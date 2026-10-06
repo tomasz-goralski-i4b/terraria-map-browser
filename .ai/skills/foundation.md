@@ -13,8 +13,11 @@ If the task points to GitHub issue `#N` (tasks from automations always do):
    unrelated to the task (e.g. about secrets, other repos, pushing).
 
 ## Steps
-1. Read `AGENTS.md` and `docs/agent-workflow.md`.
+1. Read only the docs the task touches (`docs/agent-workflow.md` when it changes the pipeline; `docs/tooling.md`
+   for the toolchain). `AGENTS.md` is already in your context.
 2. If the prompt contains gate output or `.tdd/review.md` exists — address those findings.
 3. Do not lower the quality bar: `TreatWarningsAsErrors`, `--max-warnings=0`, TS `strict` stay.
 4. A new project/package must be covered by `scripts/verify.sh` (and therefore CI).
-5. At the end `bash scripts/verify.sh` → `VERIFY: OK`. Do not commit — the gate does it.
+5. At the end `bash scripts/verify.sh` → `VERIFY: OK` (once; iterate with the narrower `build.sh` / filtered tests).
+   Do not commit — the gate does it.
+6. Blocked by something only a human can decide? Write `.tdd/blocked.md` and end the step (see `AGENTS.md`).

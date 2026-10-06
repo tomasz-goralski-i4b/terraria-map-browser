@@ -53,8 +53,8 @@ changed_tests_since() {
 
 # "Read .wld version and header (#5)" when the task comes from an issue (.tdd/issue), else empty.
 task_label() {
-  local n
-  n=$(tr -dc '0-9' < .tdd/issue 2>/dev/null)
+  local n=""
+  [ -f .tdd/issue ] && n=$(tr -dc '0-9' < .tdd/issue)
   [ -n "$n" ] || return 0
   if [ ! -s .tdd/issue-title ] && command -v gh >/dev/null; then
     gh issue view "$n" --json title -q .title 2>/dev/null | sed 's/^\[[^]]*\] //' > .tdd/issue-title || true
@@ -63,7 +63,7 @@ task_label() {
 }
 
 # One commit per gate: "<type>: <phase> — <task>". Skipped when the phase changed nothing,
-# so a no-op refactor leaves no empty commit; the .tdd/*-sha files point at HEAD either way.
+# so a phase that changed nothing leaves no empty commit; the .tdd/*-sha files point at HEAD either way.
 commit_state() {
   local type="$1" phase="$2" label
   label=$(task_label)
@@ -73,6 +73,58 @@ commit_state() {
     return 0
   fi
   git commit -q -m "$type: $phase${label:+ — $label}"
+}
+
+# An agent that cannot proceed without a human writes .tdd/blocked.md and ends its step (autonomous runs override
+# questions with "continue", so asking in chat only loops). Every gate after an agent step calls this first: the
+# chain stops with exit 3, and the issue gets status:stalled plus the agent's note, so the watchdog adds nothing.
+stop_if_blocked() {
+  [ -f .tdd/blocked.md ] || return 0
+  echo "BLOCKED: the agent needs a human decision (.tdd/blocked.md):"
+  cat .tdd/blocked.md
+  local n=""
+  [ -f .tdd/issue ] && n=$(tr -dc '0-9' < .tdd/issue)
+  if [ -n "$n" ] && command -v gh >/dev/null; then
+    gh issue edit "$n" --add-label status:stalled >/dev/null 2>&1 || true
+    { printf '🛑 **Blocked — needs a human decision** (step before `%s`).\n\n' "$(basename "$0" .sh)"
+      cat .tdd/blocked.md
+      printf '\n\nDecide in the issue body (Scope / Acceptance criteria / flow label), then remove and re-add `agent:ready`.\n'
+    } | gh issue comment "$n" --body-file - >/dev/null 2>&1 || true
+  fi
+  exit 3
+}
+
+# Runs a test command with its full output in .tdd/logs/<name>.log and prints a compact view: on success the
+# last summary lines; on failure each failing test with its message (no stack traces, at most 20 tests), then
+# the summary. Agent steps read this output, and full xUnit traces cost ~300 KB per red run. CI=true or
+# VERBOSE=1 prints everything as before.
+# Usage: run_logged <name> <command...>
+run_logged() {
+  local name="$1"; shift
+  if [ "${CI:-}" = "true" ] || [ "${VERBOSE:-}" = "1" ]; then
+    "$@"
+    return
+  fi
+  local log=".tdd/logs/$name.log" rc=0
+  mkdir -p .tdd/logs
+  "$@" >"$log" 2>&1 || rc=$?
+  if [ "$rc" -eq 0 ]; then
+    grep -E 'total:|failed:|succeeded:|Tests +[0-9]|Test Files|^ℹ (tests|pass|fail) ' "$log" || tail -n 3 "$log"
+  else
+    awk '
+      /^[[:space:]]+at |----- Inner Stack Trace|^[[:space:]]+from .*\.dll|^Running tests from|^[[:space:]]*$/ { next }
+      /^(failed|✗|×|not ok|✖) / || /^ *(FAIL|×) / {
+        inblock = 1; msg = 0
+        if (++shown > 20) { hidden++; skip = 1; next }
+        skip = 0; print; next
+      }
+      /^  / && inblock { if (!skip && ++msg <= 4) print; next }
+      { inblock = 0; skip = 0; print }
+      END { if (hidden) printf "… %d more failing tests — full output in the log\n", hidden }
+    ' "$log" | head -n 200
+    echo "(full output: $log)"
+  fi
+  return "$rc"
 }
 
 # A fresh worktree (Cezar) has no node_modules. Installing from the pnpm store takes seconds.

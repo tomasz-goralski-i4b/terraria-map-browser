@@ -1,0 +1,36 @@
+name: tests-only
+description: "Regression/characterisation tests for behaviour that already works — no red gate, no production change. Claude writes the tests, Codex reviews."
+steps:
+  - id: preflight
+    name: Gate — Claude and Codex both have usage left
+    command: "bash scripts/tdd/preflight.sh"
+
+  - id: tests
+    name: Regression tests
+    skill: tests-only
+    prompt: "{{task}}"
+    runner: claude
+    model: sonnet   # standard tier
+  - id: check-tests
+    name: Gate — tests only, verify.sh
+    command: "bash scripts/tdd/check-tests.sh"
+    onFail: { retry: tests, max: 2, retryOn: [1] }
+
+  - id: review
+    name: Cross-review (Codex, report only)
+    skill: reviewer
+    prompt: "{{task}}"
+    runner: codex
+    model: gpt-6.1-sol   # deep tier
+  - id: check-review
+    name: Gate — reviewer verdict
+    command: "bash scripts/tdd/check-review.sh"
+    onFail: { retry: tests, max: 2, retryOn: [1] }
+
+  - id: open-pr
+    name: Draft PR + status:pr-ready
+    command: "bash scripts/tdd/open-pr.sh"
+
+  - id: merge-ready
+    name: Gate — APPROVE + green CI → ready to merge
+    command: "bash scripts/tdd/merge-ready.sh"

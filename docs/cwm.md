@@ -2,7 +2,7 @@
 
 The storage contract shared by the .NET reference codec and the TypeScript codec
 ([ADR 0001](adr/0001-dotnet-ts-contract.md) §3). A world is a small header (dimensions, palette) plus one typed
-array per tile field — a **plane**. The semantic `Tile` (docs/file-format.md, "Model mapping") is only a view.
+array per tile field — a **plane**. The semantic `Tile` ([file-format/tiles.md](file-format/tiles.md), "Model mapping") is only a view.
 
 ## Layout
 

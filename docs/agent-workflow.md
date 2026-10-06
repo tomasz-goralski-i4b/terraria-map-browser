@@ -27,7 +27,7 @@ and runs started by automations can be `autonomous`.
 1. plan-backlog (Cezar, manual)     "Plan M1"  → .tdd/backlog.json → gate creates issues [backlog]
 2. promoter (GitHub Action / manual)           → issues with no open blockers, free area → [agent:ready]
 3. Cezar automation (polls every 2 min)        → task with the workflow picked by flow:* / agent:* labels (autonomous)
-4. chain                                        → red → green → refactor → review → open-pr → merge-ready
+4. chain                                        → red → green → review → open-pr → merge-ready (tdd; see below for the others)
                                                  → draft PR "Closes #N", issue → [status:pr-ready]
                                                  → APPROVE + CI green → PR undrafted, PR + issue → [status:ready-to-merge]
 5. you                                          → read the PR (description has the cross-review) → squash & merge
@@ -40,9 +40,9 @@ and runs started by automations can be `autonomous`.
 | `agent:ready` | promoter | an automation starts the task |
 | `status:pr-ready` | `open-pr.sh` | draft PR exists, waiting for CI |
 | `status:ready-to-merge` | `merge-ready.sh` | second model approved + CI green — **your turn to merge** |
-| `status:stalled` | promoter (watchdog) | the chain stopped without a PR (usage limit, crash) — **needs you**; area stays busy |
+| `status:stalled` | promoter (watchdog), or a gate when an agent wrote `.tdd/blocked.md` | the chain stopped without a PR (usage limit, crash, a decision only you can make — the issue comment says which) — **needs you**; area stays busy |
 | `human` | planner | your work (e.g. a fixture from the game); close the issue when done — it unblocks dependants |
-| `flow:tdd|foundation|spike` + `agent:claude|codex` | planner | workflow and implementer choice |
+| `flow:tdd|tests|foundation|spike` + `agent:claude|codex` | planner | workflow and implementer choice |
 | `area:*` | planner | the promoter runs one issue at a time per area |
 
 Promoter rules (`scripts/backlog/promote.mjs`): ordered by issue number, every `Blocked by: #N` closed,
@@ -101,7 +101,8 @@ Check by hand: `node scripts/backlog/usage-probe.mjs [--fresh]`.
 Cezar bug: when an agent step hits a usage/session limit, auto-resume finishes the conversation (`continue-N`
 steps) and then marks the run `done` — the remaining gates, `open-pr` and `merge-ready` never run.
 `scripts/backlog/resume.mjs` finishes such a run: it executes the remaining **command** steps of the run's own
-workflow definition in its worktree (`bash -lc`, as Cezar would), skips the optional `refactor`, and stops at
+workflow definition in its worktree (`bash -lc`, as Cezar would), skips the optional `refactor` of older workflow
+definitions, and stops at
 the first other agent step or failing gate (no agent is available for a retry loop). It only acts when the
 failed step is an agent step with a usage-limit error and its continuation finished; the PR description gets a
 "Chain resumed after a usage limit" section. The local promoter calls it automatically before flagging a stall;
@@ -134,24 +135,26 @@ The label is cleared automatically when a new Cezar run for the issue is live, o
 ## The `tdd-feature` chain
 
 ```
-red ─► check-red ─► green ─► check-green ─► refactor ─► check-refactor ─► review ─► check-review ─► open-pr ─► merge-ready
- ▲        │           ▲          │             ▲             │                          │
- └─retry──┘           └──retry───┘             └───retry─────┘                          │
- ▲                                                                                      │
- └────────────────────── REQUEST_CHANGES (findings are appended to the prompt) ─────────┘
+red ─► check-red ─► green ─► check-green ─► review ─► check-review-style ─► check-review ─► open-pr ─► merge-ready
+ ▲        │           ▲          │                          │                    │
+ └─retry──┘           └──retry───┘                          │                    │
+                      ▲                                     │                    │
+                      └──── REQUEST_CHANGES, all (style) ───┘                    │
+ ▲                                                                               │
+ └──────────── REQUEST_CHANGES with a (behaviour) finding: failing test first ───┘
 ```
 
 | Step | Who | Does | The gate checks |
 |---|---|---|---|
 | red | implementer | `.tdd/plan.md`, tests, stubs | tests changed, build OK, tests FAIL → commit `test: red`, `.tdd/red-sha` |
-| green | implementer | minimal implementation | tests unchanged since `red-sha`, `verify.sh` OK → commit, `.tdd/green-sha` |
+| green | implementer | minimal implementation, kept clean (names, duplication, docs) — there is no separate refactor step | tests unchanged since `red-sha`, `verify.sh` OK → commit, `.tdd/green-sha` |
 | (check-red-defect) | script | — | green wrote `.tdd/red-defect.md` ("this red test can never pass, per spec") → back to red, which fixes the test (`test: fix red-phase defect`) or rejects the report; once per run; shown to the reviewer and in the PR |
-| refactor | implementer | clean-up, docs | same as green |
 | review | the other provider | `.tdd/review.md` with a verdict | reviewer changed nothing; APPROVE=0, REQUEST_CHANGES=1 (rework), BLOCKED=3 (stop) |
 | open-pr | script | push, draft PR `Closes #N` | — |
 | merge-ready | script | waits for GitHub CI | APPROVE + CI green → undraft, `status:ready-to-merge`, summary comment; CI red → 3 (human) |
 
-Rework goes back to `red`: behavioural bug → failing test first; style-only findings → red without tests (the gate lets it through).
+Rework: a REQUEST_CHANGES whose blocking findings are all `(style)` goes straight back to `green`
+(`check-review-style`); one `(behaviour)` or untagged finding goes back to `red` — failing test first.
 
 Every workflow except `plan-backlog` ends with `review → check-review → open-pr → merge-ready`:
 the implementer never reviews its own work, and a PR is only marked ready when a second model approved it
@@ -160,6 +163,31 @@ and CI is green. `spike` is researched by Claude and reviewed by Codex. Foundati
 (Codex implements, Claude reviews) with `agent:codex`. The two automation filters are disjoint;
 foundation issues must carry exactly one implementer label. Step runners override the task default.
 
+## The `tests-only` chain (`flow:tests`)
+For hardening behaviour that should already work (a boundary nobody tested, a regression net before a rewrite).
+`tests` (Claude, standard tier) writes the tests → `check-tests` (test paths and `docs/` only, `verify.sh` OK, commit)
+→ review (Codex) → `check-review` → `open-pr` → `merge-ready`. There is no red gate. A new test that fails exposes
+a defect: the agent writes `.tdd/blocked.md` instead of fixing it, the chain stops, and you move the issue to
+`flow:tdd` with that test as the first criterion.
+
+## Blocked steps
+Autonomous runs answer every agent question with "continue", so a question only loops (it cost a whole run on #36).
+An agent that needs a human writes `.tdd/blocked.md` (problem, options, recommendation) and ends its step. The next
+gate (`stop_if_blocked` in `scripts/lib.sh`) prints it, adds `status:stalled`, posts it as an issue comment and
+exits 3 — the run stops without burning retries. Decide in the issue body, then remove and re-add `agent:ready`.
+
+## Test output
+`scripts/test.sh` keeps each runner's full output in `.tdd/logs/<runner>.log` and prints a compact view: the
+summary on success; on failure each failing test with its message, without stack traces, at most 20 tests.
+Agents read this output on every run, so full xUnit traces were the second-largest token cost. CI (`CI=true`)
+and `VERBOSE=1` print everything.
+
+## Why the workflows come in pairs
+`foundation`/`foundation-codex` and `tdd-feature`/`tdd-feature-codex` differ only in runners and models. Cezar
+lets a step omit `runner` (it then uses the task's runner), but it has no "the other provider" setting, and the
+reviewer must always be the other one — so each implementer needs its own definition. The routing test
+(`scripts/backlog/automation-routing.test.mjs`) keeps the pairs in step.
+
 ## Models per step
 
 Not every step needs the strongest model. Each agent step pins `runner` + `model` in its workflow YAML
@@ -167,9 +195,9 @@ Not every step needs the strongest model. Each agent step pins `runner` + `model
 
 | Tier | Claude | Codex | Used for | Why |
 |---|---|---|---|---|
-| deep | `opus` | `gpt-6.1-sol` | TDD **red**, **review**, spike **research** | tests are the spec; review is the last independent check; research needs judgement |
-| standard | `sonnet` | `gpt-6.1-sol` | TDD **green**, foundation **implement** | the tests and gates constrain the work |
-| light | `haiku` | `gpt-6-luna` | TDD **refactor** | optional clean-up; an empty refactor is fine and the gates guard behaviour |
+| deep | `opus` | `gpt-6.1-sol` | **review**, spike **research** | review is the last independent check; research needs judgement |
+| standard | `sonnet` | `gpt-6.1-sol` | TDD **red** and **green**, **tests**, foundation **implement** | the planner already wrote precise acceptance criteria; the gates and the review constrain the work |
+| light | `haiku` | `gpt-6-luna` | — (not used by default) | |
 | (task) | picked in the New Task dialog | | `plan-backlog` | rare, high leverage — choose per run |
 
 The strongest models (`fable`, `gpt-6-astra`) are not used by default — escalate manually for a hard issue
@@ -184,7 +212,7 @@ Review the tiering with the experiment metrics (first-CI result, rework cycles p
 | 0 | OK | next step |
 | 1 | the work is wrong, the agent can fix it | `retry` (with the output in the prompt), up to `max` |
 | 2 | infrastructure (missing tool, WSL) | stop — no agent attempts wasted (`retryOn: [1]`) |
-| 3 | human decision (BLOCKED, reviewer edited code) | stop |
+| 3 | human decision (BLOCKED verdict, `.tdd/blocked.md`, reviewer edited code) | stop |
 
 ## Cezar facts this relies on
 - Every agent step is a **new session** — hence the `.tdd/` handoff and skills that tell agents to read files.

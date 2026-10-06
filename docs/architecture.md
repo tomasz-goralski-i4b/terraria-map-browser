@@ -60,7 +60,7 @@ terraria-map-studio/
 │   └── Terraria.WorldCodec.Tests/
 ├── docs/
 │   ├── architecture.md
-│   ├── file-format.md
+│   ├── file-format.md           # index → file-format/*.md (one file per section family)
 │   ├── compatibility-matrix.md
 │   ├── mod-support.md
 │   ├── local-storage.md

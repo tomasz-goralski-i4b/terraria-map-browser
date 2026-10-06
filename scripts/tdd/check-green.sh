@@ -2,6 +2,7 @@
 # GREEN/REFACTOR gate: tests from the red phase untouched + full verify.sh.
 # Usage: check-green.sh [green|refactor] — only changes the commit type/phase name.
 source "$(dirname "$0")/../lib.sh"
+stop_if_blocked
 phase="${1:-green}"
 [ -f .tdd/red-sha ] || { echo "INFRA: .tdd/red-sha is missing — the red step never passed its gate"; exit 2; }
 red=$(cat .tdd/red-sha)

@@ -6,7 +6,7 @@ import { gh, ghJson } from "./gh.mjs";
 
 const file = process.argv[2] ?? ".tdd/backlog.json";
 // "human" = work an agent cannot do (e.g. generating a world in the game); the promoter skips it.
-const FLOWS = ["tdd", "foundation", "spike", "human"];
+const FLOWS = ["tdd", "foundation", "spike", "tests", "human"];
 const RUNNERS = ["claude", "codex"];
 
 function fail(msg) {
@@ -42,6 +42,7 @@ for (const [i, it] of backlog.issues.entries()) {
   if (it.flow !== "human" && !RUNNERS.includes(it.runner)) fail(`${where}: runner ∈ ${RUNNERS.join("|")}`);
   if (!it.area || !/^[a-z]+$/.test(it.area)) fail(`${where}: area is required (e.g. codec, model, fixtures, docs, infra)`);
   if (!it.body || !it.body.includes("## Acceptance criteria")) fail(`${where}: body must contain a "## Acceptance criteria" section`);
+  if (it.flow !== "human" && !/^## Spec$/m.test(it.body ?? "")) fail(`${where}: body must contain a "## Spec" section (doc parts to read, or "none")`);
   for (const dep of it.blockedBy ?? []) {
     // "#123" = an existing GitHub issue (e.g. an unfinished issue of the previous milestone).
     if (/^#\d+$/.test(dep)) continue;

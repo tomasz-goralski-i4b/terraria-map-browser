@@ -62,3 +62,17 @@ Files in the repo are UTF-8 without BOM. Windows PowerShell 5.1 reads them as AN
 ## Chain state
 The `.tdd/` directory (gitignored, per worktree) is the handoff between chain steps —
 every agent step in Cezar starts in a fresh session. Do not delete it during a run.
+
+## Chain steps: work economically
+Every step is a fresh session, so whatever it reads it pays for again.
+- This file is already in your context — do not re-read it. Read other docs only for the section you need.
+- `docs/file-format.md` is an index: read only the part named in the issue's `## Spec` section (or the one the
+  index points to), never all of `docs/file-format/`.
+- While iterating, run only the tests you touch:
+  `dotnet test --project dotnet/Terraria.WorldCodec.Tests --no-progress --filter-class "*<ClassName>"` or
+  `pnpm vitest run <path>`. Run `bash scripts/verify.sh` once at the end. Script output is compact; the full logs
+  are in `.tdd/logs/` — open them only when the compact output is not enough.
+- **Blocked?** If you cannot continue without a human (the spec contradicts itself, the issue's premise is wrong,
+  a gate cannot be satisfied honestly), do not ask in chat — autonomous runs answer every question with
+  "continue". Write `.tdd/blocked.md` (the problem, the options, your recommendation) and end your step. The next
+  gate stops the chain and posts your note on the issue.

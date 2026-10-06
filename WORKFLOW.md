@@ -11,6 +11,7 @@ Choosing a workflow:
 | Kind of work | Workflow |
 |---|---|
 | Behaviour change (codec, model, renderer) | `tdd-feature` (Claude implements / Codex reviews) or `tdd-feature-codex` |
+| Regression tests for behaviour that already works | `tests-only` |
 | CI, tooling, scaffolding, docs | `foundation` |
 | Format research, investigation | `spike` |
 | Splitting a milestone into issues | `plan-backlog` |
