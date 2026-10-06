@@ -63,7 +63,7 @@ const MIN_FOOTER_LENGTH = 6;
 const MAX_FILE_LENGTH = 0x80000000;
 
 function truncatedError(reader: ByteReader): WorldFormatError {
-  return new WorldFormatError("Truncated", reader.length, "unexpected end of data");
+  return new WorldFormatError("Truncated", reader.length, `file ends after ${String(reader.length)} bytes of the 26-byte header`);
 }
 
 function readFixedFields(reader: ByteReader): WorldFileHeader {
