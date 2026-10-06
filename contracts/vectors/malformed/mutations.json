@@ -1,0 +1,28 @@
+{
+  "description": "Malformed examples: apply each mutation (op set/delete at path) to the named valid file; the mutated document must fail its schema. `file` is relative to contracts/vectors (vector.v1) or packages/test-fixtures/snapshots/m1 (chunks.v1).",
+  "cases": [
+    { "name": "vector: missing context", "schema": "vector.v1", "file": "tiles.vectors.json", "path": ["vectors", 1, "context"], "op": "delete" },
+    { "name": "vector: missing frame-important set", "schema": "vector.v1", "file": "tiles.vectors.json", "path": ["vectors", 1, "context", "frameImportant"], "op": "delete" },
+    { "name": "vector: missing base offset", "schema": "vector.v1", "file": "runs.vectors.json", "path": ["vectors", 2, "context", "baseOffset"], "op": "delete" },
+    { "name": "vector: missing section dimensions", "schema": "vector.v1", "file": "runs.vectors.json", "path": ["vectors", 2, "context", "width"], "op": "delete" },
+    { "name": "vector: invalid hex (odd length)", "schema": "vector.v1", "file": "tiles.vectors.json", "path": ["vectors", 1, "cases", 0, "hex"], "op": "set", "value": "020" },
+    { "name": "vector: invalid hex (uppercase)", "schema": "vector.v1", "file": "tiles.vectors.json", "path": ["vectors", 1, "cases", 0, "hex"], "op": "set", "value": "02FF" },
+    { "name": "vector: invalid hex (separators)", "schema": "vector.v1", "file": "tiles.vectors.json", "path": ["vectors", 1, "cases", 0, "hex"], "op": "set", "value": "02 01" },
+    { "name": "vector: invalid hex (empty)", "schema": "vector.v1", "file": "tiles.vectors.json", "path": ["vectors", 1, "cases", 0, "hex"], "op": "set", "value": "" },
+    { "name": "vector: result and error together", "schema": "vector.v1", "file": "tiles.vectors.json", "path": ["vectors", 1, "cases", 0, "error"], "op": "set", "value": { "code": "MalformedTiles", "offset": 0 } },
+    { "name": "vector: neither result nor error", "schema": "vector.v1", "file": "tiles.vectors.json", "path": ["vectors", 1, "cases", 0, "result"], "op": "delete" },
+    { "name": "vector: negative error offset", "schema": "vector.v1", "file": "tiles.vectors.json", "path": ["vectors", 13, "cases", 0, "error", "offset"], "op": "set", "value": -1 },
+    { "name": "vector: fractional error offset", "schema": "vector.v1", "file": "tiles.vectors.json", "path": ["vectors", 13, "cases", 0, "error", "offset"], "op": "set", "value": 0.5 },
+    { "name": "vector: missing error offset", "schema": "vector.v1", "file": "tiles.vectors.json", "path": ["vectors", 13, "cases", 0, "error", "offset"], "op": "delete" },
+    { "name": "vector: unknown error code", "schema": "vector.v1", "file": "tiles.vectors.json", "path": ["vectors", 13, "cases", 0, "error", "code"], "op": "set", "value": "Truncated" },
+    { "name": "vector: unknown vector id", "schema": "vector.v1", "file": "tiles.vectors.json", "path": ["vectors", 0, "id"], "op": "set", "value": "T18" },
+    { "name": "vector: unknown entry point", "schema": "vector.v1", "file": "tiles.vectors.json", "path": ["vectors", 0, "entry"], "op": "set", "value": "FILE" },
+    { "name": "vector: schema version 2", "schema": "vector.v1", "file": "tiles.vectors.json", "path": ["schemaVersion"], "op": "set", "value": 2 },
+    { "name": "chunks: 64-tile chunk size", "schema": "chunks.v1", "file": "SCCO1.chunks.json", "path": ["size"], "op": "set", "value": 64 },
+    { "name": "chunks: renamed plane", "schema": "chunks.v1", "file": "SCCO1.chunks.json", "path": ["planes", 0], "op": "set", "value": "tile" },
+    { "name": "chunks: chunk wider than 128", "schema": "chunks.v1", "file": "SCCO1.chunks.json", "path": ["digests", 0, "width"], "op": "set", "value": 129 },
+    { "name": "chunks: uppercase digest", "schema": "chunks.v1", "file": "SCCO1.chunks.json", "path": ["digests", 0, "block"], "op": "set", "value": "2D864C0B789A4321" },
+    { "name": "chunks: short digest", "schema": "chunks.v1", "file": "SCCO1.chunks.json", "path": ["digests", 0, "wall"], "op": "set", "value": "2d864c0b789a43" },
+    { "name": "chunks: missing plane digest", "schema": "chunks.v1", "file": "SCCO1.chunks.json", "path": ["digests", 0, "flags"], "op": "delete" }
+  ]
+}

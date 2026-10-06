@@ -4,6 +4,8 @@ source "$(dirname "$0")/lib.sh"
 bash scripts/build.sh || exit $?
 echo "== eslint (max-warnings=0)"
 pnpm -s lint || exit 1
+echo "== contracts"
+node scripts/check-contracts.mjs || exit 1
 echo "== fixtures"
 node scripts/check-fixtures.mjs || exit 1
 bash scripts/test.sh || exit $?

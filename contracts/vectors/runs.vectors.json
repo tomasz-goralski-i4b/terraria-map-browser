@@ -1,0 +1,450 @@
+{
+  "schemaVersion": 1,
+  "group": "runs",
+  "vectors": [
+    {
+      "id": "R1",
+      "title": "run 0",
+      "entry": "REC",
+      "context": {
+        "formatVersion": 326,
+        "baseOffset": 0,
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "columnHeight": 4,
+        "frameImportant": {
+          "k": 754,
+          "frame": [
+            4,
+            5
+          ],
+          "plain": [
+            1,
+            255,
+            256
+          ]
+        }
+      },
+      "cases": [
+        {
+          "hex": "420100",
+          "result": {
+            "kind": "record",
+            "tile": {
+              "wires": 0,
+              "actuator": false,
+              "block": {
+                "kind": "vanilla",
+                "id": 1
+              }
+            },
+            "run": 0
+          }
+        }
+      ]
+    },
+    {
+      "id": "R2",
+      "title": "run 1",
+      "entry": "REC",
+      "context": {
+        "formatVersion": 326,
+        "baseOffset": 0,
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "columnHeight": 4,
+        "frameImportant": {
+          "k": 754,
+          "frame": [
+            4,
+            5
+          ],
+          "plain": [
+            1,
+            255,
+            256
+          ]
+        }
+      },
+      "cases": [
+        {
+          "hex": "420101",
+          "result": {
+            "kind": "record",
+            "tile": {
+              "wires": 0,
+              "actuator": false,
+              "block": {
+                "kind": "vanilla",
+                "id": 1
+              }
+            },
+            "run": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "R3",
+      "title": "last legal run",
+      "entry": "SEC",
+      "context": {
+        "formatVersion": 326,
+        "baseOffset": 100,
+        "width": 2,
+        "height": 4,
+        "frameImportant": {
+          "k": 754,
+          "frame": [
+            4,
+            5
+          ],
+          "plain": [
+            1,
+            255,
+            256
+          ]
+        }
+      },
+      "cases": [
+        {
+          "hex": "4201030048ff02",
+          "result": {
+            "kind": "grid",
+            "width": 2,
+            "height": 4,
+            "tiles": [
+              {
+                "wires": 0,
+                "actuator": false,
+                "block": {
+                  "kind": "vanilla",
+                  "id": 1
+                }
+              },
+              {
+                "wires": 0,
+                "actuator": false,
+                "block": {
+                  "kind": "vanilla",
+                  "id": 1
+                }
+              },
+              {
+                "wires": 0,
+                "actuator": false,
+                "block": {
+                  "kind": "vanilla",
+                  "id": 1
+                }
+              },
+              {
+                "wires": 0,
+                "actuator": false,
+                "block": {
+                  "kind": "vanilla",
+                  "id": 1
+                }
+              },
+              {
+                "wires": 0,
+                "actuator": false
+              },
+              {
+                "wires": 0,
+                "actuator": false,
+                "liquid": {
+                  "kind": "water",
+                  "amount": 255
+                }
+              },
+              {
+                "wires": 0,
+                "actuator": false,
+                "liquid": {
+                  "kind": "water",
+                  "amount": 255
+                }
+              },
+              {
+                "wires": 0,
+                "actuator": false,
+                "liquid": {
+                  "kind": "water",
+                  "amount": 255
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "R4",
+      "title": "Int16 run",
+      "entry": "REC",
+      "context": {
+        "formatVersion": 326,
+        "baseOffset": 0,
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "columnHeight": 4,
+        "frameImportant": {
+          "k": 754,
+          "frame": [
+            4,
+            5
+          ],
+          "plain": [
+            1,
+            255,
+            256
+          ]
+        }
+      },
+      "cases": [
+        {
+          "hex": "82010300",
+          "result": {
+            "kind": "record",
+            "tile": {
+              "wires": 0,
+              "actuator": false,
+              "block": {
+                "kind": "vanilla",
+                "id": 1
+              }
+            },
+            "run": 3
+          }
+        }
+      ]
+    },
+    {
+      "id": "R5",
+      "title": "beyond column",
+      "entry": "REC",
+      "context": {
+        "formatVersion": 326,
+        "baseOffset": 0,
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "columnHeight": 4,
+        "frameImportant": {
+          "k": 754,
+          "frame": [
+            4,
+            5
+          ],
+          "plain": [
+            1,
+            255,
+            256
+          ]
+        }
+      },
+      "cases": [
+        {
+          "hex": "420104",
+          "error": {
+            "code": "MalformedTiles",
+            "x": 0,
+            "y": 0,
+            "offset": 0,
+            "reason": "run crosses column end"
+          }
+        }
+      ]
+    },
+    {
+      "id": "R6",
+      "title": "beyond column, late",
+      "entry": "REC",
+      "context": {
+        "formatVersion": 326,
+        "baseOffset": 0,
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "columnHeight": 4,
+        "frameImportant": {
+          "k": 754,
+          "frame": [
+            4,
+            5
+          ],
+          "plain": [
+            1,
+            255,
+            256
+          ]
+        }
+      },
+      "cases": [
+        {
+          "hex": "000000420101",
+          "error": {
+            "code": "MalformedTiles",
+            "x": 0,
+            "y": 3,
+            "offset": 3,
+            "reason": "run crosses column end"
+          }
+        }
+      ]
+    },
+    {
+      "id": "R7",
+      "title": "negative run",
+      "entry": "REC",
+      "context": {
+        "formatVersion": 326,
+        "baseOffset": 0,
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "columnHeight": 4,
+        "frameImportant": {
+          "k": 754,
+          "frame": [
+            4,
+            5
+          ],
+          "plain": [
+            1,
+            255,
+            256
+          ]
+        }
+      },
+      "cases": [
+        {
+          "hex": "8201ffff",
+          "error": {
+            "code": "MalformedTiles",
+            "x": 0,
+            "y": 0,
+            "offset": 0,
+            "reason": "negative run"
+          }
+        }
+      ]
+    },
+    {
+      "id": "R8",
+      "title": "reserved width",
+      "entry": "REC",
+      "context": {
+        "formatVersion": 326,
+        "baseOffset": 0,
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "columnHeight": 4,
+        "frameImportant": {
+          "k": 754,
+          "frame": [
+            4,
+            5
+          ],
+          "plain": [
+            1,
+            255,
+            256
+          ]
+        }
+      },
+      "cases": [
+        {
+          "hex": "c2010100",
+          "error": {
+            "code": "MalformedTiles",
+            "x": 0,
+            "y": 0,
+            "offset": 0,
+            "reason": "reserved run width"
+          }
+        }
+      ]
+    },
+    {
+      "id": "R9",
+      "title": "truncation",
+      "entry": "SEC",
+      "context": {
+        "formatVersion": 326,
+        "baseOffset": 100,
+        "width": 2,
+        "height": 4,
+        "frameImportant": {
+          "k": 754,
+          "frame": [
+            4,
+            5
+          ],
+          "plain": [
+            1,
+            255,
+            256
+          ]
+        }
+      },
+      "cases": [
+        {
+          "hex": "07133a01",
+          "error": {
+            "code": "MalformedTiles",
+            "x": 0,
+            "y": 0,
+            "offset": 100,
+            "reason": "truncated record"
+          }
+        }
+      ]
+    },
+    {
+      "id": "R10",
+      "title": "leftover",
+      "entry": "SEC",
+      "context": {
+        "formatVersion": 326,
+        "baseOffset": 100,
+        "width": 2,
+        "height": 4,
+        "frameImportant": {
+          "k": 754,
+          "frame": [
+            4,
+            5
+          ],
+          "plain": [
+            1,
+            255,
+            256
+          ]
+        }
+      },
+      "cases": [
+        {
+          "hex": "4201030048ff0200",
+          "error": {
+            "code": "MalformedTiles",
+            "offset": 107,
+            "reason": "section not fully consumed"
+          }
+        }
+      ]
+    }
+  ]
+}

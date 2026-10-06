@@ -1,0 +1,725 @@
+{
+  "schemaVersion": 1,
+  "group": "tiles",
+  "vectors": [
+    {
+      "id": "T1",
+      "title": "empty",
+      "entry": "REC",
+      "context": {
+        "formatVersion": 326,
+        "baseOffset": 0,
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "columnHeight": 4,
+        "frameImportant": {
+          "k": 754,
+          "frame": [
+            4,
+            5
+          ],
+          "plain": [
+            1,
+            255,
+            256
+          ]
+        }
+      },
+      "cases": [
+        {
+          "hex": "00",
+          "result": {
+            "kind": "record",
+            "tile": {
+              "wires": 0,
+              "actuator": false
+            },
+            "run": 0
+          }
+        }
+      ]
+    },
+    {
+      "id": "T2",
+      "title": "active",
+      "entry": "REC",
+      "context": {
+        "formatVersion": 326,
+        "baseOffset": 0,
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "columnHeight": 4,
+        "frameImportant": {
+          "k": 754,
+          "frame": [
+            4,
+            5
+          ],
+          "plain": [
+            1,
+            255,
+            256
+          ]
+        }
+      },
+      "cases": [
+        {
+          "hex": "0201",
+          "result": {
+            "kind": "record",
+            "tile": {
+              "wires": 0,
+              "actuator": false,
+              "block": {
+                "kind": "vanilla",
+                "id": 1
+              }
+            },
+            "run": 0
+          }
+        }
+      ]
+    },
+    {
+      "id": "T3",
+      "title": "id 255",
+      "entry": "REC",
+      "context": {
+        "formatVersion": 326,
+        "baseOffset": 0,
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "columnHeight": 4,
+        "frameImportant": {
+          "k": 754,
+          "frame": [
+            4,
+            5
+          ],
+          "plain": [
+            1,
+            255,
+            256
+          ]
+        }
+      },
+      "cases": [
+        {
+          "hex": "02ff",
+          "result": {
+            "kind": "record",
+            "tile": {
+              "wires": 0,
+              "actuator": false,
+              "block": {
+                "kind": "vanilla",
+                "id": 255
+              }
+            },
+            "run": 0
+          }
+        }
+      ]
+    },
+    {
+      "id": "T4",
+      "title": "id 256",
+      "entry": "REC",
+      "context": {
+        "formatVersion": 326,
+        "baseOffset": 0,
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "columnHeight": 4,
+        "frameImportant": {
+          "k": 754,
+          "frame": [
+            4,
+            5
+          ],
+          "plain": [
+            1,
+            255,
+            256
+          ]
+        }
+      },
+      "cases": [
+        {
+          "hex": "220001",
+          "result": {
+            "kind": "record",
+            "tile": {
+              "wires": 0,
+              "actuator": false,
+              "block": {
+                "kind": "vanilla",
+                "id": 256
+              }
+            },
+            "run": 0
+          }
+        }
+      ]
+    },
+    {
+      "id": "T5",
+      "title": "non-canonical 255",
+      "entry": "REC",
+      "context": {
+        "formatVersion": 326,
+        "baseOffset": 0,
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "columnHeight": 4,
+        "frameImportant": {
+          "k": 754,
+          "frame": [
+            4,
+            5
+          ],
+          "plain": [
+            1,
+            255,
+            256
+          ]
+        }
+      },
+      "cases": [
+        {
+          "hex": "22ff00",
+          "result": {
+            "kind": "record",
+            "tile": {
+              "wires": 0,
+              "actuator": false,
+              "block": {
+                "kind": "vanilla",
+                "id": 255
+              }
+            },
+            "run": 0
+          }
+        }
+      ]
+    },
+    {
+      "id": "T6",
+      "title": "framed",
+      "entry": "REC",
+      "context": {
+        "formatVersion": 326,
+        "baseOffset": 0,
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "columnHeight": 4,
+        "frameImportant": {
+          "k": 754,
+          "frame": [
+            4,
+            5
+          ],
+          "plain": [
+            1,
+            255,
+            256
+          ]
+        }
+      },
+      "cases": [
+        {
+          "hex": "020400004200",
+          "result": {
+            "kind": "record",
+            "tile": {
+              "wires": 0,
+              "actuator": false,
+              "block": {
+                "kind": "vanilla",
+                "id": 4
+              },
+              "frameX": 0,
+              "frameY": 66
+            },
+            "run": 0
+          }
+        }
+      ]
+    },
+    {
+      "id": "T7",
+      "title": "water 255",
+      "entry": "REC",
+      "context": {
+        "formatVersion": 326,
+        "baseOffset": 0,
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "columnHeight": 4,
+        "frameImportant": {
+          "k": 754,
+          "frame": [
+            4,
+            5
+          ],
+          "plain": [
+            1,
+            255,
+            256
+          ]
+        }
+      },
+      "cases": [
+        {
+          "hex": "08ff",
+          "result": {
+            "kind": "record",
+            "tile": {
+              "wires": 0,
+              "actuator": false,
+              "liquid": {
+                "kind": "water",
+                "amount": 255
+              }
+            },
+            "run": 0
+          }
+        }
+      ]
+    },
+    {
+      "id": "T8",
+      "title": "lava 0",
+      "entry": "REC",
+      "context": {
+        "formatVersion": 326,
+        "baseOffset": 0,
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "columnHeight": 4,
+        "frameImportant": {
+          "k": 754,
+          "frame": [
+            4,
+            5
+          ],
+          "plain": [
+            1,
+            255,
+            256
+          ]
+        }
+      },
+      "cases": [
+        {
+          "hex": "1000",
+          "result": {
+            "kind": "record",
+            "tile": {
+              "wires": 0,
+              "actuator": false,
+              "liquid": {
+                "kind": "lava",
+                "amount": 0
+              }
+            },
+            "run": 0
+          }
+        }
+      ]
+    },
+    {
+      "id": "T9",
+      "title": "shimmer",
+      "entry": "REC",
+      "context": {
+        "formatVersion": 326,
+        "baseOffset": 0,
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "columnHeight": 4,
+        "frameImportant": {
+          "k": 754,
+          "frame": [
+            4,
+            5
+          ],
+          "plain": [
+            1,
+            255,
+            256
+          ]
+        }
+      },
+      "cases": [
+        {
+          "hex": "090180ff",
+          "result": {
+            "kind": "record",
+            "tile": {
+              "wires": 0,
+              "actuator": false,
+              "liquid": {
+                "kind": "shimmer",
+                "amount": 255
+              }
+            },
+            "run": 0
+          }
+        }
+      ]
+    },
+    {
+      "id": "T10",
+      "title": "everything",
+      "entry": "REC",
+      "context": {
+        "formatVersion": 326,
+        "baseOffset": 0,
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "columnHeight": 4,
+        "frameImportant": {
+          "k": 754,
+          "frame": [
+            4,
+            5
+          ],
+          "plain": [
+            1,
+            255,
+            256
+          ]
+        }
+      },
+      "cases": [
+        {
+          "hex": "07133a010d0402",
+          "result": {
+            "kind": "record",
+            "tile": {
+              "wires": 9,
+              "actuator": true,
+              "block": {
+                "kind": "vanilla",
+                "id": 1
+              },
+              "shape": "half",
+              "paint": 13,
+              "wall": {
+                "kind": "vanilla",
+                "id": 4
+              },
+              "wallPaint": 2
+            },
+            "run": 0
+          }
+        }
+      ]
+    },
+    {
+      "id": "T11",
+      "title": "wall 300 + water",
+      "entry": "REC",
+      "context": {
+        "formatVersion": 326,
+        "baseOffset": 0,
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "columnHeight": 4,
+        "frameImportant": {
+          "k": 754,
+          "frame": [
+            4,
+            5
+          ],
+          "plain": [
+            1,
+            255,
+            256
+          ]
+        }
+      },
+      "cases": [
+        {
+          "hex": "0d01402c0a01",
+          "result": {
+            "kind": "record",
+            "tile": {
+              "wires": 0,
+              "actuator": false,
+              "wall": {
+                "kind": "vanilla",
+                "id": 300
+              },
+              "liquid": {
+                "kind": "water",
+                "amount": 10
+              }
+            },
+            "run": 0
+          }
+        }
+      ]
+    },
+    {
+      "id": "T12",
+      "title": "header 4",
+      "entry": "REC",
+      "context": {
+        "formatVersion": 326,
+        "baseOffset": 0,
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "columnHeight": 4,
+        "frameImportant": {
+          "k": 754,
+          "frame": [
+            4,
+            5
+          ],
+          "plain": [
+            1,
+            255,
+            256
+          ]
+        }
+      },
+      "cases": [
+        {
+          "hex": "0301010201",
+          "result": {
+            "kind": "record",
+            "tile": {
+              "wires": 0,
+              "actuator": false,
+              "block": {
+                "kind": "vanilla",
+                "id": 1
+              },
+              "invisibleBlock": true
+            },
+            "run": 0
+          }
+        }
+      ]
+    },
+    {
+      "id": "T13",
+      "title": "unknown wall",
+      "entry": "REC",
+      "context": {
+        "formatVersion": 326,
+        "baseOffset": 0,
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "columnHeight": 4,
+        "frameImportant": {
+          "k": 754,
+          "frame": [
+            4,
+            5
+          ],
+          "plain": [
+            1,
+            255,
+            256
+          ]
+        }
+      },
+      "cases": [
+        {
+          "hex": "0501409001",
+          "result": {
+            "kind": "record",
+            "tile": {
+              "wires": 0,
+              "actuator": false,
+              "wall": {
+                "kind": "unknown",
+                "runtimeId": 400
+              }
+            },
+            "run": 0
+          }
+        }
+      ]
+    },
+    {
+      "id": "T14",
+      "title": "id >= k",
+      "entry": "REC",
+      "context": {
+        "formatVersion": 326,
+        "baseOffset": 0,
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "columnHeight": 4,
+        "frameImportant": {
+          "k": 754,
+          "frame": [
+            4,
+            5
+          ],
+          "plain": [
+            1,
+            255,
+            256
+          ]
+        }
+      },
+      "cases": [
+        {
+          "hex": "22f202",
+          "error": {
+            "code": "MalformedTiles",
+            "x": 0,
+            "y": 0,
+            "offset": 0,
+            "reason": "no frame-important entry"
+          }
+        }
+      ]
+    },
+    {
+      "id": "T15",
+      "title": "dangling paint",
+      "entry": "REC",
+      "context": {
+        "formatVersion": 326,
+        "baseOffset": 0,
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "columnHeight": 4,
+        "frameImportant": {
+          "k": 754,
+          "frame": [
+            4,
+            5
+          ],
+          "plain": [
+            1,
+            255,
+            256
+          ]
+        }
+      },
+      "cases": [
+        {
+          "hex": "010108",
+          "error": {
+            "code": "MalformedTiles",
+            "x": 0,
+            "y": 0,
+            "offset": 0,
+            "reason": "flag without owner"
+          }
+        }
+      ]
+    },
+    {
+      "id": "T16",
+      "title": "shimmer + lava",
+      "entry": "REC",
+      "context": {
+        "formatVersion": 326,
+        "baseOffset": 0,
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "columnHeight": 4,
+        "frameImportant": {
+          "k": 754,
+          "frame": [
+            4,
+            5
+          ],
+          "plain": [
+            1,
+            255,
+            256
+          ]
+        }
+      },
+      "cases": [
+        {
+          "hex": "110180ff",
+          "error": {
+            "code": "MalformedTiles",
+            "x": 0,
+            "y": 0,
+            "offset": 0
+          }
+        }
+      ]
+    },
+    {
+      "id": "T17",
+      "title": "shape 6",
+      "entry": "REC",
+      "context": {
+        "formatVersion": 326,
+        "baseOffset": 0,
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "columnHeight": 4,
+        "frameImportant": {
+          "k": 754,
+          "frame": [
+            4,
+            5
+          ],
+          "plain": [
+            1,
+            255,
+            256
+          ]
+        }
+      },
+      "cases": [
+        {
+          "hex": "036001",
+          "error": {
+            "code": "MalformedTiles",
+            "x": 0,
+            "y": 0,
+            "offset": 0
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,779 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/tomasz-goralski-i4b/terraria-map-browser/contracts/schemas/vector.v1.schema.json",
+  "title": "Metadata and tile vectors v1",
+  "description": "A `contracts/vectors/*.vectors.json` file (docs/file-format.md, \"Metadata and tile vectors\"). Hex is the input; offsets are absolute file offsets (context.baseOffset is the offset of the first byte shown). A case carries exactly one of `result` and `error`.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "group",
+    "vectors"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "group": {
+      "enum": [
+        "metadata",
+        "tiles",
+        "runs"
+      ]
+    },
+    "vectors": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "title",
+              "entry",
+              "context",
+              "cases"
+            ],
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/id"
+              },
+              "title": {
+                "type": "string"
+              },
+              "entry": {
+                "const": "REC"
+              },
+              "context": {
+                "$ref": "#/$defs/recContext"
+              },
+              "cases": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "hex",
+                        "result"
+                      ],
+                      "properties": {
+                        "label": {
+                          "type": "string"
+                        },
+                        "hex": {
+                          "type": "string",
+                          "pattern": "^([0-9a-f]{2})+$",
+                          "description": "Lowercase hex, two digits per byte, no separators."
+                        },
+                        "result": {
+                          "$ref": "#/$defs/recResult"
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "hex",
+                        "error"
+                      ],
+                      "properties": {
+                        "label": {
+                          "type": "string"
+                        },
+                        "hex": {
+                          "type": "string",
+                          "pattern": "^([0-9a-f]{2})+$",
+                          "description": "Lowercase hex, two digits per byte, no separators."
+                        },
+                        "error": {
+                          "$ref": "#/$defs/tilesError"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "title",
+              "entry",
+              "context",
+              "cases"
+            ],
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/id"
+              },
+              "title": {
+                "type": "string"
+              },
+              "entry": {
+                "const": "SEC"
+              },
+              "context": {
+                "$ref": "#/$defs/secContext"
+              },
+              "cases": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "hex",
+                        "result"
+                      ],
+                      "properties": {
+                        "label": {
+                          "type": "string"
+                        },
+                        "hex": {
+                          "type": "string",
+                          "pattern": "^([0-9a-f]{2})+$",
+                          "description": "Lowercase hex, two digits per byte, no separators."
+                        },
+                        "result": {
+                          "$ref": "#/$defs/secResult"
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "hex",
+                        "error"
+                      ],
+                      "properties": {
+                        "label": {
+                          "type": "string"
+                        },
+                        "hex": {
+                          "type": "string",
+                          "pattern": "^([0-9a-f]{2})+$",
+                          "description": "Lowercase hex, two digits per byte, no separators."
+                        },
+                        "error": {
+                          "$ref": "#/$defs/tilesError"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "title",
+              "entry",
+              "context",
+              "cases"
+            ],
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/id"
+              },
+              "title": {
+                "type": "string"
+              },
+              "entry": {
+                "const": "META"
+              },
+              "context": {
+                "$ref": "#/$defs/metaContext"
+              },
+              "cases": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "hex",
+                        "result"
+                      ],
+                      "properties": {
+                        "label": {
+                          "type": "string"
+                        },
+                        "hex": {
+                          "type": "string",
+                          "pattern": "^([0-9a-f]{2})+$",
+                          "description": "Lowercase hex, two digits per byte, no separators."
+                        },
+                        "result": {
+                          "$ref": "#/$defs/metaResult"
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "hex",
+                        "error"
+                      ],
+                      "properties": {
+                        "label": {
+                          "type": "string"
+                        },
+                        "hex": {
+                          "type": "string",
+                          "pattern": "^([0-9a-f]{2})+$",
+                          "description": "Lowercase hex, two digits per byte, no separators."
+                        },
+                        "error": {
+                          "$ref": "#/$defs/metadataError"
+                        }
+                      }
+                    }
+                  ]
+                }
+              },
+              "provenance": {
+                "$ref": "#/$defs/provenance"
+              }
+            }
+          }
+        ]
+      }
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^(T([1-9]|1[0-7])|R([1-9]|10)|M[1-5])$"
+    },
+    "recContext": {
+      "description": "REC: one record (or a column prefix, R6) at `position`, column height `columnHeight`; the decoder consumes exactly the bytes shown.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "formatVersion",
+        "baseOffset",
+        "position",
+        "columnHeight",
+        "frameImportant"
+      ],
+      "properties": {
+        "formatVersion": {
+          "const": 326
+        },
+        "baseOffset": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "position": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "x",
+            "y"
+          ],
+          "properties": {
+            "x": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "y": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "columnHeight": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "frameImportant": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "k",
+            "frame",
+            "plain"
+          ],
+          "description": "Frame-important set: `k` bits in the header array; `frame` ids that are frame-important, `plain` ids that are not.",
+          "properties": {
+            "k": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "frame": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "plain": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          }
+        }
+      }
+    },
+    "secContext": {
+      "description": "SEC: the bytes shown are the whole tile section; `baseOffset` is pointer[1] and pointer[2] = baseOffset + byte count.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "formatVersion",
+        "baseOffset",
+        "width",
+        "height",
+        "frameImportant"
+      ],
+      "properties": {
+        "formatVersion": {
+          "const": 326
+        },
+        "baseOffset": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "frameImportant": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "k",
+            "frame",
+            "plain"
+          ],
+          "description": "Frame-important set: `k` bits in the header array; `frame` ids that are frame-important, `plain` ids that are not.",
+          "properties": {
+            "k": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "frame": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "plain": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          }
+        }
+      }
+    },
+    "metaContext": {
+      "description": "META: metadata bytes starting at field `startsAt`; `sectionEnd` is the absolute offset of pointer[1] (end of the metadata section).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "formatVersion",
+        "baseOffset",
+        "startsAt",
+        "sectionEnd"
+      ],
+      "properties": {
+        "formatVersion": {
+          "const": 326
+        },
+        "baseOffset": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "startsAt": {
+          "enum": [
+            "height",
+            "bool",
+            "name"
+          ]
+        },
+        "sectionEnd": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "provenance": {
+      "description": "Where the bytes come from: an existing fixture, never embedded as a full world.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "world",
+        "file",
+        "sha256",
+        "offset",
+        "length"
+      ],
+      "properties": {
+        "world": {
+          "type": "string"
+        },
+        "file": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "length": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "contentRef": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "id"
+          ],
+          "properties": {
+            "kind": {
+              "const": "vanilla"
+            },
+            "id": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "mod",
+            "internalName"
+          ],
+          "properties": {
+            "kind": {
+              "const": "mod"
+            },
+            "mod": {
+              "type": "string"
+            },
+            "internalName": {
+              "type": "string"
+            },
+            "runtimeId": {
+              "type": "integer"
+            },
+            "modVersion": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "runtimeId"
+          ],
+          "properties": {
+            "kind": {
+              "const": "unknown"
+            },
+            "runtimeId": {
+              "type": "integer"
+            }
+          }
+        }
+      ]
+    },
+    "tile": {
+      "description": "Expected semantic tile (mirrors world-summary.v1 `$defs.tile` minus x and y: the position comes from the vector context; scripts/check-contracts.mjs keeps the two in sync).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "wires",
+        "actuator"
+      ],
+      "properties": {
+        "block": {
+          "$ref": "#/$defs/contentRef"
+        },
+        "frameX": {
+          "type": "integer",
+          "minimum": -32768,
+          "maximum": 32767
+        },
+        "frameY": {
+          "type": "integer",
+          "minimum": -32768,
+          "maximum": 32767
+        },
+        "paint": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 255
+        },
+        "wall": {
+          "$ref": "#/$defs/contentRef"
+        },
+        "wallPaint": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 255
+        },
+        "wires": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 15
+        },
+        "actuator": {
+          "type": "boolean"
+        },
+        "liquid": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "amount"
+          ],
+          "properties": {
+            "kind": {
+              "enum": [
+                "water",
+                "lava",
+                "honey",
+                "shimmer"
+              ]
+            },
+            "amount": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 255
+            }
+          }
+        },
+        "shape": {
+          "enum": [
+            "half",
+            "slopeTopRight",
+            "slopeTopLeft",
+            "slopeBottomRight",
+            "slopeBottomLeft"
+          ]
+        },
+        "inactive": {
+          "const": true
+        },
+        "invisibleBlock": {
+          "const": true
+        },
+        "invisibleWall": {
+          "const": true
+        },
+        "fullBrightBlock": {
+          "const": true
+        },
+        "fullBrightWall": {
+          "const": true
+        }
+      }
+    },
+    "recResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "tile",
+        "run"
+      ],
+      "properties": {
+        "kind": {
+          "const": "record"
+        },
+        "tile": {
+          "$ref": "#/$defs/tile"
+        },
+        "run": {
+          "type": "integer"
+        }
+      }
+    },
+    "secResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "width",
+        "height",
+        "tiles"
+      ],
+      "properties": {
+        "kind": {
+          "const": "grid"
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "tiles": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/tile"
+          }
+        }
+      },
+      "description": "`tiles` is column-major: index = x * height + y."
+    },
+    "metaResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "const": "metadata"
+        },
+        "name": {
+          "type": "string"
+        },
+        "seed": {
+          "type": "string"
+        },
+        "guid": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$"
+        },
+        "worldId": {
+          "type": "integer"
+        },
+        "bounds": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "left",
+            "right",
+            "top",
+            "bottom"
+          ],
+          "properties": {
+            "left": {
+              "type": "integer"
+            },
+            "right": {
+              "type": "integer"
+            },
+            "top": {
+              "type": "integer"
+            },
+            "bottom": {
+              "type": "integer"
+            }
+          }
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "gameMode": {
+          "type": "integer"
+        }
+      }
+    },
+    "tilesError": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "offset"
+      ],
+      "properties": {
+        "code": {
+          "const": "MalformedTiles"
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "reason": {
+          "type": "string"
+        },
+        "x": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "y": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "metadataError": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "offset"
+      ],
+      "properties": {
+        "code": {
+          "const": "MalformedMetadata"
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "reason": {
+          "type": "string"
+        },
+        "field": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

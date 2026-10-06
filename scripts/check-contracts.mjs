@@ -1,0 +1,171 @@
+// Contract files: contracts/vectors/*.vectors.json against vector.v1, every golden *.chunks.json against
+// chunks.v1, the malformed-example mutations (contracts/vectors/malformed/mutations.json) must be rejected,
+// plus the cross-checks a schema cannot express. Dependency-free; the validator supports exactly the keywords
+// the contracts use (the same subset as dotnet/Terraria.WorldCodec.Tests/JsonSchemaSubset.cs).
+// Exit: 0 OK, 1 violation.
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
+
+const read = (p) => JSON.parse(readFileSync(p, "utf8"));
+const schemaDir = "contracts/schemas";
+const vectorDir = "contracts/vectors";
+const snapshotDir = "packages/test-fixtures/snapshots/m1";
+const worldDir = "packages/test-fixtures/worlds";
+const ANNOTATIONS = new Set(["$schema", "$id", "title", "description", "$defs"]);
+
+/** Validation errors as "path: message"; empty when valid. */
+function validate(schema, instance, root = schema, path = "$", errors = []) {
+  const isObject = typeof instance === "object" && instance !== null && !Array.isArray(instance);
+  for (const [keyword, value] of Object.entries(schema)) {
+    switch (keyword) {
+      case "$ref": {
+        if (!value.startsWith("#/$defs/")) throw new Error(`unsupported $ref ${value}`);
+        validate(root.$defs[value.slice(8)], instance, root, path, errors);
+        break;
+      }
+      case "type": {
+        const types = Array.isArray(value) ? value : [value];
+        const ok = types.some((t) => t === "integer" ? Number.isInteger(instance)
+          : t === "number" ? typeof instance === "number"
+          : t === "array" ? Array.isArray(instance)
+          : t === "object" ? isObject
+          : t === "null" ? instance === null
+          : typeof instance === t);
+        if (!ok) errors.push(`${path}: expected ${types.join("|")}`);
+        break;
+      }
+      case "const": if (JSON.stringify(instance) !== JSON.stringify(value)) errors.push(`${path}: expected ${JSON.stringify(value)}`); break;
+      case "enum": if (!value.some((o) => JSON.stringify(o) === JSON.stringify(instance))) errors.push(`${path}: not one of ${JSON.stringify(value)}`); break;
+      case "pattern": if (typeof instance === "string" && !new RegExp(value).test(instance)) errors.push(`${path}: '${instance}' does not match ${value}`); break;
+      case "minimum": if (typeof instance === "number" && instance < value) errors.push(`${path}: ${instance} < ${value}`); break;
+      case "maximum": if (typeof instance === "number" && instance > value) errors.push(`${path}: ${instance} > ${value}`); break;
+      case "minItems": if (Array.isArray(instance) && instance.length < value) errors.push(`${path}: fewer than ${value} items`); break;
+      case "maxItems": if (Array.isArray(instance) && instance.length > value) errors.push(`${path}: more than ${value} items`); break;
+      case "items": if (Array.isArray(instance)) instance.forEach((item, i) => validate(value, item, root, `${path}[${i}]`, errors)); break;
+      case "required": if (isObject) for (const p of value) if (!(p in instance)) errors.push(`${path}: missing '${p}'`); break;
+      case "properties":
+        if (isObject) for (const [k, v] of Object.entries(instance)) if (k in value) validate(value[k], v, root, `${path}.${k}`, errors);
+        break;
+      case "additionalProperties":
+        if (value !== false) throw new Error("only additionalProperties: false is supported");
+        if (isObject) for (const k of Object.keys(instance)) if (!(k in (schema.properties ?? {}))) errors.push(`${path}: unexpected property '${k}'`);
+        break;
+      case "oneOf": {
+        const n = value.filter((o) => validate(o, instance, root, path, []).length === 0).length;
+        if (n !== 1) errors.push(`${path}: matches ${n} oneOf alternatives instead of exactly one`);
+        break;
+      }
+      default:
+        if (!ANNOTATIONS.has(keyword)) throw new Error(`unsupported keyword '${keyword}'`);
+    }
+  }
+  return errors;
+}
+
+const problems = [];
+const fail = (msg) => problems.push(msg);
+const vectorSchema = read(join(schemaDir, "vector.v1.schema.json"));
+const chunksSchema = read(join(schemaDir, "chunks.v1.schema.json"));
+const summarySchema = read(join(schemaDir, "world-summary.v1.schema.json"));
+
+// chunks.v1 must be the summary's `chunks` object, not a second format.
+for (const key of ["type", "additionalProperties", "required", "properties"]) {
+  if (JSON.stringify(chunksSchema[key]) !== JSON.stringify(summarySchema.properties.chunks[key])) fail(`chunks.v1: '${key}' differs from world-summary.v1 chunks`);
+}
+if (JSON.stringify(chunksSchema.$defs.digest) !== JSON.stringify(summarySchema.$defs.digest)) fail("chunks.v1: digest differs from world-summary.v1");
+// The vector tile mirrors the summary tile minus x and y.
+const withoutXY = (t) => ({
+  ...t,
+  description: 0,
+  required: t.required.filter((k) => k !== "x" && k !== "y"),
+  properties: Object.fromEntries(Object.entries(t.properties).filter(([k]) => k !== "x" && k !== "y")),
+});
+if (JSON.stringify(withoutXY(summarySchema.$defs.tile)) !== JSON.stringify(withoutXY(vectorSchema.$defs.tile))) fail("vector.v1: $defs.tile differs from world-summary.v1 $defs.tile (minus x, y)");
+if (JSON.stringify(vectorSchema.$defs.contentRef) !== JSON.stringify(summarySchema.$defs.contentRef)) fail("vector.v1: contentRef differs from world-summary.v1");
+
+// Vectors.
+const files = readdirSync(vectorDir).filter((f) => f.endsWith(".vectors.json")).sort();
+const byId = new Map();
+const expectedIds = [
+  ...Array.from({ length: 17 }, (_, i) => `T${i + 1}`),
+  ...Array.from({ length: 10 }, (_, i) => `R${i + 1}`),
+  ...Array.from({ length: 5 }, (_, i) => `M${i + 1}`),
+];
+const manifest = existsSync(join(worldDir, "manifest.json")) ? read(join(worldDir, "manifest.json")) : { worlds: [] };
+for (const f of files) {
+  const doc = read(join(vectorDir, f));
+  const errors = validate(vectorSchema, doc);
+  for (const e of errors) fail(`${f}: ${e}`);
+  if (errors.length) continue;
+  for (const vec of doc.vectors) {
+    if (byId.has(vec.id)) fail(`${f}: duplicate vector ${vec.id}`);
+    byId.set(vec.id, vec);
+    const ctx = vec.context;
+    for (const [i, c] of vec.cases.entries()) {
+      const where = `${f} ${vec.id} case ${i}`;
+      const end = ctx.baseOffset + c.hex.length / 2;
+      if (c.error && !(c.error.offset >= ctx.baseOffset && c.error.offset <= end)) fail(`${where}: error offset ${c.error.offset} outside [${ctx.baseOffset}, ${end}]`);
+      if (vec.entry === "META" && ctx.sectionEnd !== end) fail(`${where}: sectionEnd ${ctx.sectionEnd} != baseOffset + byte count (${end})`);
+      if (vec.entry === "SEC" && c.result && (c.result.width !== ctx.width || c.result.height !== ctx.height || c.result.tiles.length !== ctx.width * ctx.height)) fail(`${where}: grid does not match the ${ctx.width}x${ctx.height} context`);
+    }
+    if (vec.id === "M3") {
+      const p = vec.provenance;
+      if (!p) { fail("M3: provenance is required"); continue; }
+      const world = manifest.worlds.find((w) => w.file === `${p.world}.wld`);
+      if (world?.sha256 !== p.sha256) fail(`M3: provenance sha256 does not match the manifest entry of ${p.world}`);
+      if (!existsSync(p.file)) fail(`M3: ${p.file} is missing`);
+      else if (readFileSync(p.file).subarray(p.offset, p.offset + p.length).toString("hex") !== vec.cases[0].hex || ctx.baseOffset !== p.offset) fail("M3: hex/baseOffset differ from the fixture bytes");
+    } else if (vec.provenance) fail(`${vec.id}: only M3 has provenance`);
+  }
+}
+for (const id of expectedIds) if (!byId.has(id)) fail(`vector ${id} is missing`);
+for (const id of byId.keys()) if (!expectedIds.includes(id)) fail(`unexpected vector ${id}`);
+// R3 and R10 are complete sections; R10 is R3 plus one leftover byte; R9 is the deliberately cut-short section.
+if (byId.get("R10")?.cases[0].hex !== `${byId.get("R3")?.cases[0].hex}00`) fail("R10 must be R3 followed by one extra 00 byte");
+for (const id of ["R3", "R9", "R10"]) if (byId.get(id)?.entry !== "SEC") fail(`${id} must use entry SEC`);
+
+// Golden chunk files: schema + 128-aligned grid whose edge sizes match the meta.json dimensions (#10, #12).
+let chunkFiles = 0;
+if (existsSync(snapshotDir)) {
+  for (const f of readdirSync(snapshotDir).filter((n) => n.endsWith(".chunks.json")).sort()) {
+    chunkFiles++;
+    const doc = read(join(snapshotDir, f));
+    const errors = validate(chunksSchema, doc);
+    for (const e of errors) fail(`${f}: ${e}`);
+    const metaPath = join(snapshotDir, f.replace(".chunks.json", ".meta.json"));
+    if (errors.length) continue;
+    if (!existsSync(metaPath)) { fail(`${f}: ${metaPath} is missing`); continue; }
+    const { dimensions } = read(metaPath);
+    const expected = Math.ceil(dimensions.width / 128) * Math.ceil(dimensions.height / 128);
+    if (doc.digests.length !== expected) fail(`${f}: ${doc.digests.length} digests, expected ${expected}`);
+    // x and y are chunk indices (column-major order: x, then y), not tile coordinates.
+    doc.digests.forEach((d, i) => {
+      const w = Math.min(128, dimensions.width - d.x * 128);
+      const h = Math.min(128, dimensions.height - d.y * 128);
+      const rows = Math.ceil(dimensions.height / 128);
+      if (d.x !== Math.floor(i / rows) || d.y !== i % rows || d.width !== w || d.height !== h) fail(`${f}: chunk #${i} (${d.x},${d.y}) is ${d.width}x${d.height}, expected ${w}x${h} at its place in the 128 grid`);
+    });
+  }
+}
+
+// Malformed examples: path mutations of a valid file; each mutated document must be rejected.
+const mutations = read(join(vectorDir, "malformed", "mutations.json"));
+for (const m of mutations.cases) {
+  const schema = m.schema === "vector.v1" ? vectorSchema : m.schema === "chunks.v1" ? chunksSchema : null;
+  if (!schema) { fail(`malformed ${m.name}: unknown schema ${m.schema}`); continue; }
+  const source = join(m.schema === "vector.v1" ? vectorDir : snapshotDir, m.file);
+  if (!existsSync(source)) { fail(`malformed ${m.name}: ${source} is missing`); continue; }
+  const doc = read(source);
+  let target = doc;
+  for (const key of m.path.slice(0, -1)) target = target[key];
+  const last = m.path.at(-1);
+  if (m.op === "delete") delete target[last]; else target[last] = m.value;
+  if (validate(schema, doc).length === 0) fail(`malformed ${m.name}: mutated document is still valid`);
+}
+
+if (problems.length) {
+  console.log("CONTRACTS: violations:");
+  for (const p of problems) console.log(`  - ${p}`);
+  process.exit(1);
+}
+console.log(`CONTRACTS: OK — ${byId.size} vectors, ${chunkFiles} chunk file(s), ${mutations.cases.length} malformed example(s)`);

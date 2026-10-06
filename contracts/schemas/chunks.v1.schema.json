@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/tomasz-goralski-i4b/terraria-map-browser/contracts/schemas/chunks.v1.schema.json",
+  "title": "Chunk digests v1",
+  "description": "A `*.chunks.json` golden file: the `chunks` object of the world summary (world-summary.v1.schema.json) stored on its own. Same fields and meaning. `x` and `y` are chunk indices (digests in column-major order), the grid is 128 by 128 tiles with smaller chunks on the right and bottom edges; edge sizes and ordering are checked by scripts/check-contracts.mjs against the world dimensions.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "size",
+    "planes",
+    "digests"
+  ],
+  "properties": {
+    "size": {
+      "const": 128
+    },
+    "planes": {
+      "const": [
+        "block",
+        "wall",
+        "frameX",
+        "frameY",
+        "paint",
+        "wallPaint",
+        "liquid",
+        "liquidAmount",
+        "shape",
+        "flags"
+      ]
+    },
+    "digests": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "x",
+          "y",
+          "width",
+          "height",
+          "block",
+          "wall",
+          "frameX",
+          "frameY",
+          "paint",
+          "wallPaint",
+          "liquid",
+          "liquidAmount",
+          "shape",
+          "flags"
+        ],
+        "properties": {
+          "x": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "y": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "width": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 128
+          },
+          "height": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 128
+          },
+          "block": {
+            "$ref": "#/$defs/digest"
+          },
+          "wall": {
+            "$ref": "#/$defs/digest"
+          },
+          "frameX": {
+            "$ref": "#/$defs/digest"
+          },
+          "frameY": {
+            "$ref": "#/$defs/digest"
+          },
+          "paint": {
+            "$ref": "#/$defs/digest"
+          },
+          "wallPaint": {
+            "$ref": "#/$defs/digest"
+          },
+          "liquid": {
+            "$ref": "#/$defs/digest"
+          },
+          "liquidAmount": {
+            "$ref": "#/$defs/digest"
+          },
+          "shape": {
+            "$ref": "#/$defs/digest"
+          },
+          "flags": {
+            "$ref": "#/$defs/digest"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "digest": {
+      "description": "First 16 lowercase hex chars of the SHA-256 of the plane's bytes inside the chunk, column-major within the chunk.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{16}$"
+    }
+  }
+}
