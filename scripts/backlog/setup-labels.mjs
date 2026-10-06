@@ -17,6 +17,7 @@ const labels = [
   ["agent:codex", "d4c5f9", "Codex implements, Claude reviews"],
   ["area:codec", "fbca04", ".NET reference codec: dotnet/Terraria.WorldCodec (+ Inspector)"],
   ["area:codec-ts", "fbca04", "TypeScript codec: packages/world-codec — independent of the .NET codec, runs in parallel"],
+  ["area:assets", "fbca04", "Game textures read locally (XNB/LZX), asset index, reference renderer — never committed"],
   ["area:model", "fbca04", "packages/world-model"],
   ["area:fixtures", "fbca04", "packages/test-fixtures"],
   ["area:web", "fbca04", "apps/web, renderer"],

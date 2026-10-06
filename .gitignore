@@ -20,6 +20,9 @@ coverage/
 !packages/test-fixtures/**/*.wld
 *.wld.bak
 local-assets/
+# Renders made with the local game sprites (render --content): game-derived, never committed
+local-renders/
+*.sprite.png
 
 # IDE
 .idea/

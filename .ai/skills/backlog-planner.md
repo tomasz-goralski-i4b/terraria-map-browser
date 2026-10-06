@@ -23,7 +23,8 @@ you get its output in the prompt — fix the file.
 - `runner`: `claude` or `codex` — spread roughly evenly unless the task says otherwise; binary format changes
   (writer, round-trip) go to `claude`. Omit for `human`.
 - `area`: `codec` (.NET reference codec, `dotnet/`), `codec-ts` (TypeScript codec, `packages/world-codec`),
-  `model`, `fixtures`, `docs`, `infra`, `web`, `mods`. The two codecs are independent implementations of one
+  `assets` (local game textures: XNB/LZX reading, asset index, reference renderer), `model`, `fixtures`, `docs`,
+  `infra`, `web`, `mods`. The two codecs are independent implementations of one
   contract (ADR 0001), so they are separate areas and may run in parallel. The promoter runs **one issue at a time per area**,
   so do not invent areas, and put independent work in different areas so it can run in parallel.
 - `blockedBy`: **real** dependencies only (needed code/fixture/decision). Keys must point to items
