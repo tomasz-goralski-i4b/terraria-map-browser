@@ -99,6 +99,11 @@ public static class WorldDiff
                 var key = (stripe / WorldSummaryJson.ChunkSize, top / WorldSummaryJson.ChunkSize);
                 var hasLeft = leftChunks.TryGetValue(key, out var left);
                 var hasRight = rightChunks.TryGetValue(key, out var right);
+                if (!hasLeft && !hasRight)
+                {
+                    continue;
+                }
+
                 if (hasLeft && hasRight && samePalette && JsonElement.DeepEquals(left, right))
                 {
                     continue;
