@@ -1,0 +1,187 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/tomasz-goralski-i4b/terraria-map-browser/contracts/schemas/world-summary.v1.schema.json",
+  "title": "World summary v1",
+  "description": "Output of `export-json`: world summary, chunk digests of the Canonical World Model (docs/cwm.md) and, with --region, the semantic tiles of a region. Property order is fixed as listed here.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "formatVersion", "metadata", "dimensions", "skippedSections", "palette", "chunks"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "formatVersion": { "type": "integer", "minimum": 0 },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "seed", "guid", "worldId", "gameMode", "evil"],
+      "properties": {
+        "name": { "type": "string" },
+        "seed": { "type": ["string", "null"] },
+        "guid": { "type": ["string", "null"], "pattern": "^[0-9a-f]{32}$" },
+        "worldId": { "type": "integer" },
+        "gameMode": { "type": ["integer", "null"] },
+        "evil": { "enum": ["corruption", "crimson"] }
+      }
+    },
+    "dimensions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["width", "height"],
+      "properties": {
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "skippedSections": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "start", "end"],
+        "properties": {
+          "name": {
+            "enum": [
+              "chests", "signs", "npcsAndMobs", "tileEntities", "weightedPressurePlates",
+              "townManager", "bestiary", "creativePowers", "footer"
+            ]
+          },
+          "start": { "type": "integer", "minimum": 0 },
+          "end": { "type": "integer", "minimum": 0 }
+        }
+      }
+    },
+    "palette": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/contentRef" }
+    },
+    "chunks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["size", "planes", "digests"],
+      "properties": {
+        "size": { "const": 128 },
+        "planes": {
+          "const": ["block", "wall", "frameX", "frameY", "paint", "wallPaint", "liquid", "liquidAmount", "shape", "flags"]
+        },
+        "digests": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "x", "y", "width", "height",
+              "block", "wall", "frameX", "frameY", "paint", "wallPaint", "liquid", "liquidAmount", "shape", "flags"
+            ],
+            "properties": {
+              "x": { "type": "integer", "minimum": 0 },
+              "y": { "type": "integer", "minimum": 0 },
+              "width": { "type": "integer", "minimum": 1, "maximum": 128 },
+              "height": { "type": "integer", "minimum": 1, "maximum": 128 },
+              "block": { "$ref": "#/$defs/digest" },
+              "wall": { "$ref": "#/$defs/digest" },
+              "frameX": { "$ref": "#/$defs/digest" },
+              "frameY": { "$ref": "#/$defs/digest" },
+              "paint": { "$ref": "#/$defs/digest" },
+              "wallPaint": { "$ref": "#/$defs/digest" },
+              "liquid": { "$ref": "#/$defs/digest" },
+              "liquidAmount": { "$ref": "#/$defs/digest" },
+              "shape": { "$ref": "#/$defs/digest" },
+              "flags": { "$ref": "#/$defs/digest" }
+            }
+          }
+        }
+      }
+    },
+    "region": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y", "width", "height", "tiles"],
+      "properties": {
+        "x": { "type": "integer", "minimum": 0 },
+        "y": { "type": "integer", "minimum": 0 },
+        "width": { "type": "integer", "minimum": 1, "maximum": 256 },
+        "height": { "type": "integer", "minimum": 1, "maximum": 256 },
+        "tiles": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 65536,
+          "items": { "$ref": "#/$defs/tile" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "digest": {
+      "description": "First 16 lowercase hex chars of the SHA-256 of the plane's bytes inside the chunk, column-major within the chunk.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{16}$"
+    },
+    "contentRef": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "id"],
+          "properties": {
+            "kind": { "const": "vanilla" },
+            "id": { "type": "integer", "minimum": 0 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "mod", "internalName"],
+          "properties": {
+            "kind": { "const": "mod" },
+            "mod": { "type": "string" },
+            "internalName": { "type": "string" },
+            "runtimeId": { "type": "integer" },
+            "modVersion": { "type": "string" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "runtimeId"],
+          "properties": {
+            "kind": { "const": "unknown" },
+            "runtimeId": { "type": "integer" }
+          }
+        }
+      ]
+    },
+    "tile": {
+      "description": "Semantic tile (docs/file-format.md, \"Model mapping\"). Absent parts and default additive fields are omitted.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y", "wires", "actuator"],
+      "properties": {
+        "x": { "type": "integer", "minimum": 0 },
+        "y": { "type": "integer", "minimum": 0 },
+        "block": { "$ref": "#/$defs/contentRef" },
+        "frameX": { "type": "integer", "minimum": -32768, "maximum": 32767 },
+        "frameY": { "type": "integer", "minimum": -32768, "maximum": 32767 },
+        "paint": { "type": "integer", "minimum": 0, "maximum": 255 },
+        "wall": { "$ref": "#/$defs/contentRef" },
+        "wallPaint": { "type": "integer", "minimum": 0, "maximum": 255 },
+        "wires": { "type": "integer", "minimum": 0, "maximum": 15 },
+        "actuator": { "type": "boolean" },
+        "liquid": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "amount"],
+          "properties": {
+            "kind": { "enum": ["water", "lava", "honey", "shimmer"] },
+            "amount": { "type": "integer", "minimum": 0, "maximum": 255 }
+          }
+        },
+        "shape": { "enum": ["half", "slopeTopRight", "slopeTopLeft", "slopeBottomRight", "slopeBottomLeft"] },
+        "inactive": { "const": true },
+        "invisibleBlock": { "const": true },
+        "invisibleWall": { "const": true },
+        "fullBrightBlock": { "const": true },
+        "fullBrightWall": { "const": true }
+      }
+    }
+  }
+}

@@ -1,0 +1,166 @@
+{
+  "schemaVersion": 1,
+  "formatVersion": 326,
+  "metadata": {
+    "name": "Synthetic",
+    "seed": "948580918",
+    "guid": "87e466e7853c3f48b75abc85e36d4b86",
+    "worldId": 1743427911,
+    "gameMode": 0,
+    "evil": "corruption"
+  },
+  "dimensions": {
+    "width": 130,
+    "height": 129
+  },
+  "skippedSections": [
+    {
+      "name": "chests",
+      "start": 1095,
+      "end": 1097
+    },
+    {
+      "name": "signs",
+      "start": 1097,
+      "end": 1099
+    },
+    {
+      "name": "npcsAndMobs",
+      "start": 1099,
+      "end": 1101
+    },
+    {
+      "name": "tileEntities",
+      "start": 1101,
+      "end": 1103
+    },
+    {
+      "name": "weightedPressurePlates",
+      "start": 1103,
+      "end": 1105
+    },
+    {
+      "name": "townManager",
+      "start": 1105,
+      "end": 1107
+    },
+    {
+      "name": "bestiary",
+      "start": 1107,
+      "end": 1109
+    },
+    {
+      "name": "creativePowers",
+      "start": 1109,
+      "end": 1111
+    },
+    {
+      "name": "footer",
+      "start": 1111,
+      "end": 1117
+    }
+  ],
+  "palette": [
+    {
+      "kind": "vanilla",
+      "id": 1
+    },
+    {
+      "kind": "vanilla",
+      "id": 2
+    },
+    {
+      "kind": "unknown",
+      "runtimeId": 800
+    },
+    {
+      "kind": "unknown",
+      "runtimeId": 500
+    },
+    {
+      "kind": "vanilla",
+      "id": 4
+    }
+  ],
+  "chunks": {
+    "size": 128,
+    "planes": [
+      "block",
+      "wall",
+      "frameX",
+      "frameY",
+      "paint",
+      "wallPaint",
+      "liquid",
+      "liquidAmount",
+      "shape",
+      "flags"
+    ],
+    "digests": [
+      {
+        "x": 0,
+        "y": 0,
+        "width": 128,
+        "height": 128,
+        "block": "2e36a5b2b35cc140",
+        "wall": "def73be836ca7d42",
+        "frameX": "2d864c0b789a4321",
+        "frameY": "2d864c0b789a4321",
+        "paint": "4fe7b59af6de3b66",
+        "wallPaint": "4fe7b59af6de3b66",
+        "liquid": "cfcabfeff0337574",
+        "liquidAmount": "c0a6a083250195dc",
+        "shape": "8fc7f559050ee961",
+        "flags": "b3eb8b9e22b68e2b"
+      },
+      {
+        "x": 0,
+        "y": 1,
+        "width": 128,
+        "height": 1,
+        "block": "3d6876a0146de857",
+        "wall": "3d6876a0146de857",
+        "frameX": "3d6876a0146de857",
+        "frameY": "3d6876a0146de857",
+        "paint": "38723a2e5e8a17aa",
+        "wallPaint": "38723a2e5e8a17aa",
+        "liquid": "b47516f8e1c8586c",
+        "liquidAmount": "32e01971e6cd5b30",
+        "shape": "38723a2e5e8a17aa",
+        "flags": "5341e6b2646979a7"
+      },
+      {
+        "x": 1,
+        "y": 0,
+        "width": 2,
+        "height": 128,
+        "block": "405db4fc76fe76a8",
+        "wall": "6d227077378a8eaa",
+        "frameX": "9f56cda75fefeab9",
+        "frameY": "9f56cda75fefeab9",
+        "paint": "5341e6b2646979a7",
+        "wallPaint": "da7633acf5c194ac",
+        "liquid": "d1cf51dc9b6b253d",
+        "liquidAmount": "9368b9c2173bd973",
+        "shape": "9ff13b16d3a309ea",
+        "flags": "ed89542f0fe2c68e"
+      },
+      {
+        "x": 1,
+        "y": 1,
+        "width": 2,
+        "height": 1,
+        "block": "69c13d27c72a3c43",
+        "wall": "ad95131bc0b799c0",
+        "frameX": "123d7a53890c460b",
+        "frameY": "d69f56f863c93b74",
+        "paint": "583c7dfb7b3055d9",
+        "wallPaint": "96a296d224f285c6",
+        "liquid": "b413f47d13ee2fe6",
+        "liquidAmount": "48b576dfc3447c7a",
+        "shape": "96a296d224f285c6",
+        "flags": "78098632282587ee"
+      }
+    ]
+  }
+}
