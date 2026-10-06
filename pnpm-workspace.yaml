@@ -1,3 +1,23 @@
 packages:
   - "apps/*"
   - "packages/*"
+
+# Shared dev dependency versions; packages reference them as "catalog:".
+# Every version below and every exception to "latest stable major" is explained in docs/tooling.md.
+catalog:
+  "@eslint/js": ^10.0.1
+  "@types/node": ^24.19.1
+  eslint: ^10.12.0
+  # TypeScript 7 (native compiler) runs `tsc -b`; it ships no JS API that typescript-eslint can load.
+  typescript7: npm:typescript@~7.0.2
+  # The "typescript" module seen by typescript-eslint and editors: the TypeScript 6 API (bin: tsc6).
+  typescript: npm:@typescript/typescript6@~6.0.2
+  typescript-eslint: ^8.71.0
+  vitest: ^5.0.3
+
+catalogMode: strict
+
+# Explicit build-script allowlist (pnpm 11 replaced onlyBuiltDependencies with allowBuilds).
+# Empty on purpose: nothing in the tree needs an install script since Vite 8 dropped esbuild for
+# Rolldown, whose native binding ships as a prebuilt optional dependency.
+allowBuilds: {}

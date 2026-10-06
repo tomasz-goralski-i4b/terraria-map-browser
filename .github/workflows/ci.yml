@@ -16,10 +16,12 @@ jobs:
           # with --locked-mode because GitHub Actions sets CI=true.
           cache: true
           cache-dependency-path: dotnet/**/packages.lock.json
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      # pnpm version comes from package.json "packageManager"; v6+ is required for pnpm 11.
+      - uses: pnpm/action-setup@v6
+      # Same Node major as local development: .node-version (and package.json "engines").
+      - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version-file: .node-version
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       # The same command the Cezar chain gates run — a single definition of "green".
