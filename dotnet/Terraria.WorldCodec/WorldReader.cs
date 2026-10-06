@@ -18,6 +18,7 @@ public static class WorldReader
     private const int SectionCountOffset = 24;
     private const short ExpectedSectionCount = 11;
     private const string ExpectedSignature = "relogic";
+    private const string ChineseBuildSignature = "xindong";
 
     /// <summary>The explicit set of format versions accepted in M1.</summary>
     public static IReadOnlySet<int> SupportedVersions { get; } = new[] { 326 }.ToFrozenSet();
@@ -48,7 +49,7 @@ public static class WorldReader
         var signature = Encoding.ASCII.GetString(bytes, SignatureOffset, SignatureLength);
         if (signature != ExpectedSignature)
         {
-            var reason = signature == "xindong" ? "unsupported variant" : "invalid signature";
+            var reason = signature == ChineseBuildSignature ? "unsupported variant" : "invalid signature";
             throw new WorldFormatException(WorldFormatError.NotAWorld, SignatureOffset, reason);
         }
 
