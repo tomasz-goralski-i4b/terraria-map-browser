@@ -48,6 +48,6 @@ else
 fi
 
 if [ -n "$issue" ]; then
-  gh issue edit "$issue" --remove-label agent:ready --add-label status:pr-ready >/dev/null \
+  gh issue edit "$issue" --remove-label agent:ready --remove-label status:stalled --add-label status:pr-ready >/dev/null \
     && echo "issue #$issue → status:pr-ready"
 fi

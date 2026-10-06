@@ -40,6 +40,7 @@ and runs started by automations can be `autonomous`.
 | `agent:ready` | promoter | an automation starts the task |
 | `status:pr-ready` | `open-pr.sh` | draft PR exists, waiting for CI |
 | `status:ready-to-merge` | `merge-ready.sh` | second model approved + CI green — **your turn to merge** |
+| `status:stalled` | promoter (watchdog) | the chain stopped without a PR (usage limit, crash) — **needs you**; area stays busy |
 | `human` | planner | your work (e.g. a fixture from the game); close the issue when done — it unblocks dependants |
 | `flow:tdd|foundation|spike` + `agent:claude|codex` | planner | workflow and implementer choice |
 | `area:*` | planner | the promoter runs one issue at a time per area |
@@ -54,6 +55,16 @@ bash scripts/backlog/install-automations.sh
 ```
 New ones are created **paused**; enable them in the UI → Automations. Enabling sets a "from now on" baseline —
 labels added earlier are not picked up (remove and re-add `agent:ready` in that case).
+
+### Stall watchdog
+A chain can die without any GitHub event (e.g. the agent hits a usage limit and Cezar ends the run early).
+The promoter therefore also runs every 30 minutes (Action cron) and checks issues on `agent:ready`:
+- **locally** (`bash scripts/backlog/promote.sh`, Cezar cockpit reachable): stalled as soon as Cezar's run for the
+  issue is finished/failed while the issue never reached `status:pr-ready`, or no run started within 15 min;
+- **in CI** (no access to the local cockpit): stalled after `STALL_MINUTES` (120) on `agent:ready`.
+
+A stalled issue gets `status:stalled` and one comment with the reason (e.g. the failed step and its error).
+The label is cleared automatically when a new Cezar run for the issue is live, or when `open-pr` succeeds.
 
 ### When something goes wrong
 - A Cezar task `failed` (retries exhausted, BLOCKED, INFRA) → the issue stays on `agent:ready` and its area stays busy.

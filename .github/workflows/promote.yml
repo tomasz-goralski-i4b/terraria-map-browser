@@ -4,6 +4,9 @@ name: promote
 on:
   issues:
     types: [closed, reopened]
+  schedule:
+    # Stall watchdog: a chain that dies (usage limit, crash) produces no GitHub event. Time-based in CI.
+    - cron: "*/30 * * * *"
   workflow_dispatch:
     inputs:
       dry_run:
@@ -31,3 +34,4 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           MAX_ACTIVE: "2"
+          STALL_MINUTES: "120"

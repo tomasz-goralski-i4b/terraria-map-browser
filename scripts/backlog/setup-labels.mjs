@@ -6,6 +6,7 @@ const labels = [
   ["agent:ready", "0e8a16", "Unblocked by the promoter — a Cezar automation starts the task"],
   ["status:pr-ready", "1d76db", "Chain finished, draft PR waiting for a human"],
   ["status:ready-to-merge", "0e8a16", "Reviewed by a second model, CI green — waiting for a human merge"],
+  ["status:stalled", "b60205", "Chain stopped without a PR (usage limit, crash) — needs a human; area stays busy"],
   ["human", "e99695", "Needs a human (e.g. the game, a decision) — the promoter skips it, agents wait for it to close"],
   ["flow:tdd", "5319e7", "tdd-feature workflow"],
   ["flow:foundation", "5319e7", "foundation workflow (no TDD)"],

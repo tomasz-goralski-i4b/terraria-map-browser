@@ -15,6 +15,7 @@ export const LABELS = {
   ready: "agent:ready",
   prReady: "status:pr-ready",
   mergeReady: "status:ready-to-merge",
+  stalled: "status:stalled",
 };
 
 /** "Blocked by: #12, #14" — a single line in the issue body, written by create-issues.mjs. */
