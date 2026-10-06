@@ -23,6 +23,9 @@ PR descriptions, issues and review notes.
 - TS: `strict` + `noUncheckedIndexedAccess` + `exactOptionalPropertyTypes`, `typescript-eslint` strictTypeChecked, `--max-warnings=0`.
 - Warnings get fixed. Suppressions only locally and with a comment explaining why.
 - A behaviour change starts with a failing test (TDD). The `tdd-feature` workflow enforces it.
+- Architecture of the codecs: [ADR 0001](docs/adr/0001-dotnet-ts-contract.md). No runtime C#↔TS calls; storage is
+  the Canonical World Model (one typed array per tile field + `ContentRef` palette), never one object per tile;
+  golden files are small (`meta.json` + `chunks.json`), never a full tile grid.
 
 ## Layout
 ```

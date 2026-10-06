@@ -103,6 +103,11 @@ type Tile = {
 
 On import we store the runtime ID and, when the data is available, the stable `mod/internalName` identifier. On export we resolve the identifier against the current mod configuration.
 
+> **Storage vs. semantics** ([ADR 0001](adr/0001-dotnet-ts-contract.md)): `ContentRef` and `Tile` above are the
+> *semantic* model and the shape of tests and UI views. At runtime a world is stored as the Canonical World Model —
+> one typed array per tile field (struct of arrays) plus a `ContentRef` palette — never one object per tile.
+> The .NET and TS codecs never talk at runtime; they meet through the contracts in `contracts/`, checked in CI.
+
 ## Mod support
 
 "Mod support" is not a single checkbox. Every feature and every mod gets a compatibility level.
