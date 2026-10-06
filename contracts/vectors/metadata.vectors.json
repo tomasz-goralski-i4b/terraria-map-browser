@@ -10,6 +10,7 @@
         "formatVersion": 326,
         "baseOffset": 0,
         "startsAt": "height",
+        "inputEnd": 8,
         "sectionEnd": 8
       },
       "cases": [
@@ -31,6 +32,7 @@
         "formatVersion": 326,
         "baseOffset": 0,
         "startsAt": "height",
+        "inputEnd": 8,
         "sectionEnd": 8
       },
       "cases": [
@@ -64,7 +66,8 @@
         "formatVersion": 326,
         "baseOffset": 167,
         "startsAt": "name",
-        "sectionEnd": 239
+        "inputEnd": 239,
+        "sectionEnd": 11927
       },
       "cases": [
         {
@@ -103,6 +106,7 @@
         "formatVersion": 326,
         "baseOffset": 0,
         "startsAt": "bool",
+        "inputEnd": 1,
         "sectionEnd": 1
       },
       "cases": [
@@ -124,6 +128,7 @@
         "formatVersion": 326,
         "baseOffset": 0,
         "startsAt": "name",
+        "inputEnd": 5,
         "sectionEnd": 5
       },
       "cases": [

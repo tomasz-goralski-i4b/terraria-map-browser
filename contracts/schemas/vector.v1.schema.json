@@ -92,7 +92,7 @@
                           "description": "Lowercase hex, two digits per byte, no separators."
                         },
                         "error": {
-                          "$ref": "#/$defs/tilesError"
+                          "$ref": "#/$defs/recError"
                         }
                       }
                     }
@@ -167,7 +167,7 @@
                           "description": "Lowercase hex, two digits per byte, no separators."
                         },
                         "error": {
-                          "$ref": "#/$defs/tilesError"
+                          "$ref": "#/$defs/secError"
                         }
                       }
                     }
@@ -396,13 +396,14 @@
       }
     },
     "metaContext": {
-      "description": "META: metadata bytes starting at field `startsAt`; `sectionEnd` is the absolute offset of pointer[1] (end of the metadata section).",
+      "description": "META: metadata bytes starting at field `startsAt`; `inputEnd` is the absolute end of the supplied bytes (baseOffset + byte count; a prefix may stop short of the section), `sectionEnd` is the absolute offset of pointer[1] (end of the whole metadata section, >= inputEnd).",
       "type": "object",
       "additionalProperties": false,
       "required": [
         "formatVersion",
         "baseOffset",
         "startsAt",
+        "inputEnd",
         "sectionEnd"
       ],
       "properties": {
@@ -419,6 +420,10 @@
             "bool",
             "name"
           ]
+        },
+        "inputEnd": {
+          "type": "integer",
+          "minimum": 1
         },
         "sectionEnd": {
           "type": "integer",
@@ -724,34 +729,6 @@
         }
       }
     },
-    "tilesError": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "code",
-        "offset"
-      ],
-      "properties": {
-        "code": {
-          "const": "MalformedTiles"
-        },
-        "offset": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "reason": {
-          "type": "string"
-        },
-        "x": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "y": {
-          "type": "integer",
-          "minimum": 0
-        }
-      }
-    },
     "metadataError": {
       "type": "object",
       "additionalProperties": false,
@@ -765,7 +742,8 @@
         },
         "offset": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 0,
+          "maximum": 239
         },
         "reason": {
           "type": "string"
@@ -773,7 +751,68 @@
         "field": {
           "type": "string"
         }
-      }
+      },
+      "description": "META: absolute offset within the published inputs (baseOffset 0..167, at most 72 bytes)."
+    },
+    "recError": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "offset"
+      ],
+      "properties": {
+        "code": {
+          "const": "MalformedTiles"
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 7
+        },
+        "reason": {
+          "type": "string"
+        },
+        "x": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "y": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "description": "REC: absolute offset within the record input (published REC inputs are at most 7 bytes at baseOffset 0)."
+    },
+    "secError": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "offset"
+      ],
+      "properties": {
+        "code": {
+          "const": "MalformedTiles"
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 108
+        },
+        "reason": {
+          "type": "string"
+        },
+        "x": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "y": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "description": "SEC: absolute offset from baseOffset 100 (pointer[1]) up to the end of the longest published section (R10, 8 bytes); the end itself is the leftover-byte offset."
     }
   }
 }

@@ -28,7 +28,10 @@ Source of the documented results: [docs/file-format.md](../docs/file-format.md),
   a 2 × 4 world, R3/R9/R10) or `META` (metadata bytes from the field named by `context.startsAt`).
 - `hex` is the input: lowercase, no separators. `context.baseOffset` is the **absolute** file offset of its first
   byte (REC and most META: `0`; SEC: pointer[1] = `100`; M3: `167`). For SEC, pointer[2] = `baseOffset` + byte
-  count; for META, `context.sectionEnd` is the absolute end of the metadata section (pointer[1]).
+  count; for META, `context.inputEnd` is the absolute end of the supplied bytes (`baseOffset` + byte count) and
+  `context.sectionEnd` the absolute end of the whole metadata section (pointer[1]); they are equal for the synthetic
+  fragments and differ for M3, a 72-byte prefix of a section ending at 11927 (checked against the fixture header).
+  Error `offset` is bounded by the schema per entry (REC 0..7, SEC 100..108, META 0..239 = the published inputs).
 - `context.frameImportant` is the real 326 set: `k = 754`, ids `4`, `5` frame-important, `1`, `255`, `256` not.
 - A case has exactly one of `result` and `error`. Results are `record` (`tile` + `run`), `grid` (`tiles`
   column-major: `x * height + y`) or `metadata`. `tile` is the semantic tile of the summary schema without `x`/`y`.

@@ -105,7 +105,9 @@ for (const f of files) {
       const where = `${f} ${vec.id} case ${i}`;
       const end = ctx.baseOffset + c.hex.length / 2;
       if (c.error && !(c.error.offset >= ctx.baseOffset && c.error.offset <= end)) fail(`${where}: error offset ${c.error.offset} outside [${ctx.baseOffset}, ${end}]`);
-      if (vec.entry === "META" && ctx.sectionEnd !== end) fail(`${where}: sectionEnd ${ctx.sectionEnd} != baseOffset + byte count (${end})`);
+      if (vec.entry === "META" && ctx.inputEnd !== end) fail(`${where}: inputEnd ${ctx.inputEnd} != baseOffset + byte count (${end})`);
+      if (vec.entry === "META" && ctx.sectionEnd < ctx.inputEnd) fail(`${where}: sectionEnd ${ctx.sectionEnd} < inputEnd ${ctx.inputEnd}`);
+      if (vec.entry === "META" && !vec.provenance && ctx.sectionEnd !== ctx.inputEnd) fail(`${where}: synthetic META fragments are complete sections (sectionEnd == inputEnd)`);
       if (vec.entry === "SEC" && c.result && (c.result.width !== ctx.width || c.result.height !== ctx.height || c.result.tiles.length !== ctx.width * ctx.height)) fail(`${where}: grid does not match the ${ctx.width}x${ctx.height} context`);
     }
     if (vec.id === "M3") {
@@ -114,7 +116,13 @@ for (const f of files) {
       const world = manifest.worlds.find((w) => w.file === `${p.world}.wld`);
       if (world?.sha256 !== p.sha256) fail(`M3: provenance sha256 does not match the manifest entry of ${p.world}`);
       if (!existsSync(p.file)) fail(`M3: ${p.file} is missing`);
-      else if (readFileSync(p.file).subarray(p.offset, p.offset + p.length).toString("hex") !== vec.cases[0].hex || ctx.baseOffset !== p.offset) fail("M3: hex/baseOffset differ from the fixture bytes");
+      else {
+        const bytes = readFileSync(p.file);
+        if (bytes.subarray(p.offset, p.offset + p.length).toString("hex") !== vec.cases[0].hex || ctx.baseOffset !== p.offset) fail("M3: hex/baseOffset differ from the fixture bytes");
+        // Section pointers: little-endian Int32 at 26 (pointer[0], metadata start) and 30 (pointer[1], metadata end).
+        if (bytes.readInt32LE(26) !== ctx.baseOffset) fail(`M3: baseOffset ${ctx.baseOffset} != fixture pointer[0] ${bytes.readInt32LE(26)}`);
+        if (bytes.readInt32LE(30) !== ctx.sectionEnd) fail(`M3: sectionEnd ${ctx.sectionEnd} != fixture pointer[1] ${bytes.readInt32LE(30)}`);
+      }
     } else if (vec.provenance) fail(`${vec.id}: only M3 has provenance`);
   }
 }
