@@ -33,11 +33,13 @@ public static class WorldReader
     public const long MaxWorldTileCount = 1L << 28;
 
     /// <summary>Reads the header, metadata and tile section (docs/file-format.md); later sections are skipped.</summary>
-    /// <remarks>Requires a seekable stream.</remarks>
+    /// <remarks>Requires a readable, seekable stream.</remarks>
+    /// <exception cref="ArgumentException">The stream is not readable or seekable.</exception>
     /// <exception cref="WorldFormatException">The file violates the format contract.</exception>
     public static World Read(Stream stream)
     {
         ArgumentNullException.ThrowIfNull(stream);
+        ValidateStreamCapabilities(stream);
 
         var header = ReadHeader(stream);
         var table = ReadSectionTable(stream, header);
@@ -60,13 +62,15 @@ public static class WorldReader
     }
 
     /// <summary>Reads world metadata (section 1) after <see cref="ReadSectionTable"/>.</summary>
-    /// <remarks>Consumes every field of the section and leaves the stream at the start of the tile section.</remarks>
+    /// <remarks>Requires a readable, seekable stream. Consumes every field of the section and leaves the stream at the start of the tile section.</remarks>
+    /// <exception cref="ArgumentException">The stream is not readable or seekable.</exception>
     /// <exception cref="WorldFormatException">The metadata is malformed, overruns or underruns its section.</exception>
     public static WorldMetadata ReadMetadata(Stream stream, WorldFileHeader header, WorldSectionTable table)
     {
         ArgumentNullException.ThrowIfNull(stream);
         ArgumentNullException.ThrowIfNull(header);
         ArgumentNullException.ThrowIfNull(table);
+        ValidateStreamCapabilities(stream);
         ValidateVersion(header.Version);
 
         // No section-sized buffer: a hostile table can declare almost 2 GiB of metadata.
@@ -76,14 +80,16 @@ public static class WorldReader
     }
 
     /// <summary>Reads section boundaries and frame-important bits after <see cref="ReadHeader"/>.</summary>
-    /// <remarks>Requires a seekable stream; leaves it at the start of world metadata without reading payload.</remarks>
+    /// <remarks>Requires a readable, seekable stream positioned at byte 26; leaves it at the start of world metadata without reading payload.</remarks>
+    /// <exception cref="ArgumentException">The stream is not readable or seekable, or is not positioned at byte 26.</exception>
     public static WorldSectionTable ReadSectionTable(Stream stream, WorldFileHeader header)
     {
         ArgumentNullException.ThrowIfNull(stream);
         ArgumentNullException.ThrowIfNull(header);
-        if (!stream.CanSeek)
+        ValidateStreamCapabilities(stream);
+        if (stream.Position != HeaderLength)
         {
-            throw new ArgumentException("Reading the section table requires a seekable stream.", nameof(stream));
+            throw new ArgumentException("Reading the section table requires a stream positioned at byte 26.", nameof(stream));
         }
 
         ValidateVersion(header.Version);
@@ -129,7 +135,12 @@ public static class WorldReader
                 throw new WorldFormatException(
                     WorldFormatError.MalformedSectionTable,
                     HeaderLength + (index * sizeof(int)),
-                    "section pointer must match the header end or increase within the file bounds");
+                    pointer > fileLength ? "beyond end of file" : index switch
+                    {
+                        0 => "section pointer must match the header end",
+                        1 => "section pointer is before metadata start",
+                        _ => "not greater than previous",
+                    });
             }
 
             pointers[index] = pointer;
@@ -208,6 +219,14 @@ public static class WorldReader
             BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(RevisionOffset)),
             BinaryPrimitives.ReadUInt64LittleEndian(bytes.AsSpan(FlagsOffset)),
             sectionCount);
+    }
+
+    private static void ValidateStreamCapabilities(Stream stream)
+    {
+        if (!stream.CanRead || !stream.CanSeek)
+        {
+            throw new ArgumentException("Reading the world requires a readable, seekable stream.", nameof(stream));
+        }
     }
 
     private static void ValidateVersion(int version)
