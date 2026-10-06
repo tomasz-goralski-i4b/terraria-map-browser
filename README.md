@@ -26,3 +26,16 @@ the input or create world or backup files, and provides no round-trip guarantee.
 
 Exit codes are `0` for success, `2` for invalid arguments (with usage), and `1` for I/O or
 format errors. Reports go to stdout; diagnostics go to stderr without a stack trace.
+
+Export a deterministic world summary (metadata, dimensions, skipped sections, palette and
+per-chunk plane digests) as JSON on stdout:
+
+```bash
+dotnet run --project dotnet/Terraria.WorldInspector -- export-json "Forest Observatory.wld"
+dotnet run --project dotnet/Terraria.WorldInspector -- export-json "Forest Observatory.wld" --region 0,0,64,64
+```
+
+`--region x,y,w,h` additionally lists the semantic tiles of that region (at most 256 × 256).
+The format is described in [docs/cwm.md](docs/cwm.md) and validated by
+`contracts/schemas/world-summary.v1.schema.json`. Exit codes are as above; a malformed region
+or one outside the world is an argument error (`2`).
