@@ -20,6 +20,14 @@ if (files.length && !existsSync(manifestPath)) {
   console.log(`FIXTURES: ${manifestPath} is missing`);
   process.exit(1);
 }
+// Worlds live in Git LFS. A clone/worktree without `git lfs pull` has 132-byte pointer files instead —
+// report that plainly (exit 2 = infrastructure) instead of a wall of hash/size mismatches.
+const pointers = files.filter((f) => readFileSync(join(dir, f)).subarray(0, 40).toString("latin1").startsWith("version https://git-lfs"));
+if (pointers.length) {
+  console.log(`INFRA: ${pointers.length} world fixture(s) are Git LFS pointers, not the worlds: ${pointers.join(", ")}`);
+  console.log("       Install Git LFS and run: git lfs install && git lfs pull");
+  process.exit(2);
+}
 const manifest = files.length ? JSON.parse(readFileSync(manifestPath, "utf8")) : { worlds: [] };
 const entries = new Map(manifest.worlds.map((w) => [w.file, w]));
 

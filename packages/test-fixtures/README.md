@@ -66,7 +66,9 @@ are untouched (`renamedFrom` in the manifest).
 1. Generate it in the game with the settings encoded in the name; name the world exactly like the file.
 2. Copy the `.wld` (not `.wld.bak`) from `Documents/My Games/Terraria/Worlds/` to `worlds/`.
 3. Add its manifest entry; `bash scripts/verify.sh` reports any mismatch.
-4. Medium/Large worlds are ~2–5× bigger; once the corpus grows past ~50 MB move `*.wld` to Git LFS.
+4. Commit as usual — `*.wld` is stored in **Git LFS** (`.gitattributes`); `git lfs install` once per machine.
+   A checkout without the LFS objects has 132-byte pointer files; `check-fixtures` says so (`git lfs pull`).
+   CI restores LFS objects from the Actions cache, so it does not re-download them on every run.
 
 ## Golden summaries (M1)
 `snapshots/m1/<world>.meta.json` is the `export-json` summary of a corpus world without its `chunks` object;

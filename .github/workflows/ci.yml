@@ -9,6 +9,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # World fixtures live in Git LFS. Restore them from the Actions cache keyed on the LFS object ids, so a CI
+      # run normally downloads nothing from LFS (GitHub meters LFS bandwidth); pull only what is missing.
+      - name: List LFS objects
+        run: git lfs ls-files --long | cut -d' ' -f1 | sort > "$RUNNER_TEMP/lfs-ids"
+      - uses: actions/cache@v4
+        with:
+          path: .git/lfs/objects
+          key: lfs-${{ hashFiles(format('{0}/lfs-ids', runner.temp)) }}
+          restore-keys: lfs-
+      - run: git lfs pull
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
