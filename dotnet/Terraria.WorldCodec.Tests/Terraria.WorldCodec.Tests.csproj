@@ -18,6 +18,7 @@
   <ItemGroup>
     <!-- Contracts are shared with the TS test suite; tests read them next to the assembly. -->
     <None Include="..\..\contracts\schemas\*.json" LinkBase="contracts\schemas" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\contracts\vectors\**\*.json" LinkBase="contracts\vectors" CopyToOutputDirectory="PreserveNewest" />
     <None Update="Snapshots\*.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
