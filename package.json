@@ -13,9 +13,11 @@
     "test": "vitest run"
   },
   "devDependencies": {
+    "@vitest/browser-playwright": "catalog:",
     "@eslint/js": "catalog:",
     "@types/node": "catalog:",
     "eslint": "catalog:",
+    "playwright": "catalog:",
     "typescript": "catalog:",
     "typescript-eslint": "catalog:",
     "typescript7": "catalog:",

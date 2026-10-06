@@ -7,7 +7,9 @@ packages:
 catalog:
   "@eslint/js": ^10.0.1
   "@types/node": ^24.19.1
+  "@vitest/browser-playwright": ^5.0.3
   eslint: ^10.12.0
+  playwright: ^1.63.0
   # TypeScript 7 (native compiler) runs `tsc -b`; it ships no JS API that typescript-eslint can load.
   typescript7: npm:typescript@~7.0.2
   # The "typescript" module seen by typescript-eslint and editors: the TypeScript 6 API (bin: tsc6).
