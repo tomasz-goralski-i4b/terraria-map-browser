@@ -14,7 +14,7 @@ tests=$(changed_tests_since "$since")
 if [ -z "$tests" ]; then
   if [ "$mode" = rework ]; then
     echo "RED (rework): no new tests — the review findings are not about behaviour, moving on to green."
-    commit_state "test: red (rework, no new tests)"; git rev-parse HEAD > .tdd/red-sha; exit 0
+    commit_state test "red (rework, no new tests)"; git rev-parse HEAD > .tdd/red-sha; exit 0
   fi
   echo "RED: no test was added or changed (expected paths: ${TEST_PATHSPEC[*]})."
   exit 1
@@ -35,6 +35,6 @@ if out=$(bash scripts/test.sh 2>&1); then
   exit 1
 fi
 echo "$out" | tail -40
-commit_state "test: red"
+commit_state test red
 git rev-parse HEAD > .tdd/red-sha
 echo "RED: OK — tests compile and fail. Saved $(cat .tdd/red-sha)"

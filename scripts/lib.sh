@@ -51,9 +51,28 @@ changed_tests_since() {
     git ls-files -o --exclude-standard -- "${TEST_PATHSPEC[@]}"; } | sort -u
 }
 
+# "Read .wld version and header (#5)" when the task comes from an issue (.tdd/issue), else empty.
+task_label() {
+  local n
+  n=$(tr -dc '0-9' < .tdd/issue 2>/dev/null)
+  [ -n "$n" ] || return 0
+  if [ ! -s .tdd/issue-title ] && command -v gh >/dev/null; then
+    gh issue view "$n" --json title -q .title 2>/dev/null | sed 's/^\[[^]]*\] //' > .tdd/issue-title || true
+  fi
+  if [ -s .tdd/issue-title ]; then echo "$(cat .tdd/issue-title) (#$n)"; else echo "issue #$n"; fi
+}
+
+# One commit per gate: "<type>: <phase> — <task>". Skipped when the phase changed nothing,
+# so a no-op refactor leaves no empty commit; the .tdd/*-sha files point at HEAD either way.
 commit_state() {
+  local type="$1" phase="$2" label
+  label=$(task_label)
   git add -A
-  git commit -q --allow-empty -m "$1"
+  if git diff --cached --quiet; then
+    echo "($phase: nothing to commit)"
+    return 0
+  fi
+  git commit -q -m "$type: $phase${label:+ — $label}"
 }
 
 # A fresh worktree (Cezar) has no node_modules. Installing from the pnpm store takes seconds.

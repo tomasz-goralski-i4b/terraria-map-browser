@@ -28,7 +28,7 @@ steps:
     runner: codex
   - id: check-refactor
     name: Gate — verify.sh after refactor
-    command: "bash scripts/tdd/check-green.sh"
+    command: "bash scripts/tdd/check-green.sh refactor"
     onFail: { retry: refactor, max: 1, retryOn: [1] }
 
   - id: review

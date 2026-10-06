@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # GREEN/REFACTOR gate: tests from the red phase untouched + full verify.sh.
+# Usage: check-green.sh [green|refactor] — only changes the commit type/phase name.
 source "$(dirname "$0")/../lib.sh"
+phase="${1:-green}"
 [ -f .tdd/red-sha ] || { echo "INFRA: .tdd/red-sha is missing — the red step never passed its gate"; exit 2; }
 red=$(cat .tdd/red-sha)
 
@@ -13,6 +15,6 @@ if [ -n "$touched" ]; then
 fi
 
 bash scripts/verify.sh || exit $?
-commit_state "feat: green"
+if [ "$phase" = refactor ]; then commit_state refactor "clean-up"; else commit_state feat green; fi
 git rev-parse HEAD > .tdd/green-sha
-echo "GREEN: OK — saved $(cat .tdd/green-sha)"
+echo "${phase^^}: OK — saved $(cat .tdd/green-sha)"
