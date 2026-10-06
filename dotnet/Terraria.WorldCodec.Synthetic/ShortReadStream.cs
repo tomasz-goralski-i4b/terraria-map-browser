@@ -6,8 +6,12 @@ namespace Terraria.WorldCodec.Synthetic;
 /// </summary>
 public sealed class ShortReadStream(byte[] bytes, bool shortReads) : Stream
 {
+    private const int MaxChunk = 7;
+    private long position;
+    private int nextChunk = 1;
+
     /// <summary>One past the highest file offset returned by any read; 0 before the first read.</summary>
-    public long HighestReadEnd => throw new NotImplementedException();
+    public long HighestReadEnd { get; private set; }
 
     public override bool CanRead => true;
 
@@ -19,15 +23,38 @@ public sealed class ShortReadStream(byte[] bytes, bool shortReads) : Stream
 
     public override long Position
     {
-        get => throw new NotImplementedException();
-        set => throw new NotImplementedException();
+        get => position;
+        set => position = value;
     }
 
     public override int Read(byte[] buffer, int offset, int count) => Read(buffer.AsSpan(offset, count));
 
-    public override int Read(Span<byte> buffer) => throw new NotImplementedException($"short reads: {shortReads}");
+    public override int Read(Span<byte> buffer)
+    {
+        var count = (int)Math.Min(buffer.Length, Math.Max(0, bytes.Length - position));
+        if (shortReads && buffer.Length > 0)
+        {
+            count = Math.Min(count, nextChunk);
+            nextChunk = (nextChunk % MaxChunk) + 1;
+        }
 
-    public override long Seek(long offset, SeekOrigin origin) => throw new NotImplementedException();
+        bytes.AsSpan((int)position, count).CopyTo(buffer);
+        position += count;
+        HighestReadEnd = Math.Max(HighestReadEnd, position);
+        return count;
+    }
+
+    public override long Seek(long offset, SeekOrigin origin)
+    {
+        position = origin switch
+        {
+            SeekOrigin.Begin => offset,
+            SeekOrigin.Current => position + offset,
+            SeekOrigin.End => bytes.Length + offset,
+            _ => throw new ArgumentOutOfRangeException(nameof(origin)),
+        };
+        return position;
+    }
 
     public override void Flush()
     {
