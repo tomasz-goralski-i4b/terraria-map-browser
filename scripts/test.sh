@@ -3,7 +3,7 @@
 source "$(dirname "$0")/lib.sh"
 rc=0
 echo "== backlog automation routing"
-node --test scripts/backlog/automation-routing.test.mjs || rc=1
+node --test scripts/backlog/automation-routing.test.mjs scripts/backlog/resume.test.mjs || rc=1
 # Microsoft.Testing.Platform mode (opted in via global.json "test.runner").
 echo "== dotnet test"
 dotnet test --solution "$SLN" --no-build --no-progress || rc=1

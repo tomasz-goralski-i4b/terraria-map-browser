@@ -64,6 +64,22 @@ the "Ready to merge" comment, and warns when a decision is needed. Follow-ups ar
 automatically: triage them (plan, decide or close). The planner reads open follow-ups when planning the next
 milestone. For older PRs: `node scripts/backlog/followups.mjs <pr> [--dry-run]`.
 
+### Resuming chains Cezar ended early
+Cezar bug: when an agent step hits a usage/session limit, auto-resume finishes the conversation (`continue-N`
+steps) and then marks the run `done` — the remaining gates, `open-pr` and `merge-ready` never run.
+`scripts/backlog/resume.mjs` finishes such a run: it executes the remaining **command** steps of the run's own
+workflow definition in its worktree (`bash -lc`, as Cezar would), skips the optional `refactor`, and stops at
+the first other agent step or failing gate (no agent is available for a retry loop). It only acts when the
+failed step is an agent step with a usage-limit error and its continuation finished; the PR description gets a
+"Chain resumed after a usage limit" section. The local promoter calls it automatically before flagging a stall;
+by hand: `node scripts/backlog/resume.mjs <run-id> [--dry-run]`.
+
+Run the local watcher next to Cezar so this happens without you (Git Bash, repo root):
+
+```bash
+bash scripts/backlog/watch.sh        # promoter every 10 min, using the scripts from origin/main
+```
+
 ### Stall watchdog
 A chain can die without any GitHub event (e.g. the agent hits a usage limit and Cezar ends the run early).
 The promoter therefore also runs every 30 minutes (Action cron) and checks issues on `agent:ready`:

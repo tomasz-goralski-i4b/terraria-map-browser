@@ -53,6 +53,9 @@ else
         [ -f "$d" ] || continue
         echo; echo "## Red-phase test defect reported by the implementer"; echo; cat "$d"
       done
+      if [ -f .tdd/resumed.md ]; then
+        echo; echo "## Chain resumed after a usage limit"; echo; cat .tdd/resumed.md
+      fi
       if [ -f .tdd/plan.md ]; then
         echo; echo "<details><summary>Test plan</summary>"; echo; cat .tdd/plan.md; echo; echo "</details>"
       fi

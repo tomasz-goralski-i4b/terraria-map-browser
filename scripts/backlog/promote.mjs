@@ -13,6 +13,7 @@
 //    Order: ascending issue number (the planner creates issues in execution order).
 import { execFileSync } from "node:child_process";
 import { gh, ghJson, LABELS, blockedBy, labelNames, areaOf } from "./gh.mjs";
+import { fetchRun, resumability, resumeRun } from "./resume.mjs";
 
 const MAX_ACTIVE = Number(process.env.MAX_ACTIVE ?? 2);
 const STALL_MINUTES = Number(process.env.STALL_MINUTES ?? 120);
@@ -49,9 +50,22 @@ async function watchStalls(ready) {
         continue;
       }
       if (run) {
+        // Cezar ends a run early after a usage limit; finish its remaining gates when that is safe (resume.mjs).
+        let resumeNote = "";
+        try {
+          const full = await fetchRun(cezar.url, cezar.project, run.id);
+          if (resumability(full).ok) {
+            console.log(`  #${issue.number}: run ${run.id.slice(0, 8)} ended early after a usage limit — resuming its gates${DRY ? " (dry-run)" : ""}`);
+            const result = resumeRun(full, { dryRun: DRY, log: (l) => console.log(`    ${l}`) });
+            if (result.ok) continue; // open-pr relabelled the issue (status:pr-ready / ready-to-merge)
+            resumeNote = ` Automatic resume stopped at \`${result.stoppedAt}\`: ${result.reason}.`;
+          }
+        } catch (e) {
+          resumeNote = ` Automatic resume failed: ${e.message}.`;
+        }
         const failedStep = (run.steps ?? []).find((s) => s.status === "failed");
         verdict = `Cezar run \`${run.id.slice(0, 8)}\` ended as **${run.status}** but the chain never reached \`open-pr\`` +
-          (failedStep ? ` (step \`${failedStep.id}\` failed: ${String(failedStep.error ?? "").slice(0, 200)})` : "") + ".";
+          (failedStep ? ` (step \`${failedStep.id}\` failed: ${String(failedStep.error ?? "").slice(0, 200)})` : "") + "." + resumeNote;
       } else if (minutes > 15) {
         verdict = `no Cezar run picked this issue up in ${Math.round(minutes)} min (automation paused, filter mismatch, or the cockpit is down).`;
       }
@@ -138,7 +152,7 @@ async function cezarRuns() {
       const served = String(health.repoRoot ?? "").replace(/\\/g, "/").toLowerCase();
       if (!process.env.CEZ_API_URL && served !== repoRoot) continue;
       const body = await (await fetch(`${url}/api/v1/p/${project}/runs`, { signal: AbortSignal.timeout(5000) })).json();
-      return { url, runs: body.runs ?? body };
+      return { url, project, runs: body.runs ?? body };
     } catch {
       // not this port / not reachable
     }
