@@ -10,3 +10,7 @@ steps:
     name: Gate — verify.sh
     command: "bash scripts/tdd/check-verify.sh"
     onFail: { retry: research, max: 1, retryOn: [1] }
+
+  - id: open-pr
+    name: Draft PR + status:pr-ready
+    command: "bash scripts/tdd/open-pr.sh"

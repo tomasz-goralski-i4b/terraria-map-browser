@@ -1,7 +1,7 @@
 # WORKFLOW.md
 
 ```
-issue → Cezar task (workflow) → osobny worktree → chain z bramkami → review gate → draft PR → CI → human merge
+plan-backlog → issue [backlog] → promoter [agent:ready] → automation Cezara → worktree → chain z bramkami → draft PR → CI → human merge → promoter…
 ```
 
 Statusy (GitHub Project):
@@ -13,5 +13,6 @@ Wybór workflow:
 | Zmiana zachowania (codec, model, renderer) | `tdd-feature` (Claude impl / Codex review) lub `tdd-feature-codex` |
 | CI, tooling, scaffolding, docs | `foundation` |
 | Rozpoznanie formatu, research | `spike` |
+| Rozpisanie milestone na issue | `plan-backlog` |
 
 Szczegóły: `docs/agent-workflow.md`.

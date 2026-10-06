@@ -29,3 +29,6 @@ Potem lista uwag: `- [plik:linia] problem → oczekiwana poprawka`. Oznacz każd
 - `REQUEST_CHANGES` tylko dla realnych problemów (bugi, brak testu na kryterium, łamanie reguł) — nie dla gustu.
 - `BLOCKED` gdy task jest niejasny, wymaga decyzji człowieka albo zmiana jest ryzykowna dla formatu.
 - Drobne sugestie przy `APPROVE` wpisz jako `Nice to have:` — nie wracają do implementera.
+
+## Źródło taska
+Jeśli istnieje `.tdd/issue`, kryteria akceptacji są w `gh issue view $(cat .tdd/issue)` (bez `--comments`).

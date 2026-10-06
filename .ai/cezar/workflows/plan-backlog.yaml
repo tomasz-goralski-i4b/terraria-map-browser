@@ -1,0 +1,12 @@
+name: plan-backlog
+description: "Planner: rozpisuje milestone na małe issue z zależnościami (.tdd/backlog.json); skrypt waliduje i tworzy je na GitHubie z labelem backlog."
+steps:
+  - id: plan
+    name: Plan backlogu
+    skill: backlog-planner
+    prompt: "{{task}}"
+    runner: claude
+  - id: create-issues
+    name: Gate — walidacja + gh issue create
+    command: "bash scripts/backlog/create-issues.sh"
+    onFail: { retry: plan, max: 2, retryOn: [1] }

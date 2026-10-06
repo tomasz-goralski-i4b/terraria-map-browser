@@ -10,6 +10,7 @@ Plan projektu: `docs/architecture.md`. Workflow agentów: `docs/agent-workflow.m
 | Tylko build | `bash scripts/build.sh` |
 | Tylko testy | `bash scripts/test.sh` |
 | Install | `pnpm install` |
+| Backlog: odblokuj następne | `bash scripts/backlog/promote.sh [--dry-run]` |
 
 `verify.sh` musi kończyć się `VERIFY: OK`. Nic innego nie jest "zielone".
 
@@ -34,7 +35,7 @@ scripts/                           verify/build/test + bramki TDD (scripts/tdd)
 - Żadnych assetów Terrarii, światów graczy ani komercyjnych modów w repo (`*.wld` jest w `.gitignore`).
 - Nie kopiujemy kodu TEdit/tModLoader — opisujemy kontrakt i implementujemy niezależnie.
 - Codec i writer binarny zmienia naraz tylko jeden agent.
-- Agent nie merge'uje. Kończy draft PR-em przez review gate Cezara.
+- Agent nie merge'uje. Chain kończy się krokiem `open-pr` (draft PR `Closes #N`); merge robi człowiek.
 - Reviewer tylko raportuje (`.tdd/review.md`), nie zmienia kodu.
 
 ## Stan chaina

@@ -20,3 +20,6 @@ Jesteś w fazie **GREEN** chaina TDD w Cezarze (świeża sesja — kontekst jest
 ## Nie wolno
 - zmieniać plików testów i fixture'ów (bramka porównuje je z `.tdd/red-sha` i odrzuci krok),
 - commitować — zrobi to bramka `scripts/tdd/check-green.sh`.
+
+## Źródło taska
+Jeśli istnieje `.tdd/issue`, kryteria akceptacji są w `gh issue view $(cat .tdd/issue)` (bez `--comments`).

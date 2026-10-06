@@ -19,3 +19,7 @@ steps:
     name: Gate — werdykt reviewera
     command: "bash scripts/tdd/check-review.sh"
     onFail: { retry: implement, max: 2, retryOn: [1] }
+
+  - id: open-pr
+    name: Draft PR + status:pr-ready
+    command: "bash scripts/tdd/open-pr.sh"

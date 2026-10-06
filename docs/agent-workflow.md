@@ -16,9 +16,49 @@ Jeśli bramka i tak trafi do WSL, `scripts/lib.sh` zakończy ją kodem 2 z komun
 
 Zalecane zmienne (np. w `~/.bashrc` albo przed `npx`):
 ```bash
-export CEZ_REVIEW_GATE=1   # udany run ze zmianami czeka na Accept / Send back / Draft PR
+export CEZ_DISPATCH=0      # agent w chainie nie odpala własnych pod-tasków (te nie mają bramek TDD)
 ```
-Nie zaznaczaj "Autonomous" w New Task — autonomiczne runy pomijają review gate.
+Każdy chain kończy się krokiem `open-pr` (push + draft PR), więc review gate Cezara nie jest potrzebny,
+a runy z automations mogą być `autonomous`.
+
+## Flow backlogu: planner → promoter → automations → Ty
+
+```
+1. plan-backlog (Cezar, ręcznie)   "Rozpisz M1"  → .tdd/backlog.json → bramka tworzy issue [backlog]
+2. promoter (GitHub Action / ręcznie)            → issue bez otwartych blokerów, wolne area → [agent:ready]
+3. automation Cezara (poll co 2 min)             → task z workflow wg labeli flow:* / agent:*  (autonomous)
+4. chain                                          → red → green → refactor → review → open-pr
+                                                   → draft PR "Closes #N", issue → [status:pr-ready]
+5. Ty                                             → review PR na GitHubie, CI zielone → merge
+6. issue zamknięte → Action `promote`             → odblokowuje kolejne → wraca do 3
+```
+
+| Label | Kto nadaje | Znaczenie |
+|---|---|---|
+| `backlog` | planner (create-issues) | zaplanowane, czeka |
+| `agent:ready` | promoter | automation startuje task |
+| `status:pr-ready` | `open-pr.sh` | PR czeka na Ciebie |
+| `human` | planner | Twoja praca (np. fixture z gry); zamknij issue, gdy zrobione — odblokuje zależne |
+| `flow:tdd|foundation|spike` + `agent:claude|codex` | planner | wybór workflow i implementera |
+| `area:*` | planner | promoter puszcza jedno issue naraz na area |
+
+Reguły promotera (`scripts/backlog/promote.mjs`): kolejność wg numeru issue, wszystkie `Blocked by: #N` zamknięte,
+area wolne, globalnie w locie < `MAX_ACTIVE` (2 = `maxParallel` Cezara).
+
+Automations (`.ai/cezar/automation-defs/*.json`) słuchają `issue.labeled` = `agent:ready`, tylko dla issue
+autorstwa właściciela repo (repo jest publiczne). Instalacja (cockpit musi działać dla tego repo):
+```bash
+bash scripts/backlog/install-automations.sh
+```
+Tworzą się **wstrzymane**; włączasz w UI → Automations. Włączenie ustawia baseline "od teraz" —
+labele nadane wcześniej nie zostaną podjęte (wtedy zdejmij i nadaj `agent:ready` ponownie).
+
+### Gdy coś pójdzie nie tak
+- Task w Cezarze `failed` (wyczerpane retry, BLOCKED, INFRA) → issue zostaje na `agent:ready`, area jest zajęte.
+  Przeczytaj log, popraw issue/kod, potem: zdejmij `agent:ready` i nadaj ponownie (automation odpali nowy task),
+  albo daj `backlog` i odpal promotera.
+- Uwagi do PR → Continue na tasku w Cezarze z komentarzem albo popraw ręcznie na branchu PR.
+- Zły plan → zamknij/edytuj issue na GitHubie; `create-issues` pomija tytuły, które już istnieją.
 
 ## Chain `tdd-feature`
 

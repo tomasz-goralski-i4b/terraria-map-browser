@@ -11,3 +11,6 @@ Jesteś w fazie **REFACTOR** chaina TDD (świeża sesja).
 4. Jeśli nic nie wymaga poprawy — nie zmieniaj niczego. Pusty refactor jest OK.
 5. Na koniec `bash scripts/verify.sh` musi dać `VERIFY: OK`.
 Nie commituj — zrobi to bramka.
+
+## Źródło taska
+Jeśli istnieje `.tdd/issue`, kryteria akceptacji są w `gh issue view $(cat .tdd/issue)` (bez `--comments`).

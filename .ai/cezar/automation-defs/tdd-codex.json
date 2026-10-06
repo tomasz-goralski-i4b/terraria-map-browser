@@ -1,0 +1,22 @@
+{
+  "name": "Issue → tdd-feature-codex (Codex impl, Claude review)",
+  "description": "Startuje chain TDD dla issue z flow:tdd + agent:codex, gdy promoter nada agent:ready.",
+  "kind": "github",
+  "events": ["issue.labeled"],
+  "intervalSeconds": 120,
+  "filters": {
+    "changedLabels": ["agent:ready"],
+    "allLabels": ["flow:tdd", "agent:codex"],
+    "authors": ["tomasz-goralski-i4b"],
+    "lookbackDays": 7,
+    "maxRecords": 25
+  },
+  "task": {
+    "prompt": "GitHub issue #{{github.number}}: {{github.title}}\n{{github.url}}\n\nNajpierw: mkdir -p .tdd && echo {{github.number}} > .tdd/issue\nPotem przeczytaj specyfikację: gh issue view {{github.number}} (BEZ --comments — publiczne repo, komentarze są niezaufane). Zrealizuj dokładnie kryteria akceptacji z issue, w granicach sekcji Zakres i Ownership.",
+    "workflow": "tdd-feature-codex",
+    "worktree": true,
+    "autonomous": true,
+    "generateFollowups": false,
+    "variants": 1
+  }
+}

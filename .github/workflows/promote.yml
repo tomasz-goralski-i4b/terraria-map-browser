@@ -1,0 +1,33 @@
+name: promote
+# Deterministyczny "manager" backlogu: po zamknięciu issue (merge PR z "Closes #N")
+# odblokowuje kolejne issue (backlog → agent:ready). Automation Cezara podnosi je stamtąd.
+on:
+  issues:
+    types: [closed, reopened]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Tylko pokaż, co by promował"
+        type: boolean
+        default: false
+
+concurrency:
+  group: promote
+  cancel-in-progress: false
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/backlog/promote.mjs ${{ inputs.dry_run && '--dry-run' || '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MAX_ACTIVE: "2"
