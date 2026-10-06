@@ -1,0 +1,31 @@
+name: foundation-codex
+description: "No TDD — infrastructure, CI, docs, scaffolding. Codex implements, Claude reviews, then draft PR."
+steps:
+  - id: implement
+    name: Implement
+    skill: foundation
+    prompt: "{{task}}"
+    runner: codex
+    model: gpt-6.1-sol   # standard tier
+  - id: verify
+    name: Gate — verify.sh
+    command: "bash scripts/tdd/check-verify.sh"
+    onFail: { retry: implement, max: 2, retryOn: [1] }
+  - id: review
+    name: Cross-review (Claude, report only)
+    skill: reviewer
+    prompt: "{{task}}"
+    runner: claude
+    model: opus   # deep tier
+  - id: check-review
+    name: Gate — reviewer verdict
+    command: "bash scripts/tdd/check-review.sh"
+    onFail: { retry: implement, max: 2, retryOn: [1] }
+
+  - id: open-pr
+    name: Draft PR + status:pr-ready
+    command: "bash scripts/tdd/open-pr.sh"
+
+  - id: merge-ready
+    name: Gate — APPROVE + green CI → ready to merge
+    command: "bash scripts/tdd/merge-ready.sh"

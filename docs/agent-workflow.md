@@ -106,7 +106,10 @@ Rework goes back to `red`: behavioural bug → failing test first; style-only fi
 
 Every workflow except `plan-backlog` ends with `review → check-review → open-pr → merge-ready`:
 the implementer never reviews its own work, and a PR is only marked ready when a second model approved it
-and CI is green. `spike` is researched by Claude and reviewed by Codex; `foundation` the same.
+and CI is green. `spike` is researched by Claude and reviewed by Codex. Foundation issues select
+`foundation` (Claude implements, Codex reviews) with `agent:claude`, or `foundation-codex`
+(Codex implements, Claude reviews) with `agent:codex`. The two automation filters are disjoint;
+foundation issues must carry exactly one implementer label. Step runners override the task default.
 
 ## Models per step
 
