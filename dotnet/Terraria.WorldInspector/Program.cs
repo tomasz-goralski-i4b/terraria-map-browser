@@ -5,6 +5,11 @@ using Terraria.WorldInspector;
 
 Console.OutputEncoding = Encoding.UTF8;
 
+if (args.Length > 0 && args[0] == "diff")
+{
+    return DiffCommand.Run(args, Console.Out, Console.Error);
+}
+
 const string Usage = "Usage: Terraria.WorldInspector inspect <file.wld>\n"
     + "       Terraria.WorldInspector export-json <file.wld> [--region x,y,w,h]";
 
