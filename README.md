@@ -39,3 +39,22 @@ dotnet run --project dotnet/Terraria.WorldInspector -- export-json "Forest Obser
 The format is described in [docs/cwm.md](docs/cwm.md) and validated by
 `contracts/schemas/world-summary.v1.schema.json`. Exit codes are as above; a malformed region
 or one outside the world is an argument error (`2`).
+
+Compare two M1 worlds semantically:
+
+```bash
+dotnet run --project dotnet/Terraria.WorldInspector -- diff "Forest Observatory.wld" "Crimson Observatory.wld" --max 100
+```
+
+The diff compares metadata, dimensions, skipped-section lengths and palette contents before
+chunk plane digests. Detailed tile comparisons resolve ContentRef values and visit candidate
+chunks only; a changed palette mapping also requires checking block and wall semantics.
+The M1 reader still eagerly reads both worlds to build their summaries. Different legal RLE
+encodings and reordered palettes alone are equal; opaque skipped-section contents are ignored.
+
+Summary differences precede tile differences, which are ordered by x, then y. Each tile line
+names a field and its before/after values; different dimensions also report one-sided positions.
+`--max n` caps tile field differences (default 100, zero allowed), without capping summary
+differences, and reports the exact omitted count. Exit codes are `0` for no differences,
+`3` for differences, `2` for invalid arguments and `1` for a read error naming the failing side.
+Both input files remain unchanged.

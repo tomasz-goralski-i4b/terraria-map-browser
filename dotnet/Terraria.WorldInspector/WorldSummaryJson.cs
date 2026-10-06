@@ -137,7 +137,7 @@ public static class WorldSummaryJson
         writer.WriteEndObject();
     }
 
-    private static void WriteContent(Utf8JsonWriter writer, ContentRef content)
+    internal static void WriteContent(Utf8JsonWriter writer, ContentRef content)
     {
         writer.WriteStartObject();
         switch (content)
