@@ -426,3 +426,41 @@ describe("readWorldHeader — Uint8Array views", () => {
     expectFormatError(new Uint8Array(0), "Truncated", 0);
   });
 });
+
+describe("readWorldHeader — 2 GiB limit", () => {
+  // Zero-filled typed arrays are allocated lazily, so a 2 GiB view costs little real memory.
+  const TWO_GIB = 0x80000000;
+
+  function hugeView(frameCount: number, frameBits: readonly number[], length: number): Uint8Array {
+    const bytes = new Uint8Array(length);
+    bytes.set(buildHeader({ frameCount, frameBits, length: 72 + frameBits.length }));
+    return bytes;
+  }
+
+  it.each([
+    [-1, []],
+    [0, []],
+    [10, [0x38, 0x02]],
+  ])(
+    "readWorldHeader_FileOf2GiB_MalformedAtOffset26BeforeFrameCount (k = %i)",
+    (frameCount: number, frameBits: number[]) => {
+      expectFormatError(
+        hugeView(frameCount, frameBits, TWO_GIB),
+        "MalformedSectionTable",
+        26,
+        "file must be smaller than 2 GiB",
+      );
+    },
+  );
+
+  it("readWorldHeader_FileOf2GiBWithUnsupportedVersion_UnsupportedVersionFirst", () => {
+    const bytes = hugeView(10, [0x38, 0x02], TWO_GIB);
+    new DataView(bytes.buffer).setInt32(0, 327, true);
+    expectFormatError(bytes, "UnsupportedVersion", 0);
+  });
+
+  it("readWorldHeader_FileOneByteBelow2GiB_Accepted", () => {
+    const { sections } = readWorldHeader(hugeView(10, [0x38, 0x02], TWO_GIB - 1));
+    expect(sections.footer).toEqual({ start: 180, end: TWO_GIB - 1 });
+  });
+});
