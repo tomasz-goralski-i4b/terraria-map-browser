@@ -35,7 +35,29 @@ public static class WorldReader
     /// <summary>Reads the header, metadata and tile section (docs/file-format.md); later sections are skipped.</summary>
     /// <remarks>Requires a seekable stream.</remarks>
     /// <exception cref="WorldFormatException">The file violates the format contract.</exception>
-    public static World Read(Stream stream) => throw new NotImplementedException();
+    public static World Read(Stream stream)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+
+        var header = ReadHeader(stream);
+        var table = ReadSectionTable(stream, header);
+        var metadata = ReadMetadata(stream, header, table);
+        var tiles = new TileSectionReader(stream, table.Tiles, table.FrameImportant).Read(metadata.Width, metadata.Height);
+        stream.Position = table.Tiles.End;
+        SkippedSection[] skipped =
+        [
+            new(nameof(WorldSectionTable.Chests), table.Chests),
+            new(nameof(WorldSectionTable.Signs), table.Signs),
+            new(nameof(WorldSectionTable.NpcsAndMobs), table.NpcsAndMobs),
+            new(nameof(WorldSectionTable.TileEntities), table.TileEntities),
+            new(nameof(WorldSectionTable.WeightedPressurePlates), table.WeightedPressurePlates),
+            new(nameof(WorldSectionTable.TownManager), table.TownManager),
+            new(nameof(WorldSectionTable.Bestiary), table.Bestiary),
+            new(nameof(WorldSectionTable.CreativePowers), table.CreativePowers),
+            new(nameof(WorldSectionTable.Footer), table.Footer),
+        ];
+        return new World(header, metadata, tiles, skipped);
+    }
 
     /// <summary>Reads world metadata (section 1) after <see cref="ReadSectionTable"/>.</summary>
     /// <remarks>Consumes every field of the section and leaves the stream at the start of the tile section.</remarks>

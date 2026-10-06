@@ -1,14 +1,42 @@
+using System.Globalization;
+
 namespace Terraria.WorldCodec;
 
 /// <summary>Read-only grid of tiles; <c>x</c> = column (0 = left), <c>y</c> = row (0 = top).</summary>
 public sealed class TileGrid
 {
-    public int Width => throw new NotImplementedException();
+    // Column-major, like the file: all of column 0, then column 1, …
+    private readonly Tile[] tiles;
 
-    public int Height => throw new NotImplementedException();
+    internal TileGrid(int width, int height, Tile[] tiles)
+    {
+        Width = width;
+        Height = height;
+        this.tiles = tiles;
+    }
+
+    public int Width { get; }
+
+    public int Height { get; }
 
     /// <exception cref="ArgumentOutOfRangeException">The coordinates are outside the grid.</exception>
-    public Tile this[int x, int y] => throw new NotImplementedException();
+    public Tile this[int x, int y]
+    {
+        get
+        {
+            if ((uint)x >= (uint)Width)
+            {
+                throw new ArgumentOutOfRangeException(nameof(x), x, string.Create(CultureInfo.InvariantCulture, $"x must be in 0..{Width - 1}"));
+            }
+
+            if ((uint)y >= (uint)Height)
+            {
+                throw new ArgumentOutOfRangeException(nameof(y), y, string.Create(CultureInfo.InvariantCulture, $"y must be in 0..{Height - 1}"));
+            }
+
+            return tiles[(x * Height) + y];
+        }
+    }
 }
 
 /// <summary>A section the reader did not parse; only its position is known.</summary>
