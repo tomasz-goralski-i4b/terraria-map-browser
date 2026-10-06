@@ -1,0 +1,42 @@
+name: tdd-feature-codex
+description: "TDD: Codex implementuje (red → green → refactor), Claude reviewuje. Bramki to skrypty w scripts/tdd."
+steps:
+  - id: red
+    name: Red — testy i stuby
+    skill: tdd-red
+    prompt: "{{task}}"
+    runner: codex
+  - id: check-red
+    name: Gate — testy failują
+    command: "bash scripts/tdd/check-red.sh"
+    onFail: { retry: red, max: 2, retryOn: [1] }
+
+  - id: green
+    name: Green — minimalna implementacja
+    skill: tdd-green
+    prompt: "{{task}}"
+    runner: codex
+  - id: check-green
+    name: Gate — verify.sh, testy nietknięte
+    command: "bash scripts/tdd/check-green.sh"
+    onFail: { retry: green, max: 3, retryOn: [1] }
+
+  - id: refactor
+    name: Refactor
+    skill: tdd-refactor
+    prompt: "{{task}}"
+    runner: codex
+  - id: check-refactor
+    name: Gate — verify.sh po refaktorze
+    command: "bash scripts/tdd/check-green.sh"
+    onFail: { retry: refactor, max: 1, retryOn: [1] }
+
+  - id: review
+    name: Cross-review (Claude, tylko raport)
+    skill: reviewer
+    prompt: "{{task}}"
+    runner: claude
+  - id: check-review
+    name: Gate — werdykt reviewera
+    command: "bash scripts/tdd/check-review.sh"
+    onFail: { retry: red, max: 2, retryOn: [1] }

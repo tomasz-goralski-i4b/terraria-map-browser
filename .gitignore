@@ -1,0 +1,25 @@
+# .NET
+bin/
+obj/
+TestResults/
+*.user
+
+# Node
+node_modules/
+dist/
+*.tsbuildinfo
+coverage/
+
+# TDD chain state (per worktree, czytane przez scripts/tdd/*)
+.tdd/
+
+# Lokalne dane gry — NIGDY do repo
+*.wld
+*.wld.bak
+local-assets/
+
+# IDE
+.idea/
+.vs/
+.vscode/*
+!.vscode/extensions.json

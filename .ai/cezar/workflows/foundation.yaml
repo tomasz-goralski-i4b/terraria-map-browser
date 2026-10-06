@@ -1,0 +1,21 @@
+name: foundation
+description: "Bez TDD — infrastruktura, CI, docs, scaffolding. Implement → verify.sh → cross-review."
+steps:
+  - id: implement
+    name: Implement
+    skill: foundation
+    prompt: "{{task}}"
+    runner: claude
+  - id: verify
+    name: Gate — verify.sh
+    command: "bash scripts/tdd/check-verify.sh"
+    onFail: { retry: implement, max: 2, retryOn: [1] }
+  - id: review
+    name: Cross-review (Codex, tylko raport)
+    skill: reviewer
+    prompt: "{{task}}"
+    runner: codex
+  - id: check-review
+    name: Gate — werdykt reviewera
+    command: "bash scripts/tdd/check-review.sh"
+    onFail: { retry: implement, max: 2, retryOn: [1] }

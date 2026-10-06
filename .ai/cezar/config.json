@@ -1,0 +1,4 @@
+{
+  "defaultRunner": "claude",
+  "baseBranch": "main"
+}
