@@ -31,7 +31,15 @@ async function usageAllowsNewWork() {
   if (process.env.GITHUB_ACTIONS) return true; // the workflow's preflight step guards the start instead
   try {
     const report = await probeAll();
-    if (report.ok) return true;
+    if (report.ok) {
+      // Limits are back: release the issues that were deferred for usage.
+      const deferred = (await refreshed()).filter((i) => labelNames(i).includes(LABELS.deferred));
+      for (const i of deferred) {
+        console.log(`  #${i.number}: usage OK again — clearing ${LABELS.deferred}${DRY ? " (dry-run)" : ""}`);
+        if (!DRY) gh(["issue", "edit", String(i.number), "--remove-label", LABELS.deferred]);
+      }
+      return true;
+    }
     console.log(`not promoting — provider usage is LOW:\n${describe(report).replace(/^/gm, "  ")}`);
     return false;
   } catch (e) {
@@ -71,9 +79,13 @@ async function watchStalls(ready) {
       }
       if (run && (run.steps ?? []).some((s) => s.id === "preflight" && s.status === "failed")) {
         // The chain refused to start (a provider is out of credits / near a limit) — not a stall: defer the issue.
-        console.log(`  #${issue.number}: run ${run.id.slice(0, 8)} stopped at preflight (usage) — back to ${LABELS.backlog}${DRY ? " (dry-run)" : ""}`);
+        // `status:deferred` keeps the CI promoter (which cannot probe usage) from re-promoting it every cron tick;
+        // only a local promoter with a passing usage probe clears it. The refused run is archived (not deleted).
+        console.log(`  #${issue.number}: run ${run.id.slice(0, 8)} stopped at preflight (usage) — back to ${LABELS.backlog}, ${LABELS.deferred}${DRY ? " (dry-run)" : ""}`);
         if (!DRY) {
-          gh(["issue", "edit", String(issue.number), "--remove-label", LABELS.ready, "--remove-label", LABELS.stalled, "--add-label", LABELS.backlog]);
+          gh(["issue", "edit", String(issue.number), "--remove-label", LABELS.ready, "--remove-label", LABELS.stalled,
+            "--add-label", LABELS.backlog, "--add-label", LABELS.deferred]);
+          await archiveRun(cezar, run.id);
         }
         continue;
       }
@@ -129,8 +141,10 @@ function promote(issues) {
 
   const untrusted = issues.filter((i) => labelNames(i).includes(LABELS.backlog) && !isTrusted(i));
   for (const i of untrusted) console.log(`  #${i.number} ignored — author ${i.author?.login} is not trusted (.ai/cezar/trusted-authors.json)`);
+  const deferredCount = issues.filter((i) => labelNames(i).includes(LABELS.deferred)).length;
+  if (deferredCount) console.log(`  ${deferredCount} issue(s) ${LABELS.deferred} — waiting for provider usage`);
   const candidates = issues
-    .filter((i) => labelNames(i).includes(LABELS.backlog) && isTrusted(i))
+    .filter((i) => labelNames(i).includes(LABELS.backlog) && isTrusted(i) && !labelNames(i).includes(LABELS.deferred))
     .sort((a, b) => a.number - b.number);
 
   for (const issue of candidates) {
@@ -188,4 +202,14 @@ async function cezarRuns() {
     }
   }
   return null;
+}
+
+/** Hides a finished Cezar run from the task list (POST …/runs/:id/archive). Archiving deletes nothing. */
+async function archiveRun(cezar, runId) {
+  try {
+    const res = await fetch(`${cezar.url}/api/v1/p/${cezar.project}/runs/${runId}/archive`, { method: "POST", signal: AbortSignal.timeout(5000) });
+    if (!res.ok) console.log(`    (could not archive run ${runId.slice(0, 8)}: HTTP ${res.status})`);
+  } catch (e) {
+    console.log(`    (could not archive run ${runId.slice(0, 8)}: ${e.message})`);
+  }
 }

@@ -19,6 +19,7 @@ export const LABELS = {
   prReady: "status:pr-ready",
   mergeReady: "status:ready-to-merge",
   stalled: "status:stalled",
+  deferred: "status:deferred",
 };
 
 /** "Blocked by: #12, #14" — a single line in the issue body, written by create-issues.mjs. */
@@ -42,7 +43,7 @@ export const TRUSTED_AUTHORS = JSON.parse(
 ).authors;
 
 /** Labels that put an issue into the pipeline; an untrusted issue must never carry them. */
-export const PIPELINE_LABEL = /^(backlog|agent:ready|agent:claude|agent:codex|flow:.+|status:(pr-ready|ready-to-merge|stalled))$/;
+export const PIPELINE_LABEL = /^(backlog|agent:ready|agent:claude|agent:codex|flow:.+|status:(pr-ready|ready-to-merge|stalled|deferred))$/;
 
 export function isTrusted(issue) {
   return TRUSTED_AUTHORS.includes(issue.author?.login);
