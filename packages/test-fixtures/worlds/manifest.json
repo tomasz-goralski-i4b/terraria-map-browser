@@ -26,6 +26,27 @@
       "note": "Generated as a corruption world but named SCCR1 by mistake (crimson flag false, corruption tiles only — found in #18). The file was renamed to match the naming key; the in-game world name is still SCCR1 and the bytes are untouched."
     },
     {
+      "file": "SCCR2.wld",
+      "worldName": "SCCR2",
+      "seed": "1533482611",
+      "gameVersion": "1.4.5.8",
+      "formatVersion": 326,
+      "fileRevision": 1,
+      "size": "small",
+      "dimensions": {
+        "width": 4200,
+        "height": 1200
+      },
+      "mode": "classic",
+      "evil": "crimson",
+      "mods": [],
+      "bytes": 2927112,
+      "sha256": "888b383bebec8ec0ca87595700d79f201ec15a15bee386e93bc48be9bb01dcaa",
+      "generatedBy": "tomasz-goralski-i4b",
+      "generatedAt": "2026-10-06",
+      "inGameModifications": "none — freshly generated, never opened in game"
+    },
+    {
       "file": "SECR1.wld",
       "worldName": "SECR1",
       "seed": "975478998",

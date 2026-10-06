@@ -54,10 +54,12 @@ codes reserved so the M6 mod-safety work can add them without renaming anything.
 | `generatedBy`, `generatedAt`, `inGameModifications` | provenance |
 
 ## Current corpus (M1)
-Terraria 1.4.5.8, format version 326, four Small vanilla worlds covering every difficulty and both evils:
-`SCCO1` (classic/corruption), `SECR1` (expert/crimson), `SJCO1` (journey/corruption), `SMCO1` (master/corruption).
+Terraria 1.4.5.8, format version 326, five Small vanilla worlds covering every difficulty, both evils, and
+both evils within one difficulty (classic) so tests can tell `evil` apart from `mode`:
+`SCCO1` (classic/corruption), `SCCR2` (classic/crimson), `SECR1` (expert/crimson), `SJCO1` (journey/corruption),
+`SMCO1` (master/corruption).
 `SCCO1` was generated as corruption but named "SCCR1" in game by mistake; the file was renamed, the bytes
-are untouched (`renamedFrom` in the manifest). Missing combination: a **classic crimson** world (`SCCR2`).
+are untouched (`renamedFrom` in the manifest).
 `SMCO1` was opened in game once and saved on exit (`fileRevision` 2); the others were never opened.
 
 ## Adding a world

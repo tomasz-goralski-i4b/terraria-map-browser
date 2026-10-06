@@ -13,7 +13,7 @@ were read, the behaviour is restated, and every byte-level claim was checked aga
 | W1 | Terraria wiki, *Desktop version history* — https://terraria.wiki.gg/wiki/Desktop_version_history | revid `1023996` (2026-08-24) | 2026-10-06 |
 | W2 | Terraria wiki, *1.4.5.8* — https://terraria.wiki.gg/wiki/1.4.5.8 | revid `1029883` (2026-09-16) | 2026-10-06 |
 | W3 | Terraria wiki, *1.4.5.7* — https://terraria.wiki.gg/wiki/1.4.5.7 | revid `1031546` (2026-09-23) | 2026-10-06 |
-| F | M1 fixture corpus (`SCCO1`, `SECR1`, `SJCO1`, `SMCO1`), Terraria 1.4.5.8 | this repo, `packages/test-fixtures/worlds/manifest.json` | 2026-10-06 |
+| F | M1 fixture corpus (`SCCO1`, `SCCR2`, `SECR1`, `SJCO1`, `SMCO1`), Terraria 1.4.5.8 | this repo, `packages/test-fixtures/worlds/manifest.json` | 2026-10-06 |
 | N | .NET `BinaryReader.ReadString` / `Read7BitEncodedInt` / `ReadBoolean` — https://learn.microsoft.com/dotnet/api/system.io.binaryreader | .NET 8 API reference (no revision ids; behaviour unchanged since .NET Framework 2.0) | 2026-10-06 |
 
 TEdit locations used below (all at commit `182031b`):
@@ -737,8 +737,8 @@ The TS world model can represent every vanilla tile flag that the codec reads, s
 ```
 
 ```markdown
-**Status:** evil labels and the manifest↔file check are done (open question 5). Still open: a classic-mode
-crimson fixture (human task).
+**Status:** done — evil labels and the manifest↔file check (open question 5), and the classic crimson fixture
+`SCCR2.wld`.
 
 ## Goal
 The M1 fixture corpus labels each world's evil biome correctly and includes a crimson world in classic mode.
