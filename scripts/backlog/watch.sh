@@ -4,6 +4,8 @@
 # (scripts/backlog/resume.mjs), flag real stalls precisely, and promote the next issues. The GitHub Action
 # only has the time-based fallback because it cannot reach the local cockpit.
 #
+# It also deletes local Cezar task branches that are no longer needed (scripts/backlog/cleanup.sh).
+#
 # Usage (Git Bash, repo root, while `npx cezar-run` is running):  bash scripts/backlog/watch.sh [minutes]
 set -uo pipefail
 cd "$(git rev-parse --show-toplevel)"
@@ -20,5 +22,6 @@ while :; do
     node scripts/backlog/promote.mjs || echo "(promoter exited $?)"
   fi
   rm -rf "$tmp"
+  bash scripts/backlog/cleanup.sh || true   # local cez/* branches of merged/closed PRs
   sleep "$((interval * 60))"
 done
