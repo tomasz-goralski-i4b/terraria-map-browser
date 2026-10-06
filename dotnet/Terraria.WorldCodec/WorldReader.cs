@@ -42,11 +42,10 @@ public static class WorldReader
         ArgumentNullException.ThrowIfNull(table);
         ValidateVersion(header.Version);
 
-        // The section table guarantees the section lies inside a file smaller than 2 GiB.
-        var section = new byte[table.Metadata.End - table.Metadata.Start];
-        stream.Position = table.Metadata.Start;
-        stream.ReadExactly(section);
-        return MetadataSection.Read(new MetadataSectionReader(section, table.Metadata.Start), table);
+        // No section-sized buffer: a hostile table can declare almost 2 GiB of metadata.
+        var metadata = MetadataSection.Read(new MetadataSectionReader(stream, table.Metadata), table);
+        stream.Position = table.Metadata.End;
+        return metadata;
     }
 
     /// <summary>Reads section boundaries and frame-important bits after <see cref="ReadHeader"/>.</summary>

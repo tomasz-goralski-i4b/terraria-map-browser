@@ -6,24 +6,35 @@ namespace Terraria.WorldCodec;
 /// <summary>
 /// Cursor over the bytes of the metadata section (docs/file-format.md, "Primitive types").
 /// Every read is bounded by the section end; errors carry the absolute offset of the field start.
+/// Reads the seekable stream through a small window, so memory and I/O follow the fields actually consumed,
+/// not the declared section length.
 /// </summary>
-internal sealed class MetadataSectionReader(byte[] section, long sectionStart)
+internal sealed class MetadataSectionReader(Stream stream, WorldSectionBoundary section)
 {
     private const string SectionName = "Metadata";
     private const int MaxLengthPrefixBytes = 5;
+    private const int WindowSize = 4096;
 
     private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
 
-    private int position;
+    private readonly byte[] window = new byte[WindowSize];
+    private long windowStart;
+    private int windowLength;
+    private long position = section.Start;
 
-    public int Remaining => section.Length - position;
+    // Sections lie inside a file smaller than 2 GiB (section table), so the difference fits in an int.
+    public int Remaining => (int)(section.End - position);
 
-    public long AbsolutePosition => sectionStart + position;
+    public long AbsolutePosition => position;
 
     public static WorldFormatException Error(long offset, string reason, string? field = null) =>
         new(WorldFormatError.MalformedMetadata, offset, reason, SectionName, field);
 
-    public void Skip(int length, string? field = null) => Take(length, field);
+    public void Skip(int length, string? field = null)
+    {
+        EnsureAvailable(length, field);
+        position += length;
+    }
 
     public void Int32s(int count) => Skip(count * sizeof(int));
 
@@ -72,7 +83,7 @@ internal sealed class MetadataSectionReader(byte[] section, long sectionStart)
                 throw Error(start, "overruns section", field);
             }
 
-            var current = section[position++];
+            var current = UInt8(field);
             if (index == MaxLengthPrefixBytes - 1 && (current & 0x80) == 0 && current > 0x0F)
             {
                 throw Error(start, "string length prefix exceeds 32 bits", field);
@@ -123,13 +134,35 @@ internal sealed class MetadataSectionReader(byte[] section, long sectionStart)
 
     private ReadOnlySpan<byte> Take(int length, string? field)
     {
+        EnsureAvailable(length, field);
+        if (length > WindowSize)
+        {
+            // Only strings get here; the bytes exist in the file, which the section table bounds.
+            var large = new byte[length];
+            stream.Position = position;
+            stream.ReadExactly(large);
+            position += length;
+            return large;
+        }
+
+        if (position < windowStart || position + length > windowStart + windowLength)
+        {
+            windowStart = position;
+            windowLength = (int)Math.Min(WindowSize, section.End - position);
+            stream.Position = windowStart;
+            stream.ReadExactly(window, 0, windowLength);
+        }
+
+        var span = window.AsSpan((int)(position - windowStart), length);
+        position += length;
+        return span;
+    }
+
+    private void EnsureAvailable(int length, string? field)
+    {
         if (length > Remaining)
         {
             throw Error(AbsolutePosition, "overruns section", field);
         }
-
-        var span = section.AsSpan(position, length);
-        position += length;
-        return span;
     }
 }
