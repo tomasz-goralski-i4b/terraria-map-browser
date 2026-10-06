@@ -7,4 +7,8 @@ pnpm -s lint || exit 1
 echo "== fixtures"
 node scripts/check-fixtures.mjs || exit 1
 bash scripts/test.sh || exit $?
+echo "== inspector smoke"
+out=$(dotnet run --project dotnet/Terraria.WorldInspector --no-build) || { echo "SMOKE: inspector exited with $?"; exit 1; }
+out=${out%$'\r'}
+[ "$out" = "Terraria World Inspector" ] || { echo "SMOKE: unexpected inspector output: '$out'"; exit 1; }
 echo "VERIFY: OK"
