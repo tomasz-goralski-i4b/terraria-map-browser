@@ -131,6 +131,12 @@
       },
       "terraria.worldcodec": {
         "type": "Project"
+      },
+      "terraria.worldinspector": {
+        "type": "Project",
+        "dependencies": {
+          "Terraria.WorldCodec": "[1.0.0, )"
+        }
       }
     }
   }

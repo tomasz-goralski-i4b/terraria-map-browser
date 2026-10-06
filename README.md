@@ -10,3 +10,19 @@ A local, browser-based editor for Terraria worlds + a Personal Software Factory 
 pnpm install
 bash scripts/verify.sh
 ```
+
+Inspect a world with the read-only M1 CLI:
+
+```bash
+dotnet run --project dotnet/Terraria.WorldInspector -- inspect "Forest Observatory.wld"
+```
+
+The report includes the format version, name, world ID, seed and game mode when present,
+evil biome, dimensions, tile count, and counts of tiles containing blocks, walls or liquids.
+Counts include expanded run-length repeats and explicitly present zero-amount liquids.
+Later sections, including the footer, are listed as skipped; their contents are not validated.
+Only M1-supported formats (currently version 326) are accepted. The command does not modify
+the input or create world or backup files, and provides no round-trip guarantee.
+
+Exit codes are `0` for success, `2` for invalid arguments (with usage), and `1` for I/O or
+format errors. Reports go to stdout; diagnostics go to stderr without a stack trace.
