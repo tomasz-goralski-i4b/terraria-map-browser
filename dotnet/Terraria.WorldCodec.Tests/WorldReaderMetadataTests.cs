@@ -201,6 +201,31 @@ public class WorldReaderMetadataTests
         Assert.InRange(allocated, 0, 1 << 20);
     }
 
+    [Theory]
+    [InlineData(2, 0, "height")]
+    [InlineData(2, 65_537, "height")]
+    [InlineData(65_537, 4, "width")]
+    [InlineData(65_536, 65_536, "width")]
+    public void ReadMetadata_LargeSectionWithIllegalDimensions_RejectsBeforeReadingSection(int width, int height, string field)
+    {
+        // Review regression: a 256 MiB declared section must not be buffered before the dimensions are checked.
+        const int DeclaredMetadataLength = 256 << 20;
+        var metadata = new SyntheticMetadata { Width = width, Height = height };
+        using var stream = VirtualWorldStream.WithMetadataSection(metadata.Build().Bytes, DeclaredMetadataLength);
+        var header = WorldReader.ReadHeader(stream);
+        var table = WorldReader.ReadSectionTable(stream, header);
+        Assert.Equal(DeclaredMetadataLength, table.Metadata.End - table.Metadata.Start);
+        var readBefore = stream.BytesRead;
+
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        var error = Assert.Throws<WorldFormatException>(() => WorldReader.ReadMetadata(stream, header, table));
+        var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        AssertMetadataError(error, FieldOffset(metadata, field), field);
+        Assert.InRange(allocated, 0, 1 << 20);
+        Assert.InRange(stream.BytesRead - readBefore, 0, 64 << 10);
+    }
+
     [Fact]
     public void ReadMetadata_WidthBeyondTileSectionLength_ThrowsAtWidth()
     {
