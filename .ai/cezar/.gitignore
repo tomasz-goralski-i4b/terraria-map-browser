@@ -25,3 +25,5 @@ automation-poll.lock
 automation-poll.lock.guard/
 automation-mutation.lock.guard/
 automation-mutation.lock
+ui-state.json
+ui-state.json.tmp
