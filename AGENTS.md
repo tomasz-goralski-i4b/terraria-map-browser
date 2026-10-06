@@ -1,7 +1,7 @@
 # AGENTS.md — Terraria Map Studio
 
 A local editor for Terraria worlds (`.wld`): reference .NET codec → independent TS codec → PWA.
-Project plan: `docs/architecture.md`. Agent workflow: `docs/agent-workflow.md`.
+Project plan: `docs/architecture.md`. Agent workflow: `docs/agent-workflow.md`. Toolchain: `docs/tooling.md`.
 
 **Language: everything in this repository is in English** — code, comments, tests, docs, commit messages,
 PR descriptions, issues and review notes.
@@ -19,6 +19,7 @@ PR descriptions, issues and review notes.
 
 ## Quality rules (never lower them)
 - .NET: `TreatWarningsAsErrors`, nullable, analyzers `latest-recommended`, code style enforced in build (`dotnet/Directory.Build.props`).
+- .NET packages: versions only in `dotnet/Directory.Packages.props`; commit the updated `packages.lock.json` files (CI restores in locked mode).
 - TS: `strict` + `noUncheckedIndexedAccess` + `exactOptionalPropertyTypes`, `typescript-eslint` strictTypeChecked, `--max-warnings=0`.
 - Warnings get fixed. Suppressions only locally and with a comment explaining why.
 - A behaviour change starts with a failing test (TDD). The `tdd-feature` workflow enforces it.
@@ -26,7 +27,9 @@ PR descriptions, issues and review notes.
 ## Layout
 ```
 dotnet/Terraria.WorldCodec/        reference .wld parser/writer
-dotnet/Terraria.WorldCodec.Tests/  xUnit
+dotnet/TerrariaMapStudio.slnx      solution (XML format); package versions in dotnet/Directory.Packages.props
+dotnet/Terraria.WorldCodec.Tests/  xUnit v3 (Microsoft.Testing.Platform)
+dotnet/Terraria.WorldInspector/    console inspector (smoke-tested by verify.sh)
 packages/world-model/              TS domain model (ContentRef, Tile…)
 packages/test-fixtures/            explicitly generated fixtures (from M1)
 scripts/                           verify/build/test + TDD gates (scripts/tdd) + backlog tooling (scripts/backlog)

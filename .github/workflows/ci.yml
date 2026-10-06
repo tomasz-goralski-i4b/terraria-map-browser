@@ -12,6 +12,10 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
+          # NuGet cache keyed on the committed lock files; scripts/build.sh restores
+          # with --locked-mode because GitHub Actions sets CI=true.
+          cache: true
+          cache-dependency-path: dotnet/**/packages.lock.json
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:

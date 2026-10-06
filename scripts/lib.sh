@@ -22,7 +22,7 @@ done
 
 export DOTNET_NOLOGO=1 DOTNET_CLI_TELEMETRY_OPTOUT=1 FORCE_COLOR=0 NO_COLOR=1
 
-SLN="dotnet/TerrariaMapStudio.sln"
+SLN="dotnet/TerrariaMapStudio.slnx"
 
 # What counts as a "test" — single source of truth for all TDD gates.
 TEST_PATHSPEC=(
