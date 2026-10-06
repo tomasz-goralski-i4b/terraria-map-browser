@@ -32,12 +32,16 @@ TEST_PATHSPEC=(
   ':(glob)packages/test-fixtures/**'
 )
 
-# The commit Cezar forked the worktree from.
+# The commit Cezar forked the worktree from: the most recent merge-base of HEAD with
+# BASE_BRANCH / main / origin/main (whichever of local and remote main is further ahead).
 base_ref() {
-  local b
-  for b in "${BASE_BRANCH:-}" origin/main main; do
-    [ -n "$b" ] && git rev-parse -q --verify "$b" >/dev/null && { git merge-base HEAD "$b"; return; }
+  local b mb best=""
+  for b in "${BASE_BRANCH:-}" main origin/main; do
+    [ -n "$b" ] && git rev-parse -q --verify "$b" >/dev/null || continue
+    mb=$(git merge-base HEAD "$b") || continue
+    if [ -z "$best" ] || git merge-base --is-ancestor "$best" "$mb"; then best=$mb; fi
   done
+  [ -n "$best" ] && { echo "$best"; return; }
   git rev-list --max-parents=0 HEAD | tail -1
 }
 
