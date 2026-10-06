@@ -24,6 +24,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Terraria.WorldCodec\Terraria.WorldCodec.csproj" />
+    <ProjectReference Include="..\Terraria.WorldCodec.Synthetic\Terraria.WorldCodec.Synthetic.csproj" />
     <ProjectReference Include="..\Terraria.WorldInspector\Terraria.WorldInspector.csproj" />
   </ItemGroup>
 
