@@ -14,11 +14,19 @@ function fail(msg) {
   process.exit(1);
 }
 
+let raw;
 let backlog;
 try {
-  backlog = JSON.parse(readFileSync(file, "utf8"));
+  raw = readFileSync(file, "utf8").replace(/^﻿/, "");
+  backlog = JSON.parse(raw);
 } catch (e) {
   fail(`nie mogę wczytać ${file}: ${e.message}`);
+}
+// UTF-8 przeczytany jako Windows-1252 (PowerShell 5.1 Get-Content/Set-Content bez -Encoding) daje "Ä…", "â€”", "Ĺ‚".
+const mojibake = raw.match(/Ã.|Ä.|Å.|Ĺ.|â€./u);
+if (mojibake) {
+  fail(`plik ma zepsute kodowanie (np. "${mojibake[0]}"). Zapisz .tdd/backlog.json jako UTF-8 narzędziem do edycji plików ` +
+    "(apply_patch/Write), nie przez PowerShell Set-Content/Out-File; czytaj pliki przez Get-Content -Encoding UTF8.");
 }
 if (!backlog || typeof backlog.milestone !== "string" || !Array.isArray(backlog.issues) || backlog.issues.length === 0) {
   fail('oczekiwany kształt: {"milestone": "M1", "issues": [...]}');

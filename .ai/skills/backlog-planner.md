@@ -57,4 +57,8 @@ dostaniesz jej output w prompcie — popraw plik.
 }
 ```
 Tytuł bez prefiksu milestone (skrypt doda `[M1]`). Rozsądny rozmiar milestone'u: 6–15 issue.
+
+Zapisz plik **bezpośrednio narzędziem do edycji plików** (apply_patch / Write), jako UTF-8.
+Nie generuj go skryptem JS/PowerShell — escapowanie markdownu w stringach to strata czasu,
+a PowerShell 5.1 psuje polskie znaki (bramka odrzuci plik z mojibake typu `Ä…`, `â€”`).
 Nie twórz issue sam przez `gh issue create` — robi to wyłącznie bramka.

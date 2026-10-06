@@ -38,6 +38,14 @@ scripts/                           verify/build/test + bramki TDD (scripts/tdd)
 - Agent nie merge'uje. Chain kończy się krokiem `open-pr` (draft PR `Closes #N`); merge robi człowiek.
 - Reviewer tylko raportuje (`.tdd/review.md`), nie zmienia kodu.
 
+## Windows / PowerShell — kodowanie
+Pliki w repo to UTF-8 bez BOM, z polskimi znakami. Windows PowerShell 5.1 domyślnie czyta je jako ANSI
+(widać `â€”`, `Ä…` zamiast `—`, `ą`) i tak też zapisuje. Dlatego:
+- czytaj: `Get-Content -Encoding UTF8 <plik>` albo `bash -lc "cat <plik>"`,
+- zapisuj/edytuj **wyłącznie** narzędziem do edycji plików (apply_patch / Edit / Write),
+  nigdy `Set-Content`, `Out-File`, `>` w PowerShell,
+- skrypty z `scripts/` uruchamiaj przez `bash scripts/...`.
+
 ## Stan chaina
 Katalog `.tdd/` (gitignored, per worktree) to handoff między krokami chaina —
 każdy krok agenta w Cezarze startuje w świeżej sesji. Nie usuwaj go w trakcie runu.
