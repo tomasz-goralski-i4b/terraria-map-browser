@@ -77,8 +77,25 @@ commit_state() {
 
 # A fresh worktree (Cezar) has no node_modules. Installing from the pnpm store takes seconds.
 ensure_deps() {
-  if [ ! -d node_modules ] || [ pnpm-lock.yaml -nt node_modules/.modules.yaml ]; then
+  local manifests_changed=""
+  if [ -f node_modules/.modules.yaml ]; then
+    manifests_changed=$(find . -path ./node_modules -prune -o -path ./.ai -prune -o \
+      \( -name package.json -o -name pnpm-workspace.yaml \) -newer node_modules/.modules.yaml -print -quit 2>/dev/null)
+  fi
+  if [ ! -d node_modules ] || [ pnpm-lock.yaml -nt node_modules/.modules.yaml ] || [ -n "$manifests_changed" ]; then
     echo "== pnpm install"
-    pnpm install --frozen-lockfile --prefer-offline --reporter=silent --config.confirmModulesPurge=false || { echo "INFRA: pnpm install failed"; exit 2; }
+    if ! pnpm install --frozen-lockfile --prefer-offline --reporter=silent --config.confirmModulesPurge=false 2>/dev/null; then
+      if [ -n "${CI:-}" ]; then
+        echo "INFRA: pnpm install --frozen-lockfile failed in CI — is pnpm-lock.yaml committed and up to date?"; exit 1
+      fi
+      # Locally (agent worktrees) a task may legitimately add or change dependencies: update the lockfile;
+      # the gate commits it with the change, and CI then enforces it with --frozen-lockfile.
+      echo "== pnpm install (lockfile out of date — updating it)"
+      if ! out=$(pnpm install --no-frozen-lockfile --prefer-offline --reporter=append-only --config.confirmModulesPurge=false 2>&1); then
+        echo "$out" | tail -20
+        echo "DEPS: pnpm install failed — fix the dependency declarations (package.json, pnpm-workspace.yaml catalog)."
+        exit 1
+      fi
+    fi
   fi
 }
