@@ -51,3 +51,11 @@ commit_state() {
   git add -A
   git commit -q --allow-empty -m "$1"
 }
+
+# Świeży worktree (Cezar) nie ma node_modules. Install ze store'a pnpm to kilka sekund.
+ensure_deps() {
+  if [ ! -d node_modules ] || [ pnpm-lock.yaml -nt node_modules/.modules.yaml ]; then
+    echo "== pnpm install"
+    pnpm install --frozen-lockfile --prefer-offline --reporter=silent || { echo "INFRA: pnpm install nie przeszedł"; exit 2; }
+  fi
+}
