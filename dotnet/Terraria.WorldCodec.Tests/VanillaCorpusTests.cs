@@ -154,6 +154,30 @@ public sealed partial class VanillaCorpusTests
         Assert.Equal(expected, actual);
     }
 
+    [Theory]
+    [MemberData(nameof(Worlds))]
+    public void ReadMetadata_CorpusStrings_RemainAcceptedWithStringCaps(string file)
+    {
+        using var stream = File.OpenRead(WorldPath(file));
+        var header = WorldReader.ReadHeader(stream);
+        var table = WorldReader.ReadSectionTable(stream, header);
+
+        var metadata = WorldReader.ReadMetadata(stream, header, table);
+
+        Assert.Equal(Entry(file).GetProperty("worldName").GetString(), metadata.Name);
+        Assert.Equal(Entry(file).GetProperty("seed").GetString(), metadata.Seed);
+        Assert.Equal(table.Metadata.End, stream.Position);
+        if (file == "SCCO1.wld")
+        {
+            // Independent field offset from docs/file-format.md, row 59.
+            stream.Position = 2434;
+            using var reader = new BinaryReader(stream, Encoding.UTF8, leaveOpen: true);
+            var manifestText = reader.ReadString();
+            Assert.Equal(9491, Encoding.UTF8.GetByteCount(manifestText));
+            Assert.Equal(table.Metadata.End, stream.Position);
+        }
+    }
+
     /// <summary>Splits the summary into everything but <c>chunks</c> and the <c>chunks</c> object (size, planes, digests).</summary>
     private static (byte[] Meta, byte[] Chunks) Split(byte[] summary)
     {
