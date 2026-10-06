@@ -16,6 +16,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Contracts are shared with the TS test suite; tests read them next to the assembly. -->
+    <None Include="..\..\contracts\schemas\*.json" LinkBase="contracts\schemas" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="Snapshots\*.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Terraria.WorldCodec\Terraria.WorldCodec.csproj" />
     <ProjectReference Include="..\Terraria.WorldInspector\Terraria.WorldInspector.csproj" />
   </ItemGroup>

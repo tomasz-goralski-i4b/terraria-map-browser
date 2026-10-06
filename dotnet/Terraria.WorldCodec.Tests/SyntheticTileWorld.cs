@@ -24,17 +24,22 @@ internal static class SyntheticTileWorld
     /// </param>
     /// <param name="frameCount">Frame-important count <c>k</c> in the header.</param>
     /// <param name="frameImportant">Frame-important tile ids, each <c>&lt; k</c>.</param>
+    /// <param name="metadataSource">
+    /// Metadata to write instead of the defaults; its <c>Width</c>/<c>Height</c> win over
+    /// <paramref name="width"/>/<paramref name="height"/>.
+    /// </param>
     public static (byte[] File, int TileStart) Build(
         int width,
         int height,
         byte[] tiles,
         int? tileSectionLength = null,
         short frameCount = DefaultFrameCount,
-        IReadOnlyCollection<int>? frameImportant = null)
+        IReadOnlyCollection<int>? frameImportant = null,
+        SyntheticMetadata? metadataSource = null)
     {
         const int OtherSectionLength = 2;
         const int FooterLength = 6;
-        var metadata = new SyntheticMetadata { Width = width, Height = height }.Build().Bytes;
+        var metadata = (metadataSource ?? new SyntheticMetadata { Width = width, Height = height }).Build().Bytes;
         var packedBits = new byte[(frameCount + 7) / 8];
         foreach (var id in frameImportant ?? DefaultFrameImportant)
         {
