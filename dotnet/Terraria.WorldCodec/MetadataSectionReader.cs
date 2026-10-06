@@ -14,6 +14,8 @@ internal sealed class MetadataSectionReader(Stream stream, WorldSectionBoundary 
     private const string SectionName = "Metadata";
     private const int MaxLengthPrefixBytes = 5;
     private const int WindowSize = 4096;
+    private const int MaxNameAndSeedBytes = 4096;
+    private const int MaxOtherStringBytes = 1_048_576;
 
     private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
 
@@ -101,6 +103,12 @@ internal sealed class MetadataSectionReader(Stream stream, WorldSectionBoundary 
             throw Error(start, "string length overruns section", field);
         }
 
+        var maxBytes = field is "name" or "seed" ? MaxNameAndSeedBytes : MaxOtherStringBytes;
+        if (length > maxBytes)
+        {
+            throw Error(start, "string length exceeds safety limit", field);
+        }
+
         try
         {
             return StrictUtf8.GetString(Take((int)length, field));
@@ -148,7 +156,8 @@ internal sealed class MetadataSectionReader(Stream stream, WorldSectionBoundary 
         if (position < windowStart || position + length > windowStart + windowLength)
         {
             windowStart = position;
-            windowLength = (int)Math.Min(WindowSize, section.End - position);
+            // Read only the requested field: read-ahead could consume an unvalidated string payload.
+            windowLength = length;
             stream.Position = windowStart;
             stream.ReadExactly(window, 0, windowLength);
         }

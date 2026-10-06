@@ -182,6 +182,13 @@ After the last pointer comes the footer (T9).
 - Because pointers are Int32, files of 2 GiB or more cannot be represented; such a file is rejected
   (`MalformedSectionTable`) rather than read with wrapped offsets.
 
+The .NET `ReadSectionTable` entry point requires a readable, seekable stream positioned at byte 26.
+`ReadMetadata` and `Read` also require readable, seekable streams. Invalid capabilities or an invalid
+section-table position raise `ArgumentException` for `stream` before reading bytes or seeking.
+Section-pointer errors retain `MalformedSectionTable` and the pointer-slot offset: pointers beyond `L`
+report "beyond end of file", while decreasing or equal pointers after metadata report
+"not greater than previous".
+
 The table only addresses sections. Validating a section's content, and checking that a section parser stopped
 exactly at its end pointer, is the job of the section's own contract. Note: TEdit checks the end position after
 every section except tiles, where it silently seeks to `pointer[2]` (T8, lines 1423-1424); our codecs must
@@ -281,6 +288,10 @@ String rules:
   5 bytes, the 5th using only its low 4 bits (32 bits in total), and the value must be `≤ 2³¹−1` — .NET rejects
   a longer prefix and a negative length (N). A violation, or `n` not fitting
   before the end of the section → `MalformedMetadata`.
+- Metadata name and seed are capped at 4096 UTF-8 bytes each; all other metadata strings are capped at
+  1048576 UTF-8 bytes each. Exact caps are accepted. Prefix validity, section remaining bytes and the cap
+  are checked before reading any payload bytes or allocating its buffer, including through read-ahead.
+  Rejections report `MalformedMetadata` at the prefix offset with the string field name.
 - Bytes must be valid UTF-8 → otherwise `MalformedMetadata`. (.NET would silently replace invalid sequences with
   U+FFFD, which breaks round trip — our decision.)
 - Example from F: the world manifest string in `SCCO1` has prefix `93 4a` = `0x13 + (0x4a << 7)` = 9491 bytes.
