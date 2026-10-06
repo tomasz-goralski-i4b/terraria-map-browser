@@ -43,7 +43,9 @@ for (const [i, it] of backlog.issues.entries()) {
   if (!it.area || !/^[a-z]+$/.test(it.area)) fail(`${where}: area is required (e.g. codec, model, fixtures, docs, infra)`);
   if (!it.body || !it.body.includes("## Acceptance criteria")) fail(`${where}: body must contain a "## Acceptance criteria" section`);
   for (const dep of it.blockedBy ?? []) {
-    if (!seen.has(dep)) fail(`${where}: blockedBy "${dep}" must point to an issue EARLIER in the list`);
+    // "#123" = an existing GitHub issue (e.g. an unfinished issue of the previous milestone).
+    if (/^#\d+$/.test(dep)) continue;
+    if (!seen.has(dep)) fail(`${where}: blockedBy "${dep}" must point to an issue EARLIER in the list, or be an existing issue as "#123"`);
   }
   seen.add(it.key);
 }
@@ -73,7 +75,7 @@ for (const it of backlog.issues) {
     console.log(`skip (exists): #${dup} ${title}`);
     continue;
   }
-  const deps = (it.blockedBy ?? []).map((k) => `#${numbers.get(k)}`);
+  const deps = (it.blockedBy ?? []).map((k) => (/^#\d+$/.test(k) ? k : `#${numbers.get(k)}`));
   const body = `${deps.length ? `Blocked by: ${deps.join(", ")}\n\n` : ""}${it.body.trim()}\n\n<!-- backlog-key: ${it.key} -->\n`;
   const labels = it.flow === "human"
     ? ["human", `area:${it.area}`]

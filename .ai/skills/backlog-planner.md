@@ -25,7 +25,8 @@ you get its output in the prompt — fix the file.
 - `area`: `codec`, `model`, `fixtures`, `docs`, `infra`, `web`, `mods`. The promoter runs **one issue at a time per area**,
   so do not invent areas, and put independent work in different areas so it can run in parallel.
 - `blockedBy`: **real** dependencies only (needed code/fixture/decision). Keys must point to items
-  earlier in the list. The list is in execution order.
+  earlier in the list, or to an existing open issue written as `"#123"` (e.g. an unfinished issue of the
+  previous milestone). The list is in execution order.
 - Fixtures: only explicitly generated, small vanilla worlds; never player worlds or game assets in the repo.
   If a test needs a real `.wld`, add an earlier `human` issue "generate fixture X" and a dependency on it.
 
