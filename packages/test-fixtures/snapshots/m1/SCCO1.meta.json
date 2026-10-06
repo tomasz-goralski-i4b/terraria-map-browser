@@ -1,0 +1,953 @@
+{
+  "schemaVersion": 1,
+  "formatVersion": 326,
+  "metadata": {
+    "name": "SCCR1",
+    "seed": "948580918",
+    "guid": "87e466e7853c3f48b75abc85e36d4b86",
+    "worldId": 1743427911,
+    "gameMode": 0,
+    "evil": "corruption"
+  },
+  "dimensions": {
+    "width": 4200,
+    "height": 1200
+  },
+  "skippedSections": [
+    {
+      "name": "chests",
+      "start": 2970538,
+      "end": 2994270
+    },
+    {
+      "name": "signs",
+      "start": 2994270,
+      "end": 2994272
+    },
+    {
+      "name": "npcsAndMobs",
+      "start": 2994272,
+      "end": 2994343
+    },
+    {
+      "name": "tileEntities",
+      "start": 2994343,
+      "end": 2994347
+    },
+    {
+      "name": "weightedPressurePlates",
+      "start": 2994347,
+      "end": 2994351
+    },
+    {
+      "name": "townManager",
+      "start": 2994351,
+      "end": 2994355
+    },
+    {
+      "name": "bestiary",
+      "start": 2994355,
+      "end": 2994367
+    },
+    {
+      "name": "creativePowers",
+      "start": 2994367,
+      "end": 2994398
+    },
+    {
+      "name": "footer",
+      "start": 2994398,
+      "end": 2994409
+    }
+  ],
+  "palette": [
+    {
+      "kind": "vanilla",
+      "id": 53
+    },
+    {
+      "kind": "vanilla",
+      "id": 0
+    },
+    {
+      "kind": "vanilla",
+      "id": 1
+    },
+    {
+      "kind": "vanilla",
+      "id": 204
+    },
+    {
+      "kind": "vanilla",
+      "id": 57
+    },
+    {
+      "kind": "vanilla",
+      "id": 397
+    },
+    {
+      "kind": "vanilla",
+      "id": 59
+    },
+    {
+      "kind": "vanilla",
+      "id": 169
+    },
+    {
+      "kind": "vanilla",
+      "id": 166
+    },
+    {
+      "kind": "vanilla",
+      "id": 58
+    },
+    {
+      "kind": "vanilla",
+      "id": 64
+    },
+    {
+      "kind": "vanilla",
+      "id": 15
+    },
+    {
+      "kind": "vanilla",
+      "id": 123
+    },
+    {
+      "kind": "vanilla",
+      "id": 205
+    },
+    {
+      "kind": "vanilla",
+      "id": 167
+    },
+    {
+      "kind": "vanilla",
+      "id": 81
+    },
+    {
+      "kind": "vanilla",
+      "id": 60
+    },
+    {
+      "kind": "vanilla",
+      "id": 61
+    },
+    {
+      "kind": "vanilla",
+      "id": 69
+    },
+    {
+      "kind": "vanilla",
+      "id": 5
+    },
+    {
+      "kind": "vanilla",
+      "id": 51
+    },
+    {
+      "kind": "vanilla",
+      "id": 67
+    },
+    {
+      "kind": "vanilla",
+      "id": 82
+    },
+    {
+      "kind": "vanilla",
+      "id": 83
+    },
+    {
+      "kind": "vanilla",
+      "id": 185
+    },
+    {
+      "kind": "vanilla",
+      "id": 165
+    },
+    {
+      "kind": "vanilla",
+      "id": 21
+    },
+    {
+      "kind": "vanilla",
+      "id": 9
+    },
+    {
+      "kind": "vanilla",
+      "id": 40
+    },
+    {
+      "kind": "vanilla",
+      "id": 28
+    },
+    {
+      "kind": "vanilla",
+      "id": 105
+    },
+    {
+      "kind": "vanilla",
+      "id": 637
+    },
+    {
+      "kind": "vanilla",
+      "id": 633
+    },
+    {
+      "kind": "vanilla",
+      "id": 62
+    },
+    {
+      "kind": "vanilla",
+      "id": 638
+    },
+    {
+      "kind": "vanilla",
+      "id": 66
+    },
+    {
+      "kind": "vanilla",
+      "id": 206
+    },
+    {
+      "kind": "vanilla",
+      "id": 373
+    },
+    {
+      "kind": "vanilla",
+      "id": 2
+    },
+    {
+      "kind": "vanilla",
+      "id": 178
+    },
+    {
+      "kind": "vanilla",
+      "id": 444
+    },
+    {
+      "kind": "vanilla",
+      "id": 65
+    },
+    {
+      "kind": "vanilla",
+      "id": 233
+    },
+    {
+      "kind": "vanilla",
+      "id": 374
+    },
+    {
+      "kind": "vanilla",
+      "id": 187
+    },
+    {
+      "kind": "vanilla",
+      "id": 229
+    },
+    {
+      "kind": "vanilla",
+      "id": 225
+    },
+    {
+      "kind": "vanilla",
+      "id": 86
+    },
+    {
+      "kind": "vanilla",
+      "id": 22
+    },
+    {
+      "kind": "vanilla",
+      "id": 135
+    },
+    {
+      "kind": "vanilla",
+      "id": 375
+    },
+    {
+      "kind": "vanilla",
+      "id": 181
+    },
+    {
+      "kind": "vanilla",
+      "id": 324
+    },
+    {
+      "kind": "vanilla",
+      "id": 231
+    },
+    {
+      "kind": "vanilla",
+      "id": 63
+    },
+    {
+      "kind": "vanilla",
+      "id": 12
+    },
+    {
+      "kind": "vanilla",
+      "id": 138
+    },
+    {
+      "kind": "vanilla",
+      "id": 467
+    },
+    {
+      "kind": "vanilla",
+      "id": 141
+    },
+    {
+      "kind": "vanilla",
+      "id": 184
+    },
+    {
+      "kind": "vanilla",
+      "id": 137
+    },
+    {
+      "kind": "vanilla",
+      "id": 634
+    },
+    {
+      "kind": "vanilla",
+      "id": 207
+    },
+    {
+      "kind": "vanilla",
+      "id": 186
+    },
+    {
+      "kind": "vanilla",
+      "id": 84
+    },
+    {
+      "kind": "vanilla",
+      "id": 212
+    },
+    {
+      "kind": "vanilla",
+      "id": 68
+    },
+    {
+      "kind": "vanilla",
+      "id": 56
+    },
+    {
+      "kind": "vanilla",
+      "id": 656
+    },
+    {
+      "kind": "vanilla",
+      "id": 227
+    },
+    {
+      "kind": "vanilla",
+      "id": 45
+    },
+    {
+      "kind": "vanilla",
+      "id": 10
+    },
+    {
+      "kind": "vanilla",
+      "id": 549
+    },
+    {
+      "kind": "vanilla",
+      "id": 4
+    },
+    {
+      "kind": "vanilla",
+      "id": 368
+    },
+    {
+      "kind": "vanilla",
+      "id": 180
+    },
+    {
+      "kind": "vanilla",
+      "id": 588
+    },
+    {
+      "kind": "vanilla",
+      "id": 208
+    },
+    {
+      "kind": "vanilla",
+      "id": 323
+    },
+    {
+      "kind": "vanilla",
+      "id": 711
+    },
+    {
+      "kind": "vanilla",
+      "id": 381
+    },
+    {
+      "kind": "vanilla",
+      "id": 211
+    },
+    {
+      "kind": "vanilla",
+      "id": 30
+    },
+    {
+      "kind": "vanilla",
+      "id": 27
+    },
+    {
+      "kind": "vanilla",
+      "id": 34
+    },
+    {
+      "kind": "vanilla",
+      "id": 215
+    },
+    {
+      "kind": "vanilla",
+      "id": 752
+    },
+    {
+      "kind": "vanilla",
+      "id": 367
+    },
+    {
+      "kind": "vanilla",
+      "id": 443
+    },
+    {
+      "kind": "vanilla",
+      "id": 518
+    },
+    {
+      "kind": "vanilla",
+      "id": 196
+    },
+    {
+      "kind": "vanilla",
+      "id": 171
+    },
+    {
+      "kind": "vanilla",
+      "id": 587
+    },
+    {
+      "kind": "vanilla",
+      "id": 198
+    },
+    {
+      "kind": "vanilla",
+      "id": 585
+    },
+    {
+      "kind": "vanilla",
+      "id": 42
+    },
+    {
+      "kind": "vanilla",
+      "id": 158
+    },
+    {
+      "kind": "vanilla",
+      "id": 583
+    },
+    {
+      "kind": "vanilla",
+      "id": 575
+    },
+    {
+      "kind": "vanilla",
+      "id": 19
+    },
+    {
+      "kind": "vanilla",
+      "id": 18
+    },
+    {
+      "kind": "vanilla",
+      "id": 571
+    },
+    {
+      "kind": "vanilla",
+      "id": 240
+    },
+    {
+      "kind": "vanilla",
+      "id": 384
+    },
+    {
+      "kind": "vanilla",
+      "id": 94
+    },
+    {
+      "kind": "vanilla",
+      "id": 377
+    },
+    {
+      "kind": "vanilla",
+      "id": 383
+    },
+    {
+      "kind": "vanilla",
+      "id": 26
+    },
+    {
+      "kind": "vanilla",
+      "id": 78
+    },
+    {
+      "kind": "vanilla",
+      "id": 213
+    },
+    {
+      "kind": "vanilla",
+      "id": 226
+    },
+    {
+      "kind": "vanilla",
+      "id": 87
+    },
+    {
+      "kind": "vanilla",
+      "id": 237
+    },
+    {
+      "kind": "vanilla",
+      "id": 232
+    },
+    {
+      "kind": "vanilla",
+      "id": 14
+    },
+    {
+      "kind": "vanilla",
+      "id": 314
+    },
+    {
+      "kind": "vanilla",
+      "id": 713
+    },
+    {
+      "kind": "vanilla",
+      "id": 411
+    },
+    {
+      "kind": "vanilla",
+      "id": 246
+    },
+    {
+      "kind": "vanilla",
+      "id": 332
+    },
+    {
+      "kind": "vanilla",
+      "id": 245
+    },
+    {
+      "kind": "vanilla",
+      "id": 589
+    },
+    {
+      "kind": "vanilla",
+      "id": 73
+    },
+    {
+      "kind": "vanilla",
+      "id": 52
+    },
+    {
+      "kind": "vanilla",
+      "id": 382
+    },
+    {
+      "kind": "vanilla",
+      "id": 3
+    },
+    {
+      "kind": "vanilla",
+      "id": 716
+    },
+    {
+      "kind": "vanilla",
+      "id": 210
+    },
+    {
+      "kind": "vanilla",
+      "id": 75
+    },
+    {
+      "kind": "vanilla",
+      "id": 77
+    },
+    {
+      "kind": "vanilla",
+      "id": 668
+    },
+    {
+      "kind": "vanilla",
+      "id": 33
+    },
+    {
+      "kind": "vanilla",
+      "id": 104
+    },
+    {
+      "kind": "vanilla",
+      "id": 714
+    },
+    {
+      "kind": "vanilla",
+      "id": 80
+    },
+    {
+      "kind": "vanilla",
+      "id": 79
+    },
+    {
+      "kind": "vanilla",
+      "id": 48
+    },
+    {
+      "kind": "vanilla",
+      "id": 50
+    },
+    {
+      "kind": "vanilla",
+      "id": 91
+    },
+    {
+      "kind": "vanilla",
+      "id": 214
+    },
+    {
+      "kind": "vanilla",
+      "id": 101
+    },
+    {
+      "kind": "vanilla",
+      "id": 93
+    },
+    {
+      "kind": "vanilla",
+      "id": 124
+    },
+    {
+      "kind": "vanilla",
+      "id": 16
+    },
+    {
+      "kind": "vanilla",
+      "id": 170
+    },
+    {
+      "kind": "vanilla",
+      "id": 586
+    },
+    {
+      "kind": "vanilla",
+      "id": 584
+    },
+    {
+      "kind": "vanilla",
+      "id": 70
+    },
+    {
+      "kind": "vanilla",
+      "id": 71
+    },
+    {
+      "kind": "vanilla",
+      "id": 197
+    },
+    {
+      "kind": "vanilla",
+      "id": 528
+    },
+    {
+      "kind": "vanilla",
+      "id": 519
+    },
+    {
+      "kind": "vanilla",
+      "id": 209
+    },
+    {
+      "kind": "vanilla",
+      "id": 100
+    },
+    {
+      "kind": "vanilla",
+      "id": 625
+    },
+    {
+      "kind": "vanilla",
+      "id": 151
+    },
+    {
+      "kind": "vanilla",
+      "id": 529
+    },
+    {
+      "kind": "vanilla",
+      "id": 182
+    },
+    {
+      "kind": "vanilla",
+      "id": 216
+    },
+    {
+      "kind": "vanilla",
+      "id": 461
+    },
+    {
+      "kind": "vanilla",
+      "id": 530
+    },
+    {
+      "kind": "vanilla",
+      "id": 189
+    },
+    {
+      "kind": "vanilla",
+      "id": 396
+    },
+    {
+      "kind": "vanilla",
+      "id": 404
+    },
+    {
+      "kind": "vanilla",
+      "id": 484
+    },
+    {
+      "kind": "vanilla",
+      "id": 485
+    },
+    {
+      "kind": "vanilla",
+      "id": 616
+    },
+    {
+      "kind": "vanilla",
+      "id": 202
+    },
+    {
+      "kind": "vanilla",
+      "id": 577
+    },
+    {
+      "kind": "vanilla",
+      "id": 219
+    },
+    {
+      "kind": "vanilla",
+      "id": 506
+    },
+    {
+      "kind": "vanilla",
+      "id": 89
+    },
+    {
+      "kind": "vanilla",
+      "id": 199
+    },
+    {
+      "kind": "vanilla",
+      "id": 90
+    },
+    {
+      "kind": "vanilla",
+      "id": 49
+    },
+    {
+      "kind": "vanilla",
+      "id": 76
+    },
+    {
+      "kind": "vanilla",
+      "id": 13
+    },
+    {
+      "kind": "vanilla",
+      "id": 88
+    },
+    {
+      "kind": "vanilla",
+      "id": 664
+    },
+    {
+      "kind": "vanilla",
+      "id": 192
+    },
+    {
+      "kind": "vanilla",
+      "id": 242
+    },
+    {
+      "kind": "vanilla",
+      "id": 191
+    },
+    {
+      "kind": "vanilla",
+      "id": 244
+    },
+    {
+      "kind": "vanilla",
+      "id": 715
+    },
+    {
+      "kind": "vanilla",
+      "id": 304
+    },
+    {
+      "kind": "vanilla",
+      "id": 162
+    },
+    {
+      "kind": "vanilla",
+      "id": 161
+    },
+    {
+      "kind": "vanilla",
+      "id": 147
+    },
+    {
+      "kind": "vanilla",
+      "id": 224
+    },
+    {
+      "kind": "vanilla",
+      "id": 488
+    },
+    {
+      "kind": "vanilla",
+      "id": 190
+    },
+    {
+      "kind": "vanilla",
+      "id": 74
+    },
+    {
+      "kind": "vanilla",
+      "id": 321
+    },
+    {
+      "kind": "vanilla",
+      "id": 149
+    },
+    {
+      "kind": "vanilla",
+      "id": 574
+    },
+    {
+      "kind": "vanilla",
+      "id": 55
+    },
+    {
+      "kind": "vanilla",
+      "id": 349
+    },
+    {
+      "kind": "vanilla",
+      "id": 369
+    },
+    {
+      "kind": "vanilla",
+      "id": 576
+    },
+    {
+      "kind": "vanilla",
+      "id": 25
+    },
+    {
+      "kind": "vanilla",
+      "id": 23
+    },
+    {
+      "kind": "vanilla",
+      "id": 24
+    },
+    {
+      "kind": "vanilla",
+      "id": 636
+    },
+    {
+      "kind": "vanilla",
+      "id": 31
+    },
+    {
+      "kind": "vanilla",
+      "id": 32
+    },
+    {
+      "kind": "vanilla",
+      "id": 578
+    },
+    {
+      "kind": "vanilla",
+      "id": 357
+    },
+    {
+      "kind": "vanilla",
+      "id": 179
+    },
+    {
+      "kind": "vanilla",
+      "id": 561
+    },
+    {
+      "kind": "vanilla",
+      "id": 112
+    },
+    {
+      "kind": "vanilla",
+      "id": 398
+    },
+    {
+      "kind": "vanilla",
+      "id": 44
+    },
+    {
+      "kind": "vanilla",
+      "id": 483
+    },
+    {
+      "kind": "vanilla",
+      "id": 355
+    },
+    {
+      "kind": "vanilla",
+      "id": 136
+    },
+    {
+      "kind": "vanilla",
+      "id": 97
+    },
+    {
+      "kind": "vanilla",
+      "id": 241
+    },
+    {
+      "kind": "vanilla",
+      "id": 354
+    },
+    {
+      "kind": "vanilla",
+      "id": 96
+    },
+    {
+      "kind": "vanilla",
+      "id": 596
+    },
+    {
+      "kind": "vanilla",
+      "id": 103
+    },
+    {
+      "kind": "vanilla",
+      "id": 495
+    }
+  ]
+}

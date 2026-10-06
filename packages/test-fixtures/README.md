@@ -67,3 +67,19 @@ are untouched (`renamedFrom` in the manifest).
 2. Copy the `.wld` (not `.wld.bak`) from `Documents/My Games/Terraria/Worlds/` to `worlds/`.
 3. Add its manifest entry; `bash scripts/verify.sh` reports any mismatch.
 4. Medium/Large worlds are ~2–5× bigger; once the corpus grows past ~50 MB move `*.wld` to Git LFS.
+
+## Golden summaries (M1)
+`snapshots/m1/<world>.meta.json` is the `export-json` summary of a corpus world without its `chunks` object;
+`<world>.chunks.json` is that `chunks` object (size, planes and one digest per 128×128 chunk and plane).
+Both are plain text (UTF-8, LF, two-space indent, one trailing newline), ~160 KB per world, and are checked
+byte for byte by `VanillaCorpusTests` in `dotnet test` — together with the manifest checks (hash, size,
+version, name, seed, mode, evil, dimensions) and `inspect`. Verified against Terraria **1.4.5.8** (format 326).
+
+A regular test run never writes them. After an intended codec/summary change, refresh and review the diff:
+```bash
+bash scripts/build.sh
+TERRARIA_REFRESH_GOLDEN=1 dotnet test --solution dotnet/TerrariaMapStudio.slnx --no-build --filter-class "*VanillaCorpusTests"
+git diff --stat packages/test-fixtures/snapshots/m1   # the PR shows exactly what changed
+```
+The tests of a refreshing run pass by construction — run them again without the variable to confirm.
+If a world in the corpus ever falls outside the M1 contract, report it as a blocker instead of loosening the assertions.
