@@ -1,5 +1,6 @@
-// RED-phase stubs: the parameters are used once implemented (remove this directive in GREEN).
-/* eslint-disable @typescript-eslint/no-unused-vars */
+import { ByteReader } from "./byte-reader.js";
+import { WorldFormatError } from "./world-format-error.js";
+
 /** The fixed part of a `.wld` file header, up to the section table (docs/file-format.md, "File header"). */
 export interface WorldFileHeader {
   /** Format version (not the game version). */
@@ -53,16 +54,144 @@ export interface WorldHeader {
   readonly sections: WorldSectionTable;
 }
 
+const SUPPORTED_VERSION = 326;
+const SECTION_COUNT = 11;
+const TABLE_START = 26;
+const FRAME_COUNT_OFFSET = TABLE_START + 4 * SECTION_COUNT;
+const FRAME_BITS_OFFSET = FRAME_COUNT_OFFSET + 2;
+const MIN_FOOTER_LENGTH = 6;
+const MAX_FILE_LENGTH = 0x80000000;
+
+function truncated(reader: ByteReader): WorldFormatError {
+  return new WorldFormatError("Truncated", reader.length, "unexpected end of data");
+}
+
+function readFixedFields(reader: ByteReader): WorldFileHeader {
+  if (reader.length < 4) {
+    throw truncated(reader);
+  }
+  const version = reader.readInt32(0);
+  if (version !== SUPPORTED_VERSION) {
+    throw new WorldFormatError("UnsupportedVersion", 0, `format version ${String(version)} is not supported`);
+  }
+  if (reader.length < TABLE_START) {
+    throw truncated(reader);
+  }
+  const signature = String.fromCharCode(...reader.readBytes(4, 7));
+  if (signature === "xindong") {
+    throw new WorldFormatError("NotAWorld", 4, "unsupported variant");
+  }
+  if (signature !== "relogic") {
+    throw new WorldFormatError("NotAWorld", 4, "invalid signature");
+  }
+  const fileType = reader.readUint8(11);
+  if (fileType !== 2) {
+    throw new WorldFormatError("NotAWorld", 11, `file type ${String(fileType)} is not a world`);
+  }
+  const sectionCount = reader.readInt16(24);
+  if (sectionCount !== SECTION_COUNT) {
+    throw new WorldFormatError(
+      "MalformedSectionTable",
+      24,
+      `expected ${String(SECTION_COUNT)} sections, found ${String(sectionCount)}`,
+    );
+  }
+  const flags = reader.readUint64(16);
+  return {
+    version,
+    signature,
+    fileType,
+    revision: reader.readUint32(12),
+    flags,
+    isFavorite: (flags & 1n) === 1n,
+    sectionCount,
+  };
+}
+
+function readPointers(reader: ByteReader, headerEnd: number): number[] {
+  const fileLength = reader.length;
+  if (fileLength >= MAX_FILE_LENGTH) {
+    throw new WorldFormatError("MalformedSectionTable", TABLE_START, "file is 2 GiB or larger");
+  }
+  const pointers: number[] = [];
+  for (let index = 0; index < SECTION_COUNT; index++) {
+    const slot = TABLE_START + 4 * index;
+    const pointer = reader.readInt32(slot);
+    const previous = pointers[index - 1] ?? 0;
+    if (pointer > fileLength) {
+      throw new WorldFormatError("MalformedSectionTable", slot, "beyond end of file");
+    }
+    if (index === 0 && pointer !== headerEnd) {
+      throw new WorldFormatError("MalformedSectionTable", slot, "section pointer must match the header end");
+    }
+    if (index === 1 && pointer < previous) {
+      throw new WorldFormatError("MalformedSectionTable", slot, "section pointer is before metadata start");
+    }
+    if (index > 1 && pointer <= previous) {
+      throw new WorldFormatError("MalformedSectionTable", slot, "not greater than previous");
+    }
+    if (index === SECTION_COUNT - 1 && pointer + MIN_FOOTER_LENGTH > fileLength) {
+      throw new WorldFormatError("MalformedSectionTable", slot, "footer requires at least six bytes");
+    }
+    pointers.push(pointer);
+  }
+  return pointers;
+}
+
 /**
  * Reads and validates the file header, section table and frame-important bits of a format-326 world.
  * Offsets in errors and results are relative to the start of `bytes`; nothing outside the view is read.
  * @throws WorldFormatError when the header violates the contract (docs/file-format.md, "Check order").
  */
-export function readWorldHeader(_bytes: Uint8Array): WorldHeader {
-  throw new Error("not implemented");
+export function readWorldHeader(bytes: Uint8Array): WorldHeader {
+  const reader = new ByteReader(bytes);
+  const header = readFixedFields(reader);
+  if (reader.length < FRAME_BITS_OFFSET) {
+    throw truncated(reader);
+  }
+  const frameImportantCount = reader.readInt16(FRAME_COUNT_OFFSET);
+  if (frameImportantCount < 0) {
+    throw new WorldFormatError("MalformedSectionTable", FRAME_COUNT_OFFSET, "negative frame-important count");
+  }
+  const frameBytes = Math.ceil(frameImportantCount / 8);
+  const headerEnd = FRAME_BITS_OFFSET + frameBytes;
+  if (reader.length < headerEnd) {
+    throw truncated(reader);
+  }
+  const frameImportantBits = reader.readBytes(FRAME_BITS_OFFSET, frameBytes);
+  const pointers = readPointers(reader, headerEnd);
+  const edges = [0, ...pointers, reader.length];
+  const section = (index: number): SectionBoundary => ({
+    start: edges[index] ?? 0,
+    end: edges[index + 1] ?? 0,
+  });
+  return {
+    header,
+    sections: {
+      pointers,
+      fileHeader: section(0),
+      metadata: section(1),
+      tiles: section(2),
+      chests: section(3),
+      signs: section(4),
+      npcsAndMobs: section(5),
+      tileEntities: section(6),
+      weightedPressurePlates: section(7),
+      townManager: section(8),
+      bestiary: section(9),
+      creativePowers: section(10),
+      footer: section(11),
+      frameImportantCount,
+      frameImportantBits,
+    },
+  };
 }
 
 /** Whether tile type `tileId` stores frame coordinates; ids outside `0 … k-1` are not frame-important. */
-export function isFrameImportant(_sections: WorldSectionTable, _tileId: number): boolean {
-  throw new Error("not implemented");
+export function isFrameImportant(sections: WorldSectionTable, tileId: number): boolean {
+  if (!Number.isInteger(tileId) || tileId < 0 || tileId >= sections.frameImportantCount) {
+    return false;
+  }
+  const packed = sections.frameImportantBits[tileId >> 3] ?? 0;
+  return ((packed >> (tileId & 7)) & 1) === 1;
 }
