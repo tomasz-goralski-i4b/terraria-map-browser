@@ -1,97 +1,99 @@
-# Workflow agentów (Cezar)
+# Agent workflow (Cezar)
 
-## Uruchomienie Cezara — WAŻNE na Windows
+## Starting Cezar — IMPORTANT on Windows
 
-Cezar odpala kroki `command` przez `bash -lc`. W zwykłym PowerShell/cmd pierwszy w PATH jest
-`C:\Windows\System32\bash.exe`, czyli **WSL**, bez naszego toolchainu. Dlatego:
+Cezar runs `command` steps via `bash -lc`. In plain PowerShell/cmd the first bash on PATH is
+`C:\Windows\System32\bash.exe`, i.e. **WSL**, without our toolchain. Therefore:
 
-**Uruchamiaj Cezara z Git Bash**, w katalogu repo:
+**Start Cezar from Git Bash**, in the repo directory:
 
 ```bash
 cd /d/REPOS/AI/terraria-map-studio
 npx cezar-run
 ```
 
-Jeśli bramka i tak trafi do WSL, `scripts/lib.sh` zakończy ją kodem 2 z komunikatem `INFRA: ... WSL`.
+If a gate still ends up in WSL, `scripts/lib.sh` exits with code 2 and an `INFRA: ... WSL` message.
 
-Zalecane zmienne (np. w `~/.bashrc` albo przed `npx`):
+Recommended environment (e.g. in `~/.bashrc` or before `npx`):
 ```bash
-export CEZ_DISPATCH=0      # agent w chainie nie odpala własnych pod-tasków (te nie mają bramek TDD)
+export CEZ_DISPATCH=0      # agents in a chain do not spawn their own subtasks (those have no TDD gates)
 ```
-Każdy chain kończy się krokiem `open-pr` (push + draft PR), więc review gate Cezara nie jest potrzebny,
-a runy z automations mogą być `autonomous`.
+Every chain ends with the `open-pr` step (push + draft PR), so Cezar's review gate is not needed
+and runs started by automations can be `autonomous`.
 
-## Flow backlogu: planner → promoter → automations → Ty
+## Backlog flow: planner → promoter → automations → you
 
 ```
-1. plan-backlog (Cezar, ręcznie)   "Rozpisz M1"  → .tdd/backlog.json → bramka tworzy issue [backlog]
-2. promoter (GitHub Action / ręcznie)            → issue bez otwartych blokerów, wolne area → [agent:ready]
-3. automation Cezara (poll co 2 min)             → task z workflow wg labeli flow:* / agent:*  (autonomous)
-4. chain                                          → red → green → refactor → review → open-pr
-                                                   → draft PR "Closes #N", issue → [status:pr-ready]
-5. Ty                                             → review PR na GitHubie, CI zielone → merge
-6. issue zamknięte → Action `promote`             → odblokowuje kolejne → wraca do 3
+1. plan-backlog (Cezar, manual)     "Plan M1"  → .tdd/backlog.json → gate creates issues [backlog]
+2. promoter (GitHub Action / manual)           → issues with no open blockers, free area → [agent:ready]
+3. Cezar automation (polls every 2 min)        → task with the workflow picked by flow:* / agent:* labels (autonomous)
+4. chain                                        → red → green → refactor → review → open-pr
+                                                 → draft PR "Closes #N", issue → [status:pr-ready]
+5. you                                          → review the PR on GitHub, CI green → merge
+6. issue closed → `promote` Action              → unblocks the next ones → back to 3
 ```
 
-| Label | Kto nadaje | Znaczenie |
+| Label | Set by | Meaning |
 |---|---|---|
-| `backlog` | planner (create-issues) | zaplanowane, czeka |
-| `agent:ready` | promoter | automation startuje task |
-| `status:pr-ready` | `open-pr.sh` | PR czeka na Ciebie |
-| `human` | planner | Twoja praca (np. fixture z gry); zamknij issue, gdy zrobione — odblokuje zależne |
-| `flow:tdd|foundation|spike` + `agent:claude|codex` | planner | wybór workflow i implementera |
-| `area:*` | planner | promoter puszcza jedno issue naraz na area |
+| `backlog` | planner (create-issues) | planned, waiting |
+| `agent:ready` | promoter | an automation starts the task |
+| `status:pr-ready` | `open-pr.sh` | the PR is waiting for you |
+| `human` | planner | your work (e.g. a fixture from the game); close the issue when done — it unblocks dependants |
+| `flow:tdd|foundation|spike` + `agent:claude|codex` | planner | workflow and implementer choice |
+| `area:*` | planner | the promoter runs one issue at a time per area |
 
-Reguły promotera (`scripts/backlog/promote.mjs`): kolejność wg numeru issue, wszystkie `Blocked by: #N` zamknięte,
-area wolne, globalnie w locie < `MAX_ACTIVE` (2 = `maxParallel` Cezara).
+Promoter rules (`scripts/backlog/promote.mjs`): ordered by issue number, every `Blocked by: #N` closed,
+area free, globally in flight < `MAX_ACTIVE` (2 = Cezar's `maxParallel`).
 
-Automations (`.ai/cezar/automation-defs/*.json`) słuchają `issue.labeled` = `agent:ready`, tylko dla issue
-autorstwa właściciela repo (repo jest publiczne). Instalacja (cockpit musi działać dla tego repo):
+Automations (`.ai/cezar/automation-defs/*.json`) listen for `issue.labeled` = `agent:ready`, only on issues
+opened by the repo owner (the repo is public). Install/update (the cockpit must be running for this repo):
 ```bash
 bash scripts/backlog/install-automations.sh
 ```
-Tworzą się **wstrzymane**; włączasz w UI → Automations. Włączenie ustawia baseline "od teraz" —
-labele nadane wcześniej nie zostaną podjęte (wtedy zdejmij i nadaj `agent:ready` ponownie).
+New ones are created **paused**; enable them in the UI → Automations. Enabling sets a "from now on" baseline —
+labels added earlier are not picked up (remove and re-add `agent:ready` in that case).
 
-### Gdy coś pójdzie nie tak
-- Task w Cezarze `failed` (wyczerpane retry, BLOCKED, INFRA) → issue zostaje na `agent:ready`, area jest zajęte.
-  Przeczytaj log, popraw issue/kod, potem: zdejmij `agent:ready` i nadaj ponownie (automation odpali nowy task),
-  albo daj `backlog` i odpal promotera.
-- Uwagi do PR → Continue na tasku w Cezarze z komentarzem albo popraw ręcznie na branchu PR.
-- Zły plan → zamknij/edytuj issue na GitHubie; `create-issues` pomija tytuły, które już istnieją.
+### When something goes wrong
+- A Cezar task `failed` (retries exhausted, BLOCKED, INFRA) → the issue stays on `agent:ready` and its area stays busy.
+  Read the log, fix the issue/code, then remove and re-add `agent:ready` (the automation starts a new task),
+  or set `backlog` and run the promoter.
+- PR feedback → Continue the task in Cezar with a comment, or fix it by hand on the PR branch.
+- Bad plan → close/edit the issues on GitHub; `create-issues` skips items whose backlog key or title already exists.
 
-## Chain `tdd-feature`
+## The `tdd-feature` chain
 
 ```
-red ─► check-red ─► green ─► check-green ─► refactor ─► check-refactor ─► review ─► check-review ─► review gate ─► draft PR
+red ─► check-red ─► green ─► check-green ─► refactor ─► check-refactor ─► review ─► check-review ─► open-pr
  ▲        │           ▲          │             ▲             │                          │
  └─retry──┘           └──retry───┘             └───retry─────┘                          │
  ▲                                                                                      │
- └────────────────────── REQUEST_CHANGES (uwagi trafiają do prompta) ───────────────────┘
+ └────────────────────── REQUEST_CHANGES (findings are appended to the prompt) ─────────┘
 ```
 
-| Krok | Kto | Co robi | Bramka sprawdza |
+| Step | Who | Does | The gate checks |
 |---|---|---|---|
-| red | implementer | `.tdd/plan.md`, testy, stuby | są zmiany w testach, build OK, testy FAILUJĄ → commit `test: red`, `.tdd/red-sha` |
-| green | implementer | minimalna implementacja | testy niezmienione od `red-sha`, `verify.sh` OK → commit, `.tdd/green-sha` |
-| refactor | implementer | porządki, docs | jw. |
-| review | drugi provider | `.tdd/review.md` z werdyktem | reviewer nic nie zmienił; APPROVE=0, REQUEST_CHANGES=1 (rework), BLOCKED=3 (stop) |
+| red | implementer | `.tdd/plan.md`, tests, stubs | tests changed, build OK, tests FAIL → commit `test: red`, `.tdd/red-sha` |
+| green | implementer | minimal implementation | tests unchanged since `red-sha`, `verify.sh` OK → commit, `.tdd/green-sha` |
+| refactor | implementer | clean-up, docs | same as green |
+| review | the other provider | `.tdd/review.md` with a verdict | reviewer changed nothing; APPROVE=0, REQUEST_CHANGES=1 (rework), BLOCKED=3 (stop) |
+| open-pr | script | push, draft PR `Closes #N` | — |
 
-Rework wraca do `red`: błąd zachowania → najpierw failujący test; uwagi stylistyczne → red bez testów (bramka przepuszcza).
+Rework goes back to `red`: behavioural bug → failing test first; style-only findings → red without tests (the gate lets it through).
 
-## Kody wyjścia bramek
-| Kod | Znaczenie | Cezar |
+## Gate exit codes
+| Code | Meaning | Cezar |
 |---|---|---|
-| 0 | OK | następny krok |
-| 1 | praca zła, agent może poprawić | `retry` (z outputem w prompcie), do `max` |
-| 2 | infrastruktura (brak narzędzia, WSL) | stop — bez marnowania prób agenta (`retryOn: [1]`) |
-| 3 | decyzja człowieka (BLOCKED, reviewer edytował kod) | stop |
+| 0 | OK | next step |
+| 1 | the work is wrong, the agent can fix it | `retry` (with the output in the prompt), up to `max` |
+| 2 | infrastructure (missing tool, WSL) | stop — no agent attempts wasted (`retryOn: [1]`) |
+| 3 | human decision (BLOCKED, reviewer edited code) | stop |
 
-## Fakty o Cezarze, na których to stoi
-- Każdy krok agenta to **nowa sesja** — dlatego handoff przez `.tdd/` i skille każą czytać pliki.
-- Krok to albo `prompt`/`skill`, albo `command` — nie oba.
-- `retry` cofa do wskazanego kroku i wykonuje ponownie wszystko po nim; `max` liczony per bramka.
-- Codex ignoruje `allowedTools` — zakaz edycji przez reviewera egzekwuje `check-review.sh`, nie uprawnienia.
+## Cezar facts this relies on
+- Every agent step is a **new session** — hence the `.tdd/` handoff and skills that tell agents to read files.
+- A step is either `prompt`/`skill` or `command` — never both.
+- `retry` jumps back to the named step and re-runs everything after it; `max` is counted per gate.
+- Codex ignores `allowedTools` — the "reviewer must not edit" rule is enforced by `check-review.sh`, not by permissions.
+- Cezar keeps task worktrees inside the repo (`.ai/cezar/worktrees/`, gitignored); tooling must ignore `.ai/`.
 
-## Metryki eksperymentu (per issue, ręcznie w PR)
-czas Agent Ready → draft PR · interwencje człowieka · wynik 1. CI · cykle rework · provider · przyczyna porażki.
+## Experiment metrics (per issue, recorded in the PR)
+time Agent Ready → draft PR · human interventions · first CI result · rework cycles · provider · failure cause.

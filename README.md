@@ -1,10 +1,10 @@
 # Terraria Map Studio
 
-Lokalny, przeglądarkowy edytor światów Terrarii + eksperyment Personal Software Factory.
+A local, browser-based editor for Terraria worlds + a Personal Software Factory experiment.
 
 - Plan: [docs/architecture.md](docs/architecture.md)
-- Reguły dla agentów: [AGENTS.md](AGENTS.md)
-- Workflow Cezara: [docs/agent-workflow.md](docs/agent-workflow.md)
+- Rules for agents: [AGENTS.md](AGENTS.md)
+- Cezar workflow: [docs/agent-workflow.md](docs/agent-workflow.md)
 
 ```bash
 pnpm install

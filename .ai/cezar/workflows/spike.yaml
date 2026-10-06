@@ -1,5 +1,5 @@
 name: spike
-description: "Rozpoznanie (np. format .wld): notatki w docs/ i fixture'y, bez kodu produkcyjnego. Kończy się verify.sh."
+description: "Research (e.g. the .wld format): notes in docs/ and fixtures, no production code. Ends with verify.sh and a draft PR."
 steps:
   - id: research
     name: Research

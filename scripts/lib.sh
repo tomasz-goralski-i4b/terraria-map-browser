@@ -1,30 +1,30 @@
-# Wspólne helpery dla scripts/*. Source'owane, nie uruchamiane.
-# Konwencja exit codes (patrz onFail.retryOn w .ai/cezar/workflows):
-#   1 = praca jest zła — agent może to naprawić (Cezar wraca do kroku agenta)
-#   2 = infrastruktura (brak narzędzia, zły shell) — agent nie naprawi, run staje
-#   3 = decyzja człowieka (BLOCKED, naruszenie reguł chaina) — run staje
+# Shared helpers for scripts/*. Sourced, not executed.
+# Exit code convention (see onFail.retryOn in .ai/cezar/workflows):
+#   1 = the work is wrong — the agent can fix it (Cezar loops back to the agent step)
+#   2 = infrastructure (missing tool, wrong shell) — the agent cannot fix it, the run stops
+#   3 = human decision (BLOCKED, chain rule violated) — the run stops
 
 set -uo pipefail
 
-ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || { echo "INFRA: to nie jest repo git"; exit 2; }
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || { echo "INFRA: not a git repository"; exit 2; }
 cd "$ROOT"
 
-# Cezar uruchamia checki przez `bash -lc`. Na Windows pierwszy w PATH bywa WSL bash
-# (C:\Windows\System32\bash.exe), który nie ma naszego toolchainu.
+# Cezar runs checks via `bash -lc`. On Windows the first bash on PATH is often WSL
+# (C:\Windows\System32\bash.exe), which does not have our toolchain.
 if [ -n "${WSL_DISTRO_NAME:-}" ] || [ -e /proc/sys/fs/binfmt_misc/WSLInterop ]; then
-  echo "INFRA: check działa w WSL zamiast Git Bash. Uruchom cezar z Git Bash (patrz docs/agent-workflow.md)."
+  echo "INFRA: the check is running in WSL instead of Git Bash. Start cezar from Git Bash (see docs/agent-workflow.md)."
   exit 2
 fi
 
 for tool in dotnet pnpm git; do
-  command -v "$tool" >/dev/null 2>&1 || { echo "INFRA: brak '$tool' w PATH"; exit 2; }
+  command -v "$tool" >/dev/null 2>&1 || { echo "INFRA: '$tool' is not on PATH"; exit 2; }
 done
 
 export DOTNET_NOLOGO=1 DOTNET_CLI_TELEMETRY_OPTOUT=1 FORCE_COLOR=0 NO_COLOR=1
 
 SLN="dotnet/TerrariaMapStudio.sln"
 
-# Co jest "testem" — jedno źródło prawdy dla wszystkich bramek TDD.
+# What counts as a "test" — single source of truth for all TDD gates.
 TEST_PATHSPEC=(
   ':(glob)dotnet/**/*.Tests/**'
   ':(glob)**/*.test.ts'
@@ -32,7 +32,7 @@ TEST_PATHSPEC=(
   ':(glob)packages/test-fixtures/**'
 )
 
-# Gałąź, od której Cezar forkuje worktree.
+# The commit Cezar forked the worktree from.
 base_ref() {
   local b
   for b in "${BASE_BRANCH:-}" origin/main main; do
@@ -41,7 +41,7 @@ base_ref() {
   git rev-list --max-parents=0 HEAD | tail -1
 }
 
-# Pliki testów zmienione względem $1 (commitowane + working tree + nowe).
+# Test files changed since $1 (committed + working tree + untracked).
 changed_tests_since() {
   { git diff --name-only "$1" -- "${TEST_PATHSPEC[@]}"
     git ls-files -o --exclude-standard -- "${TEST_PATHSPEC[@]}"; } | sort -u
@@ -52,10 +52,10 @@ commit_state() {
   git commit -q --allow-empty -m "$1"
 }
 
-# Świeży worktree (Cezar) nie ma node_modules. Install ze store'a pnpm to kilka sekund.
+# A fresh worktree (Cezar) has no node_modules. Installing from the pnpm store takes seconds.
 ensure_deps() {
   if [ ! -d node_modules ] || [ pnpm-lock.yaml -nt node_modules/.modules.yaml ]; then
     echo "== pnpm install"
-    pnpm install --frozen-lockfile --prefer-offline --reporter=silent || { echo "INFRA: pnpm install nie przeszedł"; exit 2; }
+    pnpm install --frozen-lockfile --prefer-offline --reporter=silent || { echo "INFRA: pnpm install failed"; exit 2; }
   fi
 }

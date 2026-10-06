@@ -1,18 +1,18 @@
-## Zakres
+## Scope
 Closes #
 
-## Testy
+## Tests
 - [ ] `bash scripts/verify.sh` → `VERIFY: OK`
-- Nowe/zmienione testy:
+- New/changed tests:
 
 ## Compatibility impact
 - Vanilla: None / Render / Edit
 - Modded worlds: None / Preserve / Validate / Render / Edit
 
-## Ryzyko
+## Risk
 - 
 
 ## Agent
-- Workflow Cezara: tdd-feature / tdd-feature-codex / foundation / spike
-- Implementer: claude / codex — Reviewer: codex / claude — werdykt: 
-- Liczba cykli rework:
+- Cezar workflow: tdd-feature / tdd-feature-codex / foundation / spike
+- Implementer: claude / codex — Reviewer: codex / claude — verdict:
+- Rework cycles:

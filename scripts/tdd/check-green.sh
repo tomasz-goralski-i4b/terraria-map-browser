@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
-# Bramka GREEN/REFACTOR: testy z fazy red nietknięte + pełne verify.sh.
+# GREEN/REFACTOR gate: tests from the red phase untouched + full verify.sh.
 source "$(dirname "$0")/../lib.sh"
-[ -f .tdd/red-sha ] || { echo "INFRA: brak .tdd/red-sha — krok red nie przeszedł bramki"; exit 2; }
+[ -f .tdd/red-sha ] || { echo "INFRA: .tdd/red-sha is missing — the red step never passed its gate"; exit 2; }
 red=$(cat .tdd/red-sha)
 
 touched=$(changed_tests_since "$red")
 if [ -n "$touched" ]; then
-  echo "GREEN: zmieniono testy po fazie red — to niedozwolone. Przywróć je:"
+  echo "GREEN: tests were changed after the red phase — not allowed. Restore them:"
   echo "$touched" | sed 's/^/  /'
-  echo "  (np. git checkout $red -- <plik>; nowe pliki testów usuń)"
+  echo "  (e.g. git checkout $red -- <file>; delete new test files)"
   exit 1
 fi
 
 bash scripts/verify.sh || exit $?
 commit_state "feat: green"
 git rev-parse HEAD > .tdd/green-sha
-echo "GREEN: OK — zapisano $(cat .tdd/green-sha)"
+echo "GREEN: OK — saved $(cat .tdd/green-sha)"

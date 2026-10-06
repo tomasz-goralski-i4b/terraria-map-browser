@@ -1,10 +1,10 @@
 # test-fixtures
 
-Jawnie wygenerowane, małe światy vanilla używane przez testy codeców (.NET i TS).
+Explicitly generated, small vanilla worlds used by the codec tests (.NET and TS).
 
-Zasady:
-- Tylko światy wygenerowane specjalnie na potrzeby testów — nigdy światy graczy ani pliki z modów.
-- Każdy plik `worlds/*.wld` ma wpis w `worlds/manifest.json`: wersja gry, wersja formatu, rozmiar, seed,
-  tryb (classic/expert/journey), evil (corruption/crimson), kto i kiedy wygenerował, czy był modyfikowany w grze.
-- Preferuj fixture'y syntetyczne budowane w kodzie testu (bajty nagłówka/sekcji) — prawdziwe światy
-  służą do testów kompatybilności i round-trip.
+Rules:
+- Only worlds generated specifically for tests — never player worlds or files from mods.
+- Every `worlds/*.wld` file has an entry in `worlds/manifest.json`: game version, format version, size, seed,
+  mode (classic/expert/journey), evil (corruption/crimson), who generated it and when, whether it was modified in game.
+- Prefer synthetic fixtures built in test code (header/section bytes) — real worlds are for
+  compatibility and round-trip tests.

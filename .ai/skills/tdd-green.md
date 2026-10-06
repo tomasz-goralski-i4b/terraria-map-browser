@@ -1,25 +1,23 @@
 ---
 name: tdd-green
-description: Faza GREEN chaina tdd-feature — minimalna implementacja, testy z fazy red są zamrożone.
+description: GREEN phase of the tdd-feature chain — minimal implementation, tests from the red phase are frozen.
 ---
-Jesteś w fazie **GREEN** chaina TDD w Cezarze (świeża sesja — kontekst jest w plikach).
+You are in the **GREEN** phase of a TDD chain in Cezar (fresh session — the context lives in files).
 
-## Wejście
-- `.tdd/plan.md` — lista testów i plan z fazy red,
-- `git show $(cat .tdd/red-sha) --stat` — co dodała faza red,
-- `.tdd/review.md` — jeśli istnieje, to uwagi reviewera do zaadresowania,
-- output bramki w prompcie, jeśli to ponowna próba.
+## Input
+- `.tdd/plan.md` — test list and plan from the red phase,
+- `git show $(cat .tdd/red-sha) --stat` — what the red phase added,
+- `.tdd/review.md` — if it exists, the reviewer's findings to address,
+- gate output in the prompt, if this is a retry,
+- acceptance criteria: `gh issue view $(cat .tdd/issue)` if `.tdd/issue` exists (without `--comments`).
 
-## Zadanie
-1. Zaimplementuj **minimum**, żeby testy przeszły. Bez dodatkowych funkcji spoza taska.
-2. Uruchamiaj `bash scripts/verify.sh` aż będzie `VERIFY: OK`. To jest dokładnie to, co odpala CI:
-   build z warnings-as-errors (.NET analyzers, `tsc` strict), `eslint --max-warnings=0`, wszystkie testy.
-3. Ostrzeżenia **naprawiaj**, nie wyciszaj. `#pragma warning disable`, `// eslint-disable`, `NoWarn`, `@ts-ignore`
-   są dozwolone tylko z komentarzem uzasadniającym — reviewer to sprawdzi.
+## Steps
+1. Implement the **minimum** needed to make the tests pass. Nothing beyond the task.
+2. Run `bash scripts/verify.sh` until it prints `VERIFY: OK`. It is exactly what CI runs:
+   build with warnings as errors (.NET analyzers, strict `tsc`), `eslint --max-warnings=0`, all tests.
+3. **Fix** warnings, do not silence them. `#pragma warning disable`, `// eslint-disable`, `NoWarn`, `@ts-ignore`
+   are allowed only with a comment explaining why — the reviewer will check.
 
-## Nie wolno
-- zmieniać plików testów i fixture'ów (bramka porównuje je z `.tdd/red-sha` i odrzuci krok),
-- commitować — zrobi to bramka `scripts/tdd/check-green.sh`.
-
-## Źródło taska
-Jeśli istnieje `.tdd/issue`, kryteria akceptacji są w `gh issue view $(cat .tdd/issue)` (bez `--comments`).
+## Not allowed
+- changing test files and fixtures (the gate compares them with `.tdd/red-sha` and rejects the step),
+- committing — the `scripts/tdd/check-green.sh` gate does it.

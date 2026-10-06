@@ -1,16 +1,16 @@
-// Idempotentnie tworzy labels używane przez backlog, promotera i automations Cezara.
+// Idempotently creates the labels used by the backlog, the promoter and the Cezar automations.
 import { gh } from "./gh.mjs";
 
 const labels = [
-  ["backlog", "c5def5", "Zaplanowane, czeka na odblokowanie przez promotera"],
-  ["agent:ready", "0e8a16", "Promoter odblokował — automation Cezara startuje task"],
-  ["status:pr-ready", "1d76db", "Chain skończony, draft PR czeka na człowieka"],
-  ["human", "e99695", "Wymaga człowieka (np. gra, decyzja) — promoter pomija, agenci czekają na zamknięcie"],
-  ["flow:tdd","5319e7", "Workflow tdd-feature"],
-  ["flow:foundation", "5319e7", "Workflow foundation (bez TDD)"],
-  ["flow:spike", "5319e7", "Workflow spike (research → docs)"],
-  ["agent:claude", "d4c5f9", "Implementuje Claude, reviewuje Codex"],
-  ["agent:codex", "d4c5f9", "Implementuje Codex, reviewuje Claude"],
+  ["backlog", "c5def5", "Planned, waiting to be unblocked by the promoter"],
+  ["agent:ready", "0e8a16", "Unblocked by the promoter — a Cezar automation starts the task"],
+  ["status:pr-ready", "1d76db", "Chain finished, draft PR waiting for a human"],
+  ["human", "e99695", "Needs a human (e.g. the game, a decision) — the promoter skips it, agents wait for it to close"],
+  ["flow:tdd", "5319e7", "tdd-feature workflow"],
+  ["flow:foundation", "5319e7", "foundation workflow (no TDD)"],
+  ["flow:spike", "5319e7", "spike workflow (research → docs)"],
+  ["agent:claude", "d4c5f9", "Claude implements, Codex reviews"],
+  ["agent:codex", "d4c5f9", "Codex implements, Claude reviews"],
   ["area:codec", "fbca04", "dotnet/Terraria.WorldCodec, packages/world-codec"],
   ["area:model", "fbca04", "packages/world-model"],
   ["area:fixtures", "fbca04", "packages/test-fixtures"],

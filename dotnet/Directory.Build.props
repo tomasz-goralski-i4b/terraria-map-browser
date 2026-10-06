@@ -1,5 +1,5 @@
 <Project>
-  <!-- Wspólne reguły jakości dla całego kodu .NET. Każde ostrzeżenie łamie build. -->
+  <!-- Shared quality rules for all .NET code. Every warning breaks the build. -->
   <PropertyGroup>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
@@ -9,7 +9,7 @@
     <AnalysisLevel>latest-recommended</AnalysisLevel>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <!-- CS1591: brak XML doc dla publicznego API — za głośne na tym etapie. -->
+    <!-- CS1591: missing XML doc on public API — too noisy at this stage. -->
     <NoWarn>$(NoWarn);CS1591</NoWarn>
     <Deterministic>true</Deterministic>
   </PropertyGroup>

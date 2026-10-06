@@ -1,9 +1,9 @@
-// Promoter: deterministyczny "manager" backlogu. Bez LLM.
-// Nadaje agent:ready issue z labelem `backlog`, gdy:
-//   - wszystkie "Blocked by: #N" są zamknięte,
-//   - w tym samym area nie ma nic w locie (agent:ready / status:pr-ready) — jeden właściciel obszaru,
-//   - globalnie w locie < MAX_ACTIVE (domyślnie 2 = maxParallel Cezara).
-// Kolejność: rosnący numer issue (planner tworzy je w kolejności realizacji).
+// Promoter: the deterministic backlog "manager". No LLM.
+// Adds agent:ready to issues labelled `backlog` when:
+//   - every "Blocked by: #N" is closed,
+//   - nothing else is in flight (agent:ready / status:pr-ready) in the same area — one owner per area,
+//   - globally fewer than MAX_ACTIVE are in flight (default 2 = Cezar's maxParallel).
+// Order: ascending issue number (the planner creates issues in execution order).
 import { gh, ghJson, LABELS, blockedBy, labelNames, areaOf } from "./gh.mjs";
 
 const MAX_ACTIVE = Number(process.env.MAX_ACTIVE ?? 2);
@@ -15,7 +15,7 @@ const inFlight = open.filter((i) => labelNames(i).some((n) => n === LABELS.ready
 const busyAreas = new Set(inFlight.map(areaOf));
 let active = inFlight.length;
 
-console.log(`w locie: ${active}/${MAX_ACTIVE}${inFlight.length ? " — " + inFlight.map((i) => `#${i.number} ${areaOf(i)}`).join(", ") : ""}`);
+console.log(`in flight: ${active}/${MAX_ACTIVE}${inFlight.length ? " — " + inFlight.map((i) => `#${i.number} ${areaOf(i)}`).join(", ") : ""}`);
 
 const candidates = open
   .filter((i) => labelNames(i).includes(LABELS.backlog))
@@ -26,14 +26,14 @@ for (const issue of candidates) {
   const area = areaOf(issue);
   const blockers = blockedBy(issue.body).filter((n) => openNumbers.has(n));
   if (blockers.length) {
-    console.log(`  #${issue.number} czeka na ${blockers.map((n) => "#" + n).join(", ")}`);
+    console.log(`  #${issue.number} waiting for ${blockers.map((n) => "#" + n).join(", ")}`);
     continue;
   }
   if (busyAreas.has(area)) {
-    console.log(`  #${issue.number} czeka — ${area} zajęte`);
+    console.log(`  #${issue.number} waiting — ${area} is busy`);
     continue;
   }
-  console.log(`→ promuję #${issue.number} ${issue.title}${DRY ? " (dry-run)" : ""}`);
+  console.log(`→ promoting #${issue.number} ${issue.title}${DRY ? " (dry-run)" : ""}`);
   if (!DRY) gh(["issue", "edit", String(issue.number), "--remove-label", LABELS.backlog, "--add-label", LABELS.ready]);
   busyAreas.add(area);
   active++;

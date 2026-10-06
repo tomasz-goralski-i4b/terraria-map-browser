@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Kompilacja całości z warnings-as-errors. Bez testów.
+# Compile everything with warnings as errors. No tests.
 source "$(dirname "$0")/lib.sh"
 ensure_deps
 echo "== dotnet build (warnaserror)"

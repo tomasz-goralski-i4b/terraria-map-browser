@@ -1,13 +1,13 @@
 name: promote
-# Deterministyczny "manager" backlogu: po zamknięciu issue (merge PR z "Closes #N")
-# odblokowuje kolejne issue (backlog → agent:ready). Automation Cezara podnosi je stamtąd.
+# Deterministic backlog "manager": when an issue closes (PR merged with "Closes #N")
+# it unblocks the next issues (backlog → agent:ready). A Cezar automation picks them up from there.
 on:
   issues:
     types: [closed, reopened]
   workflow_dispatch:
     inputs:
       dry_run:
-        description: "Tylko pokaż, co by promował"
+        description: "Only show what would be promoted"
         type: boolean
         default: false
 

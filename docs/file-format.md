@@ -1,10 +1,10 @@
-# Format `.wld`
+# The `.wld` format
 
-Specyfikacja formatu opisana własnymi słowami (kontrakt dla codeców .NET i TS).
-Uzupełniana przez issue typu `spike` i fazy refactor. Na razie pusta — start w M1.
+The format specification in our own words (the contract for both the .NET and TS codecs).
+Filled in by `spike` issues and refactor phases. Empty for now — work starts in M1.
 
-## Wersje
-| Wersja | Gra | Uwagi |
+## Versions
+| Version | Game | Notes |
 |---|---|---|
 
-## Sekcje
+## Sections

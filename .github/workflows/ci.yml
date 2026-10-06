@@ -18,5 +18,5 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # Ta sama komenda co bramki w chainie Cezara — jedna definicja "zielonego".
+      # The same command the Cezar chain gates run — a single definition of "green".
       - run: bash scripts/verify.sh

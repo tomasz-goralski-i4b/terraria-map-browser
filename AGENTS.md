@@ -1,51 +1,54 @@
 # AGENTS.md — Terraria Map Studio
 
-Lokalny edytor światów Terrarii (`.wld`): referencyjny codec .NET → niezależny codec TS → PWA.
-Plan projektu: `docs/architecture.md`. Workflow agentów: `docs/agent-workflow.md`.
+A local editor for Terraria worlds (`.wld`): reference .NET codec → independent TS codec → PWA.
+Project plan: `docs/architecture.md`. Agent workflow: `docs/agent-workflow.md`.
 
-## Komendy
-| Co | Komenda |
+**Language: everything in this repository is in English** — code, comments, tests, docs, commit messages,
+PR descriptions, issues and review notes.
+
+## Commands
+| What | Command |
 |---|---|
-| Wszystko (= CI) | `bash scripts/verify.sh` |
-| Tylko build | `bash scripts/build.sh` |
-| Tylko testy | `bash scripts/test.sh` |
+| Everything (= CI) | `bash scripts/verify.sh` |
+| Build only | `bash scripts/build.sh` |
+| Tests only | `bash scripts/test.sh` |
 | Install | `pnpm install` |
-| Backlog: odblokuj następne | `bash scripts/backlog/promote.sh [--dry-run]` |
+| Backlog: unblock the next issues | `bash scripts/backlog/promote.sh [--dry-run]` |
 
-`verify.sh` musi kończyć się `VERIFY: OK`. Nic innego nie jest "zielone".
+`verify.sh` must end with `VERIFY: OK`. Nothing else counts as "green".
 
-## Reguły jakości (nie obniżać)
-- .NET: `TreatWarningsAsErrors`, nullable, analyzers `latest-recommended`, code style w buildzie (`dotnet/Directory.Build.props`).
+## Quality rules (never lower them)
+- .NET: `TreatWarningsAsErrors`, nullable, analyzers `latest-recommended`, code style enforced in build (`dotnet/Directory.Build.props`).
 - TS: `strict` + `noUncheckedIndexedAccess` + `exactOptionalPropertyTypes`, `typescript-eslint` strictTypeChecked, `--max-warnings=0`.
-- Ostrzeżenia się naprawia. Wyciszenie tylko lokalnie i z komentarzem "dlaczego".
-- Zmiana zachowania = najpierw failujący test (TDD). Workflow `tdd-feature` to wymusza.
+- Warnings get fixed. Suppressions only locally and with a comment explaining why.
+- A behaviour change starts with a failing test (TDD). The `tdd-feature` workflow enforces it.
 
-## Struktura
+## Layout
 ```
-dotnet/Terraria.WorldCodec/        referencyjny parser/writer .wld
+dotnet/Terraria.WorldCodec/        reference .wld parser/writer
 dotnet/Terraria.WorldCodec.Tests/  xUnit
-packages/world-model/              model domenowy TS (ContentRef, Tile…)
-packages/test-fixtures/            jawnie wygenerowane fixture'y (od M1)
-scripts/                           verify/build/test + bramki TDD (scripts/tdd)
-.ai/cezar/workflows/               chainy Cezara
-.ai/skills/                        playbooki kroków chainów
+packages/world-model/              TS domain model (ContentRef, Tile…)
+packages/test-fixtures/            explicitly generated fixtures (from M1)
+scripts/                           verify/build/test + TDD gates (scripts/tdd) + backlog tooling (scripts/backlog)
+.ai/cezar/workflows/               Cezar chains
+.ai/skills/                        playbooks for chain steps
 ```
 
-## Twarde zakazy
-- Żadnych assetów Terrarii, światów graczy ani komercyjnych modów w repo (`*.wld` jest w `.gitignore`).
-- Nie kopiujemy kodu TEdit/tModLoader — opisujemy kontrakt i implementujemy niezależnie.
-- Codec i writer binarny zmienia naraz tylko jeden agent.
-- Agent nie merge'uje. Chain kończy się krokiem `open-pr` (draft PR `Closes #N`); merge robi człowiek.
-- Reviewer tylko raportuje (`.tdd/review.md`), nie zmienia kodu.
+## Hard rules
+- No Terraria assets, player worlds or commercial mods in the repo (`*.wld` is gitignored except generated fixtures).
+- We do not copy TEdit/tModLoader code — we describe the contract and implement independently.
+- Only one agent at a time changes the codec and the binary writer.
+- Agents do not merge. A chain ends with the `open-pr` step (draft PR `Closes #N`); a human merges.
+- The reviewer only reports (`.tdd/review.md`) and never changes code.
 
-## Windows / PowerShell — kodowanie
-Pliki w repo to UTF-8 bez BOM, z polskimi znakami. Windows PowerShell 5.1 domyślnie czyta je jako ANSI
-(widać `â€”`, `Ä…` zamiast `—`, `ą`) i tak też zapisuje. Dlatego:
-- czytaj: `Get-Content -Encoding UTF8 <plik>` albo `bash -lc "cat <plik>"`,
-- zapisuj/edytuj **wyłącznie** narzędziem do edycji plików (apply_patch / Edit / Write),
-  nigdy `Set-Content`, `Out-File`, `>` w PowerShell,
-- skrypty z `scripts/` uruchamiaj przez `bash scripts/...`.
+## Windows / PowerShell — encoding
+Files in the repo are UTF-8 without BOM. Windows PowerShell 5.1 reads them as ANSI by default
+(you see `â€”` instead of `—`) and writes them that way too. Therefore:
+- read with `Get-Content -Encoding UTF8 <file>` or `bash -lc "cat <file>"`,
+- write/edit **only** with the file-editing tool (apply_patch / Edit / Write),
+  never with `Set-Content`, `Out-File` or `>` in PowerShell,
+- run scripts from `scripts/` via `bash scripts/...`.
 
-## Stan chaina
-Katalog `.tdd/` (gitignored, per worktree) to handoff między krokami chaina —
-każdy krok agenta w Cezarze startuje w świeżej sesji. Nie usuwaj go w trakcie runu.
+## Chain state
+The `.tdd/` directory (gitignored, per worktree) is the handoff between chain steps —
+every agent step in Cezar starts in a fresh session. Do not delete it during a run.

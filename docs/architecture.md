@@ -1,61 +1,61 @@
-# Terraria Map Studio — plan projektu i eksperymentu Personal Software Factory
+# Terraria Map Studio — project plan and Personal Software Factory experiment
 
-## Cel
+## Goal
 
-Zbudować lokalny, instalowalny w przeglądarce edytor światów Terrarii. Użytkownik otwiera własny plik `.wld`, lokalnie wskazuje assety Terrarii i opcjonalne assety modów, edytuje mapę, a następnie zapisuje nową kopię świata.
+Build a local, browser-installable Terraria world editor. The user opens their own `.wld` file, points to Terraria assets and optional mod assets locally, edits the map, and then saves a new copy of the world.
 
-Projekt jest jednocześnie kontrolowanym eksperymentem Personal Software Factory:
+The project is also a controlled Personal Software Factory experiment:
 
 ```text
-issue → agent → osobny worktree → draft PR → niezależny review → human merge → opcjonalny preview deploy
+issue → agent → separate worktree → draft PR → independent review → human merge → optional preview deploy
 ```
 
-Repozytorium i dane testowe muszą być niezależne od kodu firmowego i firmowego GitLaba. Nie kopiujemy do niego assetów Terrarii, światów graczy ani komercyjnych modów.
+The repository and test data must be independent of company code and the company GitLab. We do not copy Terraria assets, player worlds, or commercial mods into it.
 
-## Założenia techniczne
+## Technical assumptions
 
 - Monorepo: TypeScript + pnpm.
-- Referencyjny parser formatu: .NET.
-- Edytor docelowy: TypeScript, PWA, przeglądarka.
-- Dane lokalne: SQLite WASM w OPFS.
-- Hosting kodu: Cloudflare Pages/Workers.
-- Assety gry i modów: lokalne po stronie użytkownika.
-- Na start używamy tylko firmowych licencji Claude Code i Codex.
-- Inne harnessy testujemy wyłącznie w wydzielonej VM/użytkowniku, bez dostępu do firmowych repozytoriów, sekretów i Dockera.
+- Reference format parser: .NET.
+- Target editor: TypeScript, PWA, browser.
+- Local data: SQLite WASM in OPFS.
+- Code hosting: Cloudflare Pages/Workers.
+- Game and mod assets: local, on the user's side.
+- To start, we only use the company Claude Code and Codex licenses.
+- Other harnesses are tested only in a dedicated VM/user account, without access to company repositories, secrets, or Docker.
 
-## Dlaczego .NET przed TypeScriptem
+## Why .NET before TypeScript
 
-`.wld` jest binarnym, wersjonowanym formatem o wielu sekcjach i kompaktowym zapisie tile’ów. Najpierw powstaje referencyjny codec .NET, ponieważ łatwo porównać jego zachowanie z istniejącym kodem TEdit oraz strukturami tModLoader.
+`.wld` is a binary, versioned format with many sections and a compact tile encoding. The reference .NET codec comes first, because its behavior is easy to compare with existing TEdit code and tModLoader structures.
 
-Nie przenosimy aplikacji .NET do TypeScript. Przenosimy:
+We do not port the .NET application to TypeScript. We carry over:
 
-1. jawnie opisaną specyfikację formatu;
-2. niezależny model świata;
+1. an explicitly documented format specification;
+2. an independent world model;
 3. golden fixtures;
-4. testy `read → write → read`;
-5. oczekiwane różnice między wersjami formatu.
+4. `read → write → read` tests;
+5. expected differences between format versions.
 
-TypeScript implementuje ten sam kontrakt niezależnie. Dzięki temu parser webowy nie jest ukrytym portem przypadkowego kodu C#.
+TypeScript implements the same contract independently. This way the web parser is not a hidden port of incidental C# code.
 
-## Architektura repozytorium
+## Repository architecture
 
 ```text
 terraria-map-studio/
 ├── apps/
 │   ├── web/                         # PWA: React/Vite + renderer WebGL
-│   └── inspector-cli/               # narzędzie TS do inspekcji świata
+│   └── inspector-cli/               # TS tool for inspecting worlds
 ├── packages/
-│   ├── world-model/                 # model domenowy niezależny od formatu
-│   ├── world-codec/                 # parser i writer .wld w TS
-│   ├── mod-registry/                # registry modów, manifesty i ID mapping
-│   ├── asset-index/                 # index lokalnych assetów i atlasów
-│   ├── renderer/                    # rendering chunków świata
+│   ├── world-model/                 # format-independent domain model
+│   ├── world-codec/                 # .wld parser and writer in TS
+│   ├── mod-registry/                # mod registry, manifests and ID mapping
+│   ├── asset-index/                 # index of local assets and atlases
+│   ├── renderer/                    # world chunk rendering
 │   ├── local-store/                 # SQLite WASM/OPFS
-│   └── test-fixtures/               # jawnie generowane fixture’y i manifesty
+│   └── test-fixtures/               # explicitly generated fixtures and manifests
 ├── dotnet/
-│   ├── Terraria.WorldCodec/         # referencyjny parser/writer
+│   ├── Terraria.WorldCodec/         # reference parser/writer
 │   ├── Terraria.WorldInspector/     # CLI: inspect, diff, export JSON
-│   ├── Terraria.ModExporter/        # eksport manifestu moda
+│   ├── Terraria.ModExporter/        # mod manifest export
 │   └── Terraria.WorldCodec.Tests/
 ├── docs/
 │   ├── architecture.md
@@ -73,9 +73,9 @@ terraria-map-studio/
     └── workflows/ci.yml
 ```
 
-## Model świata
+## World model
 
-Model domenowy nie może przechowywać wyłącznie liczbowego `tileId`, ponieważ runtime ID moda zależy od zestawu zainstalowanych modów.
+The domain model cannot store only a numeric `tileId`, because a mod's runtime ID depends on the set of installed mods.
 
 ```ts
 type ContentRef =
@@ -101,33 +101,33 @@ type Tile = {
 };
 ```
 
-Przy imporcie zapisujemy runtime ID oraz, gdy dane są dostępne, stabilny identyfikator `mod/internalName`. Przy eksporcie rozwiązujemy identyfikator do aktualnej konfiguracji modów.
+On import we store the runtime ID and, when the data is available, the stable `mod/internalName` identifier. On export we resolve the identifier against the current mod configuration.
 
-## Wsparcie modów
+## Mod support
 
-"Obsługa modów" nie jest jednym checkboxem. Każdy feature i każdy mod dostaje poziom kompatybilności.
+"Mod support" is not a single checkbox. Every feature and every mod gets a compatibility level.
 
-| Poziom | Znaczenie |
+| Level | Meaning |
 |---|---|
-| `Preserve` | Świat z nieznanymi danymi można otworzyć i zapisać bez ich usunięcia. |
-| `Validate` | Edytor wykrywa wymagane mody i rozjazd wersji. |
-| `Render` | Edytor renderuje statyczne tile’e/walls z dostarczonych assetów. |
-| `Edit` | Użytkownik może stawiać i usuwać rozpoznane tile’e/walls. |
-| `Gameplay` | Edytor rozumie custom framing, tile entities i logikę moda. |
+| `Preserve` | A world with unknown data can be opened and saved without removing that data. |
+| `Validate` | The editor detects required mods and version mismatches. |
+| `Render` | The editor renders static tiles/walls from the provided assets. |
+| `Edit` | The user can place and remove recognized tiles/walls. |
+| `Gameplay` | The editor understands custom framing, tile entities, and mod logic. |
 
-Zakres MVP:
+MVP scope:
 
 ```text
 Vanilla:       Render + Edit
 Modded world:  Preserve + Validate
-Wybrane mody:  Render
+Selected mods: Render
 ```
 
-`Gameplay` nie jest celem ogólnego MVP. Kod moda może dowolnie definiować zasady działania, framing i dane encji; przeglądarka nie powinna próbować wykonywać skompilowanego kodu moda.
+`Gameplay` is not a goal of the general MVP. Mod code can define behavior rules, framing, and entity data arbitrarily; the browser should not attempt to execute compiled mod code.
 
 ### Mod Export Pack
 
-Zamiast zakładać, że parser `.tmod` uniwersalnie odgadnie semantykę moda, tworzymy format pośredni generowany przez CLI lub companion mod:
+Instead of assuming that a `.tmod` parser can universally infer mod semantics, we create an intermediate format generated by a CLI or a companion mod:
 
 ```text
 mod-export/
@@ -138,11 +138,11 @@ mod-export/
 └── textures/
 ```
 
-Manifest zawiera nazwę moda, wersję, mapowanie stabilnych nazw na runtime ID, wymiary sprite’ów, reguły framingu obsługiwane przez edytor i hashe assetów.
+The manifest contains the mod name, version, mapping of stable names to runtime IDs, sprite dimensions, framing rules supported by the editor, and asset hashes.
 
-## Assety i lokalne działanie
+## Assets and local operation
 
-PWA hostowana na Cloudflare nie dostaje automatycznego dostępu do dysku użytkownika. Użytkownik wybiera folder przez File System Access API:
+A PWA hosted on Cloudflare does not get automatic access to the user's disk. The user selects a folder via the File System Access API:
 
 ```ts
 const terrariaFolder = await window.showDirectoryPicker({
@@ -151,50 +151,50 @@ const terrariaFolder = await window.showDirectoryPicker({
 });
 ```
 
-Przeglądarka wymaga HTTPS oraz bezpośredniej akcji użytkownika. Aplikacja nie może samodzielnie otworzyć `C:\\Program Files\\...` ani skanować dysku.
+The browser requires HTTPS and a direct user action. The application cannot open `C:\\Program Files\\...` on its own or scan the disk.
 
-Interfejs:
+Interface:
 
 ```text
-[ Otwórz świat .wld ]
-[ Połącz assety Terrarii ]
-[ Dodaj Mod Export Pack ]
-[ Zapisz kopię świata ]
+[ Open .wld world ]
+[ Connect Terraria assets ]
+[ Add Mod Export Pack ]
+[ Save world copy ]
 ```
 
-Fallback dla przeglądarek bez wyboru folderu:
+Fallback for browsers without folder picking:
 
 ```text
-- import pliku .wld;
-- import ZIP-a z assetami/mod export packiem;
-- eksport przez pobranie pliku.
+- .wld file import;
+- ZIP import with assets/mod export pack;
+- export via file download.
 ```
 
-Assety Terrarii oraz modów pozostają lokalne. Nie trafiają do repozytorium, D1 ani R2 bez jawnego działania użytkownika.
+Terraria and mod assets stay local. They do not end up in the repository, D1, or R2 without an explicit user action.
 
-## PWA i lokalna SQLite
+## PWA and local SQLite
 
-PWA daje ikonę, osobne okno, offline cache i doświadczenie zbliżone do aplikacji desktopowej. Używamy stałej domeny produkcyjnej, np. `mapstudio.example.com`; magazyn przeglądarki jest powiązany z originem, więc Cloudflare preview URL nie jest miejscem do trwałej pracy.
+A PWA provides an icon, a separate window, offline cache, and an experience close to a desktop application. We use a fixed production domain, e.g. `mapstudio.example.com`; browser storage is tied to the origin, so a Cloudflare preview URL is not a place for persistent work.
 
-Lokalny model przechowywania:
+Local storage model:
 
 ```text
-Przeglądarka
+Browser
 ├── SQLite WASM + OPFS
-│   ├── registry assetów
-│   ├── registry modów
-│   ├── historia edycji
-│   ├── ostatnio otwarte światy
+│   ├── asset registry
+│   ├── mod registry
+│   ├── edit history
+│   ├── recently opened worlds
 │   └── undo/redo metadata
 └── OPFS files
-    ├── cache atlasów tekstur
-    ├── wygenerowane sprite mapy
-    └── snapshoty świata
+    ├── texture atlas cache
+    ├── generated sprite maps
+    └── world snapshots
 ```
 
-SQLite trzyma indeks i relacje; PNG, tilesheety i atlas powinny być plikami/blobami w OPFS, nie Base64 w tabelach.
+SQLite holds the index and relations; PNGs, tilesheets, and atlases should be files/blobs in OPFS, not Base64 in tables.
 
-Przykładowe tabele:
+Example tables:
 
 ```sql
 CREATE TABLE assets (
@@ -228,175 +228,175 @@ CREATE TABLE worlds (
 
 ## Cloudflare
 
-MVP nie potrzebuje backendu:
+The MVP does not need a backend:
 
 ```text
-Cloudflare Pages → statyczny PWA editor
-Lokalny browser  → .wld + assety + mod pack + SQLite + cache
+Cloudflare Pages → static PWA editor
+Local browser    → .wld + assets + mod pack + SQLite + cache
 ```
 
-Po stabilizacji można dodać synchronizację:
+Once things stabilize, sync can be added:
 
 ```text
-Cloudflare D1 → konta, projekty, wersje, metadata
-Cloudflare R2 → opcjonalne backupy .wld, eksporty, manifesty
+Cloudflare D1 → accounts, projects, versions, metadata
+Cloudflare R2 → optional .wld backups, exports, manifests
 ```
 
-D1 nie służy do przechowywania assetów. R2 służy do obiektów binarnych, D1 do metadanych.
+D1 is not used to store assets. R2 is for binary objects, D1 for metadata.
 
-## Milestone’y
+## Milestones
 
 ### M0 — foundation
 
-**Cel:** agent-friendly repo i powtarzalna praca nad PR-ami.
+**Goal:** an agent-friendly repo and repeatable work on PRs.
 
-- Monorepo, pnpm, .NET solution i CI.
-- `AGENTS.md`, `CLAUDE.md`, `WORKFLOW.md`, opis architektury.
-- GitHub Issues/Project jako źródło stanu.
-- PR template z sekcjami: zakres, testy, kompatybilność, ryzyko.
-- Cezar z natywnie zalogowanym Codexem i Claude Code.
+- Monorepo, pnpm, .NET solution, and CI.
+- `AGENTS.md`, `CLAUDE.md`, `WORKFLOW.md`, architecture description.
+- GitHub Issues/Project as the source of state.
+- PR template with sections: scope, tests, compatibility, risk.
+- Cezar with natively logged-in Codex and Claude Code.
 
-**Done:** testowy issue przechodzi przez worktree, draft PR, CI i review.
+**Done:** a test issue goes through worktree, draft PR, CI, and review.
 
 ### M1 — .NET world inspector
 
-**Cel:** zrozumienie formatu bez UI.
+**Goal:** understand the format without a UI.
 
-- Rozpoznanie wersji `.wld`.
-- Odczyt metadanych świata i wymiarów.
-- Odczyt tile sections do modelu domenowego.
+- `.wld` version detection.
+- Reading world metadata and dimensions.
+- Reading tile sections into the domain model.
 - CLI `inspect`, `export-json`, `diff`.
-- Fixture’y: jawnie wygenerowane małe vanilla worlds.
+- Fixtures: explicitly generated small vanilla worlds.
 
-**Done:** `inspect` raportuje świat, a JSON ma stabilny snapshot testowy.
+**Done:** `inspect` reports on the world, and the JSON has a stable test snapshot.
 
-### M2 — round-trip bezpieczeństwa
+### M2 — round-trip safety
 
-**Cel:** nie psuć świata bez zmian użytkownika.
+**Goal:** do not corrupt a world absent user changes.
 
-- Writer `.wld` w .NET.
-- Test `load → save → load` porównujący semantycznie wszystkie pola.
-- Backup przed każdą operacją zapisu.
-- Test otwarcia zapisanego świata w ustalonej wersji Terrarii.
+- `.wld` writer in .NET.
+- `load → save → load` test that semantically compares all fields.
+- Backup before every save operation.
+- Test opening the saved world in a pinned Terraria version.
 
-**Done:** świat po round-trip otwiera się w grze i ma identyczny model semantyczny.
+**Done:** a world after round-trip opens in the game and has an identical semantic model.
 
 ### M3 — TypeScript codec
 
-**Cel:** niezależny codec TS zgodny z referencją .NET.
+**Goal:** an independent TS codec consistent with the .NET reference.
 
-- Parser TS dla fixture’ów M1/M2.
-- Wspólny `world-model`.
-- Porównanie JSON eksportowanego z .NET i TS.
-- Writer TS dla ograniczonego vanilla subsetu.
+- TS parser for the M1/M2 fixtures.
+- Shared `world-model`.
+- Comparison of JSON exported from .NET and TS.
+- TS writer for a limited vanilla subset.
 
-**Done:** parsery .NET i TS mają identyczny wynik dla corpus testowego.
+**Done:** the .NET and TS parsers produce identical results for the test corpus.
 
 ### M4 — browser viewer
 
-**Cel:** otworzyć świat lokalnie w PWA.
+**Goal:** open a world locally in the PWA.
 
-- PWA z offline cache.
-- Import `.wld` przez file picker.
-- Pan, zoom, layer switch i tile inspector.
-- Chunk renderer, początkowo `128 × 128` tile’i.
-- Lokalny import folderu assetów lub ZIP-a.
+- PWA with offline cache.
+- `.wld` import via file picker.
+- Pan, zoom, layer switch, and tile inspector.
+- Chunk renderer, initially `128 × 128` tiles.
+- Local import of an asset folder or ZIP.
 
-**Done:** użytkownik otwiera mały vanilla świat i płynnie go ogląda.
+**Done:** the user opens a small vanilla world and views it smoothly.
 
 ### M5 — vanilla editor
 
-**Cel:** pierwsza użyteczna edycja.
+**Goal:** the first useful editing.
 
-- Pędzel pojedynczego tile’a i zaznaczenie prostokątne.
+- Single-tile brush and rectangular selection.
 - Undo/redo.
-- Zmiana wybranych vanilla tile’ów/walls.
-- Eksport nowej kopii `.wld`.
+- Changing selected vanilla tiles/walls.
+- Exporting a new `.wld` copy.
 
-**Done:** użytkownik zmienia obszar świata, zapisuje kopię i otwiera ją w Terrarii.
+**Done:** the user changes an area of the world, saves a copy, and opens it in Terraria.
 
 ### M6 — mod safety
 
-**Cel:** bezpiecznie nie niszczyć danych modded world.
+**Goal:** safely avoid destroying modded world data.
 
-- Rejestr wymaganych modów i wersji.
+- Registry of required mods and versions.
 - `unknown` content reference.
-- Zachowanie nierozpoznanych ID przy odczycie/zapisie.
-- UI z ostrzeżeniem "brakuje asset packa" oraz placeholderem.
+- Preserving unrecognized IDs on read/write.
+- UI with a "missing asset pack" warning and a placeholder.
 
-**Done:** modded world można otworzyć i zapisać bez utraty nierozpoznanych danych.
+**Done:** a modded world can be opened and saved without losing unrecognized data.
 
 ### M7 — Mod Export Pack
 
-**Cel:** renderować jeden kontrolowany mod.
+**Goal:** render one controlled mod.
 
-- Definicja manifestu.
-- .NET CLI lub companion mod generujący manifest.
-- Import manifestu i tekstur w webie.
-- Render jednego statycznego custom tile’a.
+- Manifest definition.
+- .NET CLI or companion mod generating the manifest.
+- Manifest and texture import on the web.
+- Rendering of one static custom tile.
 
-**Done:** testowy modded tile jest widoczny w przeglądarce i zachowuje się po eksporcie świata.
+**Done:** a test modded tile is visible in the browser and is preserved after world export.
 
-### M8 — preview deploy i sync (opcjonalne)
+### M8 — preview deploy and sync (optional)
 
-**Cel:** udostępnić aplikację bez wysyłania game assets.
+**Goal:** make the application available without uploading game assets.
 
 - Cloudflare Pages.
-- Stała domena PWA.
-- Opcjonalnie konto, D1 metadata, R2 backupy własnych eksportów.
-- Brak automatycznego uploadu assetów Terrarii/modów.
+- Fixed PWA domain.
+- Optionally an account, D1 metadata, R2 backups of the user's own exports.
+- No automatic upload of Terraria/mod assets.
 
-**Done:** aplikacja działa z Cloudflare, zachowując model local-first.
+**Done:** the application runs from Cloudflare while keeping the local-first model.
 
-## Kolejność prac
+## Order of work
 
 ```text
 M0 → M1 → M2 → M3 → M4 → M5 → M6 → M7 → M8
 ```
 
-Nie zaczynamy od UI ani modów. Najpierw powstaje zaufany codec, potem viewer, potem edycja, a obsługa modów jest rozszerzeniem kontraktu kompatybilności.
+We do not start with the UI or mods. First comes a trusted codec, then the viewer, then editing, and mod support is an extension of the compatibility contract.
 
-## Delegowanie agentom
+## Delegating to agents
 
-### Role
+### Roles
 
-| Rola | Odpowiedzialność | Domyślny runtime |
+| Role | Responsibility | Default runtime |
 |---|---|---|
-| Implementer codec | parser, writer, testy binarne | Codex albo Claude Code |
-| Fixture/documentation engineer | fixture’y, opis formatu, test vectors | drugi provider |
-| Web implementer | PWA, renderer, UX | Codex albo Claude Code |
-| Reviewer | świeży review diffu oraz testów | provider inny niż implementer |
-| Human integrator | decyzje zakresu, merge, test w grze | człowiek |
+| Implementer codec | parser, writer, binary tests | Codex or Claude Code |
+| Fixture/documentation engineer | fixtures, format description, test vectors | the other provider |
+| Web implementer | PWA, renderer, UX | Codex or Claude Code |
+| Reviewer | fresh review of the diff and tests | a provider other than the implementer's |
+| Human integrator | scope decisions, merge, in-game test | human |
 
-### Reguły delegowania
+### Delegation rules
 
-1. Jeden agent jest właścicielem jednego obszaru plików w danym czasie.
-2. Codec i zapis binarny nie są zmieniane równolegle przez dwa workery.
-3. Każdy task działa w osobnym worktree.
-4. Implementer zawsze kończy draft PR-em.
-5. Reviewer nie zatwierdza własnego kodu.
-6. Reviewer na starcie tylko raportuje; poprawki wykonuje implementer przez task `Rework`.
-7. Human merge dopiero po zielonym CI i niezależnym review.
+1. One agent owns one area of files at a given time.
+2. The codec and binary writing are not changed in parallel by two workers.
+3. Every task runs in a separate worktree.
+4. The implementer always finishes with a draft PR.
+5. The reviewer does not approve their own code.
+6. Initially the reviewer only reports; fixes are made by the implementer via a `Rework` task.
+7. Human merge only after green CI and an independent review.
 
-### Routing providerów
+### Provider routing
 
 ```text
-Codex implementuje → Claude reviewuje
-Claude implementuje → Codex reviewuje
+Codex implements → Claude reviews
+Claude implements → Codex reviews
 ```
 
-Przy szczególnie ryzykownej zmianie formatu reviewer dostaje świeży worktree na branchu PR i uruchamia:
+For especially risky format changes, the reviewer gets a fresh worktree on the PR branch and runs:
 
 ```text
-- testy codec;
+- codec tests;
 - round-trip corpus;
 - semantic diff;
-- ręczny test otwarcia świata w docelowej wersji gry.
+- manual test of opening the world in the target game version.
 ```
 
-## GitHub Project jako control plane
+## GitHub Project as the control plane
 
-Statusy:
+Statuses:
 
 ```text
 Todo → Agent Ready → In Progress → PR Ready → Agent Review
@@ -405,9 +405,9 @@ Todo → Agent Ready → In Progress → PR Ready → Agent Review
                          ↘ Rework ↗
 ```
 
-Issue jest jednostką pracy. Nie utrzymujemy stanu sprintu tylko w pamięci agenta.
+The issue is the unit of work. We do not keep sprint state only in the agent's memory.
 
-Minimalne labels:
+Minimal labels:
 
 ```text
 area:codec
@@ -422,26 +422,26 @@ compat:mod-render
 priority:high
 ```
 
-## Szablon issue
+## Issue template
 
 ```md
-## Cel
-Jedno zdanie opisujące efekt dla użytkownika.
+## Goal
+One sentence describing the outcome for the user.
 
-## Zakres
+## Scope
 - ...
 
-## Poza zakresem
+## Out of scope
 - ...
 
 ## Ownership
-- Pliki/moduły, które może zmienić agent.
+- Files/modules the agent may change.
 
 ## Compatibility impact
 - Vanilla: None / Render / Edit
 - Modded worlds: None / Preserve / Validate / Render / Edit
 
-## Kryteria akceptacji
+## Acceptance criteria
 - ...
 
 ## Proof
@@ -450,78 +450,78 @@ Jedno zdanie opisujące efekt dla użytkownika.
 - Manual test:
 
 ## Definition of Done
-- [ ] Testy przechodzą
-- [ ] Dokumentacja zaktualizowana
-- [ ] Draft PR utworzony
-- [ ] Niezależny review ukończony
+- [ ] Tests pass
+- [ ] Documentation updated
+- [ ] Draft PR created
+- [ ] Independent review completed
 ```
 
-## Szablon instrukcji dla implementera
+## Implementer instruction template
 
 ```md
-Pracujesz nad issue #<id> w przypisanym worktree.
+You are working on issue #<id> in the assigned worktree.
 
-1. Przeczytaj issue, AGENTS.md i odpowiednie docs/.
-2. Nie rozszerzaj zakresu bez opisania tego w PR.
-3. Zmieniaj wyłącznie pliki zgodne z sekcją Ownership.
-4. Dodaj test, gdy zmieniasz zachowanie parsera, writer’a albo renderer’a.
-5. Uruchom komendy z sekcji Proof.
-6. Utwórz draft PR z opisem: zmiany, testy, compatibility impact, ryzyka.
-7. Nie merge’uj PR-a.
+1. Read the issue, AGENTS.md, and the relevant docs/.
+2. Do not expand the scope without describing it in the PR.
+3. Change only files consistent with the Ownership section.
+4. Add a test when you change the behavior of the parser, writer, or renderer.
+5. Run the commands from the Proof section.
+6. Create a draft PR describing: changes, tests, compatibility impact, risks.
+7. Do not merge the PR.
 ```
 
-## Szablon instrukcji dla reviewera
+## Reviewer instruction template
 
 ```md
-Reviewuj PR #<id> w świeżym worktree.
+Review PR #<id> in a fresh worktree.
 
-Sprawdź:
-- zgodność z issue i brak rozszerzenia zakresu;
-- regresje formatu i round-trip;
-- jakość fixture’ów;
-- obsługę nieznanych modded IDs;
-- pokrycie testami;
-- czy opis kompatybilności jest zgodny z kodem.
+Check:
+- consistency with the issue and no scope expansion;
+- format and round-trip regressions;
+- fixture quality;
+- handling of unknown modded IDs;
+- test coverage;
+- whether the compatibility description matches the code.
 
-Zakończ jednym z: APPROVE, REQUEST_CHANGES, BLOCKED.
-Nie zmieniaj kodu, chyba że issue explicite zleca review + fix.
+Finish with one of: APPROVE, REQUEST_CHANGES, BLOCKED.
+Do not change code unless the issue explicitly requests review + fix.
 ```
 
-## Cezar, Multica i Symphony
+## Cezar, Multica, and Symphony
 
-### Cezar — start eksperymentu
+### Cezar — starting the experiment
 
-Najlepszy pierwszy runner dla projektu:
+The best first runner for the project:
 
-- uruchamia natywnie zalogowane Claude Code i Codex;
-- daje osobny Git worktree na task;
-- utrzymuje lokalny stan w `.ai/cezar/`;
-- wspiera workflow i draft PR;
-- nie wymaga od razu dodatkowego backendu.
+- runs natively logged-in Claude Code and Codex;
+- provides a separate Git worktree per task;
+- keeps local state in `.ai/cezar/`;
+- supports workflows and draft PRs;
+- does not require an additional backend right away.
 
-### Multica — później jako wspólne biuro agentów
+### Multica — later, as a shared agent office
 
-Ma sens, gdy pojawi się potrzeba:
+It makes sense when there is a need for:
 
-- współdzielonego boardu;
-- agenta daemona;
-- historii pracy i komentarzy;
-- wielu runtime’ów oraz wielu osób.
+- a shared board;
+- an agent daemon;
+- work history and comments;
+- multiple runtimes and multiple people.
 
-Nie jest pierwszym krokiem, bo wymaga cięższej infrastruktury niż POC.
+It is not the first step, because it requires heavier infrastructure than a POC.
 
-### Symphony — wzorzec docelowy
+### Symphony — the target pattern
 
-Stosujemy ideę Symphony:
+We apply the Symphony idea:
 
 ```text
-Każdy aktywny ticket ma izolowany workspace i agenta,
-który działa aż do workflow-defined handoff.
+Every active ticket has an isolated workspace and an agent
+that runs until a workflow-defined handoff.
 ```
 
-Nie musimy od razu używać referencyjnej implementacji Symphony. GitHub Project + Cezar mogą realizować ten sam wzorzec dla początkowego POC.
+We do not need to use the Symphony reference implementation right away. GitHub Project + Cezar can implement the same pattern for the initial POC.
 
-## Minimalne CI
+## Minimal CI
 
 ```text
 pnpm lint
@@ -530,38 +530,38 @@ pnpm build
 dotnet test
 ```
 
-Po M2 dochodzi:
+After M2, add:
 
 ```text
 dotnet run --project dotnet/Terraria.WorldInspector -- roundtrip fixtures/
 pnpm --filter @studio/world-codec test:compatibility
 ```
 
-Po M5 dochodzi test end-to-end importu świata, edycji i eksportu kopii.
+After M5, add an end-to-end test of world import, editing, and copy export.
 
-## Metryki eksperymentu Personal Software Factory
+## Personal Software Factory experiment metrics
 
-Mierzymy dla każdego issue:
+For each issue we measure:
 
-- czas `Agent Ready → draft PR`;
-- liczbę interwencji człowieka;
-- wynik pierwszego CI;
-- liczbę cykli review/rework;
-- wynik ręcznego testu w grze;
-- wykorzystany provider;
-- przyczynę niepowodzenia, jeśli wystąpiła.
+- time from `Agent Ready → draft PR`;
+- number of human interventions;
+- first CI result;
+- number of review/rework cycles;
+- result of the manual in-game test;
+- provider used;
+- cause of failure, if any.
 
-Po tygodniu porównujemy nie "który agent jest lepszy", lecz:
+After a week we compare not "which agent is better", but:
 
 ```text
-- które typy zadań są delegowalne;
-- gdzie brakuje dokumentacji w repo;
-- jakie testy dają agentom najwięcej samodzielności;
-- jakie bramki trzeba zostawić człowiekowi;
-- czy Cezar wystarcza, czy potrzebny jest board/daemon Multica.
+- which task types are delegable;
+- where documentation is missing in the repo;
+- which tests give agents the most autonomy;
+- which gates must be left to a human;
+- whether Cezar is enough, or a Multica board/daemon is needed.
 ```
 
-## Źródła referencyjne
+## Reference sources
 
 - TEdit: https://github.com/TEdit/Terraria-Map-Editor
 - tModLoader: https://github.com/tModLoader/tModLoader

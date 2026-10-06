@@ -10,12 +10,12 @@ dist/
 *.tsbuildinfo
 coverage/
 
-# TDD chain state (per worktree, czytane przez scripts/tdd/*)
+# TDD chain state (per worktree, read by scripts/tdd/*)
 .tdd/
 
-# Lokalne dane gry — NIGDY do repo
+# Local game data — NEVER in the repo
 *.wld
-# wyjątek: jawnie wygenerowane, małe fixture'y vanilla (patrz packages/test-fixtures/README)
+# exception: explicitly generated, small vanilla fixtures (see packages/test-fixtures/README.md)
 !packages/test-fixtures/**/*.wld
 *.wld.bak
 local-assets/

@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
-# Ręczne odpalenie promotera (normalnie robi to GitHub Action po zamknięciu issue).
-# Użycie: bash scripts/backlog/promote.sh [--dry-run]
+# Run the promoter by hand (normally the GitHub Action does it when an issue closes).
+# Usage: bash scripts/backlog/promote.sh [--dry-run]
 exec node "$(dirname "$0")/promote.mjs" "$@"

@@ -1,4 +1,4 @@
-/** Stabilna referencja do treści świata — vanilla, mod albo nieznane runtime ID. */
+/** A stable reference to world content — vanilla, mod, or an unknown runtime ID. */
 export type ContentRef =
   | { kind: "vanilla"; id: number }
   | {

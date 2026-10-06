@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Zakłada automations z .ai/cezar/automation-defs/*.json w działającym cockpicie Cezara (PAUSED).
-# Włączasz je potem w UI (Automations) albo: npx cezar-run automation enable <id>.
-# Cockpit szukany na portach 4321-4330 po repoRoot == to repo (inne instancje są pomijane).
+# Creates the automations from .ai/cezar/automation-defs/*.json in the running Cezar cockpit (PAUSED),
+# or updates them in place when one with the same name already exists.
+# Enable them afterwards in the UI (Automations) or with: npx cezar-run automation enable <id>.
+# The cockpit is looked up on ports 4321-4330 by repoRoot == this repo (other instances are skipped).
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 root=$(pwd -W 2>/dev/null || pwd)
@@ -14,7 +15,7 @@ if [ -z "${CEZ_API_URL:-}" ]; then
     fi
   done
 fi
-[ -n "${CEZ_API_URL:-}" ] || { echo "Nie znalazłem cockpitu Cezara dla $root — uruchom 'npx cezar-run' w tym repo (Git Bash)."; exit 2; }
+[ -n "${CEZ_API_URL:-}" ] || { echo "No Cezar cockpit found for $root — run 'npx cezar-run' in this repo (Git Bash)."; exit 2; }
 export CEZ_PROJECT_ID="${CEZ_PROJECT_ID:-terraria-map-studio}"
 echo "cockpit: $CEZ_API_URL (project $CEZ_PROJECT_ID)"
 
@@ -22,7 +23,11 @@ CEZ="${CEZ_BIN:+node $CEZ_BIN}"; CEZ="${CEZ:-npx -y cezar-run}"
 existing=$($CEZ automation list 2>/dev/null || true)
 for def in .ai/cezar/automation-defs/*.json; do
   name=$(node -p "require('./$def').name")
-  if grep -qF "$name" <<<"$existing"; then echo "skip (istnieje): $name"; continue; fi
-  $CEZ automation create --file "$def"
+  id=$(grep -F "$name" <<<"$existing" | awk '{print $1}' | head -1 || true)
+  if [ -n "$id" ]; then
+    $CEZ automation update "$id" --file "$def" && echo "updated: $name"
+  else
+    $CEZ automation create --file "$def"
+  fi
 done
 $CEZ automation list

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Jedyna definicja "zielonego": używają jej chain Cezara, CI i człowiek.
+# The single definition of "green": used by the Cezar chains, CI and humans.
 source "$(dirname "$0")/lib.sh"
 bash scripts/build.sh || exit $?
 echo "== eslint (max-warnings=0)"

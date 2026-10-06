@@ -1,33 +1,32 @@
 ---
 name: Agent task
-about: Jednostka pracy dla agenta (Cezar)
+about: A unit of work for an agent (Cezar)
 labels: []
 ---
 
-## Cel
-Jedno zdanie opisujące efekt dla użytkownika.
+## Goal
+One sentence describing the user-facing outcome.
 
-## Workflow
-tdd-feature / tdd-feature-codex / foundation / spike
-
-## Zakres
+## Scope
 - 
 
-## Poza zakresem
+## Out of scope
 - 
 
 ## Ownership
-- Pliki/moduły, które agent może zmienić.
+- Files/modules the agent may change.
 
 ## Compatibility impact
 - Vanilla: None / Render / Edit
 - Modded worlds: None / Preserve / Validate / Render / Edit
 
-## Kryteria akceptacji
-<!-- Każde kryterium = co najmniej jeden test w fazie RED. Trzymaj 1–5 kryteriów na issue. -->
+## Acceptance criteria
+<!-- Every criterion = at least one test in the RED phase. Keep 1–5 criteria per issue. -->
 - 
 
 ## Proof
 - Fixture:
 - Test command: `bash scripts/verify.sh`
 - Manual test:
+
+<!-- Labels: flow:tdd|foundation|spike + agent:claude|codex + area:* + backlog (the promoter adds agent:ready). -->

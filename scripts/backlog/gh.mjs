@@ -1,4 +1,4 @@
-// Wspólne helpery dla skryptów backlogu: cienka nakładka na `gh` (lokalnie keyring, w CI GITHUB_TOKEN).
+// Shared helpers for the backlog scripts: a thin wrapper over `gh` (keyring locally, GITHUB_TOKEN in CI).
 import { execFileSync } from "node:child_process";
 
 export function gh(args, { input } = {}) {
@@ -16,7 +16,7 @@ export const LABELS = {
   prReady: "status:pr-ready",
 };
 
-/** "Blocked by: #12, #14" — jedna linia w body issue, pisana przez create-issues.mjs. */
+/** "Blocked by: #12, #14" — a single line in the issue body, written by create-issues.mjs. */
 export function blockedBy(body) {
   const line = (body ?? "").split(/\r?\n/).find((l) => /^\s*Blocked by:/i.test(l));
   if (!line) return [];

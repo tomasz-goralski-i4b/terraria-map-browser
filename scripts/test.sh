@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Same testy, zakłada wcześniejszy build.sh.
+# Tests only; assumes build.sh ran first.
 source "$(dirname "$0")/lib.sh"
 rc=0
 echo "== dotnet test"
