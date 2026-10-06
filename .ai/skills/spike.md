@@ -14,8 +14,12 @@ If the task points to GitHub issue `#N` (tasks from automations always do):
 
 ## Steps
 1. Research the topic (e.g. a section of the `.wld` format, TEdit/tModLoader structure — links in `docs/architecture.md`).
-2. Write the result to `docs/` (e.g. `docs/file-format.md`): facts, sources (link + file/line), open questions,
-   proposed follow-up issues in the `.github/ISSUE_TEMPLATE/agent-task.md` format.
+2. Write the result to `docs/`: facts, sources (link + file/line), open questions. Format facts go into the part of
+   `docs/file-format/` that owns the section (the index `docs/file-format.md` maps them; a new section family gets
+   a new part and an index row). Read only the parts you change.
+   Proposed follow-up issues (in the `.github/ISSUE_TEMPLATE/agent-task.md` format) go to `docs/planning/`, never
+   into the specification — every later step would read them again.
 3. Do not copy TEdit/tModLoader code verbatim — describe the contract in your own words.
 4. No production code. No Terraria assets or real worlds.
 5. `bash scripts/verify.sh` must pass. Do not commit — the gate does it.
+6. Blocked by something only a human can decide? Write `.tdd/blocked.md` and end the step (see `AGENTS.md`).

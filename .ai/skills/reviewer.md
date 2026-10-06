@@ -9,7 +9,8 @@ The only file you write is `.tdd/review.md`. Any other change stops the chain.
 - `git diff main...HEAD` and `git log --oneline main..HEAD`,
 - the task (prompt), `.tdd/plan.md` if it exists,
 - acceptance criteria: `gh issue view $(cat .tdd/issue)` if `.tdd/issue` exists (without `--comments`),
-- you may run `bash scripts/verify.sh`.
+- the gate already ran `bash scripts/verify.sh` on exactly this commit — do not repeat it; run filtered tests
+  (see `AGENTS.md`) only when you need evidence for a finding.
 
 ## Checklist
 - matches the task, no scope creep;
@@ -32,6 +33,8 @@ VERDICT: BLOCKED
 Then a list of findings: `- [file:line] problem → expected fix`. Tag each as `(behaviour)` or `(style)`.
 
 - `REQUEST_CHANGES` only for real problems (bugs, a criterion without a test, broken rules) — not for taste.
+  If every blocking finding is `(style)`, the chain goes straight back to the implementer without new tests;
+  one `(behaviour)` finding (or an untagged one) sends it back to the red step.
 - `BLOCKED` when the task is unclear, needs a human decision, or the change is risky for the format.
 - Minor suggestions with `APPROVE` go under `Nice to have:` — they do not go back to the implementer; the
   `merge-ready` gate files them as a `follow-up` issue, so make each one self-contained (file:line, problem → fix).

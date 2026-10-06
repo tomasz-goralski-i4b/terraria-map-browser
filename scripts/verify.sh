@@ -5,7 +5,7 @@ bash scripts/build.sh || exit $?
 echo "== eslint (max-warnings=0)"
 pnpm -s lint || exit 1
 echo "== contracts"
-node --test scripts/contracts-validation.test.mjs || exit 1
+run_logged contracts-validation node --test scripts/contracts-validation.test.mjs || exit 1
 node scripts/check-contracts.mjs || exit 1
 echo "== draft PR body"
 bash scripts/tdd/open-pr-body.test.sh || exit 1

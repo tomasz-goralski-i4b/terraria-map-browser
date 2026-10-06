@@ -6,6 +6,7 @@
 # implementer — decides and fixes the test. Bounded by the workflow's max: one disputed test per run.
 # Exit: 0 no defect reported, 1 defect reported → back to red.
 source "$(dirname "$0")/../lib.sh"
+stop_if_blocked
 
 [ -f .tdd/red-defect.md ] || exit 0
 

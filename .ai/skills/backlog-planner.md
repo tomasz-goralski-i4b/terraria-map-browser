@@ -8,7 +8,8 @@ you get its output in the prompt — fix the file.
 
 ## Input
 - the task (prompt) — which milestone / scope to plan,
-- `docs/architecture.md` (milestones, "Done", roles, delegation rules), `AGENTS.md`, `docs/file-format.md`,
+- `docs/architecture.md` (milestones, "Done", roles, delegation rules), the index `docs/file-format.md` (open
+  only the parts you need),
 - existing issues: `gh issue list --state all --limit 200` — do not duplicate them; you may reference them in bodies,
 - open review follow-ups: `gh issue list --label follow-up --state open` — fold relevant items into the plan
   (as their own issues or into the acceptance criteria of a related one) and mention the follow-up number in the body.
@@ -18,6 +19,9 @@ you get its output in the prompt — fix the file.
 - `flow`:
   - `tdd` — changes code behaviour (parser, writer, model, CLI),
   - `foundation` — tooling, CI, project/package scaffolding, no domain logic,
+  - `tests` — regression/characterisation tests for behaviour that should already work (hardening, a boundary
+    nobody tested); no production change expected. If you are unsure whether a defect exists, use `tests`: a
+    failing test stops the chain and a human moves it to `tdd`,
   - `spike` — research of the format/sources, result goes to `docs/`,
   - `human` — something an agent cannot do: generating a small world in Terraria, an in-game test, a decision.
 - `runner`: `claude` or `codex` — spread roughly evenly unless the task says otherwise; binary format changes
@@ -39,11 +43,15 @@ you get its output in the prompt — fix the file.
 ## Scope
 ## Out of scope
 ## Ownership
+## Spec
 ## Compatibility impact
 ## Acceptance criteria
 ## Proof
 ```
 `## Acceptance criteria` is required by the gate. Be concrete: type/method/file names, boundary values.
+`## Spec` lists the exact doc parts and sections the agent must read, e.g.
+`docs/file-format/tiles.md` ("Record layout", "Rules and limits") — every step reads only these, so keep it short
+(write "none" when no doc applies).
 
 ## `.tdd/backlog.json` format
 ```json

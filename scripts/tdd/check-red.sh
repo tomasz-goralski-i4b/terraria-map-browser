@@ -2,6 +2,7 @@
 # RED gate: there are new tests, the code compiles, and the tests FAIL.
 # In rework (after REQUEST_CHANGES) having no new tests is allowed — the gate then passes.
 source "$(dirname "$0")/../lib.sh"
+stop_if_blocked
 mkdir -p .tdd
 
 # Defect mode: green reported a wrong red-phase test (check-red-defect.sh). The red agent either fixed the

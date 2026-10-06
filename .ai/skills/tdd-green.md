@@ -12,10 +12,15 @@ You are in the **GREEN** phase of a TDD chain in Cezar (fresh session — the co
 - acceptance criteria: `gh issue view $(cat .tdd/issue)` if `.tdd/issue` exists (without `--comments`).
 
 ## Steps
-1. Implement the **minimum** needed to make the tests pass. Nothing beyond the task.
-2. Run `bash scripts/verify.sh` until it prints `VERIFY: OK`. It is exactly what CI runs:
+1. Implement the **minimum** needed to make the tests pass. Nothing beyond the task. Iterate with the filtered
+   tests (see `AGENTS.md`).
+2. Leave it clean — there is no separate refactor step: clear names, no duplication, module boundaries per
+   `AGENTS.md` / `docs/architecture.md`. Update `docs/` when the change requires it (e.g. the matching
+   `docs/file-format/*.md` part, or a new project in the layout).
+3. If `.tdd/review.md` holds style-only findings (you were sent back by `check-review-style`), address every one.
+4. Run `bash scripts/verify.sh` once at the end until it prints `VERIFY: OK`. It is exactly what CI runs:
    build with warnings as errors (.NET analyzers, strict `tsc`), `eslint --max-warnings=0`, all tests.
-3. **Fix** warnings, do not silence them. `#pragma warning disable`, `// eslint-disable`, `NoWarn`, `@ts-ignore`
+5. **Fix** warnings, do not silence them. `#pragma warning disable`, `// eslint-disable`, `NoWarn`, `@ts-ignore`
    are allowed only with a comment explaining why — the reviewer will check.
 
 ## If a red-phase test itself is wrong

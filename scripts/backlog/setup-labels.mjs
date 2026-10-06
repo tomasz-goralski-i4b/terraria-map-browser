@@ -13,6 +13,7 @@ const labels = [
   ["flow:tdd", "5319e7", "tdd-feature workflow"],
   ["flow:foundation", "5319e7", "foundation workflow (no TDD)"],
   ["flow:spike", "5319e7", "spike workflow (research → docs)"],
+  ["flow:tests", "5319e7", "tests-only workflow (regression tests for working behaviour, no production change)"],
   ["agent:claude", "d4c5f9", "Claude implements, Codex reviews"],
   ["agent:codex", "d4c5f9", "Codex implements, Claude reviews"],
   ["area:codec", "fbca04", ".NET reference codec: dotnet/Terraria.WorldCodec (+ Inspector)"],

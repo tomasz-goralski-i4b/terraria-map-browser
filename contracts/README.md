@@ -20,7 +20,7 @@ version of their own: they follow `chunks.v1` (128 × 128 tiles per chunk, plane
 characters exactly as in `world-summary.v1`; `x`/`y` are chunk indices in column-major order, edge chunks are smaller).
 
 ## Vector format
-Source of the documented results: [docs/file-format.md](../docs/file-format.md), "Metadata and tile vectors".
+Source of the documented results: [docs/file-format/vectors.md](../docs/file-format/vectors.md), "Metadata and tile vectors".
 
 - A file is `{ schemaVersion, group, vectors[] }`. A vector has `id`, `title`, `entry`, `context` and `cases[]`
   (one case per documented variant, e.g. M2 `height 0` / `width -1`, M5 both overruns).

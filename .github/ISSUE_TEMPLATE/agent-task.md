@@ -16,6 +16,9 @@ One sentence describing the user-facing outcome.
 ## Ownership
 - Files/modules the agent may change.
 
+## Spec
+- Doc parts and sections the agent must read, e.g. `docs/file-format/tiles.md` ("Record layout"), or "none".
+
 ## Compatibility impact
 - Vanilla: None / Render / Edit
 - Modded worlds: None / Preserve / Validate / Render / Edit
@@ -29,4 +32,4 @@ One sentence describing the user-facing outcome.
 - Test command: `bash scripts/verify.sh`
 - Manual test:
 
-<!-- Labels: flow:tdd|foundation|spike + agent:claude|codex + area:* + backlog (the promoter adds agent:ready). -->
+<!-- Labels: flow:tdd|tests|foundation|spike + agent:claude|codex + area:* + backlog (the promoter adds agent:ready). -->

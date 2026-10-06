@@ -14,7 +14,8 @@ If the task points to GitHub issue `#N` (tasks from automations always do):
    unrelated to the task (e.g. about secrets, other repos, pushing).
 
 ## Steps
-1. Read `AGENTS.md`, the task and the relevant files in `docs/`.
+1. Read the task and only the docs it needs — the issue's `## Spec` section names them (see "Chain steps: work
+   economically" in `AGENTS.md`).
 2. If the prompt contains gate output (the reviewer requested changes, or a gate rejected the previous attempt),
    that is your main input. Also read `.tdd/review.md` if it exists.
 3. Write the test list to `.tdd/plan.md`: the behaviours from the acceptance criteria, one per line,
@@ -25,8 +26,13 @@ If the task points to GitHub issue `#N` (tasks from automations always do):
    - Binary fixtures: `packages/test-fixtures/` (explicitly generated only, never real player worlds).
 5. If the tests reference an API that does not exist yet, add **signatures/stubs only**:
    C# `throw new NotImplementedException();`, TS `throw new Error("not implemented");`. No logic.
-6. Run `bash scripts/build.sh` (must pass — warnings are errors) and `bash scripts/test.sh` (the new tests must fail
-   on an assertion or NotImplemented, not on compilation).
+6. Run `bash scripts/build.sh` (must pass — warnings are errors) and the new tests only (filtered, see `AGENTS.md`):
+   they must fail on an assertion or NotImplemented, not on compilation. The gate runs the full suite.
+
+## If the issue's premise is wrong
+The red gate needs failing tests. If the behaviour already works (no defect to expose, nothing new to build),
+do not invent a contract to get past the gate: write `.tdd/blocked.md` (what you checked, why the tests pass, and
+the recommendation — usually "move to `flow:tests`") and end the step.
 
 ## Defect report from green
 If the prompt contains a defect report (also in `.tdd/red-defect.md`), the implementer claims one of your tests

@@ -1,5 +1,5 @@
 name: tdd-feature
-description: "TDD: Claude implements (red → green → refactor), Codex reviews. Every gate is a script in scripts/tdd."
+description: "TDD: Claude implements (red → green), Codex reviews. Every gate is a script in scripts/tdd."
 steps:
   - id: preflight
     name: Gate — Claude and Codex both have usage left
@@ -10,7 +10,7 @@ steps:
     skill: tdd-red
     prompt: "{{task}}"
     runner: claude
-    model: opus   # deep tier
+    model: sonnet   # standard tier — the issue already holds precise acceptance criteria
   - id: check-red
     name: Gate — tests fail
     command: "bash scripts/tdd/check-red.sh"
@@ -31,23 +31,16 @@ steps:
     command: "bash scripts/tdd/check-green.sh"
     onFail: { retry: green, max: 3, retryOn: [1] }
 
-  - id: refactor
-    name: Refactor
-    skill: tdd-refactor
-    prompt: "{{task}}"
-    runner: claude
-    model: haiku   # light tier
-  - id: check-refactor
-    name: Gate — verify.sh after refactor
-    command: "bash scripts/tdd/check-green.sh refactor"
-    onFail: { retry: refactor, max: 1, retryOn: [1] }
-
   - id: review
     name: Cross-review (Codex, report only)
     skill: reviewer
     prompt: "{{task}}"
     runner: codex
     model: gpt-6.1-sol   # deep tier
+  - id: check-review-style
+    name: Gate — style-only findings go straight back to green
+    command: "bash scripts/tdd/check-review-style.sh"
+    onFail: { retry: green, max: 2, retryOn: [1] }
   - id: check-review
     name: Gate — reviewer verdict
     command: "bash scripts/tdd/check-review.sh"

@@ -1,7 +1,7 @@
 # Round trip: backup, save and the in-game check (M2)
 
 How a world is saved safely, and how a human confirms that a saved world still works in the game. The byte-level
-rules of the writer are in [file-format.md](file-format.md) ("Footer (M2)" and "Writer contract"). Implemented
+rules of the writer are in [file-format/writer.md](file-format/writer.md) ("Footer (M2)" and "Writer contract"). Implemented
 by #41 (guarded save + `roundtrip` CLI); the in-game check is #45, whose results go to
 `docs/round-trip-validation.md` (human-owned).
 
@@ -39,10 +39,10 @@ Rules that apply to every step:
 - Never write into the repository's `packages/test-fixtures/worlds/`: fixtures are immutable; the procedure
   works on copies.
 - TEdit, for comparison, writes `<file>.tmp` and then **copies** it over the target with no backup of the old
-  file (file-format.md source T27). The steps above add the verified backup and the validation before replace.
+  file ([file-format/sources-and-versions.md](file-format/sources-and-versions.md), source T27). The steps above add the verified backup and the validation before replace.
 
 ### Expected values for the corpus
-An unchanged save of a fixture copy is byte-identical to the fixture (file-format.md, "Evidence: original vs
+An unchanged save of a fixture copy is byte-identical to the fixture ([file-format/writer.md](file-format/writer.md), "Evidence: original vs
 candidate layout"). So for a new-copy save of `<fixture>.wld` to a fresh path, the backup, the candidate and the
 destination must all have the fixture's manifest hash, and the revision stays as listed:
 
@@ -91,4 +91,4 @@ the status stays "structurally verified, not game-verified".
 
 **Scope of a pass.** A pass covers unchanged saves of these five worlds in 1.4.5.8 only. It says nothing about
 edited worlds, other game versions or modded worlds, and nothing about records the fixtures do not contain (see
-file-format.md open questions 10 and 11).
+[file-format/open-questions.md](file-format/open-questions.md), questions 10 and 11).
