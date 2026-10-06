@@ -23,6 +23,13 @@ public static class WorldReader
     /// <summary>The explicit set of format versions accepted in M1.</summary>
     public static IReadOnlySet<int> SupportedVersions { get; } = new[] { 326 }.ToFrozenSet();
 
+    /// <summary>Reads section boundaries and frame-important bits after <see cref="ReadHeader"/>.</summary>
+    /// <remarks>Requires a seekable stream; leaves it at the start of world metadata without reading payload.</remarks>
+    public static WorldSectionTable ReadSectionTable(Stream stream, WorldFileHeader header)
+    {
+        throw new NotImplementedException();
+    }
+
     /// <summary>
     /// Reads and validates the file header and leaves <paramref name="stream"/> at the start of the section table.
     /// </summary>
