@@ -110,9 +110,6 @@ function readFixedFields(reader: ByteReader): WorldFileHeader {
 
 function readPointers(reader: ByteReader, headerEnd: number): number[] {
   const fileLength = reader.length;
-  if (fileLength >= MAX_FILE_LENGTH) {
-    throw new WorldFormatError("MalformedSectionTable", TABLE_START, "file is 2 GiB or larger");
-  }
   const pointers: number[] = [];
   for (let index = 0; index < SECTION_COUNT; index++) {
     const slot = TABLE_START + 4 * index;
@@ -146,6 +143,9 @@ function readPointers(reader: ByteReader, headerEnd: number): number[] {
 export function readWorldHeader(bytes: Uint8Array): WorldHeader {
   const reader = new ByteReader(bytes);
   const header = readFixedFields(reader);
+  if (reader.length >= MAX_FILE_LENGTH) {
+    throw new WorldFormatError("MalformedSectionTable", TABLE_START, "file must be smaller than 2 GiB");
+  }
   if (reader.length < FRAME_BITS_OFFSET) {
     throw truncated(reader);
   }
