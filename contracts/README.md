@@ -11,7 +11,7 @@ C#↔TS call (ADR 0001).
 | `vectors/metadata.vectors.json` | `vector.v1` | M1–M5 |
 | `vectors/tiles.vectors.json` | `vector.v1` | T1–T17 |
 | `vectors/runs.vectors.json` | `vector.v1` | R1–R10 |
-| `vectors/malformed/mutations.json` | — | malformed examples: each mutation of a valid file must be rejected by its schema |
+| `vectors/malformed/mutations.json` | — | malformed examples: each mutation is rejected by its declared schema or semantic validation layer |
 
 ## Schema versions
 `schemaVersion` is `1` in every vector file and in the summary. A change that breaks a consumer is a new
@@ -31,7 +31,8 @@ Source of the documented results: [docs/file-format.md](../docs/file-format.md),
   count; for META, `context.inputEnd` is the absolute end of the supplied bytes (`baseOffset` + byte count) and
   `context.sectionEnd` the absolute end of the whole metadata section (pointer[1]); they are equal for the synthetic
   fragments and differ for M3, a 72-byte prefix of a section ending at 11927 (checked against the fixture header).
-  Error `offset` is bounded by the schema per entry (REC 0..7, SEC 100..108, META 0..239 = the published inputs).
+  Error `offset` is an absolute, nonnegative integer. Its bounds depend on that case's supplied bytes,
+  and are checked by the semantic validator rather than by hardcoded schema limits.
 - `context.frameImportant` is the real 326 set: `k = 754`, ids `4`, `5` frame-important, `1`, `255`, `256` not.
 - A case has exactly one of `result` and `error`. Results are `record` (`tile` + `run`), `grid` (`tiles`
   column-major: `x * height + y`) or `metadata`. `tile` is the semantic tile of the summary schema without `x`/`y`.
@@ -42,14 +43,44 @@ Source of the documented results: [docs/file-format.md](../docs/file-format.md),
   bytes are the existing `SCCO1.wld` prefix (`provenance` gives file, SHA-256, offset and length); no full world is
   embedded. Only vanilla format 326 and synthetic bytes appear; unknown IDs are only the T13 example.
 
+## Structural and semantic validation
+The published validation contract has two layers; schema validation alone does not establish cross-field
+consistency. Standard JSON Schema Draft 2020-12 numeric bounds are constants in the schema, not expressions over
+instance fields ([validation specification](https://json-schema.org/draft/2020-12/json-schema-validation#section-6.2)).
+
+1. **Structural:** `vector.v1` requires the entry-specific context, lowercase even-length nonempty hex,
+   exactly one result or error, the appropriate error code, and a present nonnegative integer error offset.
+   `chunks.v1` requires the existing chunk size, planes, digest format and structural dimensions from #10.
+2. **Semantic:** `validateVectorSemantics` in `scripts/contracts-validation.mjs` checks every case against
+   `baseOffset <= error.offset <= baseOffset + hex.length / 2`. Both boundaries are inclusive; the upper
+   boundary permits end-of-input diagnostics. Each variant uses its own byte count. The same function checks
+   META `inputEnd`, `sectionEnd >= inputEnd`, complete synthetic META fragments, and SEC result dimensions and
+   tile count. It assumes its vector has already passed the schema. `validateChunkSemantics` checks the 128-grid
+   count, column-major ordering and edge sizes against the associated `meta.json` dimensions.
+
+`check-contracts.mjs` runs both layers for the real files. It also checks the 32 IDs, schema compatibility with
+the existing summary, R3/R10's relationship, and M3's bytes, manifest provenance and real fixture section pointers.
+M3 is an intentional prefix; do not replace its `sectionEnd` with its shorter `inputEnd`. R10's first leftover-byte
+offset remains 107. Moving an input and its absolute offsets consistently is structurally and semantically valid;
+the fixture-specific M3 provenance is additionally verified against the actual fixture.
+
+Malformed mutations default to `validation: "schema"`: the schema must reject them. A mutation marked
+`validation: "semantic"` must **pass** its schema and then fail the shared semantic validator, so an unrelated
+structural error cannot hide a missing arithmetic check. `op: "delete"` removes an object property or an array
+element. The examples cover all prior review probes, changed input bases, shorter inputs, individual variants,
+META boundaries, mismatched section dimensions, missing chunks, wrong edge sizes and incorrect chunk positions.
+
 ## Running the same files
 - Validate everything: `node scripts/check-contracts.mjs` (part of `bash scripts/verify.sh`). It checks the
   vectors against `vector.v1`, every golden `chunks.json` against `chunks.v1` plus the 128-grid edge sizes, the M3
-  provenance, and that every malformed example is rejected. Its validator supports only the keywords the schemas
+  provenance, and that every malformed example is rejected at its declared layer. Its validator supports only the keywords the schemas
   use and fails on any other, the same subset as `dotnet/Terraria.WorldCodec.Tests/JsonSchemaSubset.cs`.
 - xUnit: copy `contracts/**/*.json` next to the test assembly (as the `schemas` are already), load the files with
-  `System.Text.Json`, validate with `JsonSchemaSubset`, then decode `hex` at the entry point and compare.
+  `System.Text.Json`, validate with `JsonSchemaSubset`, apply the semantic checks above independently in C#,
+  then decode `hex` at the entry point and compare. Do not call the JavaScript validator from the .NET codec.
 - Vitest: `readFileSync` the same files from the repository root (`contracts/vectors/*.vectors.json`), decode
-  `hex` at the entry point and compare.
+  validate the document with `validate`, apply `validateVectorSemantics` to each vector, then decode `hex` at
+  the entry point and compare. The shared functions are exported by `scripts/contracts-validation.mjs`;
+  `node --test scripts/contracts-validation.test.mjs` exercises the regression and positive boundary cases.
 - Wrapping a `REC` vector in a whole-file harness is filler and must not change the result (see the
   documentation).

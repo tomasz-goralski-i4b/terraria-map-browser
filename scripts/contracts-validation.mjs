@@ -64,3 +64,18 @@ export function validateVectorSemantics(vec, path = vec.id) {
   }
   return errors;
 }
+
+/** Cross-field checks for schema-valid chunks and dimensions from the associated meta.json. */
+export function validateChunkSemantics(doc, dimensions, path = "chunks") {
+  const errors = [];
+  const expected = Math.ceil(dimensions.width / 128) * Math.ceil(dimensions.height / 128);
+  if (doc.digests.length !== expected) errors.push(`${path}: ${doc.digests.length} digests, expected ${expected}`);
+  // x and y are chunk indices (column-major order: x, then y), not tile coordinates.
+  doc.digests.forEach((d, i) => {
+    const w = Math.min(128, dimensions.width - d.x * 128);
+    const h = Math.min(128, dimensions.height - d.y * 128);
+    const rows = Math.ceil(dimensions.height / 128);
+    if (d.x !== Math.floor(i / rows) || d.y !== i % rows || d.width !== w || d.height !== h) errors.push(`${path}: chunk #${i} (${d.x},${d.y}) is ${d.width}x${d.height}, expected ${w}x${h} at its place in the 128 grid`);
+  });
+  return errors;
+}

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { validate, validateVectorSemantics } from "./contracts-validation.mjs";
+import { validate, validateVectorSemantics, validateChunkSemantics } from "./contracts-validation.mjs";
 
 const read = (path) => JSON.parse(readFileSync(path, "utf8"));
 const schema = read("contracts/schemas/vector.v1.schema.json");
@@ -133,3 +133,27 @@ test("negative, fractional and missing error offsets remain schema errors", () =
     assert.notEqual(schemaErrors(vec).length, 0);
   }
 });
+
+const chunkSchema = read("contracts/schemas/chunks.v1.schema.json");
+const chunks = read("packages/test-fixtures/snapshots/m1/SCCO1.chunks.json");
+const dimensions = read("packages/test-fixtures/snapshots/m1/SCCO1.meta.json").dimensions;
+
+test("SCCO1 chunks preserve their 104 by 48 edge chunk in column-major order", () => {
+  assert.equal(chunks.digests.at(-1).width, 104);
+  assert.equal(chunks.digests.at(-1).height, 48);
+  assert.deepEqual(validate(chunkSchema, chunks), []);
+  assert.deepEqual(validateChunkSemantics(chunks, dimensions), []);
+});
+
+for (const [name, mutate] of [
+  ["incorrect edge width", (doc) => { doc.digests.at(-1).width = 128; }],
+  ["missing edge chunk", (doc) => { doc.digests.pop(); }],
+  ["incorrect ordering", (doc) => { [doc.digests[0], doc.digests[1]] = [doc.digests[1], doc.digests[0]]; }],
+]) {
+  test(`SCCO1 ${name} passes structure but fails the semantic grid check`, () => {
+    const doc = structuredClone(chunks);
+    mutate(doc);
+    assert.deepEqual(validate(chunkSchema, doc), []);
+    assert.notEqual(validateChunkSemantics(doc, dimensions).length, 0);
+  });
+}

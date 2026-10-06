@@ -1,11 +1,12 @@
 // Contract files: contracts/vectors/*.vectors.json against vector.v1, every golden *.chunks.json against
 // chunks.v1, the malformed-example mutations (contracts/vectors/malformed/mutations.json) must be rejected,
-// plus the cross-checks a schema cannot express. Dependency-free; the validator supports exactly the keywords
-// the contracts use (the same subset as dotnet/Terraria.WorldCodec.Tests/JsonSchemaSubset.cs).
+// plus the cross-field arithmetic checks a schema cannot express. Malformed examples explicitly distinguish
+// structural rejection from semantic rejection. Dependency-free; the shared validator supports exactly the
+// keywords the contracts use (the same subset as dotnet/Terraria.WorldCodec.Tests/JsonSchemaSubset.cs).
 // Exit: 0 OK, 1 violation.
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { validate, validateVectorSemantics } from "./contracts-validation.mjs";
+import { validate, validateVectorSemantics, validateChunkSemantics } from "./contracts-validation.mjs";
 
 const read = (p) => JSON.parse(readFileSync(p, "utf8"));
 const schemaDir = "contracts/schemas";
@@ -87,31 +88,50 @@ if (existsSync(snapshotDir)) {
     if (errors.length) continue;
     if (!existsSync(metaPath)) { fail(`${f}: ${metaPath} is missing`); continue; }
     const { dimensions } = read(metaPath);
-    const expected = Math.ceil(dimensions.width / 128) * Math.ceil(dimensions.height / 128);
-    if (doc.digests.length !== expected) fail(`${f}: ${doc.digests.length} digests, expected ${expected}`);
-    // x and y are chunk indices (column-major order: x, then y), not tile coordinates.
-    doc.digests.forEach((d, i) => {
-      const w = Math.min(128, dimensions.width - d.x * 128);
-      const h = Math.min(128, dimensions.height - d.y * 128);
-      const rows = Math.ceil(dimensions.height / 128);
-      if (d.x !== Math.floor(i / rows) || d.y !== i % rows || d.width !== w || d.height !== h) fail(`${f}: chunk #${i} (${d.x},${d.y}) is ${d.width}x${d.height}, expected ${w}x${h} at its place in the 128 grid`);
-    });
+    for (const error of validateChunkSemantics(doc, dimensions, f)) fail(error);
   }
 }
 
 // Malformed examples: path mutations of a valid file; each mutated document must be rejected.
 const mutations = read(join(vectorDir, "malformed", "mutations.json"));
+let schemaExamples = 0;
+let semanticExamples = 0;
 for (const m of mutations.cases) {
   const schema = m.schema === "vector.v1" ? vectorSchema : m.schema === "chunks.v1" ? chunksSchema : null;
   if (!schema) { fail(`malformed ${m.name}: unknown schema ${m.schema}`); continue; }
+  const layer = m.validation ?? "schema";
+  if (layer !== "schema" && layer !== "semantic") { fail(`malformed ${m.name}: unknown validation layer ${layer}`); continue; }
+  if (m.op !== "set" && m.op !== "delete") { fail(`malformed ${m.name}: unknown mutation operation ${m.op}`); continue; }
   const source = join(m.schema === "vector.v1" ? vectorDir : snapshotDir, m.file);
   if (!existsSync(source)) { fail(`malformed ${m.name}: ${source} is missing`); continue; }
   const doc = read(source);
   let target = doc;
   for (const key of m.path.slice(0, -1)) target = target[key];
   const last = m.path.at(-1);
-  if (m.op === "delete") delete target[last]; else target[last] = m.value;
-  if (validate(schema, doc).length === 0) fail(`malformed ${m.name}: mutated document is still valid`);
+  if (m.op === "delete") {
+    if (Array.isArray(target)) target.splice(last, 1);
+    else delete target[last];
+  } else target[last] = m.value;
+  const schemaErrors = validate(schema, doc);
+  if (layer === "schema") {
+    schemaExamples++;
+    if (schemaErrors.length === 0) fail(`malformed ${m.name}: mutated document still passes schema validation`);
+    continue;
+  }
+  semanticExamples++;
+  if (schemaErrors.length !== 0) {
+    fail(`malformed ${m.name}: semantic example must pass schema validation first (${schemaErrors.join("; ")})`);
+    continue;
+  }
+  let semanticErrors;
+  if (m.schema === "vector.v1") {
+    semanticErrors = doc.vectors.flatMap((vec) => validateVectorSemantics(vec));
+  } else {
+    const metaPath = source.replace(/\.chunks\.json$/, ".meta.json");
+    if (!existsSync(metaPath)) { fail(`malformed ${m.name}: ${metaPath} is missing`); continue; }
+    semanticErrors = validateChunkSemantics(doc, read(metaPath).dimensions);
+  }
+  if (semanticErrors.length === 0) fail(`malformed ${m.name}: mutated document still passes semantic validation`);
 }
 
 if (problems.length) {
@@ -119,4 +139,4 @@ if (problems.length) {
   for (const p of problems) console.log(`  - ${p}`);
   process.exit(1);
 }
-console.log(`CONTRACTS: OK — ${byId.size} vectors, ${chunkFiles} chunk file(s), ${mutations.cases.length} malformed example(s)`);
+console.log(`CONTRACTS: OK — ${byId.size} vectors, ${chunkFiles} chunk file(s), ${schemaExamples} malformed schema example(s), ${semanticExamples} malformed semantic example(s)`);
