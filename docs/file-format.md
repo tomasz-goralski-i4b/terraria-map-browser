@@ -14,6 +14,7 @@ were read, the behaviour is restated, and every byte-level claim was checked aga
 | W2 | Terraria wiki, *1.4.5.8* — https://terraria.wiki.gg/wiki/1.4.5.8 | revid `1029883` (2026-09-16) | 2026-10-06 |
 | W3 | Terraria wiki, *1.4.5.7* — https://terraria.wiki.gg/wiki/1.4.5.7 | revid `1031546` (2026-09-23) | 2026-10-06 |
 | F | M1 fixture corpus (`SCCR1`, `SECR1`, `SJCO1`, `SMCO1`), Terraria 1.4.5.8 | this repo, `packages/test-fixtures/worlds/manifest.json` | 2026-10-06 |
+| N | .NET `BinaryReader.ReadString` / `Read7BitEncodedInt` / `ReadBoolean` — https://learn.microsoft.com/dotnet/api/system.io.binaryreader | .NET 8 API reference (no revision ids; behaviour unchanged since .NET Framework 2.0) | 2026-10-06 |
 
 TEdit locations used below (all at commit `182031b`):
 
@@ -29,6 +30,15 @@ TEdit locations used below (all at commit `182031b`):
 | T8 | `src/TEdit.Terraria/World.FileV2.cs:1392-1505` | section order, per-section version gates, position checks |
 | T9 | `src/TEdit.Terraria/World.FileV2.cs:1941-1951` | footer |
 | T10 | `src/TEdit.Terraria/World.cs:620-653` | dispatch by version (≤38 / ≤87 / >87) |
+| T11 | `src/TEdit.Terraria/World.FileV2.cs:1996-2476` | reading world metadata, field order and version gates |
+| T12 | `src/TEdit.Terraria/World.FileV2.cs:2478-2509` | kill counts, claimable banners, team spawns (metadata sub-lists) |
+| T13 | `src/TEdit.Terraria/World.FileV2.cs:1414-1425` | end-of-metadata check; tile section end is *not* checked |
+| T14 | `src/TEdit.Terraria/World.FileV2.cs:1507-1550` | tile loop: column-major order, run expansion, silent clamp at column end |
+| T15 | `src/TEdit.Terraria/World.FileV2.cs:1552-1768` | reading one tile record (flag bytes, payload order, run counter) |
+| T16 | `src/TEdit.Terraria/World.FileV2.cs:198-262` | writing tiles: run-length encoder, counter width choice |
+| T17 | `src/TEdit.Terraria/World.FileV2.cs:267-521` | writing one tile record (confirms payload order and flag omission) |
+| T18 | `src/TEdit.Terraria/Data/versions.json:951-960` | version 326: highest tile id 753, highest wall id 366 |
+| T19 | `src/TEdit.Terraria/BrickStyle.cs:3-11`, `src/TEdit.Terraria/LiquidType.cs:3-10` | block shape values 0–5; liquid kinds |
 
 The Terraria wiki has **no page describing the binary world format** (search for "world file format" on
 terraria.wiki.gg returned nothing relevant on 2026-10-06). It is used only for game versions and release dates.
@@ -226,14 +236,363 @@ Bytes 0–25 of `SCCR1.wld` (F) match the layout:
 (167) and frame-important count `f2 02` (754) at offset 70. All four fixtures satisfy every rule above;
 `SMCO1` has revision 2 (opened once in game).
 
+## Primitive types
+
+Used by the metadata and tile sections. All integers little-endian (as in the header).
+
+| Name | Size | Meaning |
+|---|---|---|
+| UInt8 / Int16 / UInt16 / Int32 / UInt32 / Int64 / UInt64 | 1/2/2/4/4/8/8 | two's complement for signed types |
+| Single / Double | 4 / 8 | IEEE-754 binary32 / binary64 |
+| Bool | 1 | `00` = false, `01` = true. .NET treats any non-zero byte as true (N); **M1 rejects other values** (`MalformedMetadata`) so that a read→write round trip cannot change a byte. All four fixtures use only 0/1 (F). |
+| String | 1–5 + n | length `n` as an unsigned LEB128 ("7-bit encoded") integer, then `n` bytes of UTF-8, no terminator (N). |
+
+String rules:
+- Length prefix: 7 bits per byte, least-significant group first, high bit = "another byte follows". At most
+  5 bytes, the 5th using only its low 4 bits (32 bits in total), and the value must be `≤ 2³¹−1` — .NET rejects
+  a longer prefix and a negative length (N). A violation, or `n` not fitting
+  before the end of the section → `MalformedMetadata`.
+- Bytes must be valid UTF-8 → otherwise `MalformedMetadata`. (.NET would silently replace invalid sequences with
+  U+FFFD, which breaks round trip — our decision.)
+- Example from F: the world manifest string in `SCCR1` has prefix `93 4a` = `0x13 + (0x4a << 7)` = 9491 bytes.
+
+## World metadata (section 1)
+
+Starts at `pointer[0]` (end of the file header) and must end **exactly** at `pointer[1]`. Read strictly in
+the order below (T11). The type and the version gate decide whether a field is present; there are no
+per-field lengths, so every field — including the ones M1 does not expose — must be decoded to reach the
+end. "Expose" = the value is part of the M1 model/`inspect` output; "consume" = it is parsed (and kept for
+round trip in M2) but not interpreted.
+
+The "@SCCR1" column is the absolute offset in fixture `SCCR1.wld` (5-byte name, 9-byte seed), so offsets after
+the name shift with string lengths. Rows marked *list* repeat their element type `count` times.
+
+| # | Field | Type | Present for version (T11) | @SCCR1 | M1 |
+|---|---|---|---|---|---|
+| 1 | world name | String | always | 167 | **expose** `name` |
+| 2 | seed | Int32 if version = 179, String if ≥ 180 | ≥ 179 | 173 | **expose** `seed` (text) |
+| 3 | world-gen version | UInt64 | ≥ 179 | 183 | consume (F: `0x00000146_00000001`) |
+| 4 | world GUID | 16 bytes | ≥ 181 | 191 | **expose** `guid` as 32 hex digits **in file byte order** (see note) |
+| 5 | world id | Int32 | always | 207 | **expose** `worldId` |
+| 6–9 | left, right, top, bottom bounds | Int32 ×4 (pixels) | always | 211 | consume (F: 0, 16·width, 0, 16·height) |
+| 10 | **height** (tiles) | Int32 | always | 227 | **expose** `height` |
+| 11 | **width** (tiles) | Int32 | always | 231 | **expose** `width` |
+| 12 | game mode | Int32 if ≥ 209; Bool (true = 2) if = 208; Bool (true = 1) if 112–207 | ≥ 112 | 235 | **expose** `mode` |
+| 13 | special-seed flags: drunk ≥ 222, good ≥ 227, tenth-anniversary ≥ 238, dont-starve ≥ 239, not-the-bees ≥ 241, remix ≥ 249, no-traps ≥ 266, zenith ≥ 267, skyblock ≥ 302 | Bool each, in this order | per flag; all only if ≥ 209 | 239–247 | consume |
+| 14 | creation time | Int64 (.NET `DateTime` binary form) | ≥ 141 | 248 | consume |
+| 15 | last played | Int64 (same form) | ≥ 284 | 256 | consume |
+| 16 | moon type | UInt8 | always | 264 | consume |
+| 17 | tree x-boundaries ×3, tree styles ×4, cave-back x ×3, cave-back styles ×4, ice / jungle / hell back styles | Int32 ×17 | always | 265 | consume |
+| 18 | spawn x, spawn y | Int32 ×2 | always | | consume |
+| 19 | surface level, rock level, time | Double ×3 | always | | consume |
+| 20 | day time | Bool; moon phase Int32; blood moon Bool; eclipse Bool | always | | consume |
+| 21 | dungeon x, dungeon y | Int32 ×2 | always | | consume |
+| 22 | **crimson** | Bool | always | 380 | **expose** `evil` (false = corruption, true = crimson) |
+| 23 | 10 boss-defeated flags (Eye … Golem) | Bool ×10 | always | | consume |
+| 24 | King Slime defeated | Bool | ≥ 118 | | consume |
+| 25 | 3 NPC-saved + 4 invasion-defeated flags | Bool ×7 | always | | consume |
+| 26 | orb smashed Bool, spawn meteor Bool, orb count UInt8, altar count Int32, hardmode Bool | — | always | | consume |
+| 27 | party-of-doom | Bool | ≥ 257 | | consume |
+| 28 | invasion delay, size, type | Int32 ×3; invasion x Double | always | | consume |
+| 29 | slime-rain time | Double | ≥ 118 | | consume |
+| 30 | sundial cooldown | UInt8 | ≥ 113 | | consume |
+| 31 | raining Bool, rain time Int32, max rain Single, 3 hardmode ore tiers Int32 ×3, 8 background styles UInt8 ×8, cloud-bg Int32, cloud count Int16, wind Single | — | always | | consume |
+| 32 | angler finishers: count Int32 + *list* String | — | ≥ 95 (below 95 the section ends here) | 476 | consume |
+| 33 | angler saved Bool (≥ 99), angler quest Int32 (≥ 101), stylist saved Bool (≥ 104), tax collector saved Bool (≥ 140), golfer saved Bool (≥ 201), invasion start size Int32 (≥ 107), cultist delay Int32 (≥ 108) | — | as given; the section ends early below 99 / 101 / 104 | | consume |
+| 34 | kill counts: count Int16 + *list* Int32 | — | ≥ 109 (T12; ends early below 109) | 496 | consume |
+| 35 | claimable banners: count Int16 + *list* UInt16 | — | ≥ 289 (T12) | 1670 | consume |
+| 36 | fast-forward time | Bool | ≥ 140 (ends early below 128) | | consume |
+| 37 | Duke Fishron defeated Bool (≥ 131, ends early below 131); Martians, Cultist, Moon Lord Bool ×3 (≥ 140); 5 seasonal boss flags Bool ×5 (≥ 131) | — | as given | | consume |
+| 38 | 4 pillars defeated, 4 pillars active, apocalypse | Bool ×9 | ≥ 140 (ends early below 140) | | consume |
+| 39 | party: manual Bool, genuine Bool, cooldown Int32, partying NPCs count Int32 + *list* Int32 | — | ≥ 170 | 2283 (count) | consume |
+| 40 | sandstorm: active Bool, time Int32, severity Single, intended severity Single | — | ≥ 174 | | consume |
+| 41 | bartender saved + 3 Old One's Army tiers | Bool ×4 | ≥ 178 | | consume |
+| 42 | mushroom bg UInt8 (≥ 195), underworld bg UInt8 (≥ 215), 3 more tree bgs UInt8 ×3 (≥ 195) | — | as given | | consume |
+| 43 | combat book used | Bool | ≥ 204 | | consume |
+| 44 | lantern night: cooldown Int32, genuine, manual, next-is-genuine Bool ×3 | — | ≥ 207 | | consume |
+| 45 | tree-top variations: count Int32 + *list* Int32 | — | ≥ 211 | 2317 (F: 13) | consume |
+| 46 | force Halloween / Christmas today | Bool ×2 | ≥ 212 | | consume |
+| 47 | pre-hardmode ore tiers (copper, iron, silver, gold) | Int32 ×4 | ≥ 216 | | consume |
+| 48 | bought cat, dog, bunny | Bool ×3 | ≥ 217 | | consume |
+| 49 | Empress of Light, Queen Slime defeated (≥ 223); Deerclops (≥ 240); town-slime / NPC unlocks: 1 Bool (≥ 250), 8 Bool (≥ 251) | — | as given | | consume |
+| 50 | combat book II (≥ 259), peddler's satchel (≥ 260), 7 slime unlocks (≥ 261) | Bool | as given | | consume |
+| 51 | fast-forward to dusk Bool + moondial cooldown UInt8 | — | ≥ 264 | | consume |
+| 52 | force Halloween / Christmas forever | Bool ×2 | ≥ 287 | | consume |
+| 53 | vampire seed Bool (≥ 288), infected seed Bool (≥ 296) | — | as given | | consume |
+| 54 | meteor-shower count, coin rain | Int32 ×2 | ≥ 291 (note: physically **after** row 53 although its gate is lower) | | consume |
+| 55 | team-spawns seed Bool, then count UInt8 + *list* (x Int16, y Int16) | — | ≥ 297 (T12) | 2430 (count) | consume |
+| 56 | dual-dungeons seed | Bool | ≥ 304 | | consume |
+| 57 | more-lightning, no-lightning seeds | Bool ×2 | ≥ 323 | | consume |
+| 58 | deprecated value | UInt32 | 299 ≤ version < 313 only | — | skip |
+| 59 | world-gen manifest (JSON text) | String | ≥ 299 | 2434 | consume (F: ~9.5 KB of generation-pass JSON) |
+| — | end of section | | | 11927 = `pointer[1]` | |
+
+Notes and rules:
+- **Height comes before width.** Easy to swap; vector M1 below pins it.
+- GUID: .NET's `Guid(byte[])` text form reorders the first 8 bytes (little-endian groups). To keep .NET and TS
+  identical we expose the 16 bytes as hex in file order (F `SCCR1`: `87e466e7853c3f48b75abc85e36d4b86`).
+- Game mode values (for version ≥ 209): 0 classic, 1 expert, 2 master, 3 journey — all four confirmed by F
+  (`SCCR1` 0, `SECR1` 1, `SMCO1` 2, `SJCO1` 3). Any other value is kept as `{ mode: "unknown", raw }`, not an
+  error (preserve unknown data).
+- Evil: the Bool at row 22 is the only evil flag in the metadata. In F it agrees with the tiles of every
+  fixture (crimson-only tiles in `SECR1`, corruption-only in the other three) — but **not** with the manifest
+  of `SCCR1`, see open questions.
+- Counts (rows 32, 34, 35, 39, 45, 55) must be ≥ 0 (signed types) and the list must fit before `pointer[1]`;
+  otherwise `MalformedMetadata`. No other upper bound is defined by any source; this "fits in the section"
+  rule is the only bound needed.
+- End: after row 59 the reader must be exactly at `pointer[1]`. Before → `MalformedMetadata { reason
+  "unread bytes" }`; after → `MalformedMetadata { reason "overruns section" }`. TEdit instead keeps leftover
+  bytes as opaque "unknown data" (T11, end) and fails only on overrun (T13). M1 is strict because only 326 is
+  accepted and all four fixtures end exactly (F, leftover 0); preserving trailing bytes is an M2/next-version
+  decision.
+- **Dimensions** (our own rules; no source defines a minimum or maximum):
+  - `width ≤ 0` or `height ≤ 0` → `MalformedMetadata { field "width"/"height", reason "must be positive" }`.
+  - Every column needs at least one record byte, so `width ≤ pointer[2] − pointer[1]` (derived bound).
+  - Implementation safety limit (annotated, not from a source): `width ≤ 65 536`, `height ≤ 65 536` and
+    `width · height ≤ 2²⁸`, so a hostile file cannot make the reader allocate gigabytes. TEdit has no limit
+    (T11). Vanilla's largest preset is commonly given as 8400 × 2400 — not checked against a pinned source,
+    but either way far below the limit; F worlds are 4200 × 1200.
+  - The pixel bounds (rows 6–9) are not cross-checked against the dimensions in M1 (open question).
+
+Version gates are listed for completeness; M1 accepts only format 326, for which **every** row except 58 is
+present. A reader for 326 may therefore be a straight sequence; the gates matter only when the version range
+is widened.
+
+## Tile data (section 2)
+
+Starts at `pointer[1]`, must end **exactly** at `pointer[2]`.
+
+### Order and coordinates
+- Coordinates: `x` = column, 0 = leftmost; `y` = row, 0 = topmost (the top bound is 0, F). `0 ≤ x < width`,
+  `0 ≤ y < height`.
+- Records are stored **column by column**: all of column 0 from `y = 0` down to `height − 1`, then column 1, …
+  (T14).
+- Each record describes one tile plus a repeat count `run`: the same tile also fills `(x, y+1) … (x, y+run)`.
+  The next record starts at `y + run + 1`. A run **never crosses into the next column** (the writer restarts at
+  each column, T16).
+
+### Record layout
+A record is 1–4 flag bytes followed by a payload whose parts are present or absent according to the flags
+(T15, confirmed by the writer T17 and by decoding all of F).
+
+Flag byte 1 (always present):
+
+| Bit | Meaning |
+|---|---|
+| 0 | flag byte 2 follows |
+| 1 | a block (foreground tile) is present |
+| 2 | a wall is present |
+| 3–4 | liquid kind: 0 none, 1 water, 2 lava, 3 honey |
+| 5 | block id is 2 bytes (else 1) |
+| 6–7 | run counter width: 0 none (`run = 0`), 1 = UInt8, 2 = Int16, 3 = reserved |
+
+Flag byte 2 (present iff byte-1 bit 0):
+
+| Bit | Meaning |
+|---|---|
+| 0 | flag byte 3 follows |
+| 1 / 2 / 3 | red / blue / green wire |
+| 4–6 | block shape: 0 full, 1 half block, 2–5 the four slopes (T19 names them top-right, top-left, bottom-right, bottom-left); 6–7 undefined |
+| 7 | unused (0 in F) |
+
+Flag byte 3 (present iff byte-2 bit 0):
+
+| Bit | Meaning | Since |
+|---|---|---|
+| 0 | flag byte 4 follows | 269 |
+| 1 | actuator present | |
+| 2 | block inactive (switched off by an actuator) | |
+| 3 | block paint byte present | |
+| 4 | wall paint byte present | |
+| 5 | yellow wire | |
+| 6 | wall id high byte present | 222 |
+| 7 | the liquid is shimmer (only with liquid kind 1) | 269 |
+
+Flag byte 4 (present iff byte-3 bit 0, version ≥ 269):
+
+| Bit | Meaning |
+|---|---|
+| 0 | would announce a 5th flag byte; never set by any known writer (F, T17) — reserved |
+| 1 / 2 | invisible block / invisible wall (echo coating) |
+| 3 / 4 | full-bright block / full-bright wall (illuminant coating) |
+| 5–7 | unused (0 in F) |
+
+The game and TEdit never write a flag byte whose only content would be its "next byte follows" bit: a flag byte
+is emitted only if it or a later one carries data (T17; F has no all-zero optional flag byte). Readers accept
+such bytes (they are unambiguous) but writers must not produce them.
+
+Payload, in this exact order:
+
+| # | Part | Present iff | Type |
+|---|---|---|---|
+| 1 | block id | byte-1 bit 1 | UInt8, or UInt16 if byte-1 bit 5 |
+| 2 | frame x, frame y | block present **and** the block id is frame-important (header bit array) | Int16 ×2 |
+| 3 | block paint | block present and byte-3 bit 3 | UInt8 |
+| 4 | wall id (low byte) | byte-1 bit 2 | UInt8 |
+| 5 | wall paint | wall present and byte-3 bit 4 | UInt8 |
+| 6 | liquid amount | liquid kind ≠ 0 | UInt8 (0–255) |
+| 7 | wall id high byte | byte-3 bit 6 | UInt8; wall id = low + 256·high |
+| 8 | run | byte-1 bits 6–7 ≠ 0 | UInt8 or Int16 |
+
+Note the order: the wall high byte comes **after** the liquid amount, not next to the low byte.
+
+### Rules and limits
+| Rule | Outcome | Source |
+|---|---|---|
+| Block id `≥ k` (frame-important count from the header) | `MalformedTiles { reason "no frame-important entry" }` — payload size is undecidable. TEdit guesses "frame-important" instead. | T15 (TEdit's guess), our decision |
+| Block id written as 2 bytes although `< 256` | accepted, same tile (non-canonical; never in F, writer emits 1 byte iff id ≤ 255) | T17, F |
+| Wall flag set but wall id (after the high byte) = 0 | `MalformedTiles` — "no wall" has its own encoding (flag clear); the writer never emits it | T17, our decision |
+| Paint flag without block, wall-paint flag without wall, wall-high flag without wall, non-zero block shape without block, block-id-width flag without block | `MalformedTiles { reason "flag without owner" }`. Never in F. TEdit ignores most of these but **does** consume the wall-high byte without a wall, so readers would otherwise disagree about the byte stream. | T15, F, our decision |
+| Shimmer bit with liquid kind 2 or 3, or with no liquid | `MalformedTiles` (never in F; writer only sets it with kind 1) | T17, F |
+| Block shape 6 or 7 | `MalformedTiles` (only 0–5 are defined) | T19 |
+| Byte-2 bit 7, byte-4 bits 0 and 5–7 | must be 0 → otherwise `MalformedTiles { reason "reserved bit" }`. Strict so that unknown future data is not silently dropped. | F (always 0), our decision |
+| Liquid amount 0 with a liquid kind | accepted and kept (`amount: 0`); the writer never emits it (T17 writes liquid only for amount ≠ 0, F has none) | T17, F |
+| Run width 3 | `MalformedTiles { reason "reserved run width" }`. TEdit reads it as Int16. | T15, our decision |
+| UInt8 run of 0, Int16 run < 256 | accepted (non-canonical; writer uses UInt8 for 1–255, Int16 above, nothing for 0) | T16, F (never seen) |
+| Int16 run < 0 | `MalformedTiles { reason "negative run" }` | our decision (TEdit treats it as 0) |
+| `y + run > height − 1` | `MalformedTiles { reason "run crosses column end" }`. TEdit silently stops at the column end. | T14, our decision |
+| A record not complete before `pointer[2]` | `MalformedTiles { reason "truncated record" }` (the header contract already guarantees `pointer[2]` is inside the file, so this is never `Truncated`) | header contract |
+| All columns done but position ≠ `pointer[2]` | `MalformedTiles { reason "section not fully consumed" }`. TEdit silently seeks (T13). | T13, our decision |
+| Paint byte values | any 0–255 kept as read; vanilla uses 0–31 (31 = illuminant, upgraded to coating by newer writers) | T17 |
+
+Error payload: `MalformedTiles { x, y, offset, reason }` with the coordinates of the record and its absolute
+file offset; `MalformedMetadata { field, offset, reason }`.
+
+Observed in F (all four fixtures, decoded with these rules, each ending exactly at `pointer[2]`): highest
+block id 752; ids 255 and 256 do not occur; 2-byte ids 68–76 k per world; no walls > 255; no flag byte 4;
+water/lava/honey/shimmer all present, liquid amount 255 is the maximum and 0 never occurs; UInt8 runs
+~450 k per world and Int16 runs ~2 k (longest run 604); no run crosses a column; wall paint occurs only in
+`SECR1` (43 tiles); every "never" rule above has zero occurrences.
+
+## Model mapping
+
+How a decoded record becomes the `Tile` / `ContentRef` of `docs/architecture.md` (and the .NET equivalent).
+"Absent" means the optional property is not set (TS: key missing; .NET: `null`), never a default like 0.
+
+| Model field | Value | Present iff |
+|---|---|---|
+| `block` | `{ kind: "vanilla", id }` if `id ≤ 753`; otherwise `{ kind: "unknown", runtimeId: id }` | block flag set |
+| `frameX`, `frameY` | the two Int16 values | block present and frame-important |
+| `paint` | block paint byte | block-paint flag |
+| `wall` | `{ kind: "vanilla", id }` if `id ≤ 366`; otherwise `{ kind: "unknown", runtimeId: id }` | wall flag set |
+| `wires` | bit mask: 1 red, 2 blue, 4 green, 8 yellow | always (0 = none) |
+| `actuator` | byte-3 bit 1 | always (false if byte 3 absent) |
+| `liquid` | `{ kind: water/lava/honey/shimmer, amount }` — shimmer when kind 1 and byte-3 bit 7 | liquid kind ≠ 0 |
+
+- 753 and 366 are the highest vanilla tile and wall ids for format 326 (T18). They are a property of the
+  version, not of the file; `k` (the frame-important count) is the file's own claim and only decides payload
+  size. This section never yields `kind: "mod"` refs — tModLoader stores mod tiles in a separate file (out of
+  M1); a vanilla-format id above the vanilla range can only become `unknown`.
+- Run-length encoding is purely a storage detail: the model holds one `Tile` per coordinate.
+
+**Additive fields** for the remaining vanilla flags, so that nothing read is lost (all optional/false by
+default, so existing consumers keep working):
+
+| Field | Type | From |
+|---|---|---|
+| `shape` | `"full" \| "half" \| "slopeTopRight" \| "slopeTopLeft" \| "slopeBottomRight" \| "slopeBottomLeft"` (absent = full) | byte-2 bits 4–6 |
+| `inactive` | boolean | byte-3 bit 2 |
+| `wallPaint` | number | wall paint byte |
+| `invisibleBlock`, `invisibleWall` | boolean | byte-4 bits 1, 2 |
+| `fullBrightBlock`, `fullBrightWall` | boolean | byte-4 bits 3, 4 |
+
+In .NET these are additional properties of the tile record (nullable `WallPaint`, `BlockShape` enum, bools).
+The TS `Tile` type is owned by `packages/world-model`; adding them there is a follow-up (see below). With
+these fields, every bit and byte of a canonical record can be re-encoded; only the non-canonical forms listed
+above (2-byte small ids, small Int16 runs, run 0, empty optional flag bytes) do not survive byte-for-byte —
+their meaning does.
+
+Not adopted from TEdit (editor behaviour, not format): resetting the frame y of timers on load, dropping the
+shape of blocks that cannot be sloped, never run-compressing certain tile types on save (T15, T16). The writer
+contract (M2) decides the last one.
+
+## Sections skipped in M1
+
+M1 reads sections 0–2 (header, metadata, tiles). Sections 3–10 (chests, signs, NPCs, tile entities, pressure
+plates, town manager, bestiary, creative powers) and the footer are **not parsed**: the reader stops after
+`pointer[2]`; their positions are known only from the section table. Cross-checking the footer's name/id
+with metadata rows 1 and 5 is left to the footer contract.
+
+## Metadata and tile vectors
+
+Synthetic vectors (not taken from any world). Unless stated otherwise: format 326, the real 326
+frame-important set (`k = 754`; ids 4 and 5 are frame-important, 1, 255 and 256 are not — T18), and a world of
+**width 2, height 4**. Tile vectors show only the bytes of the tile section; `pointer[2]` is assumed to be
+right after the last byte shown.
+
+### Metadata
+- **M1. Dimensions order.** Rows 10–11 bytes `04 00 00 00 02 00 00 00` → `height 4, width 2`.
+- **M2. Zero / negative.** `00 00 00 00 02 00 00 00` → `MalformedMetadata { field "height", reason "must be
+  positive" }`; `04 00 00 00 ff ff ff ff` (width −1) → same for `width`.
+- **M3. Real prefix (F).** `SCCR1` from offset 167: `05 53 43 43 52 31` (name "SCCR1"), `09 39 34 38 35 38 30 39
+  31 38` (seed "948580918"), `01 00 00 00 46 01 00 00` (world-gen version), 16 GUID bytes, `47 4d e9 67`
+  (world id 1743427911), `00 00 00 00 80 06 01 00 00 00 00 00 00 4b 00 00` (bounds 0, 67200, 0, 19200),
+  `b0 04 00 00` (height 1200), `68 10 00 00` (width 4200), `00 00 00 00` (classic).
+- **M4. Bad Bool.** Any Bool byte `02` → `MalformedMetadata { reason "invalid boolean" }`.
+- **M5. String overrun.** A name prefix `ff ff ff ff 0f` (2³²−1, too large) or a valid length reaching past
+  `pointer[1]` → `MalformedMetadata { field "name" }`.
+
+### Single records (one tile, `run = 0`)
+| Id | Bytes | Result |
+|---|---|---|
+| T1 empty | `00` | empty tile: no block, no wall, no liquid, wires 0, actuator false |
+| T2 active | `02 01` | `block vanilla 1` (not frame-important → no frame) |
+| T3 id 255 | `02 ff` | `block vanilla 255` |
+| T4 id 256 | `22 00 01` | `block vanilla 256` (bit 5 → 2-byte id, low byte first) |
+| T5 non-canonical 255 | `22 ff 00` | same as T3 (accepted) |
+| T6 framed | `02 04 00 00 42 00` | `block vanilla 4, frameX 0, frameY 66` |
+| T7 water 255 | `08 ff` | `liquid water 255` |
+| T8 lava 0 | `10 00` | `liquid lava 0` (accepted, kept) |
+| T9 shimmer | `09 01 80 ff` | `liquid shimmer 255` |
+| T10 everything | `07 13 3a 01 0d 04 02` | block 1, shape half, paint 13, wall 4, wallPaint 2, wires 9 (red+yellow), actuator |
+| T11 wall 300 + water | `0d 01 40 2c 0a 01` | wall vanilla 300 (`0x2c + 256·1`), liquid water 10 — high byte after the amount |
+| T12 header 4 | `03 01 01 02 01` | block 1, invisibleBlock |
+| T13 unknown wall | `05 01 40 90 01` | wall id 400 > 366 → `wall unknown runtimeId 400` |
+| T14 id ≥ k | `22 f2 02` | id 754 → `MalformedTiles { reason "no frame-important entry" }` |
+| T15 dangling paint | `01 01 08` | `MalformedTiles { reason "flag without owner" }` |
+| T16 shimmer + lava | `11 01 80 ff` | `MalformedTiles` |
+| T17 shape 6 | `03 60 01` | `MalformedTiles` |
+
+### Runs and columns (width 2, height 4)
+| Id | Section bytes | Result |
+|---|---|---|
+| R1 run 0 | `42 01 00` + 3 more `00` records … | the UInt8 run of 0 is accepted; one tile |
+| R2 run 1 | `42 01 01` | stone at (x, y) and (x, y+1) |
+| R3 last legal run | `42 01 03 00 48 ff 02` | column 0: stone ×4 (run 3 from y 0 = `height − 1`); column 1: empty at y 0, water 255 at y 1–3. 7 bytes, ends at `pointer[2]` |
+| R4 Int16 run | `82 01 03 00` | same as the first record of R3 |
+| R5 beyond column | `42 01 04` | `MalformedTiles { x 0, y 0, reason "run crosses column end" }` |
+| R6 beyond column, late | `00 00 00 42 01 01` | y 3 with run 1 → `MalformedTiles { x 0, y 3 }` |
+| R7 negative run | `82 01 ff ff` | `MalformedTiles { reason "negative run" }` |
+| R8 reserved width | `c2 01 01 00` | `MalformedTiles { reason "reserved run width" }` |
+| R9 truncation | `07 13 3a 01` then `pointer[2]` | `MalformedTiles { x 0, y 0, reason "truncated record" }` |
+| R10 leftover | R3 followed by one extra `00` before `pointer[2]` | `MalformedTiles { reason "section not fully consumed" }` |
+
+Cross-check on F: every fixture's tile section starts with a column-0 record `40 e8` / `40 ea` / `40 e6`
+(empty sky, UInt8 run of 232–234), followed by water records such as `08 7f` and `48 ff 63` — the same encodings
+as T1, T7 and R3.
+
 ## Open questions
 1. Are formats 315–325 identical to 326 in the file header and section table? (Very likely, per T2's comment;
    needs one fixture per version.)
 2. Should the codec warn when `k` differs from the tile count expected for the version (754 for 326)? TEdit
-   treats tile ids ≥ `k` as frame-important; the tile contract must decide.
+   treats tile ids ≥ `k` as frame-important. *Partly answered by the tile contract:* ids ≥ `k` are an error
+   (vector T14); whether `k ≠ 754` itself deserves a warning is still open.
 3. Header flags bits other than bit 0: always zero in F; does the game ever set them?
 4. Is `pointer[n-1] + 6 ≤ L` too lax? A stricter bound needs the world name, which belongs to the metadata
    contract.
+5. **Fixture manifest error:** `SCCR1` is declared `"evil": "crimson"` in `manifest.json`, but its metadata
+   crimson flag is false and its tiles contain 26 348 corruption tiles (ids 23, 25, 112) and no crimson tiles
+   (199, 203, 234). The world is a corruption world; either the manifest entry or the world-generation choice
+   was wrong. `SECR1` (crimson) and the two corruption worlds are consistent. Consequence: M1 has **no
+   classic-mode crimson fixture** and no test that distinguishes `evil` from `mode`. See follow-up.
+6. Strict end-of-metadata (`pointer[1]` reached exactly): fine for 326; when a newer format appends fields,
+   should the reader keep unread bytes opaquely (TEdit's approach) instead of failing?
+7. Should the metadata pixel bounds (rows 6–9) be required to equal `16 · width` / `16 · height`? True in F,
+   no source states it as a rule.
+8. Are the "dangling flag" and "reserved bit" rejections too strict for worlds written by third-party
+   editors? None occur in F; a corpus of TEdit-saved worlds would tell.
+9. The game's own handling of a run crossing the column end, a negative Int16 run or run width 3 is unknown
+   (only TEdit's behaviour is visible). M1 rejects all three.
 
 ## Proposed follow-up issues
 
@@ -286,5 +645,117 @@ M1 accepts worlds from every 1.4.5.x build, not only 1.4.5.8.
 - Each newly supported version has a fixture and a manifest entry; the version table is updated.
 
 ## Proof
+- Test command: `bash scripts/verify.sh`
+```
+
+```markdown
+## Goal
+The reference .NET codec reads world metadata (name, seed, GUID, id, dimensions, mode, evil) of a 1.4.5.8 world.
+
+## Scope
+- Reader for section 1 exactly as in docs/file-format.md ("World metadata"), including all consumed fields,
+  ending exactly at pointer[1].
+- Result: metadata record or MalformedMetadata { field, offset, reason }.
+
+## Out of scope
+- Tiles, other sections, writer, versions other than 326.
+
+## Ownership
+- dotnet/Terraria.WorldCodec/, dotnet/Terraria.WorldCodec.Tests/
+
+## Compatibility impact
+- Vanilla: Render (metadata only)
+- Modded worlds: None
+
+## Acceptance criteria
+- Vectors M1–M5 from docs/file-format.md give the documented results.
+- All four M1 fixtures give name, seed, dimensions and mode from the manifest; evil matches the tiles (see
+  open question 5 for SCCR1).
+- Width/height ≤ 0 and the safety limits are rejected.
+
+## Proof
+- Fixture: packages/test-fixtures/worlds/*.wld
+- Test command: `bash scripts/verify.sh`
+```
+
+```markdown
+## Goal
+The reference .NET codec decodes the tile section of a 1.4.5.8 world into Tile/ContentRef values.
+
+## Scope
+- Tile reader exactly as in docs/file-format.md ("Tile data", "Model mapping"), including the additive
+  fields (shape, inactive, wallPaint, invisible/full-bright flags) as .NET tile properties.
+- Error MalformedTiles { x, y, offset, reason }.
+
+## Out of scope
+- Writer, run-length encoding on save, sections 3–10, mod registry.
+
+## Ownership
+- dotnet/Terraria.WorldCodec/, dotnet/Terraria.WorldCodec.Tests/
+
+## Compatibility impact
+- Vanilla: Render
+- Modded worlds: None
+
+## Acceptance criteria
+- Vectors T1–T17 and R1–R10 from docs/file-format.md give the documented results.
+- All four M1 fixtures decode and stop exactly at pointer[2].
+- Ids above 753 (blocks) / 366 (walls) map to unknown { runtimeId }.
+
+## Proof
+- Fixture: packages/test-fixtures/worlds/*.wld
+- Test command: `bash scripts/verify.sh`
+```
+
+```markdown
+## Goal
+The TS world model can represent every vanilla tile flag that the codec reads, so nothing is lost.
+
+## Scope
+- Add the optional fields shape, inactive, wallPaint, invisibleBlock, invisibleWall, fullBrightBlock,
+  fullBrightWall to `Tile` in packages/world-model, as listed in docs/file-format.md ("Model mapping");
+  update docs/architecture.md's model snippet.
+
+## Out of scope
+- TS codec, renderer.
+
+## Ownership
+- packages/world-model/, docs/architecture.md (World model section)
+
+## Compatibility impact
+- Vanilla: None (model only)
+- Modded worlds: None
+
+## Acceptance criteria
+- A Tile with all additive fields type-checks; a Tile without them still type-checks (fields optional).
+
+## Proof
+- Test command: `bash scripts/verify.sh`
+```
+
+```markdown
+## Goal
+The M1 fixture corpus labels each world's evil biome correctly and includes a crimson world in classic mode.
+
+## Scope
+- Fix SCCR1's `evil` in manifest.json to `corruption` (and rename if the naming key requires it), or regenerate
+  a classic crimson world; record which.
+- A fixture check that compares the manifest `evil` with the metadata crimson flag.
+
+## Out of scope
+- Codec changes.
+
+## Ownership
+- packages/test-fixtures/, scripts/check-fixtures.mjs
+
+## Compatibility impact
+- Vanilla: None
+- Modded worlds: None
+
+## Acceptance criteria
+- For every fixture the manifest `evil` equals the crimson flag at metadata row 22 (docs/file-format.md).
+
+## Proof
+- Fixture: packages/test-fixtures/worlds/*.wld
 - Test command: `bash scripts/verify.sh`
 ```
