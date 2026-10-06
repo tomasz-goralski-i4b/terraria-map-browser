@@ -29,9 +29,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version-file: .node-version
       - run: node scripts/backlog/promote.mjs ${{ inputs.dry_run && '--dry-run' || '' }}
         env:
           GH_TOKEN: ${{ github.token }}
           MAX_ACTIVE: "2"
           STALL_MINUTES: "120"
+          # Set/cleared by the local promoter's usage probe; while set, CI promotes nothing.
+          PIPELINE_USAGE_LOW: ${{ vars.PIPELINE_USAGE_LOW }}

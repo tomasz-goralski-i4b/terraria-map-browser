@@ -26,11 +26,22 @@ const open = ghJson(["issue", "list", "--state", "open", "--limit", "500", "--js
 await watchStalls(open.filter((i) => labelNames(i).includes(LABELS.ready)));
 if (await usageAllowsNewWork()) promote(await refreshed());
 
-/** Locally, start nothing new while Claude or Codex is LOW (every chain needs both). CI cannot probe. */
+/**
+ * Start nothing new while Claude or Codex is LOW (every chain needs both).
+ * Only the local promoter can probe usage; it publishes the result as the repository Actions variable
+ * PIPELINE_USAGE_LOW (set while LOW, deleted when OK), which the CI promoter reads instead of probing.
+ */
 async function usageAllowsNewWork() {
-  if (process.env.GITHUB_ACTIONS) return true; // the workflow's preflight step guards the start instead
+  if (process.env.GITHUB_ACTIONS) {
+    if (process.env.PIPELINE_USAGE_LOW) {
+      console.log(`not promoting — the local usage probe reported LOW: ${process.env.PIPELINE_USAGE_LOW}`);
+      return false;
+    }
+    return true; // no signal from the local probe; the workflow's preflight step still guards the start
+  }
   try {
     const report = await probeAll();
+    publishUsageState(report);
     if (report.ok) {
       // Limits are back: release the issues that were deferred for usage.
       const deferred = (await refreshed()).filter((i) => labelNames(i).includes(LABELS.deferred));
@@ -45,6 +56,32 @@ async function usageAllowsNewWork() {
   } catch (e) {
     console.log(`usage probe failed (${e.message}) — promoting anyway; the preflight step still guards the start`);
     return true;
+  }
+}
+
+/** Mirrors the local usage verdict into the repo variable PIPELINE_USAGE_LOW for the CI promoter. */
+function publishUsageState(report) {
+  if (DRY) return;
+  let current = "";
+  try {
+    current = gh(["variable", "get", "PIPELINE_USAGE_LOW"], { quiet: true });
+  } catch {
+    current = ""; // not set
+  }
+  try {
+    if (report.ok && current) {
+      gh(["variable", "delete", "PIPELINE_USAGE_LOW"], { quiet: true });
+      console.log("  usage OK — cleared PIPELINE_USAGE_LOW (CI promoter may promote again)");
+    } else if (!report.ok) {
+      const low = report.results.filter((r) => !r.ok).map((r) => `${r.provider}: ${r.reason}`).join("; ");
+      const value = `${low} (probed ${new Date(report.at).toISOString().slice(0, 16)}Z)`.slice(0, 900);
+      if (!current.startsWith(low.slice(0, 60))) {
+        gh(["variable", "set", "PIPELINE_USAGE_LOW", "--body", value], { quiet: true });
+        console.log("  usage LOW — set PIPELINE_USAGE_LOW so the CI promoter does not promote");
+      }
+    }
+  } catch (e) {
+    console.log(`  (could not update PIPELINE_USAGE_LOW: ${e.message})`);
   }
 }
 

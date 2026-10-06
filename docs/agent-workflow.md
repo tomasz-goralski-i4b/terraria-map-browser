@@ -93,6 +93,8 @@ or has less than `USAGE_MIN_REMAINING_PERCENT` (default 10) left in any window:
 Results are cached in `~/.cache/terraria-map-studio/usage-probe.json` (OK for 10 min, LOW for 3 min). The local
 promoter does not promote while usage is LOW, and moves an issue whose run stopped at `preflight` back to
 `backlog` (deferred, not stalled), so work resumes by itself once limits reset or credits are refilled.
+The CI promoter cannot probe usage; the local promoter publishes its verdict as the repository Actions
+variable `PIPELINE_USAGE_LOW` (set while LOW, deleted when OK) and the CI promoter promotes nothing while it is set.
 Check by hand: `node scripts/backlog/usage-probe.mjs [--fresh]`.
 
 ### Resuming chains Cezar ended early
