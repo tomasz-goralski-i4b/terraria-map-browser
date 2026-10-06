@@ -79,6 +79,6 @@ commit_state() {
 ensure_deps() {
   if [ ! -d node_modules ] || [ pnpm-lock.yaml -nt node_modules/.modules.yaml ]; then
     echo "== pnpm install"
-    pnpm install --frozen-lockfile --prefer-offline --reporter=silent || { echo "INFRA: pnpm install failed"; exit 2; }
+    pnpm install --frozen-lockfile --prefer-offline --reporter=silent --config.confirmModulesPurge=false || { echo "INFRA: pnpm install failed"; exit 2; }
   fi
 }
