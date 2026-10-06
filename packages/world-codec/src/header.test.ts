@@ -74,6 +74,11 @@ function expectFormatError(bytes: Uint8Array, kind: WorldFormatErrorKind, offset
   }
 }
 
+/** Truncation anywhere in the header or section table uses the reference diagnostic (WorldReader.ReadExactly). */
+function expectTruncated(bytes: Uint8Array, offset: number): void {
+  expectFormatError(bytes, "Truncated", offset, `file ends after ${String(offset)} bytes of the 26-byte header`);
+}
+
 describe("readWorldHeader — vector A", () => {
   it("buildHeader_Default_MatchesDocumentedHexOfVectorA", () => {
     expect([...buildHeader().subarray(0, 74)]).toEqual([...fromHex(HEX_A)]);
@@ -177,31 +182,31 @@ describe("readWorldHeader — field decoding", () => {
 
 describe("readWorldHeader — truncation (vector B)", () => {
   it.each([0, 1, 3])("readWorldHeader_FewerThan4Bytes_TruncatedAtEndOfData (L = %i)", (length) => {
-    expectFormatError(buildHeader({ length }), "Truncated", length);
+    expectTruncated(buildHeader({ length }), length);
   });
 
   it.each([4, 20, 25])("readWorldHeader_SupportedVersionFewerThan26Bytes_TruncatedAtEndOfData (L = %i)", (length) => {
-    expectFormatError(buildHeader({ length }), "Truncated", length);
+    expectTruncated(buildHeader({ length }), length);
   });
 
   it("readWorldHeader_GarbageSignatureButTruncated_ReportsTruncated", () => {
-    expectFormatError(buildHeader({ signature: "garbage", length: 20 }), "Truncated", 20);
+    expectTruncated(buildHeader({ signature: "garbage", length: 20 }), 20);
   });
 
   it("readWorldHeader_FileTypeNotWorldButTruncated_ReportsTruncated", () => {
-    expectFormatError(buildHeader({ fileType: 3, length: 11 }), "Truncated", 11);
+    expectTruncated(buildHeader({ fileType: 3, length: 11 }), 11);
   });
 
   it.each([26, 40, 71])("readWorldHeader_EndsInsideSectionTable_TruncatedAtEndOfData (L = %i)", (length) => {
-    expectFormatError(buildHeader({ length }), "Truncated", length);
+    expectTruncated(buildHeader({ length }), length);
   });
 
   it("readWorldHeader_DocumentedVectorB_TruncatedAt40", () => {
-    expectFormatError(fromHex(HEX_A).slice(0, 40), "Truncated", 40);
+    expectTruncated(fromHex(HEX_A).slice(0, 40), 40);
   });
 
   it.each([72, 73])("readWorldHeader_EndsInsideFrameImportantBits_TruncatedAtEndOfData (L = %i)", (length) => {
-    expectFormatError(buildHeader({ length }), "Truncated", length);
+    expectTruncated(buildHeader({ length }), length);
   });
 });
 
@@ -273,7 +278,7 @@ describe("readWorldHeader — frame-important count", () => {
 
   it("readWorldHeader_FrameImportantCountLargerThanFile_Truncated", () => {
     // k = 32767 needs 4096 packed bytes, far past L = 200.
-    expectFormatError(buildHeader({ frameCount: 32767 }), "Truncated", 200);
+    expectTruncated(buildHeader({ frameCount: 32767 }), 200);
   });
 });
 
@@ -405,9 +410,9 @@ describe("readWorldHeader — Uint8Array views", () => {
     const full = buildHeader();
     const buffer = new Uint8Array(16 + full.length);
     buffer.set(full, 16);
-    expectFormatError(buffer.subarray(16, 16 + 40), "Truncated", 40);
-    expectFormatError(buffer.subarray(16, 16 + 73), "Truncated", 73);
-    expectFormatError(buffer.subarray(16, 16 + 3), "Truncated", 3);
+    expectTruncated(buffer.subarray(16, 16 + 40), 40);
+    expectTruncated(buffer.subarray(16, 16 + 73), 73);
+    expectTruncated(buffer.subarray(16, 16 + 3), 3);
   });
 
   it("readWorldHeader_PointerBeyondViewButInsideBuffer_MalformedBeyondEndOfFile", () => {
@@ -419,11 +424,11 @@ describe("readWorldHeader — Uint8Array views", () => {
   });
 
   it("readWorldHeader_EmptyViewAtEndOfBuffer_TruncatedAtZero", () => {
-    expectFormatError(new Uint8Array(new ArrayBuffer(8), 8, 0), "Truncated", 0);
+    expectTruncated(new Uint8Array(new ArrayBuffer(8), 8, 0), 0);
   });
 
   it("readWorldHeader_EmptyArray_TruncatedAtZero", () => {
-    expectFormatError(new Uint8Array(0), "Truncated", 0);
+    expectTruncated(new Uint8Array(0), 0);
   });
 });
 
