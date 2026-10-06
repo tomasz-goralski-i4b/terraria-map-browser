@@ -197,6 +197,36 @@ public sealed class DiffCommandTests
         ], tiles);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Diff_CrossedDimensionsAcrossChunks_ReportsDimensionsAndAllOneSidedPositions(bool reverse)
+    {
+        var wide = SummaryWorld.Build(129, 1);
+        var tall = SummaryWorld.Build(1, 129);
+        var result = await RunPairAsync(reverse ? tall : wide, reverse ? wide : tall, "--max", "256");
+        Assert.Equal(3, result.ExitCode);
+        Assert.Empty(result.Error);
+        var tallPresence = reverse ? "left-only -> absent" : "absent -> right-only";
+        var widePresence = reverse ? "absent -> right-only" : "left-only -> absent";
+        var expected = new List<string>
+        {
+            reverse ? "dimensions.width: 1 -> 129" : "dimensions.width: 129 -> 1",
+            reverse ? "dimensions.height: 129 -> 1" : "dimensions.height: 1 -> 129",
+        };
+        for (var y = 1; y <= 128; y++)
+        {
+            expected.Add($"tiles[0,{y}].presence: {tallPresence}");
+        }
+
+        for (var x = 1; x <= 128; x++)
+        {
+            expected.Add($"tiles[{x},0].presence: {widePresence}");
+        }
+
+        Assert.Equal(expected, Lines(result.OutputText));
+    }
+
     [Fact]
     public async Task Diff_MultipleChunks_OrdersTilesGloballyByXThenY()
     {
