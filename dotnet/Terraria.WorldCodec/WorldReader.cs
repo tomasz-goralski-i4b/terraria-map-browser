@@ -34,21 +34,8 @@ public static class WorldReader
             throw new ArgumentException("Reading the section table requires a seekable stream.", nameof(stream));
         }
 
-        if (!SupportedVersions.Contains(header.Version))
-        {
-            throw new WorldFormatException(
-                WorldFormatError.UnsupportedVersion,
-                0,
-                string.Create(CultureInfo.InvariantCulture, $"format version {header.Version} is not supported"));
-        }
-
-        if (header.SectionCount != ExpectedSectionCount)
-        {
-            throw new WorldFormatException(
-                WorldFormatError.MalformedSectionTable,
-                SectionCountOffset,
-                string.Create(CultureInfo.InvariantCulture, $"expected {ExpectedSectionCount} sections, found {header.SectionCount}"));
-        }
+        ValidateVersion(header.Version);
+        ValidateSectionCount(header.SectionCount);
 
         var fileLength = stream.Length;
         if (fileLength > int.MaxValue)
@@ -132,13 +119,7 @@ public static class WorldReader
         ReadExactly(stream, bytes.AsSpan(0, VersionLength), 0);
 
         var version = BinaryPrimitives.ReadInt32LittleEndian(bytes);
-        if (!SupportedVersions.Contains(version))
-        {
-            throw new WorldFormatException(
-                WorldFormatError.UnsupportedVersion,
-                0,
-                string.Create(CultureInfo.InvariantCulture, $"format version {version} is not supported"));
-        }
+        ValidateVersion(version);
 
         ReadExactly(stream, bytes.AsSpan(VersionLength), VersionLength);
 
@@ -159,13 +140,7 @@ public static class WorldReader
         }
 
         var sectionCount = BinaryPrimitives.ReadInt16LittleEndian(bytes.AsSpan(SectionCountOffset));
-        if (sectionCount != ExpectedSectionCount)
-        {
-            throw new WorldFormatException(
-                WorldFormatError.MalformedSectionTable,
-                SectionCountOffset,
-                string.Create(CultureInfo.InvariantCulture, $"expected {ExpectedSectionCount} sections, found {sectionCount}"));
-        }
+        ValidateSectionCount(sectionCount);
 
         return new WorldFileHeader(
             version,
@@ -174,6 +149,28 @@ public static class WorldReader
             BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(RevisionOffset)),
             BinaryPrimitives.ReadUInt64LittleEndian(bytes.AsSpan(FlagsOffset)),
             sectionCount);
+    }
+
+    private static void ValidateVersion(int version)
+    {
+        if (!SupportedVersions.Contains(version))
+        {
+            throw new WorldFormatException(
+                WorldFormatError.UnsupportedVersion,
+                0,
+                string.Create(CultureInfo.InvariantCulture, $"format version {version} is not supported"));
+        }
+    }
+
+    private static void ValidateSectionCount(short sectionCount)
+    {
+        if (sectionCount != ExpectedSectionCount)
+        {
+            throw new WorldFormatException(
+                WorldFormatError.MalformedSectionTable,
+                SectionCountOffset,
+                string.Create(CultureInfo.InvariantCulture, $"expected {ExpectedSectionCount} sections, found {sectionCount}"));
+        }
     }
 
     /// <summary>Fills <paramref name="buffer"/>; on end of data throws <c>Truncated</c> at the end-of-data offset.</summary>
