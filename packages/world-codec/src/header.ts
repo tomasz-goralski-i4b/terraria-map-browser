@@ -62,20 +62,20 @@ const FRAME_BITS_OFFSET = FRAME_COUNT_OFFSET + 2;
 const MIN_FOOTER_LENGTH = 6;
 const MAX_FILE_LENGTH = 0x80000000;
 
-function truncated(reader: ByteReader): WorldFormatError {
+function truncatedError(reader: ByteReader): WorldFormatError {
   return new WorldFormatError("Truncated", reader.length, "unexpected end of data");
 }
 
 function readFixedFields(reader: ByteReader): WorldFileHeader {
   if (reader.length < 4) {
-    throw truncated(reader);
+    throw truncatedError(reader);
   }
   const version = reader.readInt32(0);
   if (version !== SUPPORTED_VERSION) {
     throw new WorldFormatError("UnsupportedVersion", 0, `format version ${String(version)} is not supported`);
   }
   if (reader.length < TABLE_START) {
-    throw truncated(reader);
+    throw truncatedError(reader);
   }
   const signature = String.fromCharCode(...reader.readBytes(4, 7));
   if (signature === "xindong") {
@@ -147,7 +147,7 @@ export function readWorldHeader(bytes: Uint8Array): WorldHeader {
     throw new WorldFormatError("MalformedSectionTable", TABLE_START, "file must be smaller than 2 GiB");
   }
   if (reader.length < FRAME_BITS_OFFSET) {
-    throw truncated(reader);
+    throw truncatedError(reader);
   }
   const frameImportantCount = reader.readInt16(FRAME_COUNT_OFFSET);
   if (frameImportantCount < 0) {
@@ -156,31 +156,31 @@ export function readWorldHeader(bytes: Uint8Array): WorldHeader {
   const frameBytes = Math.ceil(frameImportantCount / 8);
   const headerEnd = FRAME_BITS_OFFSET + frameBytes;
   if (reader.length < headerEnd) {
-    throw truncated(reader);
+    throw truncatedError(reader);
   }
   const frameImportantBits = reader.readBytes(FRAME_BITS_OFFSET, frameBytes);
   const pointers = readPointers(reader, headerEnd);
-  const edges = [0, ...pointers, reader.length];
-  const section = (index: number): SectionBoundary => ({
-    start: edges[index] ?? 0,
-    end: edges[index + 1] ?? 0,
+  const sectionStarts = [0, ...pointers, reader.length];
+  const makeBoundary = (index: number): SectionBoundary => ({
+    start: sectionStarts[index] ?? 0,
+    end: sectionStarts[index + 1] ?? 0,
   });
   return {
     header,
     sections: {
       pointers,
-      fileHeader: section(0),
-      metadata: section(1),
-      tiles: section(2),
-      chests: section(3),
-      signs: section(4),
-      npcsAndMobs: section(5),
-      tileEntities: section(6),
-      weightedPressurePlates: section(7),
-      townManager: section(8),
-      bestiary: section(9),
-      creativePowers: section(10),
-      footer: section(11),
+      fileHeader: makeBoundary(0),
+      metadata: makeBoundary(1),
+      tiles: makeBoundary(2),
+      chests: makeBoundary(3),
+      signs: makeBoundary(4),
+      npcsAndMobs: makeBoundary(5),
+      tileEntities: makeBoundary(6),
+      weightedPressurePlates: makeBoundary(7),
+      townManager: makeBoundary(8),
+      bestiary: makeBoundary(9),
+      creativePowers: makeBoundary(10),
+      footer: makeBoundary(11),
       frameImportantCount,
       frameImportantBits,
     },
