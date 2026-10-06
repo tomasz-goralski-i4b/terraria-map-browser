@@ -1,5 +1,6 @@
 <Solution>
   <Project Path="Terraria.WorldCodec.Tests/Terraria.WorldCodec.Tests.csproj" />
   <Project Path="Terraria.WorldCodec/Terraria.WorldCodec.csproj" />
+  <Project Path="Terraria.WorldCodec.Synthetic/Terraria.WorldCodec.Synthetic.csproj" />
   <Project Path="Terraria.WorldInspector/Terraria.WorldInspector.csproj" />
 </Solution>

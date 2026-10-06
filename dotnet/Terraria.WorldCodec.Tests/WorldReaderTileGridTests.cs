@@ -1,3 +1,4 @@
+using Terraria.WorldCodec.Synthetic;
 using static Terraria.WorldCodec.Tests.TileAssert;
 
 namespace Terraria.WorldCodec.Tests;
@@ -202,5 +203,63 @@ public class WorldReaderTileGridTests
         Assert.Equal(TilesSection, error.Section);
         Assert.Equal(tileStart + 7, error.Offset);
         Assert.Equal("section not fully consumed", error.Reason);
+    }
+
+    public static TheoryData<CrossingField, bool> WindowCrossings()
+    {
+        var cases = new TheoryData<CrossingField, bool>();
+        foreach (var field in Enum.GetValues<CrossingField>())
+        {
+            cases.Add(field, false);
+            cases.Add(field, true);
+        }
+
+        return cases;
+    }
+
+    [Theory]
+    [MemberData(nameof(WindowCrossings))]
+    public void Read_FieldAcrossReadWindowBoundary_DecodesExactTiles(CrossingField field, bool shortReads)
+    {
+        var section = WindowBoundaryTileSection.Build(field);
+        Assert.True(section.Bytes.Length > WindowBoundaryTileSection.Window);
+        var (file, tileStart) = SyntheticTileWorld.Build(section.Width, WindowBoundaryTileSection.Height, section.Bytes);
+        using var stream = new ShortReadStream(file, shortReads);
+
+        var grid = WorldReader.Read(stream).Tiles;
+
+        Assert.Equal(section.Width, grid.Width);
+        Assert.Equal(WindowBoundaryTileSection.Height, grid.Height);
+        for (var x = 0; x < section.Width; x++)
+        {
+            for (var y = 0; y < grid.Height; y++)
+            {
+                Assert.Equal(section.Columns[x], grid[x, y]);
+            }
+        }
+
+        Assert.Equal(tileStart + section.Bytes.Length, stream.Position);
+        Assert.InRange(stream.HighestReadEnd, 0, tileStart + section.Bytes.Length);
+    }
+
+    [Theory]
+    [MemberData(nameof(WindowCrossings))]
+    public void Read_CrossingFieldCutAtSectionEnd_ThrowsTruncatedRecordWithoutReadingChests(CrossingField field, bool shortReads)
+    {
+        // pointer[2] falls between the two bytes of the crossing field; its second byte and the rest of the tiles
+        // spill into the chest section, where a reader that ignores pointer[2] would still find them.
+        var section = WindowBoundaryTileSection.Build(field);
+        var (file, tileStart) = SyntheticTileWorld.Build(
+            section.Width,
+            WindowBoundaryTileSection.Height,
+            section.Bytes,
+            tileSectionLength: WindowBoundaryTileSection.Window);
+        var chestsStart = tileStart + WindowBoundaryTileSection.Window;
+        using var stream = new ShortReadStream(file, shortReads);
+
+        var error = Assert.Throws<WorldFormatException>(() => WorldReader.Read(stream));
+
+        Error(error, section.CrossingColumn, 0, tileStart + section.CrossingRecordOffset, "truncated record");
+        Assert.InRange(stream.HighestReadEnd, 0, chestsStart);
     }
 }
