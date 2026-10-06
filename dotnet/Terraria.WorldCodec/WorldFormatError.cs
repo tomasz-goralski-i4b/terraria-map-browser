@@ -7,4 +7,5 @@ public enum WorldFormatError
     UnsupportedVersion,
     NotAWorld,
     MalformedSectionTable,
+    MalformedMetadata,
 }

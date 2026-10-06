@@ -11,6 +11,16 @@ public sealed class WorldFormatException : Exception
         Reason = reason;
     }
 
+    /// <summary>An error inside a named section, optionally pinned to one field of it.</summary>
+    public WorldFormatException(WorldFormatError error, long offset, string reason, string section, string? field)
+        : this(error, offset, reason) => throw new NotImplementedException();
+
+    /// <summary>Name of the section (as in <see cref="WorldSectionTable"/>) that holds the offending bytes, if any.</summary>
+    public string? Section { get; }
+
+    /// <summary>Contract name of the offending field (docs/file-format.md), if any.</summary>
+    public string? Field { get; }
+
     /// <summary>Error category.</summary>
     public WorldFormatError Error { get; }
 
