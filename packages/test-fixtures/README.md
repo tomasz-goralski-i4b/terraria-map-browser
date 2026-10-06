@@ -54,6 +54,7 @@ codes reserved so the M6 mod-safety work can add them without renaming anything.
 ## Current corpus (M1)
 Terraria 1.4.5.8, format version 326, four Small vanilla worlds covering every difficulty and both evils:
 `SCCR1` (classic/crimson), `SECR1` (expert/crimson), `SJCO1` (journey/corruption), `SMCO1` (master/corruption).
+`SMCO1` was opened in game once and saved on exit (`fileRevision` 2); the others were never opened.
 
 ## Adding a world
 1. Generate it in the game with the settings encoded in the name; name the world exactly like the file.

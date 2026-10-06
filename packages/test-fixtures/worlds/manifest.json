@@ -21,7 +21,7 @@
       "sha256": "31bb924d47b791f22b001111eca095695890196d52bd24dcb9000dd07b3d1d08",
       "generatedBy": "tomasz-goralski-i4b",
       "generatedAt": "2026-10-06",
-      "inGameModifications": "none — freshly generated, not played"
+      "inGameModifications": "none — freshly generated, never opened in game"
     },
     {
       "file": "SECR1.wld",
@@ -42,7 +42,7 @@
       "sha256": "54baff6c3ffbe8dc8e22d9c8b186c3398d72339bd0e9546a3ee928c8db4b8429",
       "generatedBy": "tomasz-goralski-i4b",
       "generatedAt": "2026-10-06",
-      "inGameModifications": "none — freshly generated, not played"
+      "inGameModifications": "none — freshly generated, never opened in game"
     },
     {
       "file": "SJCO1.wld",
@@ -63,7 +63,7 @@
       "sha256": "0c67aba1d0cf22ba97d846c9d030a1d5b3a19ec6be72a3d08f9d203dc1a0cc76",
       "generatedBy": "tomasz-goralski-i4b",
       "generatedAt": "2026-10-06",
-      "inGameModifications": "none — freshly generated, not played"
+      "inGameModifications": "none — freshly generated, never opened in game"
     },
     {
       "file": "SMCO1.wld",
@@ -84,7 +84,7 @@
       "sha256": "4aa2290b69278b2c8ea3df7b424592559d43ebff0e35146dcd96562abc544390",
       "generatedBy": "tomasz-goralski-i4b",
       "generatedAt": "2026-10-06",
-      "inGameModifications": "none — freshly generated, not played"
+      "inGameModifications": "opened in game once and saved on exit (no deliberate edits) — fileRevision 2"
     }
   ]
 }
