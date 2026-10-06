@@ -1,8 +1,8 @@
 // Shared helpers for the backlog scripts: a thin wrapper over `gh` (keyring locally, GITHUB_TOKEN in CI).
 import { execFileSync } from "node:child_process";
 
-export function gh(args, { input } = {}) {
-  return execFileSync("gh", args, { encoding: "utf8", input, stdio: ["pipe", "pipe", "inherit"] }).trim();
+export function gh(args, { input, quiet = false } = {}) {
+  return execFileSync("gh", args, { encoding: "utf8", input, stdio: ["pipe", "pipe", quiet ? "ignore" : "inherit"] }).trim();
 }
 
 export function ghJson(args) {

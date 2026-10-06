@@ -79,7 +79,7 @@ for (const it of backlog.issues) {
     ? ["human", `area:${it.area}`]
     : ["backlog", `flow:${it.flow}`, `agent:${it.runner}`, `area:${it.area}`];
   try {
-    gh(["label", "create", `area:${it.area}`, "--color", "fbca04"]);
+    gh(["label", "create", `area:${it.area}`, "--color", "fbca04"], { quiet: true });
   } catch {
     // label already exists
   }
