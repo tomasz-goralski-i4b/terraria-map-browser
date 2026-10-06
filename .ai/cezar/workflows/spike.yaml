@@ -1,6 +1,10 @@
 name: spike
 description: "Research (e.g. the .wld format): notes in docs/ and fixtures, no production code. Reviewed by the other model, then draft PR → ready to merge."
 steps:
+  - id: preflight
+    name: Gate — Claude and Codex both have usage left
+    command: "bash scripts/tdd/preflight.sh"
+
   - id: research
     name: Research
     skill: spike

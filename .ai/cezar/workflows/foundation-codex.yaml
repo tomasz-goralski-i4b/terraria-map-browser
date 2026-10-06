@@ -1,6 +1,10 @@
 name: foundation-codex
 description: "No TDD — infrastructure, CI, docs, scaffolding. Codex implements, Claude reviews, then draft PR."
 steps:
+  - id: preflight
+    name: Gate — Claude and Codex both have usage left
+    command: "bash scripts/tdd/preflight.sh"
+
   - id: implement
     name: Implement
     skill: foundation

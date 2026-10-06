@@ -1,6 +1,10 @@
 name: tdd-feature
 description: "TDD: Claude implements (red → green → refactor), Codex reviews. Every gate is a script in scripts/tdd."
 steps:
+  - id: preflight
+    name: Gate — Claude and Codex both have usage left
+    command: "bash scripts/tdd/preflight.sh"
+
   - id: red
     name: Red — tests and stubs
     skill: tdd-red

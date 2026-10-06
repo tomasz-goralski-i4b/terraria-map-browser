@@ -1,0 +1,4 @@
+{
+  "description": "GitHub logins whose issues may enter the agent pipeline (promoter, Cezar automation filters, issue-guard). The repo is public: anyone can open an issue, so everyone else is untrusted.",
+  "authors": ["tomasz-goralski-i4b"]
+}

@@ -14,7 +14,7 @@ while :; do
   git fetch -q origin main 2>/dev/null || true
   # Run the promoter as it is on origin/main, so a stale local checkout never runs old logic.
   tmp=$(mktemp -d)
-  if git archive origin/main scripts/backlog | tar -x -C "$tmp" 2>/dev/null; then
+  if git archive origin/main scripts/backlog .ai/cezar/trusted-authors.json | tar -x -C "$tmp" 2>/dev/null; then
     node "$tmp/scripts/backlog/promote.mjs" || echo "(promoter exited $?)"
   else
     node scripts/backlog/promote.mjs || echo "(promoter exited $?)"

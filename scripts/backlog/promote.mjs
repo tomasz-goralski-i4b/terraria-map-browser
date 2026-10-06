@@ -12,18 +12,38 @@
 //    - globally fewer than MAX_ACTIVE are in flight (default 2 = Cezar's maxParallel).
 //    Order: ascending issue number (the planner creates issues in execution order).
 import { execFileSync } from "node:child_process";
-import { gh, ghJson, LABELS, blockedBy, labelNames, areaOf } from "./gh.mjs";
+import { gh, ghJson, LABELS, blockedBy, labelNames, areaOf, isTrusted } from "./gh.mjs";
 import { fetchRun, resumability, resumeRun } from "./resume.mjs";
+import { describe, probeAll } from "./usage-probe.mjs";
 
 const MAX_ACTIVE = Number(process.env.MAX_ACTIVE ?? 2);
 const STALL_MINUTES = Number(process.env.STALL_MINUTES ?? 120);
 const DRY = process.argv.includes("--dry-run");
 const LIVE_RUN = new Set(["running", "queued", "waiting", "monitoring", "review"]);
 
-const open = ghJson(["issue", "list", "--state", "open", "--limit", "500", "--json", "number,title,body,labels"]);
+const open = ghJson(["issue", "list", "--state", "open", "--limit", "500", "--json", "number,title,body,labels,author"]);
 
 await watchStalls(open.filter((i) => labelNames(i).includes(LABELS.ready)));
-promote(open);
+if (await usageAllowsNewWork()) promote(await refreshed());
+
+/** Locally, start nothing new while Claude or Codex is LOW (every chain needs both). CI cannot probe. */
+async function usageAllowsNewWork() {
+  if (process.env.GITHUB_ACTIONS) return true; // the workflow's preflight step guards the start instead
+  try {
+    const report = await probeAll();
+    if (report.ok) return true;
+    console.log(`not promoting — provider usage is LOW:\n${describe(report).replace(/^/gm, "  ")}`);
+    return false;
+  } catch (e) {
+    console.log(`usage probe failed (${e.message}) — promoting anyway; the preflight step still guards the start`);
+    return true;
+  }
+}
+
+/** Issue list after the watchdog may have moved issues back to backlog. */
+async function refreshed() {
+  return DRY ? open : ghJson(["issue", "list", "--state", "open", "--limit", "500", "--json", "number,title,body,labels,author"]);
+}
 
 // ---------------------------------------------------------------------------------------------
 
@@ -46,6 +66,14 @@ async function watchStalls(ready) {
         if (stalled) {
           console.log(`  #${issue.number} has a live Cezar run again (${run.id.slice(0, 8)} ${run.status}) — clearing ${LABELS.stalled}`);
           if (!DRY) gh(["issue", "edit", String(issue.number), "--remove-label", LABELS.stalled]);
+        }
+        continue;
+      }
+      if (run && (run.steps ?? []).some((s) => s.id === "preflight" && s.status === "failed")) {
+        // The chain refused to start (a provider is out of credits / near a limit) — not a stall: defer the issue.
+        console.log(`  #${issue.number}: run ${run.id.slice(0, 8)} stopped at preflight (usage) — back to ${LABELS.backlog}${DRY ? " (dry-run)" : ""}`);
+        if (!DRY) {
+          gh(["issue", "edit", String(issue.number), "--remove-label", LABELS.ready, "--remove-label", LABELS.stalled, "--add-label", LABELS.backlog]);
         }
         continue;
       }
@@ -99,8 +127,10 @@ function promote(issues) {
 
   console.log(`in flight: ${active}/${MAX_ACTIVE}${inFlight.length ? " — " + inFlight.map((i) => `#${i.number} ${areaOf(i)}`).join(", ") : ""}`);
 
+  const untrusted = issues.filter((i) => labelNames(i).includes(LABELS.backlog) && !isTrusted(i));
+  for (const i of untrusted) console.log(`  #${i.number} ignored — author ${i.author?.login} is not trusted (.ai/cezar/trusted-authors.json)`);
   const candidates = issues
-    .filter((i) => labelNames(i).includes(LABELS.backlog))
+    .filter((i) => labelNames(i).includes(LABELS.backlog) && isTrusted(i))
     .sort((a, b) => a.number - b.number);
 
   for (const issue of candidates) {

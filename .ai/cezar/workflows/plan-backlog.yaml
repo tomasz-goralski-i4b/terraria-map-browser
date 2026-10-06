@@ -1,6 +1,10 @@
 name: plan-backlog
 description: "Planner: splits a milestone into small issues with dependencies (.tdd/backlog.json); a script validates it and creates the issues on GitHub with the backlog label. Runs on the runner picked for the task."
 steps:
+  - id: preflight
+    name: Gate — Claude and Codex both have usage left
+    command: "bash scripts/tdd/preflight.sh"
+
   - id: plan
     name: Plan the backlog
     skill: backlog-planner

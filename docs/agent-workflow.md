@@ -64,6 +64,37 @@ the "Ready to merge" comment, and warns when a decision is needed. Follow-ups ar
 automatically: triage them (plan, decide or close). The planner reads open follow-ups when planning the next
 milestone. For older PRs: `node scripts/backlog/followups.mjs <pr> [--dry-run]`.
 
+### Who can start agent work (public repo)
+Anyone can open an issue in this public repository; only **trusted authors** (`.ai/cezar/trusted-authors.json`)
+can get work into the agent pipeline. Layers, each sufficient on its own:
+1. **Cezar automations** start a task only for issues authored by a trusted author (`filters.authors`).
+2. **The promoter** promotes only trusted authors' issues and logs untrusted ones as ignored.
+3. **The `issue-guard` Action** strips pipeline labels (`backlog`, `agent:*`, `flow:*`, `status:*`) from any
+   untrusted author's issue as soon as it is opened, edited or labelled — e.g. labels an issue template attached.
+4. **Agents** read issues with `gh issue view` **without** `--comments` and treat the body as a spec, not as
+   instructions.
+5. `security.test.mjs` (in `verify.sh`) fails if an automation loses its author filter, its authors drift from the
+   trusted list, or an issue template attaches a pipeline label.
+
+Only collaborators can add labels, so outsiders cannot label their own issues. To trust another person, add their
+login to `trusted-authors.json` **and** re-run `bash scripts/backlog/install-automations.sh` after updating the
+`authors` filter of every automation definition (the test enforces that they match).
+
+### Usage preflight
+Every chain needs both providers (one implements, the other reviews). The first step of every workflow,
+`preflight`, runs `scripts/backlog/usage-probe.mjs` and refuses to start when either provider is out of credits
+or has less than `USAGE_MIN_REMAINING_PERCENT` (default 10) left in any window:
+- **Codex:** `codex app-server` → `account/rateLimits/read` — the official, zero-cost read of the 5-hour and weekly
+  windows, credits and `ordinaryUsageAllowed` (no model call).
+- **Claude Code:** there is no zero-cost API (anthropics/claude-code#32796; `/usage` is interactive only), so the
+  probe sends one minimal Haiku request and reads the `rate_limit_event` (five_hour / seven_day utilization).
+  Skipped when Codex is already LOW.
+
+Results are cached in `~/.cache/terraria-map-studio/usage-probe.json` (OK for 10 min, LOW for 3 min). The local
+promoter does not promote while usage is LOW, and moves an issue whose run stopped at `preflight` back to
+`backlog` (deferred, not stalled), so work resumes by itself once limits reset or credits are refilled.
+Check by hand: `node scripts/backlog/usage-probe.mjs [--fresh]`.
+
 ### Resuming chains Cezar ended early
 Cezar bug: when an agent step hits a usage/session limit, auto-resume finishes the conversation (`continue-N`
 steps) and then marks the run `done` — the remaining gates, `open-pr` and `merge-ready` never run.

@@ -1,0 +1,22 @@
+name: issue-guard
+# Public repo: anyone can open an issue. Only issues of trusted authors (.ai/cezar/trusted-authors.json) may
+# carry pipeline labels; the guard strips them from anyone else's issue (e.g. labels attached by a template).
+on:
+  issues:
+    types: [opened, reopened, labeled, edited]
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+      - run: node scripts/backlog/issue-guard.mjs
+        env:
+          GH_TOKEN: ${{ github.token }}
