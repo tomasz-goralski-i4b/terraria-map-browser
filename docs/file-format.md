@@ -602,7 +602,7 @@ harness filler, not part of the vector, and must not change the documented resul
 - **M2. Zero / negative.** `00 00 00 00 02 00 00 00` → `MalformedMetadata { field "height", reason "must be
   positive" }`; `04 00 00 00 ff ff ff ff` (width −1) → same for `width`.
 - **M3. Real prefix (F).** `SCCO1` from offset 167: `05 53 43 43 52 31` (name "SCCR1"), `09 39 34 38 35 38 30 39
-  31 38` (seed "948580918"), `01 00 00 00 46 01 00 00` (world-gen version), 16 GUID bytes, `47 4d e9 67`
+  31 38` (seed "948580918"), `01 00 00 00 46 01 00 00` (world-gen version), 16 GUID bytes, `47 99 ea 67`
   (world id 1743427911), `00 00 00 00 80 06 01 00 00 00 00 00 00 4b 00 00` (bounds 0, 67200, 0, 19200),
   `b0 04 00 00` (height 1200), `68 10 00 00` (width 4200), `00 00 00 00` (classic).
 - **M4. Bad Bool.** Any Bool byte `02` → `MalformedMetadata { reason "invalid boolean" }`.

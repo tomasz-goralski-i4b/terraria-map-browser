@@ -1,9 +1,19 @@
 #!/usr/bin/env bash
 # Last step of every chain: push the branch + draft PR (Closes #N) + status:pr-ready on the issue.
 # Issue number: .tdd/issue (written by the first agent step when the task comes from an issue).
+# Usage: open-pr.sh [--body-file <prepared Markdown>] (e.g. when review is explicitly pending).
 # Exit: 0 OK, 2 infrastructure (push/gh), 3 wrong branch.
 source "$(dirname "$0")/../lib.sh"
 command -v gh >/dev/null || { echo "INFRA: gh is missing"; exit 2; }
+
+body_file=""
+if [ "$#" -gt 0 ]; then
+  if [ "$#" -ne 2 ] || [ "$1" != "--body-file" ]; then
+    echo "INFRA: usage: open-pr.sh [--body-file <prepared Markdown>]"; exit 2
+  fi
+  body_file="$2"
+  [ -s "$body_file" ] || { echo "INFRA: PR body file is missing or empty: $body_file"; exit 2; }
+fi
 
 branch=$(git rev-parse --abbrev-ref HEAD)
 case "$branch" in
@@ -27,26 +37,29 @@ else
   else
     title=$(git log -1 --format=%s)
   fi
-  {
-    if [ -n "$issue" ]; then echo "Closes #$issue"; echo; fi
-    echo "## Chain"
-    echo "Cezar workflow finished: all gates passed, \`scripts/verify.sh\` → OK."
-    echo
-    echo "## Commits"
-    git log --reverse --format='- %s' "$base"..HEAD
-    if [ -f .tdd/review.md ]; then
-      echo; echo "## Cross-review"; echo; cat .tdd/review.md
-    fi
-    for d in .tdd/red-defect-resolved-*.md; do
-      [ -f "$d" ] || continue
-      echo; echo "## Red-phase test defect reported by the implementer"; echo; cat "$d"
-    done
-    if [ -f .tdd/plan.md ]; then
-      echo; echo "<details><summary>Test plan</summary>"; echo; cat .tdd/plan.md; echo; echo "</details>"
-    fi
-    echo; echo "🤖 Generated with [Claude Code](https://claude.com/claude-code) via Cezar"
-  } > .tdd/pr-body.md
-  url=$(gh pr create --draft --base main --head "$branch" --title "$title" --body-file .tdd/pr-body.md) \
+  if [ -z "$body_file" ]; then
+    body_file=".tdd/pr-body.md"
+    {
+      if [ -n "$issue" ]; then echo "Closes #$issue"; echo; fi
+      echo "## Chain"
+      echo "Cezar workflow finished: all gates passed, \`scripts/verify.sh\` → OK."
+      echo
+      echo "## Commits"
+      git log --reverse --format='- %s' "$base"..HEAD
+      if [ -f .tdd/review.md ]; then
+        echo; echo "## Cross-review"; echo; cat .tdd/review.md
+      fi
+      for d in .tdd/red-defect-resolved-*.md; do
+        [ -f "$d" ] || continue
+        echo; echo "## Red-phase test defect reported by the implementer"; echo; cat "$d"
+      done
+      if [ -f .tdd/plan.md ]; then
+        echo; echo "<details><summary>Test plan</summary>"; echo; cat .tdd/plan.md; echo; echo "</details>"
+      fi
+      echo; echo "🤖 Generated with [Claude Code](https://claude.com/claude-code) via Cezar"
+    } > "$body_file"
+  fi
+  url=$(gh pr create --draft --base main --head "$branch" --title "$title" --body-file "$body_file") \
     || { echo "INFRA: gh pr create failed"; exit 2; }
   echo "PR: $url"
 fi

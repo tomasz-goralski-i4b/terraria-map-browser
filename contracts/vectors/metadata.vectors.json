@@ -1,0 +1,156 @@
+{
+  "schemaVersion": 1,
+  "group": "metadata",
+  "vectors": [
+    {
+      "id": "M1",
+      "title": "dimensions order",
+      "entry": "META",
+      "context": {
+        "formatVersion": 326,
+        "baseOffset": 0,
+        "startsAt": "height",
+        "inputEnd": 8,
+        "sectionEnd": 8
+      },
+      "cases": [
+        {
+          "hex": "0400000002000000",
+          "result": {
+            "kind": "metadata",
+            "height": 4,
+            "width": 2
+          }
+        }
+      ]
+    },
+    {
+      "id": "M2",
+      "title": "zero / negative",
+      "entry": "META",
+      "context": {
+        "formatVersion": 326,
+        "baseOffset": 0,
+        "startsAt": "height",
+        "inputEnd": 8,
+        "sectionEnd": 8
+      },
+      "cases": [
+        {
+          "label": "height 0",
+          "hex": "0000000002000000",
+          "error": {
+            "code": "MalformedMetadata",
+            "field": "height",
+            "reason": "must be positive",
+            "offset": 0
+          }
+        },
+        {
+          "label": "width -1",
+          "hex": "04000000ffffffff",
+          "error": {
+            "code": "MalformedMetadata",
+            "field": "width",
+            "reason": "must be positive",
+            "offset": 4
+          }
+        }
+      ]
+    },
+    {
+      "id": "M3",
+      "title": "real prefix (F)",
+      "entry": "META",
+      "context": {
+        "formatVersion": 326,
+        "baseOffset": 167,
+        "startsAt": "name",
+        "inputEnd": 239,
+        "sectionEnd": 11927
+      },
+      "cases": [
+        {
+          "hex": "05534343523109393438353830393138010000004601000087e466e7853c3f48b75abc85e36d4b864799ea67000000008006010000000000004b0000b00400006810000000000000",
+          "result": {
+            "kind": "metadata",
+            "name": "SCCR1",
+            "seed": "948580918",
+            "guid": "87e466e7853c3f48b75abc85e36d4b86",
+            "worldId": 1743427911,
+            "bounds": {
+              "left": 0,
+              "right": 67200,
+              "top": 0,
+              "bottom": 19200
+            },
+            "height": 1200,
+            "width": 4200,
+            "gameMode": 0
+          }
+        }
+      ],
+      "provenance": {
+        "world": "SCCO1",
+        "file": "packages/test-fixtures/worlds/SCCO1.wld",
+        "sha256": "31bb924d47b791f22b001111eca095695890196d52bd24dcb9000dd07b3d1d08",
+        "offset": 167,
+        "length": 72
+      }
+    },
+    {
+      "id": "M4",
+      "title": "bad bool",
+      "entry": "META",
+      "context": {
+        "formatVersion": 326,
+        "baseOffset": 0,
+        "startsAt": "bool",
+        "inputEnd": 1,
+        "sectionEnd": 1
+      },
+      "cases": [
+        {
+          "hex": "02",
+          "error": {
+            "code": "MalformedMetadata",
+            "reason": "invalid boolean",
+            "offset": 0
+          }
+        }
+      ]
+    },
+    {
+      "id": "M5",
+      "title": "string overrun",
+      "entry": "META",
+      "context": {
+        "formatVersion": 326,
+        "baseOffset": 0,
+        "startsAt": "name",
+        "inputEnd": 5,
+        "sectionEnd": 5
+      },
+      "cases": [
+        {
+          "label": "length too large",
+          "hex": "ffffffff0f",
+          "error": {
+            "code": "MalformedMetadata",
+            "field": "name",
+            "offset": 0
+          }
+        },
+        {
+          "label": "length reaches past pointer[1]",
+          "hex": "0541424344",
+          "error": {
+            "code": "MalformedMetadata",
+            "field": "name",
+            "offset": 0
+          }
+        }
+      ]
+    }
+  ]
+}
