@@ -27,9 +27,10 @@ and runs started by automations can be `autonomous`.
 1. plan-backlog (Cezar, manual)     "Plan M1"  → .tdd/backlog.json → gate creates issues [backlog]
 2. promoter (GitHub Action / manual)           → issues with no open blockers, free area → [agent:ready]
 3. Cezar automation (polls every 2 min)        → task with the workflow picked by flow:* / agent:* labels (autonomous)
-4. chain                                        → red → green → refactor → review → open-pr
+4. chain                                        → red → green → refactor → review → open-pr → merge-ready
                                                  → draft PR "Closes #N", issue → [status:pr-ready]
-5. you                                          → review the PR on GitHub, CI green → merge
+                                                 → APPROVE + CI green → PR undrafted, PR + issue → [status:ready-to-merge]
+5. you                                          → read the PR (description has the cross-review) → squash & merge
 6. issue closed → `promote` Action              → unblocks the next ones → back to 3
 ```
 
@@ -37,13 +38,14 @@ and runs started by automations can be `autonomous`.
 |---|---|---|
 | `backlog` | planner (create-issues) | planned, waiting |
 | `agent:ready` | promoter | an automation starts the task |
-| `status:pr-ready` | `open-pr.sh` | the PR is waiting for you |
+| `status:pr-ready` | `open-pr.sh` | draft PR exists, waiting for CI |
+| `status:ready-to-merge` | `merge-ready.sh` | second model approved + CI green — **your turn to merge** |
 | `human` | planner | your work (e.g. a fixture from the game); close the issue when done — it unblocks dependants |
 | `flow:tdd|foundation|spike` + `agent:claude|codex` | planner | workflow and implementer choice |
 | `area:*` | planner | the promoter runs one issue at a time per area |
 
 Promoter rules (`scripts/backlog/promote.mjs`): ordered by issue number, every `Blocked by: #N` closed,
-area free, globally in flight < `MAX_ACTIVE` (2 = Cezar's `maxParallel`).
+area free (an area stays busy until the PR is merged), globally in flight < `MAX_ACTIVE` (2 = Cezar's `maxParallel`).
 
 Automations (`.ai/cezar/automation-defs/*.json`) listen for `issue.labeled` = `agent:ready`, only on issues
 opened by the repo owner (the repo is public). Install/update (the cockpit must be running for this repo):
@@ -57,13 +59,14 @@ labels added earlier are not picked up (remove and re-add `agent:ready` in that 
 - A Cezar task `failed` (retries exhausted, BLOCKED, INFRA) → the issue stays on `agent:ready` and its area stays busy.
   Read the log, fix the issue/code, then remove and re-add `agent:ready` (the automation starts a new task),
   or set `backlog` and run the promoter.
+- `merge-ready` failed (CI red on GitHub, or no APPROVE) → the PR stays a draft with a comment; fix on the PR branch or Continue the task.
 - PR feedback → Continue the task in Cezar with a comment, or fix it by hand on the PR branch.
 - Bad plan → close/edit the issues on GitHub; `create-issues` skips items whose backlog key or title already exists.
 
 ## The `tdd-feature` chain
 
 ```
-red ─► check-red ─► green ─► check-green ─► refactor ─► check-refactor ─► review ─► check-review ─► open-pr
+red ─► check-red ─► green ─► check-green ─► refactor ─► check-refactor ─► review ─► check-review ─► open-pr ─► merge-ready
  ▲        │           ▲          │             ▲             │                          │
  └─retry──┘           └──retry───┘             └───retry─────┘                          │
  ▲                                                                                      │
@@ -77,8 +80,13 @@ red ─► check-red ─► green ─► check-green ─► refactor ─► chec
 | refactor | implementer | clean-up, docs | same as green |
 | review | the other provider | `.tdd/review.md` with a verdict | reviewer changed nothing; APPROVE=0, REQUEST_CHANGES=1 (rework), BLOCKED=3 (stop) |
 | open-pr | script | push, draft PR `Closes #N` | — |
+| merge-ready | script | waits for GitHub CI | APPROVE + CI green → undraft, `status:ready-to-merge`, summary comment; CI red → 3 (human) |
 
 Rework goes back to `red`: behavioural bug → failing test first; style-only findings → red without tests (the gate lets it through).
+
+Every workflow except `plan-backlog` ends with `review → check-review → open-pr → merge-ready`:
+the implementer never reviews its own work, and a PR is only marked ready when a second model approved it
+and CI is green. `spike` is researched by Claude and reviewed by Codex; `foundation` the same.
 
 ## Gate exit codes
 | Code | Meaning | Cezar |

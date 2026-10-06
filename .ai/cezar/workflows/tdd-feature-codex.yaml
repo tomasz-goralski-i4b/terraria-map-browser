@@ -44,3 +44,7 @@ steps:
   - id: open-pr
     name: Draft PR + status:pr-ready
     command: "bash scripts/tdd/open-pr.sh"
+
+  - id: merge-ready
+    name: Gate — APPROVE + green CI → ready to merge
+    command: "bash scripts/tdd/merge-ready.sh"

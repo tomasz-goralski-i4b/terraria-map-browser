@@ -1,5 +1,5 @@
 name: spike
-description: "Research (e.g. the .wld format): notes in docs/ and fixtures, no production code. Ends with verify.sh and a draft PR."
+description: "Research (e.g. the .wld format): notes in docs/ and fixtures, no production code. Reviewed by the other model, then draft PR → ready to merge."
 steps:
   - id: research
     name: Research
@@ -10,7 +10,20 @@ steps:
     name: Gate — verify.sh
     command: "bash scripts/tdd/check-verify.sh"
     onFail: { retry: research, max: 1, retryOn: [1] }
+  - id: review
+    name: Cross-review (Codex, report only)
+    skill: reviewer
+    prompt: "{{task}}"
+    runner: codex
+  - id: check-review
+    name: Gate — reviewer verdict
+    command: "bash scripts/tdd/check-review.sh"
+    onFail: { retry: research, max: 2, retryOn: [1] }
 
   - id: open-pr
     name: Draft PR + status:pr-ready
     command: "bash scripts/tdd/open-pr.sh"
+
+  - id: merge-ready
+    name: Gate — APPROVE + green CI → ready to merge
+    command: "bash scripts/tdd/merge-ready.sh"

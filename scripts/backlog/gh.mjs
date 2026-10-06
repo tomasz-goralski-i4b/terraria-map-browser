@@ -14,6 +14,7 @@ export const LABELS = {
   backlog: "backlog",
   ready: "agent:ready",
   prReady: "status:pr-ready",
+  mergeReady: "status:ready-to-merge",
 };
 
 /** "Blocked by: #12, #14" — a single line in the issue body, written by create-issues.mjs. */
