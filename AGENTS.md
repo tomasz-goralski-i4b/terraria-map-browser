@@ -32,6 +32,7 @@ PR descriptions, issues and review notes.
 dotnet/Terraria.WorldCodec/        reference .wld parser/writer
 dotnet/TerrariaMapStudio.slnx      solution (XML format); package versions in dotnet/Directory.Packages.props
 dotnet/Terraria.WorldCodec.Tests/  xUnit v3 (Microsoft.Testing.Platform)
+dotnet/Terraria.WorldCodec.Synthetic/  generated test inputs (synthetic tile sections, short-read streams); never shipped
 dotnet/Terraria.WorldInspector/    console inspector (smoke-tested by verify.sh)
 packages/world-model/              TS domain model (ContentRef, Tile…)
 packages/test-fixtures/            explicitly generated fixtures (from M1)

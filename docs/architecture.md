@@ -56,6 +56,7 @@ terraria-map-studio/
 │   ├── Terraria.WorldCodec/         # reference parser/writer
 │   ├── Terraria.WorldInspector/     # CLI: inspect, diff, export JSON
 │   ├── Terraria.ModExporter/        # mod manifest export
+│   ├── Terraria.WorldCodec.Synthetic/  # generated test inputs, never shipped
 │   └── Terraria.WorldCodec.Tests/
 ├── docs/
 │   ├── architecture.md
