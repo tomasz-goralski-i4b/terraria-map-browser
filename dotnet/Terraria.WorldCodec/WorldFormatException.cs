@@ -13,7 +13,16 @@ public sealed class WorldFormatException : Exception
 
     /// <summary>An error inside a named section, optionally pinned to one field of it.</summary>
     public WorldFormatException(WorldFormatError error, long offset, string reason, string section, string? field)
-        : this(error, offset, reason) => throw new NotImplementedException();
+        : base(field is null
+            ? $"{error} in {section} at offset {offset}: {reason}"
+            : $"{error} in {section}.{field} at offset {offset}: {reason}")
+    {
+        Error = error;
+        Offset = offset;
+        Reason = reason;
+        Section = section;
+        Field = field;
+    }
 
     /// <summary>Name of the section (as in <see cref="WorldSectionTable"/>) that holds the offending bytes, if any.</summary>
     public string? Section { get; }

@@ -146,7 +146,10 @@ After the last pointer comes the footer (T9).
   understood the header).
 - `pointer[i] < pointer[i+1]` for every `i` — **strictly increasing**. Equal pointers (an empty section) are
   not permitted: every vanilla section begins with at least a count field, the smallest being signs
-  (Int16 count, 2 bytes, F). A decrease or an equality → `MalformedSectionTable`.
+  (Int16 count, 2 bytes, F). A decrease or an equality → `MalformedSectionTable`. One exception:
+  `pointer[1] == pointer[0]` (empty metadata) passes the table and is rejected by the metadata contract as
+  `MalformedMetadata { field "name" }` at `pointer[0]`, so that every metadata overrun — including one of
+  zero bytes — is reported by the same section.
 - `pointer[n-1] + 6 ≤ L`. The footer needs at least 6 bytes (Bool + 1-byte length of an empty name + Int32).
   A larger pointer, or any negative pointer → `MalformedSectionTable`. The fixtures have 11-byte footers
   for 5-character names (F).
