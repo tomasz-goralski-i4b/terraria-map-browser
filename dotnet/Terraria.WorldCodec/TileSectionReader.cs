@@ -65,20 +65,7 @@ internal sealed class TileSectionReader(Stream stream, WorldSectionBoundary sect
             var y = 0;
             while (y < height)
             {
-                recordStart = position;
-                recordX = x;
-                recordY = y;
-                var (tile, run) = ReadRecord();
-                if (run < 0)
-                {
-                    throw Error("negative run");
-                }
-
-                if (y + run > height - 1)
-                {
-                    throw Error("run crosses column end");
-                }
-
+                var (tile, run) = ReadRecord(x, y, height);
                 Array.Fill(tiles, tile, (x * height) + y, run + 1);
                 y += run + 1;
             }
@@ -90,6 +77,25 @@ internal sealed class TileSectionReader(Stream stream, WorldSectionBoundary sect
         }
 
         return new TileGrid(width, height, tiles);
+    }
+
+    private (Tile Tile, int Run) ReadRecord(int x, int y, int columnHeight)
+    {
+        recordStart = position;
+        recordX = x;
+        recordY = y;
+        var (tile, run) = ReadRecord();
+        if (run < 0)
+        {
+            throw Error("negative run");
+        }
+
+        if (y + run > columnHeight - 1)
+        {
+            throw Error("run crosses column end");
+        }
+
+        return (tile, run);
     }
 
     private (Tile Tile, int Run) ReadRecord()
