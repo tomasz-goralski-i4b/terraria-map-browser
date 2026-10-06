@@ -3,8 +3,9 @@
   "naming": "see ../README.md#naming-key",
   "worlds": [
     {
-      "file": "SCCR1.wld",
+      "file": "SCCO1.wld",
       "worldName": "SCCR1",
+      "renamedFrom": "SCCR1.wld",
       "seed": "948580918",
       "gameVersion": "1.4.5.8",
       "formatVersion": 326,
@@ -15,13 +16,14 @@
         "height": 1200
       },
       "mode": "classic",
-      "evil": "crimson",
+      "evil": "corruption",
       "mods": [],
       "bytes": 2994409,
       "sha256": "31bb924d47b791f22b001111eca095695890196d52bd24dcb9000dd07b3d1d08",
       "generatedBy": "tomasz-goralski-i4b",
       "generatedAt": "2026-10-06",
-      "inGameModifications": "none — freshly generated, never opened in game"
+      "inGameModifications": "none — freshly generated, never opened in game",
+      "note": "Generated as a corruption world but named SCCR1 by mistake (crimson flag false, corruption tiles only — found in #18). The file was renamed to match the naming key; the in-game world name is still SCCR1 and the bytes are untouched."
     },
     {
       "file": "SECR1.wld",

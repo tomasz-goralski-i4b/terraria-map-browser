@@ -32,7 +32,11 @@ for (const file of files) {
   const expect = (field, actual, wanted) => {
     if (actual !== wanted) errors.push(`${file}: ${field} is ${JSON.stringify(actual)}, expected ${JSON.stringify(wanted)}`);
   };
-  expect("worldName", w.worldName, file.replace(/\.wld$/, ""));
+  // The in-game name equals the file name, unless the file was explicitly renamed (bytes untouched).
+  const renamed = w.renamedFrom && w.renamedFrom === `${w.worldName}.wld`;
+  if (!renamed) expect("worldName", w.worldName, file.replace(/\.wld$/, ""));
+  if (w.renamedFrom && !renamed) errors.push(`${file}: renamedFrom must be "<worldName>.wld"`);
+  if (renamed && !w.note) errors.push(`${file}: a renamed fixture needs a note explaining why`);
   expect("size", w.size, SIZES[size]);
   expect("mode", w.mode, MODES[mode]);
   expect("evil", w.evil, EVILS[evil]);
@@ -48,6 +52,47 @@ for (const file of files) {
   expect("bytes", w.bytes, bytes.length);
   expect("sha256", w.sha256, createHash("sha256").update(bytes).digest("hex"));
   expect("formatVersion", w.formatVersion, bytes.readInt32LE(0));
+
+  // Cross-check the manifest against the world metadata (docs/file-format.md, "World metadata").
+  // Format 326 only: before the crimson flag, name and seed are the only variable-length fields.
+  if (bytes.readInt32LE(0) === 326) {
+    try {
+      const facts = readMetadata326(bytes);
+      expect("worldName (in file)", w.worldName, facts.name);
+      expect("seed (in file)", w.seed, facts.seed);
+      expect("dimensions (in file)", `${w.dimensions?.width}x${w.dimensions?.height}`, `${facts.width}x${facts.height}`);
+      expect("mode (in file)", w.mode, facts.mode);
+      expect("evil (in file)", w.evil, facts.evil);
+    } catch (e) {
+      errors.push(`${file}: cannot read metadata: ${e.message}`);
+    }
+  }
+}
+
+/** Minimal, independent metadata probe for format 326 — not the codec. */
+function readMetadata326(b) {
+  const sectionCount = b.readInt16LE(24);
+  let o = b.readInt32LE(26); // pointer[0] = start of the world metadata section
+  if (sectionCount !== 11 || o <= 0 || o >= b.length) throw new Error("unexpected section table");
+  const str = () => {
+    let len = 0, shift = 0, x;
+    do { x = b[o++]; len |= (x & 0x7f) << shift; shift += 7; } while (x & 0x80);
+    const s = b.toString("utf8", o, o + len);
+    o += len;
+    return s;
+  };
+  const name = str();
+  const seed = str();
+  const afterStrings = o;
+  // world-gen version 8 + GUID 16 + world id 4 + bounds 16 = 44 bytes, then height, width, game mode.
+  const height = b.readInt32LE(afterStrings + 44);
+  const width = b.readInt32LE(afterStrings + 48);
+  const modeRaw = b.readInt32LE(afterStrings + 52);
+  // Rows 13–21 are fixed-size for 326: 197 bytes from the end of the seed to the crimson flag.
+  const crimson = b[afterStrings + 197];
+  if (crimson !== 0 && crimson !== 1) throw new Error(`crimson flag byte is ${crimson}`);
+  const MODE = ["classic", "expert", "master", "journey"];
+  return { name, seed, width, height, mode: MODE[modeRaw] ?? `unknown(${modeRaw})`, evil: crimson ? "crimson" : "corruption" };
 }
 for (const file of entries.keys()) {
   if (!files.includes(file)) errors.push(`${file}: manifest entry without a file`);

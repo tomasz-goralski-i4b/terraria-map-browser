@@ -13,7 +13,7 @@ were read, the behaviour is restated, and every byte-level claim was checked aga
 | W1 | Terraria wiki, *Desktop version history* — https://terraria.wiki.gg/wiki/Desktop_version_history | revid `1023996` (2026-08-24) | 2026-10-06 |
 | W2 | Terraria wiki, *1.4.5.8* — https://terraria.wiki.gg/wiki/1.4.5.8 | revid `1029883` (2026-09-16) | 2026-10-06 |
 | W3 | Terraria wiki, *1.4.5.7* — https://terraria.wiki.gg/wiki/1.4.5.7 | revid `1031546` (2026-09-23) | 2026-10-06 |
-| F | M1 fixture corpus (`SCCR1`, `SECR1`, `SJCO1`, `SMCO1`), Terraria 1.4.5.8 | this repo, `packages/test-fixtures/worlds/manifest.json` | 2026-10-06 |
+| F | M1 fixture corpus (`SCCO1`, `SECR1`, `SJCO1`, `SMCO1`), Terraria 1.4.5.8 | this repo, `packages/test-fixtures/worlds/manifest.json` | 2026-10-06 |
 | N | .NET `BinaryReader.ReadString` / `Read7BitEncodedInt` / `ReadBoolean` — https://learn.microsoft.com/dotnet/api/system.io.binaryreader | .NET 8 API reference (no revision ids; behaviour unchanged since .NET Framework 2.0) | 2026-10-06 |
 
 TEdit locations used below (all at commit `182031b`):
@@ -231,7 +231,7 @@ Result: `UnsupportedVersion(279)` — decided at step 2, nothing after the versi
 Likewise `47 01 00 00` (327) → `UnsupportedVersion(327)`.
 
 ### Cross-check on real fixtures
-Bytes 0–25 of `SCCR1.wld` (F) match the layout:
+Bytes 0–25 of `SCCO1.wld` (F) match the layout:
 `46 01 00 00 72 65 6c 6f 67 69 63 02 01 00 00 00 00 00 00 00 00 00 00 00 0b 00`, then `pointer[0] = a7 00 00 00`
 (167) and frame-important count `f2 02` (754) at offset 70. All four fixtures satisfy every rule above;
 `SMCO1` has revision 2 (opened once in game).
@@ -254,7 +254,7 @@ String rules:
   before the end of the section → `MalformedMetadata`.
 - Bytes must be valid UTF-8 → otherwise `MalformedMetadata`. (.NET would silently replace invalid sequences with
   U+FFFD, which breaks round trip — our decision.)
-- Example from F: the world manifest string in `SCCR1` has prefix `93 4a` = `0x13 + (0x4a << 7)` = 9491 bytes.
+- Example from F: the world manifest string in `SCCO1` has prefix `93 4a` = `0x13 + (0x4a << 7)` = 9491 bytes.
 
 ## World metadata (section 1)
 
@@ -264,10 +264,10 @@ per-field lengths, so every field — including the ones M1 does not expose — 
 end. "Expose" = the value is part of the M1 model/`inspect` output; "consume" = it is parsed (and kept for
 round trip in M2) but not interpreted.
 
-The "@SCCR1" column is the absolute offset in fixture `SCCR1.wld` (5-byte name, 9-byte seed), so offsets after
+The "@SCCO1" column is the absolute offset in fixture `SCCO1.wld` (5-byte name, 9-byte seed), so offsets after
 the name shift with string lengths. Rows marked *list* repeat their element type `count` times.
 
-| # | Field | Type | Present for version (T11) | @SCCR1 | M1 |
+| # | Field | Type | Present for version (T11) | @SCCO1 | M1 |
 |---|---|---|---|---|---|
 | 1 | world name | String | always | 167 | **expose** `name` |
 | 2 | seed | Int32 if version = 179, String if ≥ 180 | ≥ 179 | 173 | **expose** `seed` (text) |
@@ -330,13 +330,13 @@ the name shift with string lengths. Rows marked *list* repeat their element type
 Notes and rules:
 - **Height comes before width.** Easy to swap; vector M1 below pins it.
 - GUID: .NET's `Guid(byte[])` text form reorders the first 8 bytes (little-endian groups). To keep .NET and TS
-  identical we expose the 16 bytes as hex in file order (F `SCCR1`: `87e466e7853c3f48b75abc85e36d4b86`).
+  identical we expose the 16 bytes as hex in file order (F `SCCO1`: `87e466e7853c3f48b75abc85e36d4b86`).
 - Game mode values (for version ≥ 209): 0 classic, 1 expert, 2 master, 3 journey — all four confirmed by F
-  (`SCCR1` 0, `SECR1` 1, `SMCO1` 2, `SJCO1` 3). Any other value is kept as `{ mode: "unknown", raw }`, not an
+  (`SCCO1` 0, `SECR1` 1, `SMCO1` 2, `SJCO1` 3). Any other value is kept as `{ mode: "unknown", raw }`, not an
   error (preserve unknown data).
 - Evil: the Bool at row 22 is the only evil flag in the metadata. In F it agrees with the tiles of every
-  fixture (crimson-only tiles in `SECR1`, corruption-only in the other three) — but **not** with the manifest
-  of `SCCR1`, see open questions.
+  fixture (crimson-only tiles in `SECR1`, corruption-only in the other three) and, since the fix for open
+  question 5, with the manifest; `scripts/check-fixtures.mjs` enforces it.
 - Counts (rows 32, 34, 35, 39, 45, 55) must be ≥ 0 (signed types) and the list must fit before `pointer[1]`;
   otherwise `MalformedMetadata`. No other upper bound is defined by any source; this "fits in the section"
   rule is the only bound needed.
@@ -524,7 +524,7 @@ right after the last byte shown.
 - **M1. Dimensions order.** Rows 10–11 bytes `04 00 00 00 02 00 00 00` → `height 4, width 2`.
 - **M2. Zero / negative.** `00 00 00 00 02 00 00 00` → `MalformedMetadata { field "height", reason "must be
   positive" }`; `04 00 00 00 ff ff ff ff` (width −1) → same for `width`.
-- **M3. Real prefix (F).** `SCCR1` from offset 167: `05 53 43 43 52 31` (name "SCCR1"), `09 39 34 38 35 38 30 39
+- **M3. Real prefix (F).** `SCCO1` from offset 167: `05 53 43 43 52 31` (name "SCCR1"), `09 39 34 38 35 38 30 39
   31 38` (seed "948580918"), `01 00 00 00 46 01 00 00` (world-gen version), 16 GUID bytes, `47 4d e9 67`
   (world id 1743427911), `00 00 00 00 80 06 01 00 00 00 00 00 00 4b 00 00` (bounds 0, 67200, 0, 19200),
   `b0 04 00 00` (height 1200), `68 10 00 00` (width 4200), `00 00 00 00` (classic).
@@ -580,7 +580,10 @@ as T1, T7 and R3.
 3. Header flags bits other than bit 0: always zero in F; does the game ever set them?
 4. Is `pointer[n-1] + 6 ≤ L` too lax? A stricter bound needs the world name, which belongs to the metadata
    contract.
-5. **Fixture manifest error:** `SCCR1` is declared `"evil": "crimson"` in `manifest.json`, but its metadata
+5. ~~**Fixture manifest error:**~~ **Resolved:** the file was renamed `SCCR1.wld` → `SCCO1.wld` and the
+   manifest now says `corruption` (bytes untouched, in-game name still `SCCR1`; `renamedFrom` + `note` in the
+   manifest). `scripts/check-fixtures.mjs` now compares name, seed, dimensions, mode and evil with the file.
+   Original finding: `SCCR1` was declared `"evil": "crimson"` in `manifest.json`, but its metadata
    crimson flag is false and its tiles contain 26 348 corruption tiles (ids 23, 25, 112) and no crimson tiles
    (199, 203, 234). The world is a corruption world; either the manifest entry or the world-generation choice
    was wrong. `SECR1` (crimson) and the two corruption worlds are consistent. Consequence: M1 has **no
@@ -669,8 +672,8 @@ The reference .NET codec reads world metadata (name, seed, GUID, id, dimensions,
 
 ## Acceptance criteria
 - Vectors M1–M5 from docs/file-format.md give the documented results.
-- All four M1 fixtures give name, seed, dimensions and mode from the manifest; evil matches the tiles (see
-  open question 5 for SCCR1).
+- All four M1 fixtures give name, seed, dimensions and mode from the manifest; evil matches the tiles
+  (the world named "SCCR1" in game is the corruption fixture `SCCO1.wld`).
 - Width/height ≤ 0 and the safety limits are rejected.
 
 ## Proof
@@ -734,6 +737,9 @@ The TS world model can represent every vanilla tile flag that the codec reads, s
 ```
 
 ```markdown
+**Status:** evil labels and the manifest↔file check are done (open question 5). Still open: a classic-mode
+crimson fixture (human task).
+
 ## Goal
 The M1 fixture corpus labels each world's evil biome correctly and includes a crimson world in classic mode.
 

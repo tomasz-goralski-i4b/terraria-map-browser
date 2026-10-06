@@ -6,7 +6,8 @@ Explicitly generated worlds used by the codec tests (.NET and TS).
 - Only worlds generated specifically for tests — never player worlds, game assets or files from commercial mods.
 - Every `worlds/*.wld` has an entry in `worlds/manifest.json`, and every entry has a file.
   `bash scripts/verify.sh` enforces this (`scripts/check-fixtures.mjs`): file name ↔ naming key ↔ manifest fields,
-  byte size and SHA-256.
+  byte size and SHA-256, and — for format 326 — name, seed, dimensions, mode and evil read from the file
+  itself, so a mislabelled world is caught.
 - The manifest is the **independent oracle** for tests: its values come from the game settings and the raw file,
   never from our codec. Do not regenerate it with codec output.
 - Prefer synthetic fixtures built in test code (header/section bytes) for unit tests — real worlds are for
@@ -16,7 +17,8 @@ Explicitly generated worlds used by the codec tests (.NET and TS).
 ## Naming key
 
 `<size><difficulty><evil><n>.wld` — e.g. `SMCO1.wld` = Small, Master, Corruption, #1.
-The world name inside the file equals the file name without the extension.
+The world name inside the file equals the file name without the extension. Exception: if a world was
+mislabelled, the **file** is renamed (never the bytes) and the manifest records `renamedFrom` plus a `note`.
 
 | Position | Code | Meaning | Manifest value |
 |---|---|---|---|
@@ -53,7 +55,9 @@ codes reserved so the M6 mod-safety work can add them without renaming anything.
 
 ## Current corpus (M1)
 Terraria 1.4.5.8, format version 326, four Small vanilla worlds covering every difficulty and both evils:
-`SCCR1` (classic/crimson), `SECR1` (expert/crimson), `SJCO1` (journey/corruption), `SMCO1` (master/corruption).
+`SCCO1` (classic/corruption), `SECR1` (expert/crimson), `SJCO1` (journey/corruption), `SMCO1` (master/corruption).
+`SCCO1` was generated as corruption but named "SCCR1" in game by mistake; the file was renamed, the bytes
+are untouched (`renamedFrom` in the manifest). Missing combination: a **classic crimson** world (`SCCR2`).
 `SMCO1` was opened in game once and saved on exit (`fileRevision` 2); the others were never opened.
 
 ## Adding a world
