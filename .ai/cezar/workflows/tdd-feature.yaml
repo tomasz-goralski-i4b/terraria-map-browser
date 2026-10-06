@@ -6,6 +6,7 @@ steps:
     skill: tdd-red
     prompt: "{{task}}"
     runner: claude
+    model: opus   # deep tier
   - id: check-red
     name: Gate — tests fail
     command: "bash scripts/tdd/check-red.sh"
@@ -16,6 +17,7 @@ steps:
     skill: tdd-green
     prompt: "{{task}}"
     runner: claude
+    model: sonnet   # standard tier
   - id: check-green
     name: Gate — verify.sh, tests untouched
     command: "bash scripts/tdd/check-green.sh"
@@ -26,6 +28,7 @@ steps:
     skill: tdd-refactor
     prompt: "{{task}}"
     runner: claude
+    model: haiku   # light tier
   - id: check-refactor
     name: Gate — verify.sh after refactor
     command: "bash scripts/tdd/check-green.sh refactor"
@@ -36,6 +39,7 @@ steps:
     skill: reviewer
     prompt: "{{task}}"
     runner: codex
+    model: gpt-6.1-sol   # deep tier
   - id: check-review
     name: Gate — reviewer verdict
     command: "bash scripts/tdd/check-review.sh"

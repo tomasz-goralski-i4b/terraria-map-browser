@@ -99,6 +99,24 @@ Every workflow except `plan-backlog` ends with `review → check-review → open
 the implementer never reviews its own work, and a PR is only marked ready when a second model approved it
 and CI is green. `spike` is researched by Claude and reviewed by Codex; `foundation` the same.
 
+## Models per step
+
+Not every step needs the strongest model. Each agent step pins `runner` + `model` in its workflow YAML
+(Cezar: the step setting wins over the task/automation default). Tiers:
+
+| Tier | Claude | Codex | Used for | Why |
+|---|---|---|---|---|
+| deep | `opus` | `gpt-6.1-sol` | TDD **red**, **review**, spike **research** | tests are the spec; review is the last independent check; research needs judgement |
+| standard | `sonnet` | `gpt-6.1-sol` | TDD **green**, foundation **implement** | the tests and gates constrain the work |
+| light | `haiku` | `gpt-6-luna` | TDD **refactor** | optional clean-up; an empty refactor is fine and the gates guard behaviour |
+| (task) | picked in the New Task dialog | | `plan-backlog` | rare, high leverage — choose per run |
+
+The strongest models (`fable`, `gpt-6-astra`) are not used by default — escalate manually for a hard issue
+(change the model of that step on a branch, or restart the issue after editing the workflow).
+Codex reasoning effort is not settable per step; it comes from `~/.codex/config.toml` (`model_reasoning_effort`).
+Model ids come from `GET /api/v1/models?runner=claude|codex` on the cockpit; the Claude aliases float to the newest release.
+Review the tiering with the experiment metrics (first-CI result, rework cycles per step) and move steps up or down.
+
 ## Gate exit codes
 | Code | Meaning | Cezar |
 |---|---|---|

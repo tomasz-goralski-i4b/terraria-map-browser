@@ -6,6 +6,7 @@ steps:
     skill: foundation
     prompt: "{{task}}"
     runner: claude
+    model: sonnet   # standard tier
   - id: verify
     name: Gate — verify.sh
     command: "bash scripts/tdd/check-verify.sh"
@@ -15,6 +16,7 @@ steps:
     skill: reviewer
     prompt: "{{task}}"
     runner: codex
+    model: gpt-6.1-sol   # deep tier
   - id: check-review
     name: Gate — reviewer verdict
     command: "bash scripts/tdd/check-review.sh"
