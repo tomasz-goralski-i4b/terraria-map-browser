@@ -8,4 +8,5 @@ public enum WorldFormatError
     NotAWorld,
     MalformedSectionTable,
     MalformedMetadata,
+    MalformedTiles,
 }

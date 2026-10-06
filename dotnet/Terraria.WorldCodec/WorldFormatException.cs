@@ -30,6 +30,12 @@ public sealed class WorldFormatException : Exception
     /// <summary>Contract name of the offending field (docs/file-format.md), if any.</summary>
     public string? Field { get; }
 
+    /// <summary>Column of the offending tile record, for <see cref="WorldFormatError.MalformedTiles"/>.</summary>
+    public int? X { get; init; }
+
+    /// <summary>Row of the offending tile record, for <see cref="WorldFormatError.MalformedTiles"/>.</summary>
+    public int? Y { get; init; }
+
     /// <summary>Error category.</summary>
     public WorldFormatError Error { get; }
 

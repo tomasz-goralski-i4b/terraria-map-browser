@@ -32,6 +32,11 @@ public static class WorldReader
     /// <summary>Implementation safety limit for width · height.</summary>
     public const long MaxWorldTileCount = 1L << 28;
 
+    /// <summary>Reads the header, metadata and tile section (docs/file-format.md); later sections are skipped.</summary>
+    /// <remarks>Requires a seekable stream.</remarks>
+    /// <exception cref="WorldFormatException">The file violates the format contract.</exception>
+    public static World Read(Stream stream) => throw new NotImplementedException();
+
     /// <summary>Reads world metadata (section 1) after <see cref="ReadSectionTable"/>.</summary>
     /// <remarks>Consumes every field of the section and leaves the stream at the start of the tile section.</remarks>
     /// <exception cref="WorldFormatException">The metadata is malformed, overruns or underruns its section.</exception>
