@@ -171,7 +171,7 @@ public sealed class ExportJsonCommandTests
         // Name, column, new column hex, chunk and plane whose digest must change.
         { "wall removed at (2, 3)", 2, "40 02 03 18 02 40 7c", "0,0", "wall" },
         { "paint 3 → 9 at (129, 128)", 129, "40 7f 0b 03 0b 0a 04 12 00 2c 00 09 c8", "1,1", "paint" },
-        { "honey → lava at (64, 128)", 64, "40 7d 58 ff 01 50 ff", "0,1", "liquid" },
+        { "honey → lava at (64, 128)", 64, "40 7d 58 ff 01 10 ff", "0,1", "liquid" },
     };
 
     [Theory]
