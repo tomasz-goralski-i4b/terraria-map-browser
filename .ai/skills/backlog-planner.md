@@ -22,7 +22,9 @@ you get its output in the prompt — fix the file.
   - `human` — something an agent cannot do: generating a small world in Terraria, an in-game test, a decision.
 - `runner`: `claude` or `codex` — spread roughly evenly unless the task says otherwise; binary format changes
   (writer, round-trip) go to `claude`. Omit for `human`.
-- `area`: `codec`, `model`, `fixtures`, `docs`, `infra`, `web`, `mods`. The promoter runs **one issue at a time per area**,
+- `area`: `codec` (.NET reference codec, `dotnet/`), `codec-ts` (TypeScript codec, `packages/world-codec`),
+  `model`, `fixtures`, `docs`, `infra`, `web`, `mods`. The two codecs are independent implementations of one
+  contract (ADR 0001), so they are separate areas and may run in parallel. The promoter runs **one issue at a time per area**,
   so do not invent areas, and put independent work in different areas so it can run in parallel.
 - `blockedBy`: **real** dependencies only (needed code/fixture/decision). Keys must point to items
   earlier in the list, or to an existing open issue written as `"#123"` (e.g. an unfinished issue of the

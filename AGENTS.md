@@ -43,7 +43,8 @@ scripts/                           verify/build/test + TDD gates (scripts/tdd) +
 ## Hard rules
 - No Terraria assets, player worlds or commercial mods in the repo (`*.wld` is gitignored except generated fixtures).
 - We do not copy TEdit/tModLoader code — we describe the contract and implement independently.
-- Only one agent at a time changes the codec and the binary writer.
+- Only one agent at a time changes a codec and its binary writer — per implementation: `area:codec` (.NET,
+  `dotnet/`) and `area:codec-ts` (TypeScript, `packages/world-codec`) are separate areas and may run in parallel.
 - Agents do not merge. A chain ends with the `open-pr` step (draft PR `Closes #N`); a human merges.
 - The reviewer only reports (`.tdd/review.md`) and never changes code.
 - Public repo: only issues of trusted authors (`.ai/cezar/trusted-authors.json`) enter the pipeline. Never weaken
