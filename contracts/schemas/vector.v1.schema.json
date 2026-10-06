@@ -99,7 +99,231 @@
                   ]
                 }
               }
-            }
+            },
+            "oneOf": [
+              {
+                "required": [
+                  "id"
+                ],
+                "properties": {
+                  "id": {
+                    "const": "R5"
+                  },
+                  "cases": {
+                    "items": {
+                      "properties": {
+                        "error": {
+                          "properties": {
+                            "offset": {
+                              "minimum": 0,
+                              "maximum": 3
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "required": [
+                  "id"
+                ],
+                "properties": {
+                  "id": {
+                    "const": "R6"
+                  },
+                  "cases": {
+                    "items": {
+                      "properties": {
+                        "error": {
+                          "properties": {
+                            "offset": {
+                              "minimum": 0,
+                              "maximum": 6
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "required": [
+                  "id"
+                ],
+                "properties": {
+                  "id": {
+                    "const": "R7"
+                  },
+                  "cases": {
+                    "items": {
+                      "properties": {
+                        "error": {
+                          "properties": {
+                            "offset": {
+                              "minimum": 0,
+                              "maximum": 4
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "required": [
+                  "id"
+                ],
+                "properties": {
+                  "id": {
+                    "const": "R8"
+                  },
+                  "cases": {
+                    "items": {
+                      "properties": {
+                        "error": {
+                          "properties": {
+                            "offset": {
+                              "minimum": 0,
+                              "maximum": 4
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "required": [
+                  "id"
+                ],
+                "properties": {
+                  "id": {
+                    "const": "T14"
+                  },
+                  "cases": {
+                    "items": {
+                      "properties": {
+                        "error": {
+                          "properties": {
+                            "offset": {
+                              "minimum": 0,
+                              "maximum": 3
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "required": [
+                  "id"
+                ],
+                "properties": {
+                  "id": {
+                    "const": "T15"
+                  },
+                  "cases": {
+                    "items": {
+                      "properties": {
+                        "error": {
+                          "properties": {
+                            "offset": {
+                              "minimum": 0,
+                              "maximum": 3
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "required": [
+                  "id"
+                ],
+                "properties": {
+                  "id": {
+                    "const": "T16"
+                  },
+                  "cases": {
+                    "items": {
+                      "properties": {
+                        "error": {
+                          "properties": {
+                            "offset": {
+                              "minimum": 0,
+                              "maximum": 4
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "required": [
+                  "id"
+                ],
+                "properties": {
+                  "id": {
+                    "const": "T17"
+                  },
+                  "cases": {
+                    "items": {
+                      "properties": {
+                        "error": {
+                          "properties": {
+                            "offset": {
+                              "minimum": 0,
+                              "maximum": 3
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "required": [
+                  "id"
+                ],
+                "properties": {
+                  "id": {
+                    "enum": [
+                      "T1",
+                      "T2",
+                      "T3",
+                      "T4",
+                      "T5",
+                      "T6",
+                      "T7",
+                      "T8",
+                      "T9",
+                      "T10",
+                      "T11",
+                      "T12",
+                      "T13",
+                      "R1",
+                      "R2",
+                      "R3",
+                      "R4",
+                      "M1",
+                      "M3"
+                    ]
+                  }
+                }
+              }
+            ]
           },
           {
             "type": "object",
@@ -174,7 +398,87 @@
                   ]
                 }
               }
-            }
+            },
+            "oneOf": [
+              {
+                "required": [
+                  "id"
+                ],
+                "properties": {
+                  "id": {
+                    "const": "R9"
+                  },
+                  "cases": {
+                    "items": {
+                      "properties": {
+                        "error": {
+                          "properties": {
+                            "offset": {
+                              "minimum": 100,
+                              "maximum": 104
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "required": [
+                  "id"
+                ],
+                "properties": {
+                  "id": {
+                    "const": "R10"
+                  },
+                  "cases": {
+                    "items": {
+                      "properties": {
+                        "error": {
+                          "properties": {
+                            "offset": {
+                              "minimum": 100,
+                              "maximum": 108
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "required": [
+                  "id"
+                ],
+                "properties": {
+                  "id": {
+                    "enum": [
+                      "T1",
+                      "T2",
+                      "T3",
+                      "T4",
+                      "T5",
+                      "T6",
+                      "T7",
+                      "T8",
+                      "T9",
+                      "T10",
+                      "T11",
+                      "T12",
+                      "T13",
+                      "R1",
+                      "R2",
+                      "R3",
+                      "R4",
+                      "M1",
+                      "M3"
+                    ]
+                  }
+                }
+              }
+            ]
           },
           {
             "type": "object",
@@ -252,7 +556,111 @@
               "provenance": {
                 "$ref": "#/$defs/provenance"
               }
-            }
+            },
+            "oneOf": [
+              {
+                "required": [
+                  "id"
+                ],
+                "properties": {
+                  "id": {
+                    "const": "M2"
+                  },
+                  "cases": {
+                    "items": {
+                      "properties": {
+                        "error": {
+                          "properties": {
+                            "offset": {
+                              "minimum": 0,
+                              "maximum": 8
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "required": [
+                  "id"
+                ],
+                "properties": {
+                  "id": {
+                    "const": "M4"
+                  },
+                  "cases": {
+                    "items": {
+                      "properties": {
+                        "error": {
+                          "properties": {
+                            "offset": {
+                              "minimum": 0,
+                              "maximum": 1
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "required": [
+                  "id"
+                ],
+                "properties": {
+                  "id": {
+                    "const": "M5"
+                  },
+                  "cases": {
+                    "items": {
+                      "properties": {
+                        "error": {
+                          "properties": {
+                            "offset": {
+                              "minimum": 0,
+                              "maximum": 5
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "required": [
+                  "id"
+                ],
+                "properties": {
+                  "id": {
+                    "enum": [
+                      "T1",
+                      "T2",
+                      "T3",
+                      "T4",
+                      "T5",
+                      "T6",
+                      "T7",
+                      "T8",
+                      "T9",
+                      "T10",
+                      "T11",
+                      "T12",
+                      "T13",
+                      "R1",
+                      "R2",
+                      "R3",
+                      "R4",
+                      "M1",
+                      "M3"
+                    ]
+                  }
+                }
+              }
+            ]
           }
         ]
       }
@@ -742,8 +1150,7 @@
         },
         "offset": {
           "type": "integer",
-          "minimum": 0,
-          "maximum": 239
+          "minimum": 0
         },
         "reason": {
           "type": "string"
@@ -752,7 +1159,7 @@
           "type": "string"
         }
       },
-      "description": "META: absolute offset within the published inputs (baseOffset 0..167, at most 72 bytes)."
+      "description": "META: absolute offset within the vector's input; the per-vector bounds (baseOffset up to inputEnd of the vector's longest case) are enforced by the vector alternatives."
     },
     "recError": {
       "type": "object",
@@ -767,8 +1174,7 @@
         },
         "offset": {
           "type": "integer",
-          "minimum": 0,
-          "maximum": 7
+          "minimum": 0
         },
         "reason": {
           "type": "string"
@@ -782,7 +1188,7 @@
           "minimum": 0
         }
       },
-      "description": "REC: absolute offset within the record input (published REC inputs are at most 7 bytes at baseOffset 0)."
+      "description": "REC: absolute offset within the vector's record input; the per-vector bounds (baseOffset up to the end of the vector's longest case) are enforced by the vector alternatives."
     },
     "secError": {
       "type": "object",
@@ -797,8 +1203,7 @@
         },
         "offset": {
           "type": "integer",
-          "minimum": 100,
-          "maximum": 108
+          "minimum": 100
         },
         "reason": {
           "type": "string"
@@ -812,7 +1217,7 @@
           "minimum": 0
         }
       },
-      "description": "SEC: absolute offset from baseOffset 100 (pointer[1]) up to the end of the longest published section (R10, 8 bytes); the end itself is the leftover-byte offset."
+      "description": "SEC: absolute offset from baseOffset 100 (pointer[1]); the per-vector bounds (up to the end of the vector's longest case; the end itself is the leftover-byte offset, R10) are enforced by the vector alternatives."
     }
   }
 }
