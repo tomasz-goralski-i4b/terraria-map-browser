@@ -14,6 +14,16 @@ npx cezar-run
 
 If a gate still ends up in WSL, `scripts/lib.sh` exits with code 2 and an `INFRA: ... WSL` message.
 
+**After a reboot** only two processes have to come back — Cezar keeps automations (enabled/paused, event cursor)
+and runs on disk and recovers interrupted runs itself. `scripts/start-pipeline.ps1` starts both in Git Bash
+windows (the cockpit with `CEZ_DISPATCH=0`, then `scripts/backlog/watch.sh`) and skips whatever already runs:
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\start-pipeline.ps1                     # start what is missing
+powershell -ExecutionPolicy Bypass -File scripts\start-pipeline.ps1 -Check              # only report
+powershell -ExecutionPolicy Bypass -File scripts\start-pipeline.ps1 -InstallAutostart   # also run it at every logon
+powershell -ExecutionPolicy Bypass -File scripts\start-pipeline.ps1 -RemoveAutostart
+```
+
 Recommended environment (e.g. in `~/.bashrc` or before `npx`):
 ```bash
 export CEZ_DISPATCH=0      # agents in a chain do not spawn their own subtasks (those have no TDD gates)
