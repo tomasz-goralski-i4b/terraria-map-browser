@@ -1,4 +1,9 @@
 {
   "files": [],
-  "references": [{ "path": "packages/world-model" }]
+  "references": [
+    { "path": "packages/world-model" },
+    { "path": "packages/world-codec" },
+    { "path": "packages/world-codec/tests" },
+    { "path": "packages/world-codec/tests/fixtures" }
+  ]
 }

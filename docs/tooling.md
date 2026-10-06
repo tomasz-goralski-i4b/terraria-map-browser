@@ -12,6 +12,7 @@ Toolchain decisions and the reasons behind them. Change a version here in the sa
 | TypeScript API (lint, editors) | TypeScript 6.0 via `@typescript/typescript6`, installed as `typescript` | `pnpm-workspace.yaml` `catalog` |
 | Linter | ESLint 10 + `@eslint/js` 10 + `typescript-eslint` 8 (`strictTypeChecked` + `stylisticTypeChecked`) | `eslint.config.js` |
 | Tests | Vitest 5, one project per package | `vitest.config.ts` |
+| Browser tests | `@vitest/browser-playwright` 5 (matches Vitest) + Playwright 1.63, headless Chromium | `vitest.config.ts`, CI browser install |
 | Node types | `@types/node` 24 | `pnpm-workspace.yaml` `catalog` |
 
 All shared dev dependency versions live in the `catalog:` of `pnpm-workspace.yaml`; `package.json` files reference
@@ -91,9 +92,29 @@ Considered and not enabled:
 
 ### Tests
 
-`vitest.config.ts` creates one Vitest project per `packages/*` / `apps/*` directory that has a `src/`, named after
-the package (`[@studio/world-model]` in the output). Only `src/**/*.test.ts` is collected, so the compiled copies in
-`dist/` never run twice. A new package with tests is picked up without touching the config.
+`vitest.config.ts` creates one Node Vitest project per `packages/*` / `apps/*` directory that has a `src/`, named
+after the package (`[@studio/world-model]` in the output). It collects `src/**/*.test.ts` and `tests/**/*.test.ts`,
+excluding `*.browser.test.ts`, so compiled copies in `dist/` never run twice. New Node tests are picked up without
+touching the config.
+
+`@studio/world-codec/browser` runs `tests/**/*.browser.test.ts` in real headless Chromium through
+[Vitest's Playwright provider](https://vitest.dev/config/browser/playwright). The module Worker smoke imports the
+built package entry and reports readiness; its fixture is test tooling, not a codec Worker API. A separate Node
+smoke imports the same package export without `window` or `Worker` globals. The package deliberately has no
+runtime dependencies or codec logic yet. Build before either test so `dist/index.js` and declarations exist.
+
+Browser projects are registered explicitly in `vitest.config.ts`; add a browser project there for each new
+package containing `tests/**/*.browser.test.ts`. Vitest saves failure screenshots under `.vitest/attachments/`;
+`.vitest/` is gitignored so red-phase browser runs cannot stage generated binary artifacts through `git add -A`.
+
+Install the matching browser once locally with `pnpm exec playwright install chromium`. CI uses
+`pnpm exec playwright install --with-deps chromium` to also install Linux system libraries
+([Playwright browser setup](https://playwright.dev/docs/browsers)). Browser installation is an explicit setup
+step, not a dependency install hook. `bash scripts/verify.sh` builds and typechecks the package and harnesses,
+lints them with zero warnings, and runs both Node and browser projects through `scripts/test.sh`.
+
+For focused checks: `pnpm --filter @studio/world-codec build`, `pnpm --filter @studio/world-codec lint`,
+`pnpm --filter @studio/world-codec test`, and `pnpm --filter @studio/world-codec test:browser`.
 
 ### pnpm settings
 

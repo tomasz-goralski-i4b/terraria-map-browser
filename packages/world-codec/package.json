@@ -1,0 +1,19 @@
+{
+  "name": "@studio/world-codec",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -b",
+    "lint": "eslint src tests --max-warnings=0",
+    "test": "pnpm --dir ../.. exec vitest run --project @studio/world-codec",
+    "test:browser": "pnpm --dir ../.. exec vitest run --project @studio/world-codec/browser"
+  }
+}

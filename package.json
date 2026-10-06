@@ -15,7 +15,9 @@
   "devDependencies": {
     "@eslint/js": "catalog:",
     "@types/node": "catalog:",
+    "@vitest/browser-playwright": "catalog:",
     "eslint": "catalog:",
+    "playwright": "catalog:",
     "typescript": "catalog:",
     "typescript-eslint": "catalog:",
     "typescript7": "catalog:",
