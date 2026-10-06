@@ -7,6 +7,7 @@ const labels = [
   ["status:pr-ready", "1d76db", "Chain finished, draft PR waiting for a human"],
   ["status:ready-to-merge", "0e8a16", "Reviewed by a second model, CI green — waiting for a human merge"],
   ["status:stalled", "b60205", "Chain stopped without a PR (usage limit, crash) — needs a human; area stays busy"],
+  ["follow-up", "fef2c0", "Non-blocking review notes from a merged chain — triage: plan, decide or close"],
   ["human", "e99695", "Needs a human (e.g. the game, a decision) — the promoter skips it, agents wait for it to close"],
   ["flow:tdd", "5319e7", "tdd-feature workflow"],
   ["flow:foundation", "5319e7", "foundation workflow (no TDD)"],

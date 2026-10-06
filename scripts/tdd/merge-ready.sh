@@ -52,12 +52,26 @@ if [ -n "$issue" ]; then
   gh issue edit "$issue" --remove-label status:pr-ready --add-label "$LABEL" >/dev/null || true
 fi
 
+# Non-blocking review notes become a tracked follow-up issue instead of dying in the PR description.
+followups=$(node scripts/backlog/followups.mjs "$pr" --review .tdd/review.md 2>&1 || true)
+echo "$followups"
+followup_url=$(grep -o 'https://github.com/[^ ]*/issues/[0-9]*' <<<"$followups" | head -1 || true)
+needs_decision=""
+grep -qi '^needs a human decision' .tdd/review.md && needs_decision=1
+
 {
   echo "✅ **Ready to merge**"
   echo
   echo "- Independent review: \`VERDICT: APPROVE\` (see *Cross-review* in the description)"
   echo "- CI: green on \`${head_sha:0:7}\`"
   echo "- Gates passed in the agent worktree: \`scripts/verify.sh\` → \`VERIFY: OK\`"
+  if [ -n "$followup_url" ]; then
+    echo "- Non-blocking review notes filed as $followup_url"
+  fi
+  if [ -n "$needs_decision" ]; then
+    echo
+    echo "⚠️ The reviewer marked something as **Needs a human decision** — read it before merging."
+  fi
   echo
   echo "Suggested: **Squash and merge**, delete the branch. Merging closes ${issue:+#$issue and }unblocks the next backlog items."
 } > .tdd/merge-ready.md

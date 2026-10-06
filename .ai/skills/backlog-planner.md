@@ -9,7 +9,9 @@ you get its output in the prompt — fix the file.
 ## Input
 - the task (prompt) — which milestone / scope to plan,
 - `docs/architecture.md` (milestones, "Done", roles, delegation rules), `AGENTS.md`, `docs/file-format.md`,
-- existing issues: `gh issue list --state all --limit 200` — do not duplicate them; you may reference them in bodies.
+- existing issues: `gh issue list --state all --limit 200` — do not duplicate them; you may reference them in bodies,
+- open review follow-ups: `gh issue list --label follow-up --state open` — fold relevant items into the plan
+  (as their own issues or into the acceptance criteria of a related one) and mention the follow-up number in the body.
 
 ## Slicing rules
 - One issue = one behaviour, **1–5 acceptance criteria**, each testable (the RED phase turns them into tests).

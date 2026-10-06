@@ -31,5 +31,10 @@ Then a list of findings: `- [file:line] problem → expected fix`. Tag each as `
 
 - `REQUEST_CHANGES` only for real problems (bugs, a criterion without a test, broken rules) — not for taste.
 - `BLOCKED` when the task is unclear, needs a human decision, or the change is risky for the format.
-- Minor suggestions with `APPROVE` go under `Nice to have:` — they do not go back to the implementer.
+- Minor suggestions with `APPROVE` go under `Nice to have:` — they do not go back to the implementer; the
+  `merge-ready` gate files them as a `follow-up` issue, so make each one self-contained (file:line, problem → fix).
+- Things a human must confirm but that do not block the merge (a contract or doc change outside the issue's
+  Ownership, a trade-off you accepted) go under `Needs a human decision:` — listed first in the follow-up issue.
+  If it should block the merge, use `BLOCKED` instead.
+- Section headers exactly `Needs a human decision:` and `Nice to have:`, each followed by `- ` bullets.
 - Write in English.

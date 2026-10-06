@@ -56,6 +56,14 @@ bash scripts/backlog/install-automations.sh
 New ones are created **paused**; enable them in the UI → Automations. Enabling sets a "from now on" baseline —
 labels added earlier are not picked up (remove and re-add `agent:ready` in that case).
 
+### Review notes → follow-up issues
+An `APPROVE` review can still carry non-blocking notes. The reviewer writes them as `Needs a human decision:`
+(something you must confirm, e.g. a contract change outside the issue's Ownership) and `Nice to have:`
+(suggestions). `merge-ready` files them as **one issue per PR** labelled `follow-up` (+ the area), links it in
+the "Ready to merge" comment, and warns when a decision is needed. Follow-ups are not `backlog`, so nothing runs
+automatically: triage them (plan, decide or close). The planner reads open follow-ups when planning the next
+milestone. For older PRs: `node scripts/backlog/followups.mjs <pr> [--dry-run]`.
+
 ### Stall watchdog
 A chain can die without any GitHub event (e.g. the agent hits a usage limit and Cezar ends the run early).
 The promoter therefore also runs every 30 minutes (Action cron) and checks issues on `agent:ready`:
