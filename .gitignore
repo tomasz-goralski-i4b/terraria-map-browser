@@ -9,6 +9,7 @@ node_modules/
 dist/
 *.tsbuildinfo
 coverage/
+.vitest/
 
 # TDD chain state (per worktree, read by scripts/tdd/*)
 .tdd/

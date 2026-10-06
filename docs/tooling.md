@@ -103,6 +103,10 @@ built package entry and reports readiness; its fixture is test tooling, not a co
 smoke imports the same package export without `window` or `Worker` globals. The package deliberately has no
 runtime dependencies or codec logic yet. Build before either test so `dist/index.js` and declarations exist.
 
+Browser projects are registered explicitly in `vitest.config.ts`; add a browser project there for each new
+package containing `tests/**/*.browser.test.ts`. Vitest saves failure screenshots under `.vitest/attachments/`;
+`.vitest/` is gitignored so red-phase browser runs cannot stage generated binary artifacts through `git add -A`.
+
 Install the matching browser once locally with `pnpm exec playwright install chromium`. CI uses
 `pnpm exec playwright install --with-deps chromium` to also install Linux system libraries
 ([Playwright browser setup](https://playwright.dev/docs/browsers)). Browser installation is an explicit setup
