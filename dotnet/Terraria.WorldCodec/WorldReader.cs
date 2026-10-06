@@ -23,6 +23,31 @@ public static class WorldReader
     /// <summary>The explicit set of format versions accepted in M1.</summary>
     public static IReadOnlySet<int> SupportedVersions { get; } = new[] { 326 }.ToFrozenSet();
 
+    /// <summary>Implementation safety limit for <see cref="WorldMetadata.Width"/> (docs/file-format.md, "Dimensions").</summary>
+    public const int MaxWorldWidth = 65_536;
+
+    /// <summary>Implementation safety limit for <see cref="WorldMetadata.Height"/>.</summary>
+    public const int MaxWorldHeight = 65_536;
+
+    /// <summary>Implementation safety limit for width · height.</summary>
+    public const long MaxWorldTileCount = 1L << 28;
+
+    /// <summary>Reads world metadata (section 1) after <see cref="ReadSectionTable"/>.</summary>
+    /// <remarks>Consumes every field of the section and leaves the stream at the start of the tile section.</remarks>
+    /// <exception cref="WorldFormatException">The metadata is malformed, overruns or underruns its section.</exception>
+    public static WorldMetadata ReadMetadata(Stream stream, WorldFileHeader header, WorldSectionTable table)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+        ArgumentNullException.ThrowIfNull(header);
+        ArgumentNullException.ThrowIfNull(table);
+        ValidateVersion(header.Version);
+
+        // No section-sized buffer: a hostile table can declare almost 2 GiB of metadata.
+        var metadata = MetadataSection.Read(new MetadataSectionReader(stream, table.Metadata), table);
+        stream.Position = table.Metadata.End;
+        return metadata;
+    }
+
     /// <summary>Reads section boundaries and frame-important bits after <see cref="ReadHeader"/>.</summary>
     /// <remarks>Requires a seekable stream; leaves it at the start of world metadata without reading payload.</remarks>
     public static WorldSectionTable ReadSectionTable(Stream stream, WorldFileHeader header)
@@ -64,8 +89,15 @@ public static class WorldReader
         for (var index = 0; index < pointers.Length; index++)
         {
             var pointer = BinaryPrimitives.ReadInt32LittleEndian(pointerBytes[(index * sizeof(int))..]);
-            if (pointer < headerEnd || pointer > fileLength ||
-                (index == 0 ? pointer != headerEnd : pointer <= pointers[index - 1]))
+            var ordered = index switch
+            {
+                0 => pointer == headerEnd,
+
+                // An empty metadata section passes here; ReadMetadata reports it as MalformedMetadata.
+                1 => pointer >= pointers[0],
+                _ => pointer > pointers[index - 1],
+            };
+            if (pointer < headerEnd || pointer > fileLength || !ordered)
             {
                 throw new WorldFormatException(
                     WorldFormatError.MalformedSectionTable,

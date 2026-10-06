@@ -11,6 +11,25 @@ public sealed class WorldFormatException : Exception
         Reason = reason;
     }
 
+    /// <summary>An error inside a named section, optionally pinned to one field of it.</summary>
+    public WorldFormatException(WorldFormatError error, long offset, string reason, string section, string? field)
+        : base(field is null
+            ? $"{error} in {section} at offset {offset}: {reason}"
+            : $"{error} in {section}.{field} at offset {offset}: {reason}")
+    {
+        Error = error;
+        Offset = offset;
+        Reason = reason;
+        Section = section;
+        Field = field;
+    }
+
+    /// <summary>Name of the section (as in <see cref="WorldSectionTable"/>) that holds the offending bytes, if any.</summary>
+    public string? Section { get; }
+
+    /// <summary>Contract name of the offending field (docs/file-format.md), if any.</summary>
+    public string? Field { get; }
+
     /// <summary>Error category.</summary>
     public WorldFormatError Error { get; }
 
