@@ -28,6 +28,14 @@ If the task points to GitHub issue `#N` (tasks from automations always do):
 6. Run `bash scripts/build.sh` (must pass — warnings are errors) and `bash scripts/test.sh` (the new tests must fail
    on an assertion or NotImplemented, not on compilation).
 
+## Defect report from green
+If the prompt contains a defect report (also in `.tdd/red-defect.md`), the implementer claims one of your tests
+can never pass. Judge it against the spec, as the author of the tests:
+- **Right:** fix exactly that test/fixture so it expresses the original intent — never weaken or delete
+  assertions, never touch production code. Then run `bash scripts/build.sh`.
+- **Wrong:** change nothing and write your reasoning to `.tdd/red-defect-rejected.md`.
+The gate records the outcome for the reviewer and the PR description.
+
 ## Rework
 If the reviewer's findings are about **behaviour** (bug, missing edge case), add a failing test that reproduces it.
 If they are only about style/naming/structure — add no tests and finish the step without changes (the gate lets it through).

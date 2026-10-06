@@ -17,6 +17,8 @@ The only file you write is `.tdd/review.md`. Any other change stops the chain.
 - `.wld` format and round-trip regressions (load → save → load), handling of unknown modded IDs (`unknown`);
 - silenced warnings (`#pragma`, `NoWarn`, `eslint-disable`, `@ts-ignore`) without justification;
 - compliance with `AGENTS.md` (module ownership, no game assets in the repo);
+- red-phase test corrections (`.tdd/red-defect-resolved-*.md`, commits `test: fix red-phase defect`): was each
+  test really wrong per the spec, and does the corrected test keep its original intent and strength?
 - docs updated when the format/contract changes;
 - docs/spike changes: every claim has a source (link + revision, file:line), byte-level claims are checked
   against fixtures, nothing is copied verbatim from TEdit/tModLoader, open questions and decisions are explicit.

@@ -18,6 +18,10 @@ steps:
     prompt: "{{task}}"
     runner: codex
     model: gpt-6.1-sol   # standard tier
+  - id: check-red-defect
+    name: Gate — implementer reported a wrong red-phase test?
+    command: "bash scripts/tdd/check-red-defect.sh"
+    onFail: { retry: red, max: 1, retryOn: [1] }
   - id: check-green
     name: Gate — verify.sh, tests untouched
     command: "bash scripts/tdd/check-green.sh"

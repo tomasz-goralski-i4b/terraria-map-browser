@@ -96,6 +96,7 @@ red ─► check-red ─► green ─► check-green ─► refactor ─► chec
 |---|---|---|---|
 | red | implementer | `.tdd/plan.md`, tests, stubs | tests changed, build OK, tests FAIL → commit `test: red`, `.tdd/red-sha` |
 | green | implementer | minimal implementation | tests unchanged since `red-sha`, `verify.sh` OK → commit, `.tdd/green-sha` |
+| (check-red-defect) | script | — | green wrote `.tdd/red-defect.md` ("this red test can never pass, per spec") → back to red, which fixes the test (`test: fix red-phase defect`) or rejects the report; once per run; shown to the reviewer and in the PR |
 | refactor | implementer | clean-up, docs | same as green |
 | review | the other provider | `.tdd/review.md` with a verdict | reviewer changed nothing; APPROVE=0, REQUEST_CHANGES=1 (rework), BLOCKED=3 (stop) |
 | open-pr | script | push, draft PR `Closes #N` | — |

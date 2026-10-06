@@ -37,6 +37,10 @@ else
     if [ -f .tdd/review.md ]; then
       echo; echo "## Cross-review"; echo; cat .tdd/review.md
     fi
+    for d in .tdd/red-defect-resolved-*.md; do
+      [ -f "$d" ] || continue
+      echo; echo "## Red-phase test defect reported by the implementer"; echo; cat "$d"
+    done
     if [ -f .tdd/plan.md ]; then
       echo; echo "<details><summary>Test plan</summary>"; echo; cat .tdd/plan.md; echo; echo "</details>"
     fi
