@@ -194,8 +194,9 @@ later). Encoding (T5, T6, verified on F):
 - Int16 `k` = number of tile types. For 1.4.5.8 `k = 754` = highest tile id 753 + 1 (T2, F).
 - Followed by `⌈k/8⌉` bytes. Tile id `i` is bit `i mod 8` (value `1 << (i mod 8)`, **least-significant bit
   first**) of byte `i div 8`.
-- Unused high bits of the last byte are written as 0 (F: last byte `0x03`, only bits 752 and 753). Readers
-  ignore them; writers emit 0.
+- Unused high bits of the last byte are 0 in every observed vanilla file (F: last byte `0x03`, only bits 752
+  and 753), so the game writes them as 0. Readers ignore them. Our writer does **not** normalise them: it
+  copies the bytes as read, so a source with nonzero padding keeps it on an unchanged save (W-H3).
 - `k < 0` → `MalformedSectionTable`. `k = 0` is structurally valid (no bytes follow).
 - The header layer accepts any `k`; whether `k` matches the tile ids used in the tile payload is decided by the
   tile contract (see open questions).
