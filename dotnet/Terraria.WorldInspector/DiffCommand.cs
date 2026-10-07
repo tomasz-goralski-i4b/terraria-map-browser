@@ -32,7 +32,8 @@ internal static class DiffCommand
         using var leftSummary = Summary(left);
         using var rightSummary = Summary(right);
         return WorldDiff.Write(leftSummary.RootElement, rightSummary.RootElement,
-            region => ReadChunk(left, region), region => ReadChunk(right, region), output, maximum);
+            region => ReadChunk(left, region), region => ReadChunk(right, region), output, maximum,
+            PaletteResolvedDigests.For(left, right));
     }
 
     private static JsonDocument Summary(World world)

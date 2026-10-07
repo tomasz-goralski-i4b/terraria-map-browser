@@ -49,7 +49,8 @@ internal static class InspectorCommand
         }
 
         const string Usage = "Usage: Terraria.WorldInspector inspect <file.wld>\n"
-            + "       Terraria.WorldInspector export-json <file.wld> [--region x,y,w,h]";
+            + "       Terraria.WorldInspector export-json <file.wld> [--region x,y,w,h]\n"
+            + "       Terraria.WorldInspector diff <left.wld> <right.wld> [--max n]";
 
         var exporting = arguments is ["export-json", _] or ["export-json", _, "--region", _];
         if (!exporting && arguments is not ["inspect", _])

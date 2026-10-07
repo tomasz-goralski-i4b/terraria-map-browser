@@ -54,12 +54,15 @@ dotnet run --project dotnet/Terraria.WorldInspector -- diff "Forest Observatory.
 
 The diff compares metadata, dimensions, skipped-section lengths and palette contents before
 chunk plane digests. Detailed tile comparisons resolve ContentRef values and visit candidate
-chunks only; a changed palette mapping also requires checking block and wall semantics.
+chunks only. When the palettes differ (reordered or with other entries), block and wall indices are
+compared through one shared palette, so unchanged chunks are still skipped.
 The M1 reader still eagerly reads both worlds to build their summaries. Different legal RLE
 encodings and reordered palettes alone are equal; opaque skipped-section contents are ignored.
 
 Summary differences precede tile differences, which are ordered by x, then y. Each tile line
-names a field and its before/after values; different dimensions also report one-sided positions.
+names a field and its before/after values (wires as names, e.g. `"red, green"` or `"none"`); a
+metadata field present on one side only is reported as `absent` on the other; different dimensions
+also report one-sided positions.
 `--max n` caps tile field differences (default 100, zero allowed), without capping summary
 differences, and reports the exact omitted count. Exit codes are `0` for no differences,
 `3` for differences, `2` for invalid arguments and `1` for a read error naming the failing side.
