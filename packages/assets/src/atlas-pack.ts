@@ -1,7 +1,7 @@
 import type { AtlasEntry, PackableSheet, SheetKind, SheetMetrics, SpriteAtlas } from "./atlas-types.js";
 
 /** Bump when the page layout or index shape changes; it is part of the cache key. */
-export const ATLAS_FORMAT_VERSION = 1;
+export const ATLAS_FORMAT_VERSION = 2;
 
 /** Page edge used when the caller passes none. */
 export const DEFAULT_PAGE_SIZE = 4096;
@@ -13,6 +13,37 @@ const METRICS: Readonly<Record<SheetKind, SheetMetrics>> = {
   tile: { cell: 16, gap: 2 },
   wall: { cell: 32, gap: 4 },
 };
+
+interface SheetLayout {
+  readonly frameWidth: number;
+  readonly frameHeight: number;
+  readonly gapX: number;
+  readonly gapY: number;
+}
+
+/**
+ * Tile ids whose texture grid or gutter differs from the 16×16 / 2×2 default, restated from the per-id statistics in
+ * docs/assets.md ("Sprite layout", "Blocks"; source A12). Only the ids that document names are listed; every other id
+ * uses the default until a follow-up derives the full table.
+ */
+const TILE_LAYOUT_EXCEPTIONS: ReadonlyMap<number, Partial<SheetLayout>> = new Map([
+  [3, { frameHeight: 20 }], // short plants: 16×20 grid
+  [4, { frameWidth: 20, frameHeight: 20 }], // torches
+  [5, { frameWidth: 20, frameHeight: 20 }], // trees
+  [323, { frameWidth: 20, frameHeight: 20 }], // palm trees
+  [15, { gapY: 4 }], // chairs
+  [216, { gapY: 4 }], // rockets
+  [497, { gapY: 4 }], // toilets
+  [172, { gapY: 3 }], // sinks
+  [751, { gapX: 0, gapY: 0 }],
+  [752, { gapX: 0, gapY: 0 }],
+]);
+
+function layoutOf(kind: SheetKind, id: number): SheetLayout {
+  const { cell, gap } = METRICS[kind];
+  const base: SheetLayout = { frameWidth: cell, frameHeight: cell, gapX: gap, gapY: gap };
+  return kind === "tile" ? { ...base, ...TILE_LAYOUT_EXCEPTIONS.get(id) } : base;
+}
 
 export interface PackOptions {
   /** Power-of-two page edge in pixels. */
@@ -108,7 +139,7 @@ export function packSheets(sheets: readonly PackableSheet[], options?: PackOptio
     for (let row = 0; row < sheet.height; row++) {
       page.set(sheet.rgba.subarray(row * rowBytes, (row + 1) * rowBytes), ((placement.y + row) * pageSize + placement.x) * 4);
     }
-    entries.push({ kind: sheet.kind, id: sheet.id, page: placement.page, x: placement.x, y: placement.y, width: sheet.width, height: sheet.height, frameWidth: 0, frameHeight: 0, gapX: 0, gapY: 0 });
+    entries.push({ kind: sheet.kind, id: sheet.id, page: placement.page, x: placement.x, y: placement.y, width: sheet.width, height: sheet.height, ...layoutOf(sheet.kind, sheet.id) });
   }
 
   return {

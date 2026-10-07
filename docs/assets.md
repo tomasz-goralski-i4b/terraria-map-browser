@@ -305,15 +305,17 @@ touches the network; the Worker reports the number of `fetch` calls it saw (alwa
 - **Packing:** shelf packing, tallest sheet first, with 2 transparent pixels of padding around every sheet so
   sampling never bleeds into a neighbour. A sheet that does not fit an empty page (including padding) is rejected with
   `AtlasSheetTooLargeError`.
-- **Index:** `(kind, id) → { page, x, y, width, height }` plus the frame/gutter metrics of "Sprite layout"
-  (tiles 16 / 2, walls 32 / 4), the page size, padding and `ATLAS_FORMAT_VERSION`.
+- **Index:** `(kind, id) → { page, x, y, width, height, frameWidth, frameHeight, gapX, gapY }`: the per-sheet frame and gutter
+  of "Sprite layout" (default tiles 16×16 / 2, walls 32×32 / 4; the ids that section names as exceptions — e.g. tile 4
+  20×20, tile 3 16×20, tile 15 gutter 2×4 — carry their own values, all others the default), the family defaults, the page size, padding and `ATLAS_FORMAT_VERSION`.
 - **Cache:** the origin private file system, one directory per fingerprint holding `page-<n>.rgba` (raw RGBA) and
   `index.json`, written last so an entry without it is never read. The fingerprint hashes the name, size and
   last-modified time of every matched sheet plus the format version; storing a new entry removes the old ones. A build
   with an unchanged fingerprint decodes no `.xnb`; any changed, added or removed sheet rebuilds.
-- **Progress and cancellation:** `scan`, `decode` (one event per sheet), `pack` and `store` events; aborting rejects
-  with an `AbortError` before anything is stored, so no partial cache entry exists.
-- **Missing sheets:** an undecodable file is listed in `missing` (name and reason) and the rest is built.
+- **Progress and cancellation:** `scan`, `decode` (one event per sheet), `pack` and `store` events; aborting (also during the cache
+  write) rejects with an `AbortError` and removes the uncommitted entry, so no partial cache entry exists.
+- **Missing sheets:** an undecodable file or unreadable file is listed in `missing` (name and reason) and the rest is built. The report is stored with the cache
+  entry (`missing.json`) and restored on a cache hit. A scan that could not read every matched file is never cached.
 
 ## Test strategy (no game files)
 

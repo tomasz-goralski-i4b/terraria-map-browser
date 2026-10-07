@@ -1,4 +1,5 @@
-import { computeFingerprint, loadCachedAtlas, storeAtlas, type CacheDirectory, type FingerprintInput } from "./atlas-cache.js";
+import { throwIfAborted } from "./atlas-abort.js";
+import { computeFingerprint, loadCachedAtlas, loadCachedMissing, storeAtlas, type CacheDirectory, type FingerprintInput } from "./atlas-cache.js";
 import { ATLAS_FORMAT_VERSION, DEFAULT_PADDING, DEFAULT_PAGE_SIZE, packSheets, type PackOptions } from "./atlas-pack.js";
 import type { MissingSheet, PackableSheet, SheetKind, SpriteAtlas } from "./atlas-types.js";
 import { readXnbTexture, type XnbTexture } from "./xnb-texture.js";
@@ -54,12 +55,14 @@ interface SourceSheet {
   readonly file: SourceFile;
 }
 
+interface Scan {
+  readonly sheets: SourceSheet[];
+  /** Matched entries whose file could not be obtained. */
+  readonly unreadable: MissingSheet[];
+}
+
 // Case-insensitive: the casing of Tiles_/Wall_ files differs between installs (docs/assets.md).
 const SHEET_NAME = /^(tiles|wall)_(\d+)\.xnb$/i;
-
-function throwIfAborted(signal: AbortSignal | undefined): void {
-  if (signal?.aborted === true) throw new DOMException("The atlas build was cancelled.", "AbortError");
-}
 
 /** The `Images` folder when `contentDir` is `Content`, otherwise `contentDir` itself. */
 async function imagesDirectory(contentDir: ContentDirectory): Promise<ContentDirectory> {
@@ -70,15 +73,22 @@ async function imagesDirectory(contentDir: ContentDirectory): Promise<ContentDir
   }
 }
 
-async function scanSheets(directory: ContentDirectory): Promise<SourceSheet[]> {
+async function scanSheets(directory: ContentDirectory): Promise<Scan> {
   const sheets: SourceSheet[] = [];
+  const unreadable: MissingSheet[] = [];
   for await (const [name, entry] of directory.entries()) {
     const match = SHEET_NAME.exec(name);
     if (match === null || entry.kind !== "file" || entry.getFile === undefined) continue;
     const kind: SheetKind = (match[1] ?? "").toLowerCase() === "tiles" ? "tile" : "wall";
-    sheets.push({ kind, id: Number(match[2]), name, file: await entry.getFile() });
+    const id = Number(match[2]);
+    try {
+      sheets.push({ kind, id, name, file: await entry.getFile() });
+    } catch (error) {
+      unreadable.push({ kind, id, name, reason: error instanceof Error ? error.message : String(error) });
+    }
   }
-  return sheets.sort((a, b) => a.kind.localeCompare(b.kind) || a.id - b.id);
+  sheets.sort((a, b) => a.kind.localeCompare(b.kind) || a.id - b.id);
+  return { sheets, unreadable };
 }
 
 /** Rejects with an `AbortError` `DOMException` when `signal` aborts; leaves no partial cache entry. */
@@ -89,21 +99,23 @@ export async function buildSpriteAtlas(contentDir: ContentDirectory, options?: B
   const padding = options?.padding ?? DEFAULT_PADDING;
 
   throwIfAborted(signal);
-  const sources = await scanSheets(await imagesDirectory(contentDir));
+  const { sheets: sources, unreadable } = await scanSheets(await imagesDirectory(contentDir));
   const inputs: FingerprintInput[] = sources.map((s) => ({ name: s.name, size: s.file.size, lastModified: s.file.lastModified }));
   const fingerprint = computeFingerprint(inputs, ATLAS_FORMAT_VERSION);
   onProgress?.({ phase: "scan", done: sources.length, total: sources.length });
   throwIfAborted(signal);
 
-  if (cache !== undefined) {
+  // An incomplete scan has a fingerprint that does not describe the install, so it is neither read from nor written to the cache.
+  const cacheable = cache !== undefined && unreadable.length === 0;
+  if (cacheable) {
     const cached = await loadCachedAtlas(cache, fingerprint);
     if (cached?.index.pageSize === pageSize && cached.index.padding === padding) {
-      return { atlas: cached, missing: [], fromCache: true, fingerprint };
+      return { atlas: cached, missing: await loadCachedMissing(cache, fingerprint), fromCache: true, fingerprint };
     }
   }
 
   const sheets: PackableSheet[] = [];
-  const missing: MissingSheet[] = [];
+  const missing: MissingSheet[] = [...unreadable];
   for (const [position, source] of sources.entries()) {
     throwIfAborted(signal);
     try {
@@ -121,9 +133,10 @@ export async function buildSpriteAtlas(contentDir: ContentDirectory, options?: B
   onProgress?.({ phase: "pack", done: 1, total: 1 });
 
   throwIfAborted(signal);
-  if (cache !== undefined) {
+  if (cacheable) {
     onProgress?.({ phase: "store", done: 0, total: 1 });
-    await storeAtlas(cache, fingerprint, atlas);
+    throwIfAborted(signal);
+    await storeAtlas(cache, fingerprint, atlas, { missing, signal });
     onProgress?.({ phase: "store", done: 1, total: 1 });
   }
   return { atlas, missing, fromCache: false, fingerprint };

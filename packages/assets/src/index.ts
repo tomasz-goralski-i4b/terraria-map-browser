@@ -19,10 +19,12 @@ export {
 export {
   computeFingerprint,
   loadCachedAtlas,
+  loadCachedMissing,
   storeAtlas,
   type CacheDirectory,
   type CacheFile,
   type FingerprintInput,
+  type StoreOptions,
 } from "./atlas-cache.js";
 export {
   buildSpriteAtlas,

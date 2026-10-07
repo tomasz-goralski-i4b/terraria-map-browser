@@ -1,4 +1,5 @@
-import type { AtlasIndex, SpriteAtlas } from "./atlas-types.js";
+import { throwIfAborted } from "./atlas-abort.js";
+import type { AtlasIndex, MissingSheet, SpriteAtlas } from "./atlas-types.js";
 
 /** The subset of `FileSystemDirectoryHandle` the cache uses (OPFS, or an in-memory fake in tests). */
 export interface CacheDirectory {
@@ -25,6 +26,7 @@ export interface FingerprintInput {
 }
 
 const INDEX_FILE = "index.json";
+const MISSING_FILE = "missing.json";
 const pageFile = (page: number): string => `page-${String(page)}.rgba`;
 
 /** Two independent 32-bit hashes, joined; not cryptographic, only a change detector. */
@@ -92,12 +94,43 @@ export async function loadCachedAtlas(root: CacheDirectory, fingerprint: string)
   }
 }
 
+/** The missing-sheet report stored with the entry for `fingerprint`; empty when none is stored. */
+export async function loadCachedMissing(root: CacheDirectory, fingerprint: string): Promise<MissingSheet[]> {
+  try {
+    const directory = await root.getDirectoryHandle(fingerprint);
+    const missing: unknown = JSON.parse(new TextDecoder().decode(await readBytes(directory, MISSING_FILE)));
+    return Array.isArray(missing) ? (missing as MissingSheet[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+export interface StoreOptions {
+  /** Sheets that were left out of the atlas; restored on a cache hit. */
+  readonly missing?: readonly MissingSheet[];
+  /** Aborting rejects with an `AbortError` and removes the uncommitted entry. */
+  readonly signal?: AbortSignal | undefined;
+}
+
 /** Stores the atlas under `fingerprint` atomically: a partial entry is never visible. Replaces older entries. */
-export async function storeAtlas(root: CacheDirectory, fingerprint: string, atlas: SpriteAtlas): Promise<void> {
+export async function storeAtlas(root: CacheDirectory, fingerprint: string, atlas: SpriteAtlas, options?: StoreOptions): Promise<void> {
+  const signal = options?.signal;
+  throwIfAborted(signal);
   await root.removeEntry(fingerprint, { recursive: true }).catch(() => undefined);
-  const directory = await root.getDirectoryHandle(fingerprint, { create: true });
-  for (const [page, pixels] of atlas.pages.entries()) await writeFile(directory, pageFile(page), pixels);
-  await writeFile(directory, INDEX_FILE, JSON.stringify(atlas.index));
+  try {
+    const directory = await root.getDirectoryHandle(fingerprint, { create: true });
+    for (const [page, pixels] of atlas.pages.entries()) {
+      await writeFile(directory, pageFile(page), pixels);
+      throwIfAborted(signal);
+    }
+    await writeFile(directory, MISSING_FILE, JSON.stringify(options?.missing ?? []));
+    throwIfAborted(signal);
+    await writeFile(directory, INDEX_FILE, JSON.stringify(atlas.index));
+    throwIfAborted(signal);
+  } catch (error) {
+    await root.removeEntry(fingerprint, { recursive: true }).catch(() => undefined);
+    throw error;
+  }
 
   const stale: string[] = [];
   for await (const [name] of root.entries()) if (name !== fingerprint) stale.push(name);
