@@ -111,39 +111,7 @@ public sealed class DiffCommandTests
     {
         var world = SyntheticTileWorld.Read(SummaryWorld.Snapshot());
         using var left = Summary(world);
-        var remapped = JsonNode.Parse(left.RootElement.GetRawText())!.AsObject();
-        var palette = remapped["palette"]!.AsArray();
-        var entries = palette.Select(entry => entry!.DeepClone()).Reverse().ToArray();
-        palette.Clear();
-        foreach (var entry in entries)
-        {
-            palette.Add(entry);
-        }
-
-        var planes = SummaryWorld.ExpectedSnapshotPlanes().ToDictionary(pair => pair.Key, pair => pair.Value.ToArray());
-        foreach (var name in new[] { "block", "wall" })
-        {
-            var plane = planes[name];
-            for (var offset = 0; offset < plane.Length; offset += 2)
-            {
-                var index = BinaryPrimitives.ReadUInt16LittleEndian(plane.AsSpan(offset));
-                if (index != ushort.MaxValue)
-                {
-                    BinaryPrimitives.WriteUInt16LittleEndian(plane.AsSpan(offset), checked((ushort)(palette.Count - 1 - index)));
-                }
-            }
-        }
-
-        var digests = SummaryWorld.Digests(planes, SummaryWorld.Width, SummaryWorld.Height);
-        foreach (var chunk in remapped["chunks"]!["digests"]!.AsArray())
-        {
-            foreach (var name in new[] { "block", "wall" })
-            {
-                chunk![name] = digests[$"{chunk["x"]},{chunk["y"]}/{name}"];
-            }
-        }
-
-        using var right = JsonDocument.Parse(remapped.ToJsonString());
+        using var right = ReversedPaletteSnapshotSummary(left);
         using var output = new StringWriter(CultureInfo.InvariantCulture);
         var code = WorldDiff.Write(left.RootElement, right.RootElement,
             region => ReadChunk(world, region, []), region => ReadChunk(world, region, []), output);
@@ -191,21 +159,120 @@ public sealed class DiffCommandTests
         Assert.Equal(["tiles[0,0].block: {\"kind\":\"vanilla\",\"id\":1} -> {\"kind\":\"vanilla\",\"id\":30}"], TileLines(output.ToString()));
     }
 
-    [Fact]
-    public void Write_PalettePermutationWithoutRemappedDigests_ResolvesAndSkipsEveryChunk()
+    private const string ShiftedPaletteBlock = "tiles[0,0].block: {\"kind\":\"vanilla\",\"id\":1} -> {\"kind\":\"vanilla\",\"id\":30}";
+
+    public static TheoryData<int, string, string, TileRegion, string[]> ChangesBehindShiftedPalette() => new()
     {
-        var world = SyntheticTileWorld.Read(SummaryWorld.Snapshot());
-        using var left = Summary(world);
-        var reordered = JsonNode.Parse(left.RootElement.GetRawText())!.AsObject();
-        var palette = reordered["palette"]!.AsArray();
-        var entries = palette.Select(entry => entry!.DeepClone()).Reverse().ToArray();
-        palette.Clear();
-        foreach (var entry in entries)
+        // Wall-only change in the last cell of the 2-wide chunk (1,0).
+        { 129, "40 7e 04 01 00", "40 7e 04 02 00", new TileRegion(128, 0, 2, 128),
+            ["tiles[129,127].wall: {\"kind\":\"vanilla\",\"id\":1} -> {\"kind\":\"vanilla\",\"id\":2}"] },
+        // Block and wall present -> absent in the last cell of the 1-high chunk (0,1).
+        { 127, "40 7f 06 01 01", "40 80", new TileRegion(0, 128, 128, 1),
+            ["tiles[127,128].block: {\"kind\":\"vanilla\",\"id\":1} -> null", "tiles[127,128].wall: {\"kind\":\"vanilla\",\"id\":1} -> null"] },
+        // ... and absent -> present.
+        { 127, "40 80", "40 7f 06 01 01", new TileRegion(0, 128, 128, 1),
+            ["tiles[127,128].block: null -> {\"kind\":\"vanilla\",\"id\":1}", "tiles[127,128].wall: null -> {\"kind\":\"vanilla\",\"id\":1}"] },
+        // Only a non-index plane (liquid) differs in the corner chunk (1,1); block and wall are absent on both sides.
+        { 129, "40 80", "40 7f 08 ff", new TileRegion(128, 128, 2, 1),
+            ["tiles[129,128].liquid.kind: null -> \"water\"", "tiles[129,128].liquid.amount: null -> 255"] },
+    };
+
+    [Theory]
+    [MemberData(nameof(ChangesBehindShiftedPalette))]
+    public void Write_ShiftedPalette_ReadsExactlyTheChangedChunks(
+        int column, string leftHex, string rightHex, TileRegion changed, string[] expected)
+    {
+        // Right: block 30 first seen at (0,0) shifts every palette index, so no block/wall index digest is comparable.
+        var leftWorld = SyntheticTileWorld.Read(SummaryWorld.SnapshotWith(new Dictionary<int, string> { [column] = leftHex }));
+        var rightWorld = SyntheticTileWorld.Read(SummaryWorld.SnapshotWith(
+            new Dictionary<int, string> { [0] = "02 1e 40 7f", [column] = rightHex }));
+        using var left = Summary(leftWorld);
+        using var right = Summary(rightWorld);
+        using var output = new StringWriter(CultureInfo.InvariantCulture);
+        var leftRequests = new List<TileRegion>();
+        var rightRequests = new List<TileRegion>();
+        var code = WorldDiff.Write(left.RootElement, right.RootElement,
+            region => ReadChunk(leftWorld, region, leftRequests), region => ReadChunk(rightWorld, region, rightRequests), output,
+            resolved: PaletteResolvedDigests.For(leftWorld, rightWorld));
+        Assert.Equal(3, code);
+        Assert.Equal([new TileRegion(0, 0, 128, 128), changed], leftRequests);
+        Assert.Equal(leftRequests, rightRequests);
+        Assert.Equal([ShiftedPaletteBlock, .. expected], TileLines(output.ToString()));
+    }
+
+    [Theory]
+    [InlineData(32014)] // union of both palettes = exactly 65536 entries
+    [InlineData(32400)] // union > 65536 entries
+    public void Write_SharedPaletteBeyondIndexRange_StillReportsPresentVersusAbsent(int rightUnknownWalls)
+    {
+        // Each palette is valid on its own (< 65535 entries); together they exceed what a Uint16 index with 0xFFFF as
+        // "absent" can hold. Left: 32768 unknown walls (367…). Right: vanilla blocks 0–753 plus other unknown walls.
+        // The largest key (vanilla 9) is present only on the right at (256,0), in a chunk the left leaves empty.
+        const int Height = 128;
+        const int Tiles = 256 * Height;
+        using var leftTiles = new MemoryStream();
+        using var rightTiles = new MemoryStream();
+        for (var tile = 0; tile < Tiles; tile++)
         {
-            palette.Add(entry);
+            Record(leftTiles, block: null, wall: 367 + tile);
+            Record(rightTiles, block: tile < 754 ? tile : null, wall: tile < rightUnknownWalls ? 367 + Tiles + tile : null);
         }
 
-        using var right = JsonDocument.Parse(reordered.ToJsonString());
+        for (var x = 256; x < 384; x++)
+        {
+            leftTiles.Write(SummaryWorld.EmptyColumn(Height));
+            rightTiles.Write(x == 256 ? TileAssert.Hex("02 09 40 7e") : SummaryWorld.EmptyColumn(Height));
+        }
+
+        var leftWorld = SyntheticTileWorld.Read(SyntheticTileWorld.Build(384, Height, leftTiles.ToArray(), frameImportant: []).File);
+        var rightWorld = SyntheticTileWorld.Read(SyntheticTileWorld.Build(384, Height, rightTiles.ToArray(), frameImportant: []).File);
+        using var left = Summary(leftWorld);
+        using var right = Summary(rightWorld);
+        using var output = new StringWriter(CultureInfo.InvariantCulture);
+        var requests = new List<TileRegion>();
+        var code = WorldDiff.Write(left.RootElement, right.RootElement,
+            region => ReadChunk(leftWorld, region, requests), region => ReadChunk(rightWorld, region, []), output, 0,
+            PaletteResolvedDigests.For(leftWorld, rightWorld));
+        Assert.Equal(3, code);
+        Assert.Contains(new TileRegion(256, 0, 128, 128), requests);
+        // Every tile of the first two chunks differs in its wall, the first 754 also in their block; plus the block
+        // present only on the right at (256,0).
+        Assert.Equal($"Omitted tile differences: {Tiles + 754 + 1}", Lines(output.ToString())[^1]);
+
+        // flags1 (more flags, wide block?, wall) · flags2 (more flags) · flags3 (wall high byte) · [UInt16 block] ·
+        // wall low · wall high. Blocks always use the wide id (accepted for any id, docs T17).
+        static void Record(MemoryStream tiles, int? block, int? wall)
+        {
+            var flags1 = (block is null ? 0 : 0x22) | (wall is null ? 0 : 0x05);
+            tiles.WriteByte((byte)flags1);
+            if (wall is not null)
+            {
+                tiles.Write([0x01, 0x40]);
+            }
+
+            if (block is not null)
+            {
+                tiles.Write([(byte)block.Value, (byte)(block.Value >> 8)]);
+            }
+
+            if (wall is not null)
+            {
+                tiles.Write([(byte)wall.Value, (byte)(wall.Value >> 8)]);
+            }
+        }
+    }
+
+    [Fact]
+    public void Write_PalettePermutationWithResolvedDigests_SkipsEveryChunk()
+    {
+        // The right summary is the same world with a reversed palette and its block/wall digests recomputed from the
+        // remapped planes, so every index digest differs while the content is identical.
+        var world = SyntheticTileWorld.Read(SummaryWorld.Snapshot());
+        using var left = Summary(world);
+        using var right = ReversedPaletteSnapshotSummary(left);
+        Assert.Contains(left.RootElement.GetProperty("chunks").GetProperty("digests").EnumerateArray()
+                .Zip(right.RootElement.GetProperty("chunks").GetProperty("digests").EnumerateArray()),
+            pair => pair.First.GetProperty("block").GetString() != pair.Second.GetProperty("block").GetString());
         using var output = new StringWriter(CultureInfo.InvariantCulture);
         var code = WorldDiff.Write(left.RootElement, right.RootElement,
             _ => throw new InvalidOperationException("Equal left chunk must not be decoded."),
@@ -521,6 +588,44 @@ public sealed class DiffCommandTests
         Assert.Equal(left, File.ReadAllBytes(leftPath));
         Assert.Equal(right, File.ReadAllBytes(rightPath));
         return result;
+    }
+
+    /// <summary>The snapshot summary with its palette reversed and block/wall digests recomputed for the remapped planes.</summary>
+    private static JsonDocument ReversedPaletteSnapshotSummary(JsonDocument snapshot)
+    {
+        var remapped = JsonNode.Parse(snapshot.RootElement.GetRawText())!.AsObject();
+        var palette = remapped["palette"]!.AsArray();
+        var entries = palette.Select(entry => entry!.DeepClone()).Reverse().ToArray();
+        palette.Clear();
+        foreach (var entry in entries)
+        {
+            palette.Add(entry);
+        }
+
+        var planes = SummaryWorld.ExpectedSnapshotPlanes().ToDictionary(pair => pair.Key, pair => pair.Value.ToArray());
+        foreach (var name in new[] { "block", "wall" })
+        {
+            var plane = planes[name];
+            for (var offset = 0; offset < plane.Length; offset += 2)
+            {
+                var index = BinaryPrimitives.ReadUInt16LittleEndian(plane.AsSpan(offset));
+                if (index != ushort.MaxValue)
+                {
+                    BinaryPrimitives.WriteUInt16LittleEndian(plane.AsSpan(offset), checked((ushort)(palette.Count - 1 - index)));
+                }
+            }
+        }
+
+        var digests = SummaryWorld.Digests(planes, SummaryWorld.Width, SummaryWorld.Height);
+        foreach (var chunk in remapped["chunks"]!["digests"]!.AsArray())
+        {
+            foreach (var name in new[] { "block", "wall" })
+            {
+                chunk![name] = digests[$"{chunk["x"]},{chunk["y"]}/{name}"];
+            }
+        }
+
+        return JsonDocument.Parse(remapped.ToJsonString());
     }
 
     private static JsonDocument Summary(World world)
