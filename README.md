@@ -25,7 +25,13 @@ Only M1-supported formats (currently version 326) are accepted. The command does
 the input or create world or backup files, and provides no round-trip guarantee.
 
 Exit codes are `0` for success, `2` for invalid arguments (with usage), and `1` for I/O or
-format errors. Reports go to stdout; diagnostics go to stderr without a stack trace.
+format errors or unexpected internal failures. Reports go to stdout; diagnostics go to stderr
+without a stack trace. All three commands retain specific I/O and format diagnostics; unexpected
+failures produce one fixed internal-error line and leave stdout empty.
+
+Inspect renders control characters in the world name and seed as literal four-digit Unicode
+escapes (for example, `\u000a` for LF and `\u001b` for ESC), keeping each field on one line.
+Printable non-ASCII text remains readable. Export-json uses the existing JSON string escaping.
 
 Export a deterministic world summary (metadata, dimensions, skipped sections, palette and
 per-chunk plane digests) as JSON on stdout:
