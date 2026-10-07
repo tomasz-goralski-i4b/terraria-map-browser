@@ -106,6 +106,13 @@ public static class WorldWriter
             throw new WorldWriteException("fixed header fields are not those of a supported world");
         }
 
+        // Revision and every flag bit (reserved ones included) are copied as read; header editing is not a save.
+        if (BinaryPrimitives.ReadUInt32LittleEndian(bytes[RevisionOffset..]) != header.Revision
+            || BinaryPrimitives.ReadUInt64LittleEndian(bytes[FlagsOffset..]) != header.Flags)
+        {
+            throw new WorldWriteException("file header bytes contradict the header revision or flags");
+        }
+
         var frameImportant = table.FrameImportant;
         if (BinaryPrimitives.ReadInt16LittleEndian(bytes[FrameCountOffset..]) != frameImportant.Count
             || bytes.Length != FrameCountOffset + sizeof(short) + ((frameImportant.Count + 7) / 8))
