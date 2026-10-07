@@ -256,9 +256,15 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
    * Background colour of every world row, resolved on the CPU by the same `backgroundColor` as `renderChunk` (so the
    * GPU output is exact), 256 rows per texture row; the last texture row holds the paint colours by paint ID.
    */
+  /** Drops the background of the previous world: its texture and the reference that would keep its planes alive. */
+  const releaseBackground = (): void => {
+    if (background !== null && !gl.isContextLost()) gl.deleteTexture(background.texture);
+    background = null;
+  };
+
   const uploadBackground = (source: RenderableWorld): void => {
     if (background?.world === source) return;
-    if (background !== null) gl.deleteTexture(background.texture);
+    releaseBackground();
     const paintRow = Math.ceil(source.height / PALETTE_ROW);
     const texels = new Uint8Array(PALETTE_ROW * (paintRow + 1) * 4);
     const depth = { surfaceY: source.surfaceY, height: source.height, ...(source.rockY === undefined ? {} : { rockY: source.rockY }) };
@@ -378,6 +384,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     setWorld: (next) => {
       if (next !== world) {
         clearChunks();
+        releaseBackground();
         paletteUploaded = 0;
         world = next;
       }
@@ -408,9 +415,9 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       if (!gl.isContextLost()) {
         clearChunks();
         gl.deleteTexture(resources.palette);
-        if (background !== null) gl.deleteTexture(background.texture);
         gl.deleteProgram(resources.program);
       }
+      releaseBackground();
     },
   };
 }

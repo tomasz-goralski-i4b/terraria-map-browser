@@ -217,6 +217,32 @@ describe("GPU output equals renderChunk", () => {
 describe("uploads, cache and draw calls", () => {
   const world = syntheticWorld(1280, 256);
 
+  test("clearing the world releases all its textures, background included; the next world gets its own depth", () => {
+    // 128 × 300: one column of three chunks, all visible.
+    const first = syntheticWorld(128, 300, { surfaceY: 40.5, rockY: 60.25 });
+    const canvas = makeCanvas(128, 300);
+    const renderer = makeRenderer(canvas, { mapPalette: syntheticMapPalette });
+    renderer.setWorld(first);
+    renderer.setCamera({ x: 0, y: 0, zoom: 1 });
+    renderer.render();
+    expect(renderer.stats().residentChunks).toBe(3);
+
+    const deleted = vi.spyOn(WebGL2RenderingContext.prototype, "deleteTexture");
+    try {
+      renderer.setWorld(null);
+      renderer.render();
+      // Six plane textures per chunk plus the world's background texture.
+      expect(deleted).toHaveBeenCalledTimes(3 * 6 + 1);
+    } finally {
+      deleted.mockRestore();
+    }
+
+    const second = syntheticWorld(128, 300, { surfaceY: 120.5, rockY: 200.25 });
+    renderer.setWorld(second);
+    renderer.render();
+    expect(readCanvas(canvas)).toEqual(cpuReference(second, allLayers, syntheticMapPalette));
+  });
+
   test("layer toggles and camera moves upload no texture data", () => {
     const renderer = makeRenderer(makeCanvas(256, 256));
     renderer.setWorld(world);
