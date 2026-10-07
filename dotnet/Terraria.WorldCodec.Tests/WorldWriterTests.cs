@@ -304,6 +304,86 @@ public class WorldWriterTests
         AssertRejected(envelope with { FileHeaderBytes = header });
     }
 
+    [Theory]
+    [InlineData(11, "03")]
+    [InlineData(4, "78 69 6e 64 6f 6e 67")]
+    [InlineData(4, "72 65 6c 6f 67 69 64")]
+    [InlineData(24, "0a 00")]
+    public void Write_FileHeaderBytesWithAnotherFixedField_ThrowsUnsupportedWriteAndWritesNothing(int offset, string replacement)
+    {
+        var envelope = ReadForSave(Build(2, 4, ShrinkingTilesCanonical));
+        var header = envelope.FileHeaderBytes.ToArray();
+        Hex(replacement).CopyTo(header, offset);
+
+        AssertRejected(envelope with { FileHeaderBytes = header });
+    }
+
+    [Fact]
+    public void Write_ModelHeaderWithAnotherSignature_ThrowsUnsupportedWriteAndWritesNothing()
+    {
+        var envelope = ReadForSave(Build(2, 4, ShrinkingTilesCanonical));
+
+        AssertRejected(envelope with { World = envelope.World with { Header = envelope.World.Header with { Signature = "xindong" } } });
+    }
+
+    [Fact]
+    public void Write_ModelHeaderWithAnotherFileType_ThrowsUnsupportedWriteAndWritesNothing()
+    {
+        var envelope = ReadForSave(Build(2, 4, ShrinkingTilesCanonical));
+
+        AssertRejected(envelope with { World = envelope.World with { Header = envelope.World.Header with { FileType = WorldFileType.Player } } });
+    }
+
+    [Fact]
+    public void Write_ModelHeaderWithAnotherSectionCount_ThrowsUnsupportedWriteAndWritesNothing()
+    {
+        var envelope = ReadForSave(Build(2, 4, ShrinkingTilesCanonical));
+
+        AssertRejected(envelope with { World = envelope.World with { Header = envelope.World.Header with { SectionCount = 10 } } });
+    }
+
+    [Fact]
+    public void Write_OpaqueBoundaryShiftedKeepingItsLength_ThrowsUnsupportedWriteAndWritesNothing()
+    {
+        var envelope = ReadForSave(Build(2, 4, ShrinkingTilesCanonical));
+        var chests = envelope.Table.Chests;
+
+        AssertRejected(envelope with { Table = envelope.Table with { Chests = new WorldSectionBoundary(chests.Start + 1, chests.End + 1) } });
+    }
+
+    [Fact]
+    public void Write_TileBoundaryNotEndingWhereSectionsStart_ThrowsUnsupportedWriteAndWritesNothing()
+    {
+        var envelope = ReadForSave(Build(2, 4, ShrinkingTilesCanonical));
+        var tiles = envelope.Table.Tiles;
+
+        AssertRejected(envelope with { Table = envelope.Table with { Tiles = new WorldSectionBoundary(tiles.Start, tiles.End - 1) } });
+    }
+
+    [Fact]
+    public void Write_FooterBoundaryContradictingTheFooterBytes_ThrowsUnsupportedWriteAndWritesNothing()
+    {
+        var envelope = ReadForSave(Build(2, 4, ShrinkingTilesCanonical));
+        var footer = envelope.Table.Footer;
+
+        AssertRejected(envelope with { Table = envelope.Table with { Footer = new WorldSectionBoundary(footer.Start + 1, footer.End) } });
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(2)]
+    [InlineData(4)]
+    [InlineData(10)]
+    public void Write_PreservedPointerContradictingTheSectionTable_ThrowsUnsupportedWriteAndWritesNothing(int index)
+    {
+        var envelope = ReadForSave(Build(2, 4, ShrinkingTilesCanonical));
+        var header = envelope.FileHeaderBytes.ToArray();
+        var offset = HeaderPointerTable + (4 * index);
+        BinaryPrimitives.WriteInt32LittleEndian(header.AsSpan(offset), BinaryPrimitives.ReadInt32LittleEndian(header.AsSpan(offset)) - 1);
+
+        AssertRejected(envelope with { FileHeaderBytes = header });
+    }
+
     [Fact]
     public void ComputePointers_RegeneratesAllElevenPointersFromTheEmittedLengths()
     {
