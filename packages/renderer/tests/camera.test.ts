@@ -118,9 +118,10 @@ describe("visible chunks", () => {
   });
 
   test("zoom changes the covered tile range", () => {
-    // 512 px at 4 px/tile = 128 tiles; at 0.5 px/tile = 1024 tiles = 8 chunks.
+    // 512 px at 4 px/tile = 128 tiles; at 0.5 px/tile = 1024 tiles = 8 chunk columns.
+    // 64 px at 0.5 px/tile = 128 tiles = exactly one chunk row.
     expect(visibleChunks({ x: 0, y: 0, zoom: 4 }, { width: 512, height: 512 }, world)).toEqual([{ x: 0, y: 0 }]);
-    expect(visibleChunks({ x: 0, y: 0, zoom: 0.5 }, { width: 512, height: 128 }, world)).toHaveLength(8);
+    expect(visibleChunks({ x: 0, y: 0, zoom: 0.5 }, { width: 512, height: 64 }, world)).toHaveLength(8);
   });
 
   test("chunks are clipped to the world grid, including the partial edge chunk", () => {
