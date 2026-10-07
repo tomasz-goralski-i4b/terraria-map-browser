@@ -1,6 +1,8 @@
 import { describe, expect, test } from "vitest";
 import { createWorld } from "@studio/world-model";
-import { contentColor, liquidColors, placeholderColor, renderChunk, terrariaMapPalette } from "../src/index.js";
+import {
+  backgroundColor, contentColor, liquidColors, paintedColor, placeholderColor, renderChunk, terrariaMapPalette,
+} from "../src/index.js";
 import type { ChunkLayers } from "../src/index.js";
 import { syntheticMapPalette } from "./map-palette.fixture.js";
 
@@ -50,8 +52,89 @@ test("map palette colours reach renderChunk pixels; unmapped IDs keep placeholde
     .toEqual(placeholderColor({ kind: "vanilla", id: 1 }, "block"));
 });
 
+describe("backgroundColor", () => {
+  // A 1000-row world: surface at 300.6, rock layer at 500.4, underworld from row 800 (height − 200).
+  const depth = { surfaceY: 300.6, rockY: 500.4, height: 1000 };
+  const sky = (index: number): readonly number[] => [0, index, 255, 255];
+
+  test.each([
+    [0, sky(0)], [1, sky(0)], [2, sky(1)], [150, sky(127)], [300, sky(254)],
+  ])("row %i above the surface takes sky gradient entry floor(y / surface × 255)", (y, expected) => {
+    expect(backgroundColor(y, depth, syntheticMapPalette)).toEqual(expected);
+  });
+
+  test.each([
+    [301, [0x5a, 0x3c, 0x28, 255]], [500, [0x5a, 0x3c, 0x28, 255]],
+    [501, [0x46, 0x46, 0x46, 255]], [799, [0x46, 0x46, 0x46, 255]],
+    [800, [0x32, 0x14, 0x14, 255]], [999, [0x32, 0x14, 0x14, 255]],
+  ])("row %i below the surface is dirt, rock or underworld by its layer", (y, expected) => {
+    expect(backgroundColor(y, depth, syntheticMapPalette)).toEqual(expected);
+  });
+
+  test("without a rock level the dirt layer reaches the underworld", () => {
+    expect(backgroundColor(799, { surfaceY: 300, height: 1000 }, syntheticMapPalette)).toEqual([0x5a, 0x3c, 0x28, 255]);
+  });
+
+  test("without a map palette the placeholder sky and underground colours are used", () => {
+    expect(backgroundColor(300, depth)).toEqual([100, 160, 220, 255]);
+    expect(backgroundColor(301, depth)).toEqual([40, 30, 20, 255]);
+    expect(backgroundColor(900, depth)).toEqual([40, 30, 20, 255]);
+  });
+});
+
+describe("paintedColor", () => {
+  test("a colour paint scales the paint colour by the brightest base channel, truncating", () => {
+    expect(paintedColor([128, 128, 128, 255], 1, "block", syntheticMapPalette)).toEqual([128, 0, 0, 255]);
+    expect(paintedColor([128, 128, 128, 255], 2, "block", syntheticMapPalette)).toEqual([128, 63, 0, 255]);
+    expect(paintedColor([114, 81, 56, 255], 25, "wall", syntheticMapPalette)).toEqual([33, 33, 33, 255]);
+  });
+
+  test("shadow paint (29) turns the colour into a near-black grey of the blue channel / 34", () => {
+    expect(paintedColor([28, 216, 94, 255], 29, "block", syntheticMapPalette)).toEqual([2, 2, 2, 255]);
+    expect(paintedColor([255, 255, 255, 255], 29, "wall", syntheticMapPalette)).toEqual([7, 7, 7, 255]);
+  });
+
+  test("negative paint (30) inverts blocks and inverts walls at half brightness", () => {
+    expect(paintedColor([106, 210, 255, 255], 30, "block", syntheticMapPalette)).toEqual([149, 45, 0, 255]);
+    expect(paintedColor([87, 59, 55, 255], 30, "wall", syntheticMapPalette)).toEqual([84, 98, 100, 255]);
+  });
+
+  test("no paint, an unknown paint ID or no map palette leave the colour unchanged", () => {
+    expect(paintedColor([1, 2, 3, 255], 0, "block", syntheticMapPalette)).toEqual([1, 2, 3, 255]);
+    expect(paintedColor([1, 2, 3, 255], 200, "block", syntheticMapPalette)).toEqual([1, 2, 3, 255]);
+    expect(paintedColor([1, 2, 3, 255], 1, "block")).toEqual([1, 2, 3, 255]);
+  });
+});
+
+test("renderChunk paints blocks and walls and draws the background by depth with a map palette", () => {
+  const world = createWorld(2, 3);
+  world.setTile(0, 0, { block: { kind: "vanilla", id: 0 }, paint: 1, wires: 0, actuator: false });
+  world.setTile(1, 0, { wall: { kind: "vanilla", id: 1 }, wallPaint: 30, wires: 0, actuator: false });
+  const pixels = renderChunk(world, 0, 0, {
+    surfaceY: 1.5, rockY: 2, layers: allLayers, mapPalette: syntheticMapPalette,
+  }).pixels;
+  const pixel = (x: number, y: number): number[] => Array.from(pixels.slice((y * 2 + x) * 4, (y * 2 + x) * 4 + 4));
+  expect(pixel(0, 0)).toEqual([0x76, 0, 0, 255]);
+  expect(pixel(1, 0)).toEqual([(255 - 0x52) >> 1, (255 - 0x56) >> 1, (255 - 0x5c) >> 1, 255]);
+  // Row 1 is still above the surface (sky entry floor(1 / 1.5 × 255) = 170). Row 2 is below it, and a 3-row world
+  // is underworld from row 0 (height − 200 < 0).
+  expect(pixel(0, 1)).toEqual([0, 170, 255, 255]);
+  expect(pixel(0, 2)).toEqual([0x32, 0x14, 0x14, 255]);
+});
+
+test("without a map palette paint does not change renderChunk pixels", () => {
+  const world = createWorld(1, 1);
+  world.setTile(0, 0, { block: { kind: "vanilla", id: 0 }, paint: 1, wires: 0, actuator: false });
+  expect(Array.from(renderChunk(world, 0, 0, { surfaceY: 1, layers: allLayers }).pixels))
+    .toEqual(placeholderColor({ kind: "vanilla", id: 0 }, "block"));
+});
+
 describe("the shipped Terraria map palette", () => {
-  const colors = [...terrariaMapPalette.tiles.flat(), ...terrariaMapPalette.walls.flat(), ...terrariaMapPalette.liquids];
+  const { background } = terrariaMapPalette;
+  const colors = [
+    ...terrariaMapPalette.tiles.flat(), ...terrariaMapPalette.walls.flat(), ...terrariaMapPalette.liquids,
+    ...background.sky, background.dirt, background.rock, background.hell, ...terrariaMapPalette.paints,
+  ];
 
   test("names the game version it was exported from", () => {
     expect(terrariaMapPalette.gameVersion).toMatch(/^\d+(\.\d+)+$/);
@@ -63,7 +146,12 @@ describe("the shipped Terraria map palette", () => {
     expect(terrariaMapPalette.walls.length).toBeGreaterThanOrEqual(350);
   });
 
-  test("holds only 24-bit RGB colours", () => {
+  test("has a 256-step sky gradient and a colour for every paint ID up to negative paint (30)", () => {
+    expect(terrariaMapPalette.background.sky).toHaveLength(256);
+    expect(terrariaMapPalette.paints.length).toBeGreaterThan(30);
+  });
+
+    test("holds only 24-bit RGB colours", () => {
     expect(colors.every((color) => Number.isInteger(color) && color >= 0 && color <= 0xffffff)).toBe(true);
   });
 

@@ -1,5 +1,5 @@
 import type { CanonicalWorld, ContentRef } from "@studio/world-model";
-import { contentColor, liquidColors } from "../palette/map-palette.js";
+import { backgroundColor, contentColor, liquidColors, paintedColor } from "../palette/map-palette.js";
 import type { MapPalette, Rgba } from "../palette/map-palette.js";
 
 export interface ChunkLayers {
@@ -10,9 +10,15 @@ export interface ChunkLayers {
 }
 
 export interface ChunkRenderOptions {
+  /** The world's surface level: the sky is above it. */
   readonly surfaceY: number;
+  /** The world's rock level; without one the dirt layer reaches the underworld (only drawn with a map palette). */
+  readonly rockY?: number;
   readonly layers: ChunkLayers;
-  /** Map colours for vanilla content; without one, every block and wall gets its placeholder colour. */
+  /**
+   * Map colours: vanilla content, paint and the background by depth. Without one, every block and wall gets its
+   * placeholder colour, paint is ignored and the background is the placeholder sky and underground.
+   */
   readonly mapPalette?: MapPalette;
 }
 
@@ -25,6 +31,7 @@ export interface ChunkPixels {
 
 const chunkSize = 128;
 const absentContent = 0xffff;
+const transparent: Rgba = [0, 0, 0, 0];
 
 interface PaletteColors {
   readonly block: Rgba[];
@@ -75,7 +82,8 @@ export function renderChunk(
   const width = Math.min(chunkSize, world.width - originX);
   const height = Math.min(chunkSize, world.height - originY);
   const pixels = new Uint8ClampedArray(width * height * 4);
-  const { layers, surfaceY, mapPalette } = options;
+  const { layers, mapPalette } = options;
+  const depth = { surfaceY: options.surfaceY, height: world.height, ...(options.rockY === undefined ? {} : { rockY: options.rockY }) };
   const { planes } = world;
   // Palette colours are cached outside the pixel loop; no semantic tile views are created.
   const colors = paletteColors(world.palette, mapPalette);
@@ -84,17 +92,23 @@ export function renderChunk(
   const liquids = liquidColors(mapPalette);
 
   for (let y = 0; y < height; y++) {
-    const sky = originY + y < surfaceY;
+    const background = layers.background ? backgroundColor(originY + y, depth, mapPalette) : transparent;
     for (let x = 0; x < width; x++) {
       const index = (originX + x) * world.height + originY + y;
-      let red = layers.background ? (sky ? 100 : 40) : 0;
-      let green = layers.background ? (sky ? 160 : 30) : 0;
-      let blue = layers.background ? (sky ? 220 : 20) : 0;
-      let alpha = layers.background ? 255 : 0;
+      let red = background[0];
+      let green = background[1];
+      let blue = background[2];
+      let alpha = background[3];
 
       // Both content layers are opaque, so the uppermost present colour replaces the background.
-      const color = blockColors[planes.block[index] ?? absentContent]
-        ?? wallColors[planes.wall[index] ?? absentContent];
+      const block = blockColors[planes.block[index] ?? absentContent];
+      const wall = block === undefined ? wallColors[planes.wall[index] ?? absentContent] : undefined;
+      let color = block ?? wall;
+      if (mapPalette !== undefined && color !== undefined) {
+        color = block === undefined
+          ? paintedColor(color, planes.wallPaint[index] ?? 0, "wall", mapPalette)
+          : paintedColor(color, planes.paint[index] ?? 0, "block", mapPalette);
+      }
       if (color !== undefined) {
         red = color[0];
         green = color[1];

@@ -14,6 +14,8 @@ export interface MetadataSpec {
   worldGenVersion?: bigint;
   creationTime?: bigint;
   lastPlayed?: bigint;
+  surfaceLevel?: number;
+  rockLevel?: number;
 }
 
 /** UTF-8 generation for synthetic strings without depending on browser or Node globals. */
@@ -94,7 +96,9 @@ export function buildMetadata(spec: MetadataSpec = {}): {
   mark("creationTime"); long(spec.creationTime ?? 638000000000000001n);
   mark("lastPlayed"); long(spec.lastPlayed ?? 638000000100000001n);
   bytes(1); ints(17); ints(2);
-  number(8, 300, true); number(8, 420.5, true); number(8, 13500.25, true);
+  mark("surfaceLevel"); number(8, spec.surfaceLevel ?? 300, true);
+  mark("rockLevel"); number(8, spec.rockLevel ?? 420.5, true);
+  number(8, 13500.25, true);
   mark("dayTime"); bools(1); ints(1); bools(2); ints(2);
   mark("crimson"); booleans.push(data.length); data.push(spec.crimson ?? 0);
   bools(18); bools(2); bytes(1); ints(1); bools(2); ints(3);

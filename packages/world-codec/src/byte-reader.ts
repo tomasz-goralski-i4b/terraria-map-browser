@@ -39,6 +39,11 @@ export class ByteReader {
     return this.view.getUint32(offset, true);
   }
 
+  readFloat64(offset: number): number {
+    this.require(offset, 8);
+    return this.view.getFloat64(offset, true);
+  }
+
   readUint64(offset: number): bigint {
     this.require(offset, 8);
     return this.view.getBigUint64(offset, true);

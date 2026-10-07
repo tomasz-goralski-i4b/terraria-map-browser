@@ -5,6 +5,15 @@ export type Rgba = readonly [number, number, number, number];
 /** A map colour as 0xRRGGBB. */
 export type MapColor = number;
 
+/** Colours of empty space by depth. */
+export interface MapBackground {
+  /** Gradient from the top of the world (entry 0) down to the surface (entry 255). */
+  readonly sky: readonly MapColor[];
+  readonly dirt: MapColor;
+  readonly rock: MapColor;
+  readonly hell: MapColor;
+}
+
 /**
  * Terraria's map colours for vanilla content, indexed by content ID. Each ID lists one colour per map option
  * (some content has several, chosen in game by its frame); an empty list means the ID has no map colour.
@@ -16,9 +25,29 @@ export interface MapPalette {
   readonly walls: readonly (readonly MapColor[])[];
   /** Water, lava, honey, shimmer. */
   readonly liquids: readonly [MapColor, MapColor, MapColor, MapColor];
+  readonly background: MapBackground;
+  /** Indexed by paint ID; 0 is unpainted. */
+  readonly paints: readonly MapColor[];
 }
 
+/** Where a world's layers start, in rows. Levels are fractional, as stored in the world file. */
+export interface WorldDepth {
+  /** The sky is above this level, the dirt layer below it. */
+  readonly surfaceY: number;
+  /** The rock layer starts at this level; without one the dirt layer reaches the underworld. */
+  readonly rockY?: number;
+  /** World height in rows; the underworld is the bottom 200 rows. */
+  readonly height: number;
+}
+
+/** Paint IDs with their own rule on the map; every other paint tints by its colour. */
+const SHADOW_PAINT = 29;
+const NEGATIVE_PAINT = 30;
+const UNDERWORLD_ROWS = 200;
+
 const transparent: Rgba = [0, 0, 0, 0];
+const placeholderSky: Rgba = [100, 160, 220, 255];
+const placeholderUnderground: Rgba = [40, 30, 20, 255];
 const placeholderLiquids: readonly Rgba[] = [
   transparent,
   [40, 110, 230, 255],
@@ -71,4 +100,53 @@ export function liquidColors(mapPalette?: MapPalette): readonly Rgba[] {
     liquidColorCache.set(mapPalette, colors);
   }
   return colors;
+}
+
+/**
+ * Colour of empty space at row `y`, as Terraria's map draws it (observed from the game's map functions, ADR 0002):
+ * above the surface the sky gradient entry floor(y / surface × 255); below it dirt, from the rock level rock, and
+ * the bottom 200 rows underworld. Without a map palette: the placeholder sky above the surface, underground below.
+ */
+export function backgroundColor(y: number, depth: WorldDepth, mapPalette?: MapPalette): Rgba {
+  if (mapPalette === undefined) return y < depth.surfaceY ? placeholderSky : placeholderUnderground;
+  const { background } = mapPalette;
+  let color: MapColor;
+  if (y < depth.surfaceY) {
+    const last = background.sky.length - 1;
+    color = background.sky[Math.min(last, Math.max(0, Math.floor((y / depth.surfaceY) * 255)))] ?? background.dirt;
+  } else if (y >= depth.height - UNDERWORLD_ROWS) {
+    color = background.hell;
+  } else if (depth.rockY !== undefined && y >= depth.rockY) {
+    color = background.rock;
+  } else {
+    color = background.dirt;
+  }
+  return rgba(color);
+}
+
+/**
+ * A block or wall colour under paint `paint`, as Terraria's map shows it (observed from the game, ADR 0002).
+ * A colour paint keeps the brightness of the base colour: each paint channel × max(base channels) / 255, truncated.
+ * Negative paint inverts the colour, at half brightness on walls. Shadow paint gives a near-black grey; the game's
+ * exact value (0–7) is approximated by the blue channel / 34. Unpainted content, unknown paint IDs and rendering
+ * without a map palette leave the colour unchanged.
+ */
+export function paintedColor(base: Rgba, paint: number, layer: "block" | "wall", mapPalette?: MapPalette): Rgba {
+  const color = paint === 0 ? undefined : mapPalette?.paints[paint];
+  if (color === undefined) return base;
+  const [red, green, blue] = base;
+  if (paint === SHADOW_PAINT) {
+    const grey = Math.floor(blue / 34);
+    return [grey, grey, grey, 255];
+  }
+  if (paint === NEGATIVE_PAINT) {
+    const shift = layer === "wall" ? 1 : 0;
+    return [(255 - red) >> shift, (255 - green) >> shift, (255 - blue) >> shift, 255];
+  }
+  const brightness = Math.max(red, green, blue);
+  const [paintRed, paintGreen, paintBlue] = rgba(color);
+  return [
+    Math.floor((paintRed * brightness) / 255), Math.floor((paintGreen * brightness) / 255),
+    Math.floor((paintBlue * brightness) / 255), 255,
+  ];
 }

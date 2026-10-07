@@ -27,40 +27,50 @@ if ($env:OS -eq 'Windows_NT' -and [Environment]::Is64BitProcess) {
 
 $assemblyPath = (Resolve-Path -LiteralPath $TerrariaAssembly).Path
 $output = [IO.Path]::GetFullPath($OutputPath)
-$gameDirectory = [IO.Path]::GetDirectoryName($assemblyPath)
-$script:gameAssembly = $null
-$script:resolving = $false
 
 # Dependencies come from the installation itself: its directory or the game assembly's embedded DLL resources.
-$resolver = [ResolveEventHandler] {
-    param($sender, $request)
-    if ($script:resolving) { return $null }
-    $script:resolving = $true
-    try {
-        $name = ([Reflection.AssemblyName]$request.Name).Name
-        $dependency = Join-Path $gameDirectory ($name + '.dll')
-        if (Test-Path -LiteralPath $dependency) { return [Reflection.Assembly]::LoadFrom($dependency) }
-        if ($null -eq $script:gameAssembly) { return $null }
-        foreach ($resource in $script:gameAssembly.GetManifestResourceNames()) {
-            if ($resource -eq ($name + '.dll') -or $resource.EndsWith('.' + $name + '.dll', [StringComparison]::OrdinalIgnoreCase)) {
-                $stream = $script:gameAssembly.GetManifestResourceStream($resource)
-                $buffer = New-Object IO.MemoryStream
-                try {
-                    $stream.CopyTo($buffer)
-                    return [Reflection.Assembly]::Load($buffer.ToArray())
-                } finally { $stream.Dispose(); $buffer.Dispose() }
+# The resolver is C#, not a PowerShell script block: the game may resolve assemblies on threads without a
+# PowerShell runspace, where a script-block handler intermittently overflows the stack.
+Add-Type -TypeDefinition @'
+using System;
+using System.IO;
+using System.Reflection;
+
+public static class MapPaletteGameHost {
+    private static Assembly game;
+    private static string directory;
+
+    public static Assembly Load(string path) {
+        directory = Path.GetDirectoryName(path);
+        AppDomain.CurrentDomain.AssemblyResolve += Resolve;
+        game = Assembly.LoadFrom(path);
+        return game;
+    }
+
+    private static Assembly Resolve(object sender, ResolveEventArgs request) {
+        string name = new AssemblyName(request.Name).Name;
+        string file = Path.Combine(directory, name + ".dll");
+        if (File.Exists(file)) return Assembly.LoadFrom(file);
+        if (game == null) return null;
+        foreach (string resource in game.GetManifestResourceNames()) {
+            if (resource == name + ".dll" || resource.EndsWith("." + name + ".dll", StringComparison.OrdinalIgnoreCase)) {
+                using (Stream stream = game.GetManifestResourceStream(resource))
+                using (MemoryStream buffer = new MemoryStream()) {
+                    stream.CopyTo(buffer);
+                    return Assembly.Load(buffer.ToArray());
+                }
             }
         }
-        return $null
-    } finally { $script:resolving = $false }
+        return null;
+    }
 }
-[AppDomain]::CurrentDomain.add_AssemblyResolve($resolver)
+'@
 $flags = [Reflection.BindingFlags]'Static,Public,NonPublic'
 
 function Read-Field([Type]$Type, [string]$Name) {
     $field = $Type.GetField($Name, $flags)
     if ($null -eq $field) { throw "Unsupported map palette contract: missing $Name." }
-    $value = $field.GetValue($null)
+    $value = if ($field.IsLiteral) { $field.GetRawConstantValue() } else { $field.GetValue($null) }
     if ($null -eq $value) { throw "Map palette field $Name was not initialized." }
     return ,$value
 }
@@ -97,28 +107,34 @@ function Read-Options([Array]$Lookup, [Array]$Counts, [Array]$Colours) {
     return ,$entries.ToArray()
 }
 
+# `count` consecutive colours of the colour table, starting at the index stored in the field `position`.
+function Read-Range([Type]$Map, [Array]$Colours, [string]$Position, [int]$Count) {
+    $start = [int](Read-Field $Map $Position)
+    if ($start -le 0 -or $start + $Count -gt $Colours.Length) { throw "Unsupported map palette range at $Position." }
+    return ,@(0..($Count - 1) | ForEach-Object { Read-Colour ($Colours.GetValue($start + $_)) })
+}
+
 function Format-Colour([int]$Colour) { return '0x{0:x6}' -f $Colour }
+
+function Format-List([Array]$Colours) { return (@($Colours | ForEach-Object { Format-Colour $_ }) -join ', ') }
 
 function Format-Table([string]$Name, [Array]$Entries) {
     $lines = New-Object 'Collections.Generic.List[string]'
     $lines.Add("  ${Name}: [")
-    for ($id = 0; $id -lt $Entries.Length; $id++) {
-        $colours = @($Entries[$id] | ForEach-Object { Format-Colour $_ }) -join ', '
-        $lines.Add("    [$colours], // $id")
-    }
+    for ($id = 0; $id -lt $Entries.Length; $id++) { $lines.Add("    [$(Format-List $Entries[$id])], // $id") }
     $lines.Add('  ],')
     return $lines
 }
 
 try {
-    $script:gameAssembly = [Reflection.Assembly]::LoadFrom($assemblyPath)
+    $game = [MapPaletteGameHost]::Load($assemblyPath)
     # Main's static initializer expects the launcher's save root. This process never opens or saves a world.
-    $program = $script:gameAssembly.GetType('Terraria.Program', $false)
+    $program = $game.GetType('Terraria.Program', $false)
     if ($null -ne $program) {
         $savePath = $program.GetField('SavePath', $flags)
         if ($null -ne $savePath -and $null -eq $savePath.GetValue($null)) { $savePath.SetValue($null, [IO.Path]::GetTempPath()) }
     }
-    $map = $script:gameAssembly.GetType('Terraria.Map.MapHelper', $true)
+    $map = $game.GetType('Terraria.Map.MapHelper', $true)
     $initialize = $map.GetMethod('Initialize', $flags, $null, [Type[]]@(), $null)
     if ($null -eq $initialize) { throw 'Unsupported map palette contract: missing Initialize().' }
     $null = $initialize.Invoke($null, @())
@@ -127,12 +143,26 @@ try {
     $tiles = Read-Options (Read-Field $map 'tileLookup') (Read-Field $map 'tileOptionCounts') $colours
     $walls = Read-Options (Read-Field $map 'wallLookup') (Read-Field $map 'wallOptionCounts') $colours
     # Water, lava, honey and shimmer follow each other in the colour table.
-    $liquidStart = [int](Read-Field $map 'liquidPosition')
-    if ($liquidStart -le 0 -or $liquidStart + 4 -gt $colours.Length) { throw 'Unsupported map palette liquid lookup range.' }
-    $liquids = @(0..3 | ForEach-Object { Format-Colour (Read-Colour ($colours.GetValue($liquidStart + $_))) }) -join ', '
+    $liquids = Read-Range $map $colours 'liquidPosition' 4
+    # The sky is a gradient from the top of the world down to the surface; the dirt and rock layers and the
+    # underworld each have one colour (the first entry of their range; the game draws empty space only with it).
+    $sky = Read-Range $map $colours 'skyPosition' ([int](Read-Field $map 'maxSkyGradients'))
+    $dirt = (Read-Range $map $colours 'dirtPosition' 1)[0]
+    $rock = (Read-Range $map $colours 'rockPosition' 1)[0]
+    $hell = (Read-Range $map $colours 'hellPosition' 1)[0]
+    if ($sky.Length -ne 256) { throw "Unsupported map palette contract: $($sky.Length) sky colours instead of 256." }
 
-    $version = $script:gameAssembly.GetName().Version.ToString()
-    $main = $script:gameAssembly.GetType('Terraria.Main', $false)
+    # Paint colours, indexed by paint ID (0 = unpainted).
+    $paintIds = $game.GetType('Terraria.ID.PaintID', $true).GetFields($flags) | Where-Object { $_.IsLiteral } |
+        ForEach-Object { [int]$_.GetRawConstantValue() }
+    $paintCount = ($paintIds | Measure-Object -Maximum).Maximum + 1
+    if ($paintCount -lt 2 -or $paintCount -gt 256) { throw 'Unsupported map palette contract: paint ID range.' }
+    $paintColour = $game.GetType('Terraria.WorldGen', $true).GetMethod('paintColor', $flags, $null, [Type[]]@([int]), $null)
+    if ($null -eq $paintColour) { throw 'Unsupported map palette contract: missing paintColor(int).' }
+    $paints = @(0..($paintCount - 1) | ForEach-Object { Read-Colour ($paintColour.Invoke($null, @([int]$_))) })
+
+    $version = $game.GetName().Version.ToString()
+    $main = $game.GetType('Terraria.Main', $false)
     if ($null -ne $main) {
         $versionField = $main.GetField('versionNumber', $flags)
         if ($null -ne $versionField -and $versionField.IsLiteral) { $version = [string]$versionField.GetRawConstantValue() }
@@ -149,7 +179,18 @@ try {
     $lines.Add("  gameVersion: `"$version`",")
     $lines.AddRange([string[]](Format-Table 'tiles' $tiles))
     $lines.AddRange([string[]](Format-Table 'walls' $walls))
-    $lines.Add("  liquids: [$liquids],")
+    $lines.Add("  liquids: [$(Format-List $liquids)],")
+    $lines.Add('  background: {')
+    $lines.Add('    sky: [')
+    for ($row = 0; $row -lt $sky.Length; $row += 8) { $lines.Add("      $(Format-List $sky[$row..([Math]::Min($row + 7, $sky.Length - 1))]),") }
+    $lines.Add('    ],')
+    $lines.Add("    dirt: $(Format-Colour $dirt),")
+    $lines.Add("    rock: $(Format-Colour $rock),")
+    $lines.Add("    hell: $(Format-Colour $hell),")
+    $lines.Add('  },')
+    $lines.Add('  paints: [')
+    for ($id = 0; $id -lt $paints.Length; $id++) { $lines.Add("    $(Format-Colour $paints[$id]), // $id") }
+    $lines.Add('  ],')
     $lines.Add('};')
     # Everything was read and validated before the output is touched.
     $null = [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($output))
@@ -160,6 +201,4 @@ try {
     while ($null -ne $cause.InnerException) { $cause = $cause.InnerException }
     Write-Verbose $cause.ToString()
     throw ('Map palette export failed: ' + $cause.GetType().Name + ': ' + $cause.Message)
-} finally {
-    [AppDomain]::CurrentDomain.remove_AssemblyResolve($resolver)
 }

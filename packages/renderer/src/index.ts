@@ -3,8 +3,8 @@
 export const RENDERER_PACKAGE = "@studio/renderer";
 export { renderChunk } from "./chunk/render.js";
 export type { ChunkLayers, ChunkPixels, ChunkRenderOptions } from "./chunk/render.js";
-export { contentColor, liquidColors, placeholderColor } from "./palette/map-palette.js";
-export type { MapColor, MapPalette, Rgba } from "./palette/map-palette.js";
+export { backgroundColor, contentColor, liquidColors, paintedColor, placeholderColor } from "./palette/map-palette.js";
+export type { MapBackground, MapColor, MapPalette, Rgba, WorldDepth } from "./palette/map-palette.js";
 export { terrariaMapPalette } from "./palette/terraria-map-palette.generated.js";
 export {
   CHUNK_SIZE, MAX_ZOOM, MIN_ZOOM, actualSize, clampCamera, clampZoom, fitWorld, panBy, screenToTile, tileToScreen,

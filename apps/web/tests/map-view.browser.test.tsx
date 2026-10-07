@@ -17,7 +17,10 @@ function syntheticWorld(): RenderableWorld {
   for (let i = 0; i < count; i += 3) block[i] = 0;
   return {
     width, height, surfaceY: 200,
-    planes: { block, wall: new Uint16Array(count).fill(0xffff), liquid: new Uint8Array(count), liquidAmount: new Uint8Array(count) },
+    planes: {
+      block, wall: new Uint16Array(count).fill(0xffff), liquid: new Uint8Array(count), liquidAmount: new Uint8Array(count),
+      paint: new Uint8Array(count), wallPaint: new Uint8Array(count),
+    },
     palette: [{ kind: "vanilla", id: 0 }],
   };
 }
@@ -278,7 +281,10 @@ test("replacing the world refreshes the status bar for the resting pointer", asy
   const count = 600 * 300;
   const replacement: RenderableWorld = {
     ...small,
-    planes: { block: new Uint16Array(count), wall: new Uint16Array(count), liquid: new Uint8Array(count), liquidAmount: new Uint8Array(count) },
+    planes: {
+      block: new Uint16Array(count), wall: new Uint16Array(count), liquid: new Uint8Array(count), liquidAmount: new Uint8Array(count),
+      paint: new Uint8Array(count), wallPaint: new Uint8Array(count),
+    },
   };
   const view = await render(
     <div style={{ width: viewport.width, height: viewport.height, position: "relative" }}>

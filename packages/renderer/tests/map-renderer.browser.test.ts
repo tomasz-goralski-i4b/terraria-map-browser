@@ -25,13 +25,15 @@ const palette = [
   { kind: "vanilla", id: 0 }, { kind: "vanilla", id: 1 }, { kind: "vanilla", id: 2 }, { kind: "vanilla", id: 25 },
 ] as const;
 
-/** Column-major planes with a deterministic mix of blocks, walls, liquids and partial amounts. */
-function syntheticWorld(width: number, height: number): RenderableWorld {
+/** Column-major planes with a deterministic mix of blocks, walls, liquids, partial amounts and paints. */
+function syntheticWorld(width: number, height: number, depth?: { surfaceY: number; rockY: number }): RenderableWorld {
   const count = width * height;
   const block = new Uint16Array(count).fill(0xffff);
   const wall = new Uint16Array(count).fill(0xffff);
   const liquid = new Uint8Array(count);
   const liquidAmount = new Uint8Array(count);
+  const paint = new Uint8Array(count);
+  const wallPaint = new Uint8Array(count);
   for (let x = 0; x < width; x++) {
     for (let y = 0; y < height; y++) {
       const i = x * height + y;
@@ -42,9 +44,15 @@ function syntheticWorld(width: number, height: number): RenderableWorld {
         liquid[i] = hash % 5;
         liquidAmount[i] = (hash * 37) % 256;
       }
+      // Every paint ID 0–31, including shadow (29) and negative (30), on blocks and walls.
+      paint[i] = (x * 5 + y * 3) % 32;
+      wallPaint[i] = (x * 3 + y * 7) % 32;
     }
   }
-  return { width, height, surfaceY: Math.floor(height / 2), planes: { block, wall, liquid, liquidAmount }, palette };
+  return {
+    width, height, surfaceY: depth?.surfaceY ?? Math.floor(height / 2), ...(depth === undefined ? {} : { rockY: depth.rockY }),
+    planes: { block, wall, liquid, liquidAmount, paint, wallPaint }, palette,
+  };
 }
 
 function readCanvas(canvas: HTMLCanvasElement): Uint8Array {
@@ -63,11 +71,12 @@ function readCanvas(canvas: HTMLCanvasElement): Uint8Array {
 
 /** The CPU reference for a whole world at 1 pixel per tile, stitched from renderChunk. */
 function cpuReference(world: RenderableWorld, layers: ChunkLayers, mapPalette?: MapPalette): Uint8Array {
+  const rockY = world.rockY === undefined ? {} : { rockY: world.rockY };
   const out = new Uint8Array(world.width * world.height * 4);
   for (let cy = 0; cy < Math.ceil(world.height / 128); cy++) {
     for (let cx = 0; cx < Math.ceil(world.width / 128); cx++) {
       const chunk = renderChunk(world as never, cx, cy, {
-        surfaceY: world.surfaceY, layers, ...(mapPalette === undefined ? {} : { mapPalette }),
+        surfaceY: world.surfaceY, ...rockY, layers, ...(mapPalette === undefined ? {} : { mapPalette }),
       });
       for (let y = 0; y < chunk.height; y++) {
         const dest = ((cy * 128 + y) * world.width + cx * 128) * 4;
@@ -97,14 +106,16 @@ describe("GPU output equals renderChunk", () => {
     expect(readCanvas(canvas)).toEqual(cpuReference(world, layers));
   });
 
-  test.each(layerCombos)("layers %o with a map palette at 1 pixel per tile", (layers) => {
-    const canvas = makeCanvas(300, 200);
+  test.each(layerCombos)("layers %o with a map palette (paint, sky gradient, depth layers) at 1 pixel per tile", (layers) => {
+    // 300 × 400: sky above 90.5, dirt to 140.25, rock to the underworld at row 200 (height − 200).
+    const layered = syntheticWorld(300, 400, { surfaceY: 90.5, rockY: 140.25 });
+    const canvas = makeCanvas(300, 400);
     const renderer = makeRenderer(canvas, { mapPalette: syntheticMapPalette });
-    renderer.setWorld(world);
+    renderer.setWorld(layered);
     renderer.setLayers(layers);
     renderer.setCamera({ x: 0, y: 0, zoom: 1 });
     renderer.render();
-    expect(readCanvas(canvas)).toEqual(cpuReference(world, layers, syntheticMapPalette));
+    expect(readCanvas(canvas)).toEqual(cpuReference(layered, layers, syntheticMapPalette));
   });
 
   test("a viewport covering only the partial edge chunk matches that chunk", () => {
@@ -286,6 +297,7 @@ describe("uploads, cache and draw calls", () => {
       planes: {
         block: new Uint16Array(count), wall: new Uint16Array(count),
         liquid: new Uint8Array(count), liquidAmount: new Uint8Array(count),
+        paint: new Uint8Array(count), wallPaint: new Uint8Array(count),
       },
       palette,
     };
