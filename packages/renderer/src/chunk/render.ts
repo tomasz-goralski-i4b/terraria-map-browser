@@ -1,6 +1,6 @@
 import type { CanonicalWorld, ContentRef } from "@studio/world-model";
-
-export type Rgba = readonly [number, number, number, number];
+import { contentColor, liquidColors } from "../palette/map-palette.js";
+import type { MapPalette, Rgba } from "../palette/map-palette.js";
 
 export interface ChunkLayers {
   readonly background: boolean;
@@ -12,6 +12,8 @@ export interface ChunkLayers {
 export interface ChunkRenderOptions {
   readonly surfaceY: number;
   readonly layers: ChunkLayers;
+  /** Map colours for vanilla content; without one, every block and wall gets its placeholder colour. */
+  readonly mapPalette?: MapPalette;
 }
 
 export interface ChunkPixels {
@@ -23,51 +25,36 @@ export interface ChunkPixels {
 
 const chunkSize = 128;
 const absentContent = 0xffff;
-const liquidColors: readonly Rgba[] = [
-  [0, 0, 0, 0],
-  [40, 110, 230, 255],
-  [255, 80, 20, 255],
-  [240, 180, 40, 255],
-  [180, 100, 240, 255],
-];
 
 interface PaletteColors {
   readonly block: Rgba[];
   readonly wall: Rgba[];
 }
 
-// CWM palettes are append-only, so a cached colour stays valid and only new entries need hashing.
-const paletteColorCache = new WeakMap<readonly ContentRef[], PaletteColors>();
+// Keyed by map palette, then by CWM palette. CWM palettes are append-only, so a cached colour stays valid and
+// only new entries need resolving.
+const withoutMapPalette = {};
+const paletteColorCache = new WeakMap<object, WeakMap<readonly ContentRef[], PaletteColors>>();
 
-function paletteColors(palette: readonly ContentRef[]): PaletteColors {
-  let colors = paletteColorCache.get(palette);
+function paletteColors(palette: readonly ContentRef[], mapPalette: MapPalette | undefined): PaletteColors {
+  const key = mapPalette ?? withoutMapPalette;
+  let byPalette = paletteColorCache.get(key);
+  if (byPalette === undefined) {
+    byPalette = new WeakMap();
+    paletteColorCache.set(key, byPalette);
+  }
+  let colors = byPalette.get(palette);
   if (colors === undefined) {
     colors = { block: [], wall: [] };
-    paletteColorCache.set(palette, colors);
+    byPalette.set(palette, colors);
   }
   for (let index = colors.block.length; index < palette.length; index++) {
     const ref = palette[index];
     if (ref === undefined) break;
-    colors.block.push(placeholderColor(ref, "block"));
-    colors.wall.push(placeholderColor(ref, "wall"));
+    colors.block.push(contentColor(ref, "block", mapPalette));
+    colors.wall.push(contentColor(ref, "wall", mapPalette));
   }
   return colors;
-}
-
-export function placeholderColor(ref: ContentRef, layer: "block" | "wall"): Rgba {
-  if (ref.kind !== "vanilla") return [255, 0, 255, 255];
-  const key = `vanilla:${String(ref.id)}`;
-  let hash = 2166136261;
-  for (let i = 0; i < key.length; i++) {
-    hash = Math.imul(hash ^ key.charCodeAt(i), 16777619) >>> 0;
-  }
-  const divisor = layer === "wall" ? 2 : 1;
-  return [
-    Math.floor((64 + (hash & 127)) / divisor),
-    Math.floor((64 + ((hash >>> 8) & 127)) / divisor),
-    Math.floor((64 + ((hash >>> 16) & 127)) / divisor),
-    255,
-  ];
 }
 
 export function renderChunk(
@@ -88,12 +75,13 @@ export function renderChunk(
   const width = Math.min(chunkSize, world.width - originX);
   const height = Math.min(chunkSize, world.height - originY);
   const pixels = new Uint8ClampedArray(width * height * 4);
-  const { layers, surfaceY } = options;
+  const { layers, surfaceY, mapPalette } = options;
   const { planes } = world;
   // Palette colours are cached outside the pixel loop; no semantic tile views are created.
-  const colors = paletteColors(world.palette);
+  const colors = paletteColors(world.palette, mapPalette);
   const blockColors = layers.blocks ? colors.block : [];
   const wallColors = layers.walls ? colors.wall : [];
+  const liquids = liquidColors(mapPalette);
 
   for (let y = 0; y < height; y++) {
     const sky = originY + y < surfaceY;
@@ -114,7 +102,7 @@ export function renderChunk(
         alpha = color[3];
       }
 
-      const liquid = layers.liquids ? liquidColors[planes.liquid[index] ?? 0] : undefined;
+      const liquid = layers.liquids ? liquids[planes.liquid[index] ?? 0] : undefined;
       const amount = planes.liquidAmount[index] ?? 0;
       if (liquid !== undefined && liquid[3] !== 0 && amount !== 0) {
         // Earlier layers are either opaque or absent. On transparent pixels retain straight RGB.

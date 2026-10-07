@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { WebGl2UnavailableError, createMapRenderer, renderChunk, visibleChunks } from "../src/index.js";
-import type { ChunkLayers, MapRenderer, RenderableWorld } from "../src/index.js";
+import type { ChunkLayers, MapPalette, MapRenderer, MapRendererOptions, RenderableWorld } from "../src/index.js";
+import { syntheticMapPalette } from "./map-palette.fixture.js";
 
 const created: MapRenderer[] = [];
 afterEach(() => {
@@ -14,7 +15,7 @@ function makeCanvas(width: number, height: number): HTMLCanvasElement {
   return canvas;
 }
 
-function makeRenderer(canvas: HTMLCanvasElement, options?: { maxCachedChunks?: number }): MapRenderer {
+function makeRenderer(canvas: HTMLCanvasElement, options?: MapRendererOptions): MapRenderer {
   const renderer = createMapRenderer(canvas, options);
   created.push(renderer);
   return renderer;
@@ -61,11 +62,13 @@ function readCanvas(canvas: HTMLCanvasElement): Uint8Array {
 }
 
 /** The CPU reference for a whole world at 1 pixel per tile, stitched from renderChunk. */
-function cpuReference(world: RenderableWorld, layers: ChunkLayers): Uint8Array {
+function cpuReference(world: RenderableWorld, layers: ChunkLayers, mapPalette?: MapPalette): Uint8Array {
   const out = new Uint8Array(world.width * world.height * 4);
   for (let cy = 0; cy < Math.ceil(world.height / 128); cy++) {
     for (let cx = 0; cx < Math.ceil(world.width / 128); cx++) {
-      const chunk = renderChunk(world as never, cx, cy, { surfaceY: world.surfaceY, layers });
+      const chunk = renderChunk(world as never, cx, cy, {
+        surfaceY: world.surfaceY, layers, ...(mapPalette === undefined ? {} : { mapPalette }),
+      });
       for (let y = 0; y < chunk.height; y++) {
         const dest = ((cy * 128 + y) * world.width + cx * 128) * 4;
         out.set(chunk.pixels.subarray(y * chunk.width * 4, (y + 1) * chunk.width * 4), dest);
@@ -92,6 +95,16 @@ describe("GPU output equals renderChunk", () => {
     renderer.setCamera({ x: 0, y: 0, zoom: 1 });
     renderer.render();
     expect(readCanvas(canvas)).toEqual(cpuReference(world, layers));
+  });
+
+  test.each(layerCombos)("layers %o with a map palette at 1 pixel per tile", (layers) => {
+    const canvas = makeCanvas(300, 200);
+    const renderer = makeRenderer(canvas, { mapPalette: syntheticMapPalette });
+    renderer.setWorld(world);
+    renderer.setLayers(layers);
+    renderer.setCamera({ x: 0, y: 0, zoom: 1 });
+    renderer.render();
+    expect(readCanvas(canvas)).toEqual(cpuReference(world, layers, syntheticMapPalette));
   });
 
   test("a viewport covering only the partial edge chunk matches that chunk", () => {

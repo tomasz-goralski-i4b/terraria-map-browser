@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { page } from "vitest/browser";
 import { render } from "vitest-browser-react";
-import { screenToTile, visibleChunks } from "@studio/renderer";
+import { screenToTile, terrariaMapPalette, visibleChunks } from "@studio/renderer";
 import type { Camera, RenderableWorld } from "@studio/renderer";
 import { MapView } from "../src/components/MapView.js";
 import { useAppStore } from "../src/store.js";
@@ -91,6 +91,11 @@ test("the visible-chunk set follows the camera and equals the pure visibleChunks
   await vi.waitFor(() => {
     expect(chunks()).toEqual(visibleChunks(cam, viewport, { width, height }).map((chunk: { x: number; y: number }) => [chunk.x, chunk.y]));
   });
+});
+
+test("the map is drawn with the shipped Terraria map palette", async () => {
+  await mountMap();
+  expect(canvas().dataset["mapPalette"]).toBe(terrariaMapPalette.gameVersion);
 });
 
 test("dragging pans the map: content follows the pointer", async () => {

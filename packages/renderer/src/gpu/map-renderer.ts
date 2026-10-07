@@ -5,8 +5,9 @@
 import type { ContentRef } from "@studio/world-model";
 import { CHUNK_SIZE, visibleChunks } from "../camera/camera.js";
 import type { Camera, ChunkCoord } from "../camera/camera.js";
-import { placeholderColor } from "../chunk/render.js";
 import type { ChunkLayers } from "../chunk/render.js";
+import { contentColor, liquidColors } from "../palette/map-palette.js";
+import type { MapPalette } from "../palette/map-palette.js";
 import { fragmentSource, vertexSource } from "./shaders.js";
 
 /** The slice of a world the renderer reads. Planes are column-major (`x * height + y`); never copied by the caller. */
@@ -27,6 +28,8 @@ export interface RenderableWorld {
 export interface MapRendererOptions {
   /** Upper bound of chunk textures kept on the GPU (LRU). Default 1536, enough for a whole Large world. */
   readonly maxCachedChunks?: number;
+  /** Map colours for vanilla content, as in `renderChunk`; without one, placeholders are drawn. */
+  readonly mapPalette?: MapPalette;
 }
 
 export interface MapRendererStats {
@@ -68,7 +71,7 @@ const PALETTE_HEIGHT = PALETTE_ROW;
 const DEFAULT_MAX_CACHED_CHUNKS = 1536;
 const UNIFORM_NAMES = [
   "uBlock", "uWall", "uLiquid", "uAmount", "uPalette", "uCamera", "uZoom", "uViewport", "uOrigin", "uSize", "uSurfaceY",
-  "uPaletteLength", "uLayers",
+  "uPaletteLength", "uLayers", "uLiquids",
 ] as const;
 type UniformName = (typeof UNIFORM_NAMES)[number];
 
@@ -135,6 +138,9 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   if (context === null) throw new WebGl2UnavailableError();
   const gl: WebGL2RenderingContext = context;
   const maxCachedChunks = Math.max(1, options?.maxCachedChunks ?? DEFAULT_MAX_CACHED_CHUNKS);
+  const mapPalette = options?.mapPalette;
+  // The four liquid kinds (CWM kinds 1–4) as the shader's ivec3 array.
+  const liquidUniform = new Int32Array(liquidColors(mapPalette).slice(1).flatMap(([red, green, blue]) => [red, green, blue]));
 
   // Looked up once: getExtension returns null while the context is lost. Used only to restore a forced loss.
   const loseContext = gl.getExtension("WEBGL_lose_context");
@@ -172,8 +178,8 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       if (ref === undefined) break;
       const row = Math.floor(index / PALETTE_ROW);
       const column = index % PALETTE_ROW;
-      paletteMirror.set(placeholderColor(ref, "block"), (row * PALETTE_WIDTH + column) * 4);
-      paletteMirror.set(placeholderColor(ref, "wall"), (row * PALETTE_WIDTH + PALETTE_ROW + column) * 4);
+      paletteMirror.set(contentColor(ref, "block", mapPalette), (row * PALETTE_WIDTH + column) * 4);
+      paletteMirror.set(contentColor(ref, "wall", mapPalette), (row * PALETTE_WIDTH + PALETTE_ROW + column) * 4);
     }
     const firstRow = Math.floor(paletteUploaded / PALETTE_ROW);
     const lastRow = Math.floor((total - 1) / PALETTE_ROW);
@@ -271,6 +277,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     gl.uniform1i(uniforms.uSurfaceY, world.surfaceY);
     gl.uniform1i(uniforms.uPaletteLength, paletteUploaded);
     gl.uniform1i(uniforms.uLayers, layers);
+    gl.uniform3iv(uniforms.uLiquids, liquidUniform);
     gl.activeTexture(gl.TEXTURE4);
     gl.bindTexture(gl.TEXTURE_2D, resources.palette);
 

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  actualSize, clampCamera, createMapRenderer, fitWorld, panBy, visibleChunks, zoomAt,
+  actualSize, clampCamera, createMapRenderer, fitWorld, panBy, terrariaMapPalette, visibleChunks, zoomAt,
 } from "@studio/renderer";
 import type { Camera, MapRenderer, RenderableWorld, Size } from "@studio/renderer";
 
@@ -87,7 +87,7 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
     if (canvas === null) return undefined;
     let renderer: MapRenderer;
     try {
-      renderer = createMapRenderer(canvas);
+      renderer = createMapRenderer(canvas, { mapPalette: terrariaMapPalette });
     } catch (cause) {
       // Creating the renderer needs the mounted canvas, so its failure is only known inside this effect.
       // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -222,6 +222,7 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
         style={CANVAS_STYLE}
         tabIndex={0}
         aria-label="World map"
+        data-map-palette={terrariaMapPalette.gameVersion}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerEnd}
