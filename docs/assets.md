@@ -20,8 +20,8 @@ words.
 | A6 | MonoGame `MonoGame.Framework/Content/LzxDecoder.cs` (C# port of libmspack `lzxd.c`) | `55b5621b` | LZX bitstream: window 60–103, header 146–155, block header 160–210, tree lengths 585–625, bit reader 649–700, constants 750–770 |
 | A7 | [libmspack](https://github.com/kyz/libmspack) `libmspack/mspack/lzxd.c` | `55d50197` | the original LZX decoder A6 was ported from (not read line by line in this spike) |
 | A8 | [TEdit](https://github.com/TEdit/Terraria-Map-Editor) `src/TEdit/View/WorldRenderXna.xaml.cs` | `99928583` | wall source rectangle 4282–4297, frame-important tile source rectangle 4737 |
-| A9 | TEdit `src/TEdit.Terraria/Render/WallFraming.cs` | `99928583` | wall framing (port of `Framing.WallFrame`, 1.4.5.4): 40–80, 86–119, 125–162 |
-| A10 | TEdit `src/TEdit/Render/BlendRules.cs` | `99928583` | block self-framing rules: 93–113; cell notation 401–415 |
+| A9 | TEdit `src/TEdit.Terraria/Render/WallFraming.cs` | `99928583` | wall framing (port of `Framing.WallFrame`, 1.4.5.4): variant patterns 15–29, table 40–80, neighbours 86–119, variant choice 135–153 |
+| A10 | TEdit `src/TEdit/Render/BlendRules.cs` | `99928583` | block self-framing rules: 93–113 (diagonal-sensitive rules 109–112); cell notation 401–415 |
 | A11 | TEdit `src/TEdit.Terraria/Objects/TileProperty.cs` | `99928583` | defaults `TextureGrid 16×16`, `FrameGap 2×2`: lines 95–96 |
 | A12 | TEdit `src/TEdit.Terraria/Data/tiles.json` | `99928583` | per-tile `textureGrid`, `frameGap`, `frameSize`, `isFramed`, `isAnimated` (754 entries, ids 0–753); dirt line 3, torch 98, tree 256, chair 867, chest 3084 |
 | A13 | TEdit `src/TEdit.Terraria/Render/TileFraming.cs` | `99928583` | 8-way framing for gemspark-like tiles: lines 6–36 |
@@ -209,6 +209,12 @@ Where `frameX`/`frameY` come from:
   ("self-framing"). The renderer has to do the same (A10). The base rule set picks one of 16 neighbour cases from the
   four direct neighbours of the same type, then one of three variants. Cell names in A10 are `<row letter><1-based
   column>`, so `B2`–`B4` = cells (1,1), (2,1), (3,1) → `frameX/frameY` (18,18), (36,18), (54,18).
+- **Diagonal rules (deferred).** When all four direct neighbours are the same type, A10 (lines 109–112) first tries
+  four higher-priority rules that also look at the diagonals: top-left and bottom-left missing → `A11`–`C11`;
+  top-right and bottom-right missing → `A12`–`C12`; both top diagonals missing → `B7`–`B9`; both bottom diagonals
+  missing → `C7`–`C9`. Only if none matches does `B2`–`B4` apply. **M4 ignores these rules** and always uses
+  `B2`–`B4` for the four-neighbour case; worked example 1 therefore states all eight neighbours, so that it matches
+  the source as well.
 
 ### Walls (`Wall_<id>`)
 
@@ -218,9 +224,18 @@ frame; it is computed from the four direct neighbours (A9 86–119):
 1. `index` = N·1 + W·2 + E·4 + S·8, where a neighbour counts if it has a wall, or an active tile of a
    "truncates walls" type (A9 13: 54, 328, 459, 748). Tiles on the world border use cell (0,0).
 2. If `index = 15`, add a centre sub-pattern chosen by `(x mod 3, y mod 3)` (A9 31–37; values 0–4).
-3. A frame number 0–3 picks one of four variants (Terraria: random per tile; TEdit: deterministic substitute,
-   A9 140–162).
-4. The (index, variant) table (A9 60–79) gives a cell `(column, row)`.
+3. A variant number picks a column of the table (A9 135–153):
+   - **Ordinary walls** (`LargeFrameType = 0`): variant **0–2** only. Terraria picks it randomly when the wall is
+     framed and the `.wld` does not store it; TEdit substitutes the deterministic `(7x + 11y) mod 3` (A9 150–153).
+   - **Large-frame walls** (`LargeFrameType` 1 or 2, a per-wall property): variant **0–3**, taken from a fixed
+     repeating pattern over `(x, y)` — 3 tiles wide × 4 high for type 1, 2 × 2 for type 2 (A9 15–29, 144–148).
+     Only these walls use variant 3, whose cells lie in rows 5–6 (A9 60–79, fourth pair).
+4. The (index, variant) table (A9 60–79) gives a cell `(column, row)`. For variants 0–2 every cell lies in rows 0–4,
+   i.e. inside a 468 × 180 sheet.
+
+**M4 rule:** ordinary walls use variant `(7x + 11y) mod 3` (the same substitute as TEdit, so the result is in 0–2
+and never leaves rows 0–4); large-frame walls are deferred and drawn with the same 0–2 rule until a follow-up adds
+their patterns and confirms their sheets have rows 5–6.
 
 ```text
 source = (x = 36 × column, y = 36 × row, w = 32, h = 32)
@@ -231,7 +246,7 @@ dest   = top-left at (16 × tileX − 8, 16 × tileY − 8)        // a 32×32 s
 
 | # | Case | Input | Source rectangle (x, y, w, h) | Basis |
 |---|---|---|---|---|
-| 1 | Dirt, `Tiles_0` (not frame-important), dirt on all four sides, variant 0 | computed frame (18, 18) | **(18, 18, 16, 16)** → pixels 18–33 × 18–33 | A10 rule `B2`–`B4`, stride 18 |
+| 1 | Dirt, `Tiles_0` (not frame-important), dirt on all eight neighbours (four sides and four diagonals), variant 0 | computed frame (18, 18) | **(18, 18, 16, 16)** → pixels 18–33 × 18–33 | A10 rule `B2`–`B4` (no diagonal rule matches), stride 18 |
 | 2 | Dirt, only a right-hand neighbour, variant 0 | computed frame (162, 0) | **(162, 0, 16, 16)** | A10 rule `A10`–`C10`: column 9 × 18 = 162 |
 | 3 | Torch, `Tiles_4` (frame-important, grid 20×20, gap 2) | `.wld` vector T6: `frameX 0, frameY 66` | **(0, 66, 20, 20)** — style row 66 / 22 = 3 | F (T6), A12 line 98 |
 | 4 | Chest, `Tiles_21` (frame-important 2×2 object, grid 16, gap 2), style `s`, part `(dx, dy)` | `frameX = 36s + 18dx`, `frameY = 18dy` | style 1, bottom-right: **(54, 18, 16, 16)** | A12 line 3084 (`frameSize 2×2`) |
@@ -247,8 +262,8 @@ Expected sheet sizes (consistent with the size arithmetic, confirmed only by the
 |---|---|---|
 | Frame-important tiles with a 16×16 grid (most furniture, multi-tile objects) | draw each tile's own cell at `(frameX, frameY)`; multi-tile objects need nothing extra because every tile carries its own frame | — |
 | Frame-important tiles with other grids (torches, plants, …) | draw with the tile's `textureGrid` size | exact per-id draw offsets |
-| Non-frame-important blocks | base self-framing (same-type neighbours, 16 cases × 3 variants, deterministic variant) | blending with dirt/stone/other types, grass rules, slopes and half bricks (block style), 8-way framing for gemspark-like tiles (A13) |
-| Walls | 4-neighbour framing with the table above, variant chosen deterministically | Terraria's random variant, special `LargeFrameType` walls, wall variant rows that the 180-px sheet does not have (rows 5–6) |
+| Non-frame-important blocks | base self-framing (same-type neighbours, 16 cases × 3 variants, deterministic variant) | the four diagonal-sensitive rules of the four-neighbour case (A10 109–112), blending with dirt/stone/other types, grass rules, slopes and half bricks (block style), 8-way framing for gemspark-like tiles (A13) |
+| Walls | 4-neighbour framing with the table above, variant `(7x + 11y) mod 3` (0–2, rows 0–4 only) | Terraria's random variant, the variant patterns of `LargeFrameType` 1/2 walls (variant 3, rows 5–6) |
 | Animated tiles (173 ids flagged `isAnimated` in A12, all frame-important) | draw the stored frame (static) | animation |
 | Trees (5, 323, …), tree tops/branches, variant sheets (`Tiles_5_N`, `Tiles_2_Beach`, `Tiles_59_2`, …) | placeholder | yes |
 | Paint, actuated/inactive tint, illumination, liquids, wires | — | yes |
@@ -260,9 +275,10 @@ format, never copied; "Depend" = may be a build or runtime dependency.
 
 | Candidate | Language | License | Read | Depend | Reason |
 |---|---|---|---|---|---|
-| MonoGame `LzxDecoder.cs`, `LzxDecoderStream.cs` (A5, A6) | C# | dual **LGPL-2.1 / Ms-PL** (file header); rest of MonoGame **Ms-PL** | yes | **no** | Ms-PL would allow it, but the code is internal to `MonoGame.Framework` (needs a graphics device for `Texture2D`) — far too heavy for a codec |
-| MonoGame content readers (A1–A4) | C# | Ms-PL | yes | no | same |
-| [FNA](https://github.com/FNA-XNA/FNA) (`24031e5b`) | C# | Ms-PL; LZX decoder under `licenses/lzxdecoder.LICENSE` | yes | no | same lineage as MonoGame; whole framework |
+| MonoGame `LzxDecoder.cs` (A6) | C# | dual **LGPL-2.1 / Ms-PL**, user's choice ([file header, lines 1–34](https://github.com/MonoGame/MonoGame/blob/55b5621b/MonoGame.Framework/Content/LzxDecoder.cs#L1-L34)) | yes | **no** | Ms-PL would allow it, but the code is internal to `MonoGame.Framework` (needs a graphics device for `Texture2D`) — far too heavy for a codec |
+| MonoGame `LzxDecoderStream.cs` (A5) | C# | **Ms-PL** — the header ([lines 1–3](https://github.com/MonoGame/MonoGame/blob/55b5621b/MonoGame.Framework/Utilities/LzxStream/LzxDecoderStream.cs#L1-L3)) refers to the repository's [`LICENSE.txt`](https://github.com/MonoGame/MonoGame/blob/55b5621b/LICENSE.txt) | yes | no | same |
+| MonoGame content readers (A1–A4) | C# | **Ms-PL** ([`LICENSE.txt`](https://github.com/MonoGame/MonoGame/blob/55b5621b/LICENSE.txt)) | yes | no | same |
+| [FNA](https://github.com/FNA-XNA/FNA) (`24031e5b`) | C# | framework **Ms-PL** ([`licenses/LICENSE`](https://github.com/FNA-XNA/FNA/blob/24031e5b/licenses/LICENSE)); its LZX decoder dual **LGPL-2.1 / Ms-PL**, user's choice ([`licenses/lzxdecoder.LICENSE`](https://github.com/FNA-XNA/FNA/blob/24031e5b/licenses/lzxdecoder.LICENSE)) | yes | no | same lineage as MonoGame; whole framework |
 | libmspack `lzxd.c` (A7) | C | **LGPL-2.1** | yes | no | the canonical decoder, but native — unusable in the browser and an unwanted native dependency in .NET |
 | [xnb-js](https://github.com/Lybell-Art/xnb-js) (`2e533abf`) | JS | **LGPL-3.0** | readme only | no | LGPL in a bundled PWA adds relinking obligations; we would also lose control of error reporting |
 | [xnbcli](https://github.com/LeonBlade/xnbcli) (`499929e4`) | JS (Node) | **GPL-3.0** | **no** | no | copyleft; do not read the code to keep our implementation clearly independent |

@@ -73,7 +73,8 @@ The .NET reference renderer maps a region of a world to sheet rectangles for blo
 
 ## Scope
 - Frame-important tiles: source rectangle `(frameX, frameY, textureGrid)`.
-- Base self-framing for non-frame-important blocks and 4-neighbour wall framing (deterministic variants).
+- Base self-framing for non-frame-important blocks (four-neighbour case always `B2`–`B4`; the diagonal-sensitive
+  rules are out of scope) and 4-neighbour wall framing with variant `(7x + 11y) mod 3` (0–2 only).
 - Worked examples 1–6 of docs/assets.md ("Sprite layout") as unit tests on rectangles (no pixels).
 
 ## Out of scope
