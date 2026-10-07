@@ -15,20 +15,20 @@ export class WorldFormatError extends Error {
   readonly offset: number;
   /** Human-readable diagnostic. */
   readonly reason: string;
+  /** Metadata field associated with the rejection, when known. */
+  readonly field?: string;
   /** Tile column of the offending record, for `MalformedTiles`. */
   readonly x?: number;
   /** Tile row of the offending record, for `MalformedTiles`. */
   readonly y?: number;
 
-  constructor(kind: WorldFormatErrorKind, offset: number, reason: string, tile?: { readonly x: number; readonly y: number }) {
+  constructor(kind: WorldFormatErrorKind, offset: number, reason: string, tile?: { readonly x?: number; readonly y?: number; readonly field?: string }) {
     super(`${kind} at offset ${String(offset)}: ${reason}`);
     this.name = "WorldFormatError";
     this.kind = kind;
     this.offset = offset;
     this.reason = reason;
-    if (tile !== undefined) {
-      this.x = tile.x;
-      this.y = tile.y;
-    }
+    if (tile?.x !== undefined) this.x = tile.x;
+    if (tile?.y !== undefined) this.y = tile.y;
   }
 }
