@@ -2,7 +2,7 @@
 
 Issue drafts written by the spike that produced the "Tile framing" section of [docs/assets.md](../assets.md).
 Check the backlog before filing. The first two are the implementation; the third collects the in-game checks, the
-remaining sheet measurements and the deferred grass rules.
+remaining sheet measurements and the deferred grass rules. The in-game part (H1–H6 on a generated test world) is filed as #120.
 
 ```markdown
 ## Goal
