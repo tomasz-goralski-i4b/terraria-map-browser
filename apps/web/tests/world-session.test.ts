@@ -5,7 +5,7 @@ import { createWorldSession, type WorldParser } from "../src/world/world-session
 
 function fakeWorld(name: string, width = 4200, height = 1200): WorldTilesResult {
   return {
-    formatVersion: 326,
+    header: { version: 326 },
     metadata: { name, seed: "42", guid: "g", worldId: 1, width, height, mode: "expert", evil: "crimson" },
     palette: [{ kind: "vanilla", id: 1 }, { kind: "vanilla", id: 2 }, { kind: "vanilla", id: 3 }],
     planes: {},
