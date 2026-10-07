@@ -702,8 +702,12 @@ project); nothing is derived from game files.
      consecutive main-tree lengths at different values (e.g. 8, 9, 10, 11), the second updates them with one
      symbol-19 run (`n = 4`, `z' = 1`). Assert the resulting lengths are all 7 (directly on the tree reader, or via
      a payload whose decoding only succeeds with those lengths).
-5. **Aligned blocks and general matches** are only covered by the opt-in integration test (L uses aligned blocks
-   exclusively) unless a later issue adds a minimal encoder.
+5. **Hand-assembled aligned matches:** an uncompressed prefix containing the header and 64 distinct pixel bytes,
+   then an aligned block with one four-byte match. Use aligned-tree lengths `[2, 2, 3, 3, 4, 4, 4, 4]`: symbol 5
+   has code `1101`, so reading three raw bits cannot substitute for Huffman decoding. Slot 8 has exactly three
+   extra bits and offset `16 − 2 + 5 = 19`; slot 10 has four extra bits, verbatim high bit 1 and offset
+   `32 − 2 + (1 << 3) + 5 = 43`. Assert fixed RGBA bytes copied from different positions in the prefix. These
+   cases run in CI without game content or a compressor; broader real-content coverage remains opt-in.
 6. **Negative vectors:** bad magic, platform ≠ `w`, version ≠ 5, unknown flag bit, file-size mismatch, truncated
    header, truncated chunk, block type 0 or 4–7, E8 flag set, frame total ≠ decompressed size, wrong reader name,
    surface format ≠ 0, data length ≠ `w × h × 4`, trailing bytes. Each gets a precise error (names decided by the
