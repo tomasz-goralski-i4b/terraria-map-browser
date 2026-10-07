@@ -11,3 +11,5 @@ echo "== dotnet build (warnaserror)"
 dotnet build "$SLN" --no-restore -warnaserror -v q -nologo -clp:"NoSummary;ErrorsOnly" || exit 1
 echo "== tsc -b"
 pnpm -s typecheck || exit 1
+echo "== web app build (vite)"
+pnpm --filter @studio/web build || exit 1

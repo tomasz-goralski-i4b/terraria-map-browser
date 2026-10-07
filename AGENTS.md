@@ -35,6 +35,8 @@ dotnet/Terraria.WorldCodec.Tests/  xUnit v3 (Microsoft.Testing.Platform)
 dotnet/Terraria.WorldCodec.Synthetic/  generated test inputs (synthetic tile sections, short-read streams); never shipped
 dotnet/Terraria.WorldInspector/    console inspector (smoke-tested by verify.sh)
 packages/world-model/              TS domain model (ContentRef, Tile…)
+packages/renderer/                 framework-free renderer (never imports React)
+apps/web/                          browser viewer: React 19 + Vite + PWA (`pnpm --filter @studio/web dev`)
 packages/test-fixtures/            explicitly generated fixtures (from M1)
 scripts/                           verify/build/test + TDD gates (scripts/tdd) + backlog tooling (scripts/backlog)
 .ai/cezar/workflows/               Cezar chains

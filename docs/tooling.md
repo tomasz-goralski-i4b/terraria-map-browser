@@ -13,6 +13,7 @@ Toolchain decisions and the reasons behind them. Change a version here in the sa
 | Linter | ESLint 10 + `@eslint/js` 10 + `typescript-eslint` 8 (`strictTypeChecked` + `stylisticTypeChecked`) | `eslint.config.js` |
 | Tests | Vitest 5, one project per package | `vitest.config.ts` |
 | Browser tests | `@vitest/browser-playwright` 5 (matches Vitest) + Playwright 1.63, headless Chromium | `vitest.config.ts`, CI browser install |
+| Web app | React 19, Vite 8, `vite-plugin-pwa` (see the Web app section) | `apps/web`, `pnpm-workspace.yaml` `catalog` |
 | Node types | `@types/node` 24 | `pnpm-workspace.yaml` `catalog` |
 
 All shared dev dependency versions live in the `catalog:` of `pnpm-workspace.yaml`; `package.json` files reference
@@ -162,6 +163,28 @@ point at its own files (see the "Where" column).
 - [S9] `vite@8.3.2` (resolved by Vitest 5.0.3, peer `vite: ^6.4.0 || ^7.0.0 || ^8.0.0`) depends on
   `rolldown ~1.2.11` and not on `esbuild`; `rolldown@1.2.11` ships `@rolldown/binding-*` optional dependencies:
   https://unpkg.com/vite@8.3.2/package.json, https://unpkg.com/rolldown@1.2.11/package.json
+
+## Web app (`apps/web`, `packages/renderer`)
+
+| Dependency | Why |
+|---|---|
+| `react` / `react-dom` 19 | UI of the viewer/editor (M4–M7). The renderer package stays framework-free. |
+| `zustand` 5 | Small UI-state store. World data (CWM planes, palette) never goes into it — see `apps/web/README.md`. |
+| `vite` 8 | Dev server and production build; the same version Vitest 5 already resolves, so the tree has one Vite. |
+| `@vitejs/plugin-react` | JSX/Fast Refresh for the app and for its Vitest browser project (also a root devDependency because `vitest.config.ts` imports it). |
+| `vite-plugin-pwa` 2 (Workbox) | Web app manifest and a generated service worker that precaches the built shell only (no runtime caching of user files). `base: "./"` keeps the build relocatable. |
+| `vitest-browser-react` | Renders React components in the real-Chromium Vitest browser project. |
+| `eslint-plugin-react-hooks` 7 | Rules of Hooks; applied only to `apps/web/**` in `eslint.config.js` (also a root devDependency). |
+| `@types/react`, `@types/react-dom` | Types for React 19. |
+
+`packages/renderer` (`@studio/renderer`) is framework-free: `no-restricted-imports` in `eslint.config.js` and a test in
+`packages/renderer/tests` fail if it imports React.
+
+`scripts/build.sh` runs `vite build` after `tsc -b`. The `@studio/web/browser` Vitest project
+(`apps/web/tests/**/*.browser.test.ts(x)`) serves the production build under `/pwa-app/` through a test-only Vite
+plugin (`apps/web/tests/support/dist-server.ts`) so `pwa.browser.test.ts` can register the real service worker, cut the
+"network" (the plugin drops every request) and prove the shell still loads. Run `pnpm build` before that test.
+`pnpm --filter @studio/web dev|build|preview` run the app.
 
 ## .NET
 

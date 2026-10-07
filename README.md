@@ -11,6 +11,15 @@ pnpm install
 bash scripts/verify.sh
 ```
 
+Run the browser viewer (builds the workspace packages first, then serves it with Vite):
+
+```bash
+pnpm build
+pnpm --filter @studio/web dev   # open the printed URL
+```
+
+See [apps/web/README.md](apps/web/README.md). `pnpm --filter @studio/web preview` serves the production build.
+
 Inspect a world with the read-only M1 CLI:
 
 ```bash
