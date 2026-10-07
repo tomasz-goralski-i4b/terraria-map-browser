@@ -1,13 +1,214 @@
 using System.Buffers.Binary;
 using System.Diagnostics;
 using System.Security.Cryptography;
+using System.Globalization;
+using System.Text.Json;
 using System.Text.RegularExpressions;
+using Terraria.WorldInspector;
 
 namespace Terraria.WorldCodec.Tests;
 
 /// <summary>Exercises the shipped CLI entry point, exit codes, streams and read-only filesystem contract.</summary>
 public sealed class InspectorCommandTests
 {
+    [Theory]
+    [InlineData("inspect", false, false)]
+    [InlineData("inspect", false, true)]
+    [InlineData("export-json", false, false)]
+    [InlineData("export-json", false, true)]
+    [InlineData("diff", false, false)]
+    [InlineData("diff", false, true)]
+    [InlineData("diff", true, false)]
+    [InlineData("diff", true, true)]
+    public void Run_UnexpectedReaderException_ReturnsOneInternalErrorLine(
+        string command, bool failingRight, bool invalidCast)
+    {
+        using var directory = new TemporaryDirectory();
+        var bytes = SummaryWorld.Build(2, 4, metadata: new SyntheticMetadata { Name = "Forest Observatory" });
+        var left = directory.Write("Forest Observatory.wld", bytes);
+        var right = directory.Write("Crimson Coast.wld", bytes);
+        string[] arguments = command == "diff" ? [command, left, right] : [command, left];
+        var reads = 0;
+        Terraria.WorldCodec.World ReadWorld(string path)
+        {
+            reads++;
+            if (path == (failingRight ? right : left))
+            {
+                const string Message = "World summary conversion failed\n   at WorldSummary.Convert()\u001b[31m";
+                throw invalidCast ? new InvalidCastException(Message) : new OverflowException(Message);
+            }
+
+            return SyntheticTileWorld.Read(bytes);
+        }
+
+        using var output = new StringWriter(CultureInfo.InvariantCulture);
+        using var error = new StringWriter(CultureInfo.InvariantCulture);
+        var exitCode = InspectorCommand.Run(arguments, output, error, ReadWorld);
+
+        Assert.Equal(failingRight ? 2 : 1, reads);
+        Assert.Equal(1, exitCode);
+        Assert.Empty(output.ToString());
+        var diagnostic = Assert.Single(error.ToString().Split('\n', StringSplitOptions.RemoveEmptyEntries));
+        Assert.Contains("internal", diagnostic, StringComparison.OrdinalIgnoreCase);
+        AssertNoStackTrace(error.ToString());
+        Assert.DoesNotContain('\u001b', diagnostic);
+        Assert.Equal(bytes, File.ReadAllBytes(left));
+        Assert.Equal(bytes, File.ReadAllBytes(right));
+    }
+
+    [Theory]
+    [InlineData("\n", "\\u000a")]
+    [InlineData("\r", "\\u000d")]
+    [InlineData("\t", "\\u0009")]
+    [InlineData("\u001b", "\\u001b")]
+    [InlineData("\u0000", "\\u0000")]
+    [InlineData("\u0085", "\\u0085")]
+    public async Task Inspect_ControlCharactersInNameAndSeed_ReportsLiteralUnicodeEscapes(string control, string escaped)
+    {
+        using var directory = new InspectorDirectory();
+        var metadata = new SyntheticMetadata { Name = $"Crimson Coast{control}Blocks: 999", Seed = $"94858{control}0918" };
+        var bytes = BuildWorld(metadata, "42 01 03 4c 04 ff 01 10 00 00");
+        var path = directory.WriteWorld(bytes);
+
+        var result = await RunAsync(directory.Path, "inspect", path);
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.Empty(result.Error);
+        var lines = result.Output.Split('\n', StringSplitOptions.RemoveEmptyEntries).Select(line => line.TrimEnd('\r')).ToArray();
+        Assert.Contains($"Name: Crimson Coast{escaped}Blocks: 999", lines, StringComparer.OrdinalIgnoreCase);
+        Assert.Contains($"Seed: 94858{escaped}0918", lines, StringComparer.OrdinalIgnoreCase);
+        Assert.Equal("Blocks: 4", Assert.Single(lines, line => line.StartsWith("Blocks:", StringComparison.Ordinal)));
+        Assert.Equal(12, lines.Length);
+        Assert.Equal(bytes, File.ReadAllBytes(path));
+    }
+
+    [Fact]
+    public async Task Inspect_AllControlCharactersInNameAndSeed_EscapesEveryControl()
+    {
+        using var directory = new InspectorDirectory();
+        var controls = new string(Enumerable.Range(0, 0xa0).Select(value => (char)value).Where(char.IsControl).ToArray());
+        var escaped = string.Concat(controls.Select(character => "\\u" + ((int)character).ToString("x4", CultureInfo.InvariantCulture)));
+        var metadata = new SyntheticMetadata { Name = "Crimson Coast" + controls, Seed = "948580918" + controls };
+        var path = directory.WriteWorld(BuildWorld(metadata, "40 03 40 03"));
+
+        var result = await RunAsync(directory.Path, "inspect", path);
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.Empty(result.Error);
+        Assert.Contains("Name: Crimson Coast" + escaped, result.Output, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Seed: 948580918" + escaped, result.Output, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(result.Output, character => char.IsControl(character) && character is not '\r' and not '\n');
+    }
+
+    [Fact]
+    public async Task Inspect_PrintableUnicodeNameAndSeed_KeepsTextReadable()
+    {
+        using var directory = new InspectorDirectory();
+        var metadata = new SyntheticMetadata { Name = "Crimson Éclipse — 海岸 🌊", Seed = "Forêt-海岸-948580918" };
+        var path = directory.WriteWorld(BuildWorld(metadata, "40 03 40 03"));
+
+        var result = await RunAsync(directory.Path, "inspect", path);
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.Empty(result.Error);
+        AssertField(result.Output, "Name", metadata.Name);
+        AssertField(result.Output, "Seed", metadata.Seed);
+    }
+
+    [Theory]
+    [InlineData("inspect", false, false)]
+    [InlineData("inspect", false, true)]
+    [InlineData("export-json", false, false)]
+    [InlineData("export-json", false, true)]
+    [InlineData("diff", false, false)]
+    [InlineData("diff", false, true)]
+    [InlineData("diff", true, false)]
+    [InlineData("diff", true, true)]
+    public async Task Run_ExpectedReadError_KeepsSpecificDiagnosticAndInputs(
+        string command, bool failingRight, bool truncated)
+    {
+        using var directory = new TemporaryDirectory();
+        var bytes = SummaryWorld.Build(2, 4, metadata: new SyntheticMetadata { Name = "Forest Observatory" });
+        var valid = directory.Write("Forest Observatory.wld", bytes);
+        byte[] incomplete = [0x46, 0x01];
+        var failing = truncated ? directory.Write("Truncated Coast.wld", incomplete)
+            : System.IO.Path.Combine(directory.Path, "Missing Coast.wld");
+        var filesBefore = Directory.GetFiles(directory.Path);
+        string[] arguments = command == "diff"
+            ? [command, failingRight ? valid : failing, failingRight ? failing : valid]
+            : [command, failing];
+
+        var result = await RunAsync(directory.Path, arguments);
+
+        Assert.Equal(1, result.ExitCode);
+        Assert.Empty(result.Output);
+        Assert.Contains(System.IO.Path.GetFileName(failing), result.Error, StringComparison.Ordinal);
+        if (truncated)
+        {
+            Assert.Contains("Truncated", result.Error, StringComparison.OrdinalIgnoreCase);
+            Assert.Equal(incomplete, File.ReadAllBytes(failing));
+        }
+        else
+        {
+            Assert.Matches("(?i)(not found|could not find|does not exist|no such file|missing)", result.Error);
+        }
+
+        if (command == "diff")
+        {
+            Assert.Contains(failingRight ? "right" : "left", result.Error, StringComparison.OrdinalIgnoreCase);
+        }
+
+        Assert.DoesNotContain("internal", result.Error, StringComparison.OrdinalIgnoreCase);
+        AssertNoStackTrace(result.Error);
+        Assert.Equal(bytes, File.ReadAllBytes(valid));
+        Assert.Equal(filesBefore, Directory.GetFiles(directory.Path));
+    }
+
+    [Theory]
+    [InlineData("inspect")]
+    [InlineData("export-json")]
+    [InlineData("diff")]
+    public async Task Run_MissingCommandInputs_ReturnsArgumentExitCode(string command)
+    {
+        using var directory = new InspectorDirectory();
+        var result = await RunAsync(directory.Path, command);
+
+        Assert.Equal(2, result.ExitCode);
+        Assert.Empty(result.Output);
+        Assert.Contains("usage", result.Error, StringComparison.OrdinalIgnoreCase);
+        AssertNoStackTrace(result.Error);
+    }
+
+    [Fact]
+    public async Task Run_ExistingCommands_PreservesInputsAndJsonTextWithDiffExitCode()
+    {
+        using var directory = new TemporaryDirectory();
+        var metadata = new SyntheticMetadata { Name = "Crimson Éclipse\nBlocks: 999\u001b", Seed = "94858\r\t0918" };
+        var leftBytes = SummaryWorld.Build(2, 4, metadata: metadata);
+        var rightBytes = SummaryWorld.Build(2, 4, metadata: new SyntheticMetadata { Name = "Quiet Meadow" });
+        var left = directory.Write("Crimson Coast.wld", leftBytes);
+        var right = directory.Write("Quiet Meadow.wld", rightBytes);
+        var filesBefore = Directory.GetFiles(directory.Path);
+
+        var inspect = await InspectorProcess.RunAsync(directory.Path, "inspect", left);
+        var export = await InspectorProcess.RunAsync(directory.Path, "export-json", left);
+        var diff = await InspectorProcess.RunAsync(directory.Path, "diff", left, right);
+
+        Assert.Equal(0, inspect.ExitCode);
+        Assert.Empty(inspect.Error);
+        Assert.Equal(0, export.ExitCode);
+        Assert.Empty(export.Error);
+        using var json = JsonDocument.Parse(export.Output);
+        Assert.Equal(metadata.Name, json.RootElement.GetProperty("metadata").GetProperty("name").GetString());
+        Assert.Equal(metadata.Seed, json.RootElement.GetProperty("metadata").GetProperty("seed").GetString());
+        Assert.Equal(3, diff.ExitCode);
+        Assert.Empty(diff.Error);
+        Assert.NotEmpty(diff.Output);
+        Assert.Equal(leftBytes, File.ReadAllBytes(left));
+        Assert.Equal(rightBytes, File.ReadAllBytes(right));
+        Assert.Equal(filesBefore, Directory.GetFiles(directory.Path));
+    }
+
     [Theory]
     [InlineData("Forest Observatory", "948580918", 1743427911, 0, 0, "Classic", "Corruption")]
     [InlineData("Crimson Éclipse", "620104273", 620104273, 2, 1, "Master", "Crimson")]
