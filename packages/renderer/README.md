@@ -3,6 +3,7 @@
 Framework-free, pure rendering of CWM planes. `renderChunk(world, cx, cy, options)` returns
 `{ width, height, pixels }`, with row-major straight-alpha RGBA bytes at one pixel per tile.
 Chunk coordinates are indices of 128 × 128 regions; right and bottom edges are cropped.
+Negative, non-integer or past-the-edge chunk indices throw a `RangeError`.
 `options.surfaceY` is the first underground row (the CWM does not contain a surface depth).
 `options.layers` independently enables background, walls, blocks and liquids.
 
@@ -27,3 +28,5 @@ contribute nothing. Paint, frames, shape and flags do not alter this initial pla
 
 For example, vanilla id 1 is block `[157, 173, 94, 255]`, wall `[78, 86, 47, 255]`.
 Rendering reads the column-major planes directly, without semantic tile views or per-tile objects.
+Placeholder colours are hashed once per palette entry and cached per palette (CWM palettes are
+append-only), not once per chunk.

@@ -1,7 +1,7 @@
 import { Session } from "node:inspector/promises";
 import type { HeapProfiler } from "node:inspector";
 import { expect, test, vi } from "vitest";
-import { createWorld } from "../../world-model/dist/index.js";
+import { createWorld } from "@studio/world-model";
 import { renderChunk } from "../src/index.js";
 import type { ChunkRenderOptions } from "../src/index.js";
 

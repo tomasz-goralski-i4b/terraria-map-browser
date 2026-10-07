@@ -1,4 +1,4 @@
-import type { CanonicalWorld, ContentRef } from "../../../world-model/dist/index.js";
+import type { CanonicalWorld, ContentRef } from "@studio/world-model";
 
 export type Rgba = readonly [number, number, number, number];
 
@@ -31,6 +31,29 @@ const liquidColors: readonly Rgba[] = [
   [180, 100, 240, 255],
 ];
 
+interface PaletteColors {
+  readonly block: Rgba[];
+  readonly wall: Rgba[];
+}
+
+// CWM palettes are append-only, so a cached colour stays valid and only new entries need hashing.
+const paletteColorCache = new WeakMap<readonly ContentRef[], PaletteColors>();
+
+function paletteColors(palette: readonly ContentRef[]): PaletteColors {
+  let colors = paletteColorCache.get(palette);
+  if (colors === undefined) {
+    colors = { block: [], wall: [] };
+    paletteColorCache.set(palette, colors);
+  }
+  for (let index = colors.block.length; index < palette.length; index++) {
+    const ref = palette[index];
+    if (ref === undefined) break;
+    colors.block.push(placeholderColor(ref, "block"));
+    colors.wall.push(placeholderColor(ref, "wall"));
+  }
+  return colors;
+}
+
 export function placeholderColor(ref: ContentRef, layer: "block" | "wall"): Rgba {
   if (ref.kind !== "vanilla") return [255, 0, 255, 255];
   const key = `vanilla:${String(ref.id)}`;
@@ -53,6 +76,13 @@ export function renderChunk(
   chunkY: number,
   options: ChunkRenderOptions,
 ): ChunkPixels {
+  const chunksX = Math.ceil(world.width / chunkSize);
+  const chunksY = Math.ceil(world.height / chunkSize);
+  if (!Number.isInteger(chunkX) || !Number.isInteger(chunkY)
+    || chunkX < 0 || chunkY < 0 || chunkX >= chunksX || chunkY >= chunksY) {
+    throw new RangeError(`Chunk (${String(chunkX)}, ${String(chunkY)}) is outside the ${String(chunksX)} × `
+      + `${String(chunksY)} chunk grid of a ${String(world.width)} × ${String(world.height)} world`);
+  }
   const originX = chunkX * chunkSize;
   const originY = chunkY * chunkSize;
   const width = Math.min(chunkSize, world.width - originX);
@@ -60,9 +90,10 @@ export function renderChunk(
   const pixels = new Uint8ClampedArray(width * height * 4);
   const { layers, surfaceY } = options;
   const { planes } = world;
-  // Palette-sized allocations stay outside the pixel loop; no semantic tile views are created.
-  const blockColors = layers.blocks ? world.palette.map((ref) => placeholderColor(ref, "block")) : [];
-  const wallColors = layers.walls ? world.palette.map((ref) => placeholderColor(ref, "wall")) : [];
+  // Palette colours are cached outside the pixel loop; no semantic tile views are created.
+  const colors = paletteColors(world.palette);
+  const blockColors = layers.blocks ? colors.block : [];
+  const wallColors = layers.walls ? colors.wall : [];
 
   for (let y = 0; y < height; y++) {
     const sky = originY + y < surfaceY;

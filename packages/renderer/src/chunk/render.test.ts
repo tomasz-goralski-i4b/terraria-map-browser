@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
-import { createWorld } from "../../../world-model/dist/index.js";
-import type { CanonicalWorld, Tile, WorldPlanes } from "../../../world-model/dist/index.js";
+import { createWorld } from "@studio/world-model";
+import type { CanonicalWorld, Tile, WorldPlanes } from "@studio/world-model";
 import { placeholderColor, renderChunk } from "../index.js";
 import type { ChunkLayers, ChunkPixels, ChunkRenderOptions } from "../index.js";
 
@@ -191,4 +191,31 @@ test("unknown and mod block and wall refs use the marker colour", () => {
     expect(placeholderColor(ref, "block")).toEqual([255, 0, 255, 255]);
     expect(placeholderColor(ref, "wall")).toEqual([255, 0, 255, 255]);
   }
+});
+
+test.each([
+  [-1, 0], [0, -1], [2, 0], [0, 2], [0.5, 0], [0, Number.NaN], [Number.POSITIVE_INFINITY, 0],
+] as const)("rejects chunk (%s, %s) outside a 130 × 129 world", (chunkX, chunkY) => {
+  const world = createWorld(130, 129);
+  expect(() => renderChunk(world, chunkX, chunkY, options)).toThrow(
+    new RangeError(`Chunk (${String(chunkX)}, ${String(chunkY)}) is outside the 2 × 2 chunk grid of a 130 × 129 world`),
+  );
+});
+
+test("hashes each palette entry once across chunks and colours entries added later", () => {
+  const world = createWorld(130, 1);
+  world.setTile(0, 0, { block: dirt, wall: stone, wires: 0, actuator: false });
+  const imul = vi.spyOn(Math, "imul");
+  try {
+    renderChunk(world, 0, 0, options);
+    const firstRender = imul.mock.calls.length;
+    expect(firstRender).toBeGreaterThan(0);
+    renderChunk(world, 1, 0, options);
+    renderChunk(world, 0, 0, options);
+    expect(imul.mock.calls.length).toBe(firstRender);
+  } finally {
+    imul.mockRestore();
+  }
+  world.setTile(129, 0, { block: { kind: "vanilla", id: 25 }, wires: 0, actuator: false });
+  expect(pixel(renderChunk(world, 1, 0, options), 1, 0)).toEqual([131, 92, 158, 255]);
 });
