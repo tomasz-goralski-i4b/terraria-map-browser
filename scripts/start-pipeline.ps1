@@ -39,9 +39,15 @@ if ($RemoveAutostart) {
 }
 
 # Git for Windows' bash, in its own console window per part (never WSL's C:\Windows\System32\bash.exe).
+# git.exe lives in Git\cmd, or in Git\mingw64\bin when PowerShell is started from Git Bash: walk up to the root.
 $git = Get-Command git -ErrorAction SilentlyContinue
-$gitRoot = if ($git) { Split-Path (Split-Path $git.Source) } else { 'C:\Program Files\Git' }
-$bash = Join-Path $gitRoot 'bin\bash.exe'
+$bash = $null
+$dir = if ($git) { Split-Path $git.Source } else { $null }
+while ($dir -and -not $bash) {
+  if (Test-Path (Join-Path $dir 'bin\bash.exe')) { $bash = Join-Path $dir 'bin\bash.exe' }
+  $dir = Split-Path $dir
+}
+if (-not $bash) { $bash = 'C:\Program Files\Git\bin\bash.exe' }
 if (-not (Test-Path $bash)) { throw "Git for Windows not found (looked for $bash)." }
 
 # D:\REPOS\x -> /d/REPOS/x for bash
