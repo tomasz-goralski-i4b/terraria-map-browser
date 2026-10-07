@@ -114,3 +114,24 @@ test("cancelling the Worker build leaves no partial cache entry", async () => {
     worker.terminate();
   }
 }, 30_000);
+
+test("cancelling the Worker build while the cache is being written leaves no partial cache entry", async () => {
+  const content = await syntheticContent("cancel-store", 12);
+  const cacheName = `${content.name}-cache`;
+  created.push(cacheName);
+  const worker = startWorker();
+  try {
+    let cancelSent = false;
+    const messages = await run(worker, { type: "build", contentDir: content.handle, cacheName }, (message) => {
+      if (message.type === "progress" && message.progress.phase === "store" && !cancelSent) {
+        cancelSent = true;
+        worker.postMessage({ type: "cancel" } satisfies AtlasWorkerRequest);
+      }
+    });
+    expect(cancelSent).toBe(true);
+    expect(messages.at(-1)?.type).toBe("cancelled");
+    expect(await cacheEntries(cacheName)).toEqual([]);
+  } finally {
+    worker.terminate();
+  }
+}, 30_000);

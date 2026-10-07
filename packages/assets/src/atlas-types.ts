@@ -26,6 +26,12 @@ export interface AtlasEntry {
   readonly y: number;
   readonly width: number;
   readonly height: number;
+  /** Effective frame (cell) size of this sheet in pixels; differs per tile id (docs/assets.md, "Blocks"). */
+  readonly frameWidth: number;
+  readonly frameHeight: number;
+  /** Effective gutter to the right of / below each frame; differs per tile id. */
+  readonly gapX: number;
+  readonly gapY: number;
 }
 
 /** The serialisable part of an atlas. */

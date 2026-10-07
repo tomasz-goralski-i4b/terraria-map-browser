@@ -11,6 +11,7 @@ import {
   readXnbTexture,
   storeAtlas,
   type BuildProgress,
+  type ContentDirectory,
   type PackableSheet,
   type XnbTexture,
 } from "./index.js";
@@ -121,6 +122,18 @@ describe("packSheets", () => {
     expect(index.pageSize).toBe(64);
   });
 
+  // Values: docs/assets.md "Blocks" (A12 textureGrid / gap per tile id) and "Walls" (32×32, gap 4).
+  it.each([
+    ["an ordinary tile", "tile", 0, { frameWidth: 16, frameHeight: 16, gapX: 2, gapY: 2 }],
+    ["tile 4 (torches, 20×20 grid)", "tile", 4, { frameWidth: 20, frameHeight: 20, gapX: 2, gapY: 2 }],
+    ["tile 3 (short plants, rectangular 16×20 grid)", "tile", 3, { frameWidth: 16, frameHeight: 20, gapX: 2, gapY: 2 }],
+    ["tile 15 (chairs, asymmetric 2×4 gutter)", "tile", 15, { frameWidth: 16, frameHeight: 16, gapX: 2, gapY: 4 }],
+    ["a wall", "wall", 1, { frameWidth: 32, frameHeight: 32, gapX: 4, gapY: 4 }],
+  ] as const)("packSheets_%s_IndexesItsEffectiveFrameAndGutter", (_label, kind, id, expected) => {
+    const atlas = packSheets([sheet(kind, id, 40, 40)], { pageSize: 128 });
+    expect(findSprite(atlas, kind, id)).toMatchObject(expected);
+  });
+
   it("packSheets_DefaultOptions_Use4096Pages", () => {
     const atlas = packSheets([sheet("tile", 0, 18, 18)]);
     expect(atlas.index.pageSize).toBe(4096);
@@ -196,6 +209,15 @@ describe("atlas cache", () => {
     expect(loaded?.pages).toEqual(atlas.pages);
   });
 
+  it("storeAtlas_ThenLoad_KeepsPerSheetFrameAndGutterMetrics", async () => {
+    const root = new MemoryDirectory();
+    await storeAtlas(root, "fp-a", packSheets([sheet("tile", 4, 40, 40), sheet("tile", 15, 40, 40), sheet("wall", 1, 64, 64)], { pageSize: 256 }));
+    const loaded = await loadCachedAtlas(root, "fp-a");
+    expect(loaded && findSprite(loaded, "tile", 4)).toMatchObject({ frameWidth: 20, frameHeight: 20, gapX: 2, gapY: 2 });
+    expect(loaded && findSprite(loaded, "tile", 15)).toMatchObject({ frameWidth: 16, frameHeight: 16, gapX: 2, gapY: 4 });
+    expect(loaded && findSprite(loaded, "wall", 1)).toMatchObject({ frameWidth: 32, frameHeight: 32, gapX: 4, gapY: 4 });
+  });
+
   it("loadCachedAtlas_OtherFingerprint_ReturnsUndefined", async () => {
     const root = new MemoryDirectory();
     const atlas = makeAtlas();
@@ -235,6 +257,49 @@ const SHEETS = [
   { name: "Wall_Outline", width: 36, height: 36 }, // look-alike, not a wall sheet
   { name: "Tiles_5_0", width: 36, height: 36 }, // variant sheet, deferred
 ];
+
+/** `content` where the `Images/<name>` entry is listed but `getFile()` rejects, like a file that vanished mid-scan. */
+function withUnreadableSheet(content: MemoryDirectory, name: string): ContentDirectory {
+  const unreadable = (images: MemoryDirectory): ContentDirectory => ({
+    getDirectoryHandle: () => Promise.reject(new DOMException("no subdirectory", "NotFoundError")),
+    async *entries() {
+      for await (const [entryName, entry] of images.entries()) {
+        yield entryName === name
+          ? [entryName, { kind: "file", getFile: () => Promise.reject(new DOMException("gone", "NotFoundError")) }]
+          : [entryName, entry];
+      }
+    },
+  });
+  return {
+    getDirectoryHandle: async () => unreadable(await content.getDirectoryHandle("Images")),
+    entries: () => content.entries(),
+  };
+}
+
+/** Aborts `controller` as soon as the cache's first page file is being written, i.e. during an awaited write. */
+function abortOnFirstWrite(cache: MemoryDirectory, controller: AbortController): void {
+  const getDirectory = cache.getDirectoryHandle.bind(cache);
+  cache.getDirectoryHandle = async (name, options) => {
+    const directory = await getDirectory(name, options);
+    const getFile = directory.getFileHandle.bind(directory);
+    directory.getFileHandle = async (fileName, fileOptions) => {
+      const handle = await getFile(fileName, fileOptions);
+      const createWritable = handle.createWritable.bind(handle);
+      handle.createWritable = async () => {
+        const writable = await createWritable();
+        return {
+          ...writable,
+          write: async (data) => {
+            controller.abort();
+            await writable.write(data);
+          },
+        };
+      };
+      return handle;
+    };
+    return directory;
+  };
+}
 
 function countingDecoder(): { decode: (bytes: Uint8Array) => XnbTexture; calls: () => number } {
   let calls = 0;
@@ -344,6 +409,67 @@ describe("buildSpriteAtlas", () => {
       buildSpriteAtlas(contentWith(SHEETS), { decode: counter.decode, signal: controller.signal }),
     ).rejects.toMatchObject({ name: "AbortError" });
     expect(counter.calls()).toBe(0);
+  });
+
+  it("buildSpriteAtlas_AbortedAtTheStoreBoundary_RejectsWithAbortErrorAndLeavesNoCacheEntry", async () => {
+    const controller = new AbortController();
+    const cache = new MemoryDirectory();
+    const promise = buildSpriteAtlas(contentWith(SHEETS), {
+      cache,
+      pageSize: 1024,
+      signal: controller.signal,
+      onProgress: (p) => {
+        if (p.phase === "store" && p.done === 0) controller.abort();
+      },
+    });
+    await expect(promise).rejects.toMatchObject({ name: "AbortError" });
+    expect(cache.names()).toEqual([]);
+  });
+
+  it("buildSpriteAtlas_AbortedDuringACacheWrite_RejectsWithAbortErrorAndRemovesTheUncommittedEntry", async () => {
+    const controller = new AbortController();
+    const cache = new MemoryDirectory();
+    abortOnFirstWrite(cache, controller);
+    const promise = buildSpriteAtlas(contentWith(SHEETS), { cache, pageSize: 1024, signal: controller.signal });
+    await expect(promise).rejects.toMatchObject({ name: "AbortError" });
+    expect(cache.names()).toEqual([]);
+  });
+
+  it("buildSpriteAtlas_CacheHit_RestoresTheMissingSheetReportWithoutDecoding", async () => {
+    const content = contentWith(SHEETS);
+    const images = await content.getDirectoryHandle("Images");
+    images.putFile("Tiles_1.xnb", new Uint8Array([1, 2, 3, 4]));
+    const cache = new MemoryDirectory();
+    const counter = countingDecoder();
+    const first = await buildSpriteAtlas(content, { cache, decode: counter.decode, pageSize: 1024 });
+    expect(first.missing.map((m) => `${m.kind}:${String(m.id)}`)).toEqual(["tile:1"]);
+    const calls = counter.calls();
+
+    const second = await buildSpriteAtlas(content, { cache, decode: counter.decode, pageSize: 1024 });
+    expect(second.fromCache).toBe(true);
+    expect(counter.calls()).toBe(calls);
+    expect(second.missing).toEqual(first.missing);
+  });
+
+  it("buildSpriteAtlas_UnreadableMatchedSheet_IsListedAsMissingAndTheRestIsBuilt", async () => {
+    const content = withUnreadableSheet(contentWith(SHEETS), "Tiles_1.xnb");
+    const result = await buildSpriteAtlas(content, { pageSize: 1024 });
+    expect(result.missing).toHaveLength(1);
+    expect(result.missing[0]).toMatchObject({ kind: "tile", id: 1, name: "Tiles_1.xnb" });
+    expect(result.missing[0]?.reason.length).toBeGreaterThan(0);
+    expect(findSprite(result.atlas, "tile", 1)).toBeUndefined();
+    expect(findSprite(result.atlas, "tile", 0)).toBeDefined();
+    expect(findSprite(result.atlas, "wall", 2)).toBeDefined();
+  });
+
+  it("buildSpriteAtlas_IncompleteScan_IsNeverTreatedAsAnUnchangedCacheHit", async () => {
+    const content = withUnreadableSheet(contentWith(SHEETS), "Tiles_1.xnb");
+    const cache = new MemoryDirectory();
+    const first = await buildSpriteAtlas(content, { cache, pageSize: 1024 });
+    const second = await buildSpriteAtlas(content, { cache, pageSize: 1024 });
+    expect(second.fromCache).toBe(false);
+    expect(second.missing).toEqual(first.missing);
+    expect(second.missing.map((m) => m.id)).toEqual([1]);
   });
 
   it("buildSpriteAtlas_Build_MakesNoNetworkRequests", async () => {

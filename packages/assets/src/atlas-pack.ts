@@ -108,7 +108,7 @@ export function packSheets(sheets: readonly PackableSheet[], options?: PackOptio
     for (let row = 0; row < sheet.height; row++) {
       page.set(sheet.rgba.subarray(row * rowBytes, (row + 1) * rowBytes), ((placement.y + row) * pageSize + placement.x) * 4);
     }
-    entries.push({ kind: sheet.kind, id: sheet.id, page: placement.page, x: placement.x, y: placement.y, width: sheet.width, height: sheet.height });
+    entries.push({ kind: sheet.kind, id: sheet.id, page: placement.page, x: placement.x, y: placement.y, width: sheet.width, height: sheet.height, frameWidth: 0, frameHeight: 0, gapX: 0, gapY: 0 });
   }
 
   return {
