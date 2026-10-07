@@ -55,12 +55,12 @@ test("opening SCCO1.wld through the file input shows its name and dimensions", a
   await render(<App />);
   chooseFile(await worldFile("SCCO1.wld"));
   const summary = page.getByRole("region", { name: "World summary" });
-  await expect.element(summary).toHaveTextContent("SCCR1");
-  await expect.element(summary).toHaveTextContent("4200 × 1200");
-  await expect.element(summary).toHaveTextContent("948580918");
-  await expect.element(summary).toHaveTextContent("326");
-  await expect.element(summary).toHaveTextContent("classic");
-  await expect.element(summary).toHaveTextContent("corruption");
+  await expect.element(summary).toMatchTextContent("SCCR1");
+  await expect.element(summary).toMatchTextContent("4200 × 1200");
+  await expect.element(summary).toMatchTextContent("948580918");
+  await expect.element(summary).toMatchTextContent("326");
+  await expect.element(summary).toMatchTextContent("classic");
+  await expect.element(summary).toMatchTextContent("corruption");
 });
 
 test("opening a truncated file shows the codec's code and offset and the app stays usable", async () => {
@@ -70,11 +70,11 @@ test("opening a truncated file shows the codec's code and offset and the app sta
   await render(<App />);
   chooseFile(new File([truncated], "cut.wld"));
   const alert = page.getByRole("alert");
-  await expect.element(alert).toHaveTextContent(expected.kind);
-  await expect.element(alert).toHaveTextContent(`offset ${String(expected.offset)}`);
+  await expect.element(alert).toMatchTextContent(expected.kind);
+  await expect.element(alert).toMatchTextContent(`offset ${String(expected.offset)}`);
 
   chooseFile(new File([valid], "SCCO1.wld"));
-  await expect.element(page.getByRole("region", { name: "World summary" })).toHaveTextContent("4200 × 1200");
+  await expect.element(page.getByRole("region", { name: "World summary" })).toMatchTextContent("4200 × 1200");
   await expect.element(page.getByRole("alert")).not.toBeInTheDocument();
 });
 
@@ -83,12 +83,12 @@ test("opening a non-.wld file shows the codec's error and keeps the previously l
   const expected = codecError(garbage);
   await render(<App />);
   chooseFile(await worldFile("SCCO1.wld"));
-  await expect.element(page.getByRole("region", { name: "World summary" })).toHaveTextContent("SCCR1");
+  await expect.element(page.getByRole("region", { name: "World summary" })).toMatchTextContent("SCCR1");
 
   chooseFile(new File([garbage], "notes.txt"));
-  await expect.element(page.getByRole("alert")).toHaveTextContent(expected.kind);
-  await expect.element(page.getByRole("alert")).toHaveTextContent(`offset ${String(expected.offset)}`);
-  await expect.element(page.getByRole("region", { name: "World summary" })).toHaveTextContent("SCCR1");
+  await expect.element(page.getByRole("alert")).toMatchTextContent(expected.kind);
+  await expect.element(page.getByRole("alert")).toMatchTextContent(`offset ${String(expected.offset)}`);
+  await expect.element(page.getByRole("region", { name: "World summary" })).toMatchTextContent("SCCR1");
 });
 
 test("the main thread keeps ticking while a Small fixture is parsed", async () => {
@@ -106,7 +106,7 @@ test("the main thread keeps ticking while a Small fixture is parsed", async () =
   try {
     last = performance.now();
     chooseFile(file);
-    await expect.element(page.getByRole("region", { name: "World summary" })).toHaveTextContent("4200 × 1200");
+    await expect.element(page.getByRole("region", { name: "World summary" })).toMatchTextContent("4200 × 1200");
   } finally {
     window.clearInterval(timer);
   }
@@ -117,14 +117,14 @@ test("the main thread keeps ticking while a Small fixture is parsed", async () =
 test("cancel during loading returns to the previous state", async () => {
   await render(<App />);
   chooseFile(await worldFile("SCCO1.wld"));
-  await expect.element(page.getByRole("region", { name: "World summary" })).toHaveTextContent("SCCR1");
+  await expect.element(page.getByRole("region", { name: "World summary" })).toMatchTextContent("SCCR1");
 
   chooseFile(await worldFile("SCCR2.wld"));
   const cancel = page.getByRole("button", { name: "Cancel" });
   await expect.element(cancel).toBeVisible();
   await cancel.click();
   await expect.element(page.getByRole("button", { name: "Cancel" })).not.toBeInTheDocument();
-  await expect.element(page.getByRole("region", { name: "World summary" })).toHaveTextContent("SCCR1");
+  await expect.element(page.getByRole("region", { name: "World summary" })).toMatchTextContent("SCCR1");
   await expect.element(page.getByRole("alert")).not.toBeInTheDocument();
 });
 
@@ -132,10 +132,10 @@ test("dropping a file onto the map area behaves like the file input", async () =
   await render(<App />);
   dropFile(await worldFile("SCCO1.wld"));
   const summary = page.getByRole("region", { name: "World summary" });
-  await expect.element(summary).toHaveTextContent("SCCR1");
-  await expect.element(summary).toHaveTextContent("4200 × 1200");
+  await expect.element(summary).toMatchTextContent("SCCR1");
+  await expect.element(summary).toMatchTextContent("4200 × 1200");
 
   dropFile(new File([new TextEncoder().encode("nope".repeat(100))], "x.txt"));
   await expect.element(page.getByRole("alert")).toBeVisible();
-  await expect.element(summary).toHaveTextContent("SCCR1");
+  await expect.element(summary).toMatchTextContent("SCCR1");
 });
