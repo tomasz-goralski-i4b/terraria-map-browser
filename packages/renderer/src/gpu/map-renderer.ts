@@ -1,0 +1,360 @@
+// The WebGL2 backend draws into a DOM canvas; the DOM types are declared here, where they are used, so the rest of
+// the package keeps the DOM-free lib of the base config.
+/// <reference lib="dom" />
+
+import type { ContentRef } from "@studio/world-model";
+import { CHUNK_SIZE, visibleChunks } from "../camera/camera.js";
+import type { Camera, ChunkCoord } from "../camera/camera.js";
+import { placeholderColor } from "../chunk/render.js";
+import type { ChunkLayers } from "../chunk/render.js";
+import { fragmentSource, vertexSource } from "./shaders.js";
+
+/** The slice of a world the renderer reads. Planes are column-major (`x * height + y`); never copied by the caller. */
+export interface RenderableWorld {
+  readonly width: number;
+  readonly height: number;
+  readonly surfaceY: number;
+  readonly planes: {
+    readonly block: Uint16Array;
+    readonly wall: Uint16Array;
+    readonly liquid: Uint8Array;
+    readonly liquidAmount: Uint8Array;
+  };
+  /** Append-only palette. */
+  readonly palette: readonly ContentRef[];
+}
+
+export interface MapRendererOptions {
+  /** Upper bound of chunk textures kept on the GPU (LRU). Default 1536, enough for a whole Large world. */
+  readonly maxCachedChunks?: number;
+}
+
+export interface MapRendererStats {
+  /** Texture upload calls since creation: one per chunk upload (all planes) and one per palette append. */
+  readonly textureUploads: number;
+  /** Draw calls issued by the last `render()`. */
+  readonly drawCalls: number;
+  /** Chunks drawn by the last `render()`. */
+  readonly visibleChunks: readonly ChunkCoord[];
+  /** Chunk textures currently held by the cache. */
+  readonly residentChunks: number;
+}
+
+export interface MapRenderer {
+  readonly setWorld: (world: RenderableWorld | null) => void;
+  /** The viewport is the canvas backing store (`canvas.width` × `canvas.height`). */
+  readonly setCamera: (camera: Camera) => void;
+  readonly setLayers: (layers: ChunkLayers) => void;
+  /** Integer tile under a canvas pixel, or null outside the world. */
+  readonly tileAt: (screenX: number, screenY: number) => { readonly x: number; readonly y: number } | null;
+  /** Draws synchronously (what the animation frame calls). Setters schedule a frame via requestAnimationFrame. */
+  readonly render: () => void;
+  readonly stats: () => MapRendererStats;
+  readonly dispose: () => void;
+}
+
+/** Thrown by `createMapRenderer` when the canvas cannot provide a WebGL2 context. */
+export class WebGl2UnavailableError extends Error {
+  constructor() {
+    super("WebGL2 is not available in this browser");
+    this.name = "WebGl2UnavailableError";
+  }
+}
+
+const PALETTE_ROW = 256;
+const PALETTE_WIDTH = PALETTE_ROW * 2;
+const PALETTE_CAPACITY = 0xffff;
+const PALETTE_HEIGHT = PALETTE_ROW;
+const DEFAULT_MAX_CACHED_CHUNKS = 1536;
+const UNIFORM_NAMES = [
+  "uBlock", "uWall", "uLiquid", "uAmount", "uPalette", "uCamera", "uZoom", "uViewport", "uOrigin", "uSize", "uSurfaceY",
+  "uPaletteLength", "uLayers",
+] as const;
+type UniformName = (typeof UNIFORM_NAMES)[number];
+
+interface ChunkTextures {
+  readonly block: WebGLTexture;
+  readonly wall: WebGLTexture;
+  readonly liquid: WebGLTexture;
+  readonly amount: WebGLTexture;
+}
+
+/** Everything owned by one GL context; rebuilt after a context loss. */
+interface GpuResources {
+  readonly program: WebGLProgram;
+  readonly uniforms: Readonly<Record<UniformName, WebGLUniformLocation>>;
+  readonly palette: WebGLTexture;
+}
+
+function requireValue<T>(value: T | null, what: string): T {
+  if (value === null) throw new Error(`WebGL2 could not create ${what}`);
+  return value;
+}
+
+function compile(gl: WebGL2RenderingContext, type: number, source: string): WebGLShader {
+  const shader = requireValue(gl.createShader(type), "a shader");
+  gl.shaderSource(shader, source);
+  gl.compileShader(shader);
+  if (!(gl.getShaderParameter(shader, gl.COMPILE_STATUS) as boolean)) {
+    throw new Error(`Shader compilation failed: ${gl.getShaderInfoLog(shader) ?? "unknown error"}`);
+  }
+  return shader;
+}
+
+function integerTexture(gl: WebGL2RenderingContext, format: number, width: number, height: number): WebGLTexture {
+  const texture = requireValue(gl.createTexture(), "a texture");
+  gl.bindTexture(gl.TEXTURE_2D, texture);
+  gl.texStorage2D(gl.TEXTURE_2D, 1, format, width, height);
+  // Integer textures are incomplete unless they use NEAREST filtering.
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  return texture;
+}
+
+function createResources(gl: WebGL2RenderingContext): GpuResources {
+  const program = requireValue(gl.createProgram(), "a program");
+  gl.attachShader(program, compile(gl, gl.VERTEX_SHADER, vertexSource));
+  gl.attachShader(program, compile(gl, gl.FRAGMENT_SHADER, fragmentSource));
+  gl.linkProgram(program);
+  if (!(gl.getProgramParameter(program, gl.LINK_STATUS) as boolean)) {
+    throw new Error(`Shader link failed: ${gl.getProgramInfoLog(program) ?? "unknown error"}`);
+  }
+  const uniforms = Object.fromEntries(
+    UNIFORM_NAMES.map((name) => [name, requireValue(gl.getUniformLocation(program, name), `uniform ${name}`)]),
+  ) as Record<UniformName, WebGLUniformLocation>;
+  return { program, uniforms, palette: integerTexture(gl, gl.RGBA8UI, PALETTE_WIDTH, PALETTE_HEIGHT) };
+}
+
+function layerBits(layers: ChunkLayers): number {
+  return (layers.background ? 1 : 0) | (layers.walls ? 2 : 0) | (layers.blocks ? 4 : 0) | (layers.liquids ? 8 : 0);
+}
+
+export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRendererOptions): MapRenderer {
+  // Straight (non-premultiplied) alpha: the shader writes the same RGBA that `renderChunk` produces.
+  const context = canvas.getContext("webgl2", { premultipliedAlpha: false });
+  if (context === null) throw new WebGl2UnavailableError();
+  const gl: WebGL2RenderingContext = context;
+  const maxCachedChunks = Math.max(1, options?.maxCachedChunks ?? DEFAULT_MAX_CACHED_CHUNKS);
+
+  // Looked up once: getExtension returns null while the context is lost. Used only to restore a forced loss.
+  const loseContext = gl.getExtension("WEBGL_lose_context");
+  let resources = createResources(gl);
+  let world: RenderableWorld | null = null;
+  let camera: Camera = { x: 0, y: 0, zoom: 1 };
+  let layers = 15;
+  // LRU: Map iteration order is insertion order, and a hit re-inserts its key at the end.
+  const chunks = new Map<number, ChunkTextures>();
+  const paletteMirror = new Uint8Array(PALETTE_WIDTH * PALETTE_HEIGHT * 4);
+  let paletteUploaded = 0;
+  let textureUploads = 0;
+  let drawCalls = 0;
+  let drawn: readonly ChunkCoord[] = [];
+  let frame = 0;
+  let disposed = false;
+
+  const deleteChunk = (textures: ChunkTextures): void => {
+    gl.deleteTexture(textures.block);
+    gl.deleteTexture(textures.wall);
+    gl.deleteTexture(textures.liquid);
+    gl.deleteTexture(textures.amount);
+  };
+
+  const clearChunks = (): void => {
+    for (const textures of chunks.values()) deleteChunk(textures);
+    chunks.clear();
+  };
+
+  const uploadPalette = (palette: readonly ContentRef[]): void => {
+    const total = Math.min(palette.length, PALETTE_CAPACITY);
+    if (total <= paletteUploaded) return;
+    for (let index = paletteUploaded; index < total; index++) {
+      const ref = palette[index];
+      if (ref === undefined) break;
+      const row = Math.floor(index / PALETTE_ROW);
+      const column = index % PALETTE_ROW;
+      paletteMirror.set(placeholderColor(ref, "block"), (row * PALETTE_WIDTH + column) * 4);
+      paletteMirror.set(placeholderColor(ref, "wall"), (row * PALETTE_WIDTH + PALETTE_ROW + column) * 4);
+    }
+    const firstRow = Math.floor(paletteUploaded / PALETTE_ROW);
+    const lastRow = Math.floor((total - 1) / PALETTE_ROW);
+    gl.activeTexture(gl.TEXTURE4);
+    gl.bindTexture(gl.TEXTURE_2D, resources.palette);
+    gl.pixelStorei(gl.UNPACK_ROW_LENGTH, PALETTE_WIDTH);
+    // Only the appended entries: a partial first/last row is cut at the entry, in both colour halves.
+    for (let row = firstRow; row <= lastRow; row++) {
+      const start = row === firstRow ? paletteUploaded % PALETTE_ROW : 0;
+      const end = row === lastRow ? ((total - 1) % PALETTE_ROW) + 1 : PALETTE_ROW;
+      for (const half of [0, PALETTE_ROW]) {
+        gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, half + start);
+        gl.pixelStorei(gl.UNPACK_SKIP_ROWS, row);
+        gl.texSubImage2D(
+          gl.TEXTURE_2D, 0, half + start, row, end - start, 1, gl.RGBA_INTEGER, gl.UNSIGNED_BYTE, paletteMirror,
+        );
+      }
+    }
+    gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 0);
+    gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, 0);
+    gl.pixelStorei(gl.UNPACK_SKIP_ROWS, 0);
+    textureUploads++;
+    paletteUploaded = total;
+  };
+
+  /** Uploads one chunk straight from the column-major planes: a plane row is one world column. */
+  const uploadChunk = (source: RenderableWorld, chunk: ChunkCoord): ChunkTextures => {
+    const originX = chunk.x * CHUNK_SIZE;
+    const originY = chunk.y * CHUNK_SIZE;
+    const columns = Math.min(CHUNK_SIZE, source.width - originX);
+    const rows = Math.min(CHUNK_SIZE, source.height - originY);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    gl.pixelStorei(gl.UNPACK_ROW_LENGTH, source.height);
+    gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, originY);
+    gl.pixelStorei(gl.UNPACK_SKIP_ROWS, originX);
+    gl.activeTexture(gl.TEXTURE0);
+    const plane = (format: number, type: number, data: Uint8Array | Uint16Array): WebGLTexture => {
+      const texture = integerTexture(gl, format, rows, columns);
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, rows, columns, gl.RED_INTEGER, type, data);
+      return texture;
+    };
+    const textures: ChunkTextures = {
+      block: plane(gl.R16UI, gl.UNSIGNED_SHORT, source.planes.block),
+      wall: plane(gl.R16UI, gl.UNSIGNED_SHORT, source.planes.wall),
+      liquid: plane(gl.R8UI, gl.UNSIGNED_BYTE, source.planes.liquid),
+      amount: plane(gl.R8UI, gl.UNSIGNED_BYTE, source.planes.liquidAmount),
+    };
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+    gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 0);
+    gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, 0);
+    gl.pixelStorei(gl.UNPACK_SKIP_ROWS, 0);
+    textureUploads++;
+    return textures;
+  };
+
+  const chunkTextures = (source: RenderableWorld, chunk: ChunkCoord, chunksX: number): ChunkTextures => {
+    const key = chunk.y * chunksX + chunk.x;
+    let textures = chunks.get(key);
+    if (textures !== undefined) {
+      chunks.delete(key);
+    } else {
+      textures = uploadChunk(source, chunk);
+      while (chunks.size >= maxCachedChunks) {
+        const oldest = chunks.entries().next();
+        if (oldest.done === true) break;
+        deleteChunk(oldest.value[1]);
+        chunks.delete(oldest.value[0]);
+      }
+    }
+    chunks.set(key, textures);
+    return textures;
+  };
+
+  const render = (): void => {
+    if (disposed || gl.isContextLost()) return;
+    const viewport = { width: canvas.width, height: canvas.height };
+    gl.viewport(0, 0, viewport.width, viewport.height);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    drawCalls = 0;
+    drawn = [];
+    if (world === null) return;
+
+    uploadPalette(world.palette);
+    const { uniforms } = resources;
+    gl.useProgram(resources.program);
+    gl.uniform1i(uniforms.uBlock, 0);
+    gl.uniform1i(uniforms.uWall, 1);
+    gl.uniform1i(uniforms.uLiquid, 2);
+    gl.uniform1i(uniforms.uAmount, 3);
+    gl.uniform1i(uniforms.uPalette, 4);
+    gl.uniform2f(uniforms.uCamera, camera.x, camera.y);
+    gl.uniform1f(uniforms.uZoom, camera.zoom);
+    gl.uniform2f(uniforms.uViewport, viewport.width, viewport.height);
+    gl.uniform1i(uniforms.uSurfaceY, world.surfaceY);
+    gl.uniform1i(uniforms.uPaletteLength, paletteUploaded);
+    gl.uniform1i(uniforms.uLayers, layers);
+    gl.activeTexture(gl.TEXTURE4);
+    gl.bindTexture(gl.TEXTURE_2D, resources.palette);
+
+    const chunksX = Math.ceil(world.width / CHUNK_SIZE);
+    const visible = visibleChunks(camera, viewport, world);
+    for (const chunk of visible) {
+      const textures = chunkTextures(world, chunk, chunksX);
+      [textures.block, textures.wall, textures.liquid, textures.amount].forEach((texture, unit) => {
+        gl.activeTexture(gl.TEXTURE0 + unit);
+        gl.bindTexture(gl.TEXTURE_2D, texture);
+      });
+      const originX = chunk.x * CHUNK_SIZE;
+      const originY = chunk.y * CHUNK_SIZE;
+      gl.uniform2i(uniforms.uOrigin, originX, originY);
+      gl.uniform2i(uniforms.uSize, Math.min(CHUNK_SIZE, world.width - originX), Math.min(CHUNK_SIZE, world.height - originY));
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      drawCalls++;
+    }
+    drawn = visible;
+  };
+
+  const schedule = (): void => {
+    if (frame !== 0 || disposed) return;
+    frame = requestAnimationFrame(() => {
+      frame = 0;
+      render();
+    });
+  };
+
+  const onContextLost = (event: Event): void => {
+    // Without this the browser never restores the context.
+    event.preventDefault();
+    // A loss forced through WEBGL_lose_context is only restored by an explicit call made after this event: Chromium
+    // ignores one made earlier. For a real GPU loss the call is a harmless INVALID_OPERATION, the browser restores it.
+    setTimeout(() => {
+      if (!disposed) loseContext?.restoreContext();
+    }, 0);
+  };
+  const onContextRestored = (): void => {
+    // Every GL object died with the context: rebuild them and let chunks upload again on demand.
+    chunks.clear();
+    paletteUploaded = 0;
+    resources = createResources(gl);
+    schedule();
+  };
+  canvas.addEventListener("webglcontextlost", onContextLost);
+  canvas.addEventListener("webglcontextrestored", onContextRestored);
+
+  return {
+    setWorld: (next) => {
+      if (next !== world) {
+        clearChunks();
+        paletteUploaded = 0;
+        world = next;
+      }
+      schedule();
+    },
+    setCamera: (next) => {
+      camera = next;
+      schedule();
+    },
+    setLayers: (next) => {
+      layers = layerBits(next);
+      schedule();
+    },
+    tileAt: (screenX, screenY) => {
+      if (world === null || screenX < 0 || screenY < 0 || screenX >= canvas.width || screenY >= canvas.height) return null;
+      const x = Math.floor(camera.x + screenX / camera.zoom);
+      const y = Math.floor(camera.y + screenY / camera.zoom);
+      return x < 0 || y < 0 || x >= world.width || y >= world.height ? null : { x, y };
+    },
+    render,
+    stats: () => ({ textureUploads, drawCalls, visibleChunks: drawn, residentChunks: chunks.size }),
+    dispose: () => {
+      if (disposed) return;
+      disposed = true;
+      cancelAnimationFrame(frame);
+      canvas.removeEventListener("webglcontextlost", onContextLost);
+      canvas.removeEventListener("webglcontextrestored", onContextRestored);
+      if (!gl.isContextLost()) {
+        clearChunks();
+        gl.deleteTexture(resources.palette);
+        gl.deleteProgram(resources.program);
+      }
+    },
+  };
+}

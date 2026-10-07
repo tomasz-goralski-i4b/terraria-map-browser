@@ -1,12 +1,42 @@
+import { useMemo } from "react";
+import type { RenderableWorld } from "@studio/renderer";
 import { useAppStore } from "../store.js";
 import { getDefaultWorldSession } from "../world/world-session.js";
+import { MapCanvas } from "./MapCanvas.js";
 
-// The canvas and the renderer backend are attached here by later issues.
-export function MapView({ renderer }: { readonly renderer: string }): React.JSX.Element {
+/** The world metadata does not carry the surface row yet; Terraria puts it at roughly 30 % of the height. */
+const SURFACE_FRACTION = 0.3;
+
+/**
+ * Session messages stay above the canvas of a previously loaded world (which fills the view) and keep receiving
+ * pointer input; inline so this holds without the app stylesheet, like the map overlays.
+ */
+const MESSAGE_STYLE: React.CSSProperties = { position: "relative", zIndex: 2 };
+
+/** The loaded world's planes and palette by reference; nothing is copied. */
+function loadedRenderableWorld(): RenderableWorld | null {
+  const loaded = getDefaultWorldSession().getLoadedWorld();
+  if (loaded === null) return null;
+  const { width, height } = loaded.metadata;
+  return {
+    width, height, surfaceY: Math.round(height * SURFACE_FRACTION), planes: loaded.planes, palette: loaded.palette,
+  };
+}
+
+export interface MapViewProps {
+  readonly renderer: string;
+  /** World to draw, by reference; defaults to the world loaded by the default session. */
+  readonly world?: RenderableWorld | null;
+}
+
+export function MapView({ renderer, world }: MapViewProps): React.JSX.Element {
   const phase = useAppStore((state) => state.phase);
   const loadingFileName = useAppStore((state) => state.loadingFileName);
   const summary = useAppStore((state) => state.summary);
   const error = useAppStore((state) => state.error);
+  // A new summary means a newly loaded world; the session is not reactive, the store is.
+  const sessionWorld = useMemo(() => (summary === null ? null : loadedRenderableWorld()), [summary]);
+  const drawn = world === undefined ? sessionWorld : world;
 
   return (
     <main
@@ -23,7 +53,7 @@ export function MapView({ renderer }: { readonly renderer: string }): React.JSX.
       }}
     >
       {phase === "loading" && (
-        <p>
+        <p style={MESSAGE_STYLE}>
           Loading {loadingFileName}…{" "}
           <button
             type="button"
@@ -36,14 +66,15 @@ export function MapView({ renderer }: { readonly renderer: string }): React.JSX.
         </p>
       )}
       {phase === "failed" && error !== null && (
-        <p role="alert">
+        <p role="alert" style={MESSAGE_STYLE}>
           Could not open {error.fileName}: {error.code} at offset {error.offset}. {error.message}
         </p>
       )}
+      {drawn !== null && <MapCanvas world={drawn} />}
       {summary === null ? (
         phase === "idle" && <p>No world loaded. Open a .wld file or drop it here.</p>
       ) : (
-        <section aria-label="World summary">
+        <section aria-label="World summary" className="world-summary">
           <h2>{summary.name}</h2>
           <dl>
             <dt>Size</dt>

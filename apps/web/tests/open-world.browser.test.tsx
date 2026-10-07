@@ -120,12 +120,26 @@ test("the main thread keeps ticking while a Small fixture is parsed", async () =
     last = now;
     ticks++;
   }, 10);
+  // The window ends when the summary is committed: the map's first frame (shader compile, chunk uploads) follows it
+  // on the main thread by design and is not parsing; on a loaded CI runner with software GL it alone can exceed the bound.
+  let stopped = false;
+  const stop = (): void => {
+    if (stopped) return;
+    stopped = true;
+    window.clearInterval(timer);
+    maxGap = Math.max(maxGap, performance.now() - last);
+    observer.disconnect();
+  };
+  const observer = new MutationObserver(() => {
+    if (document.querySelector('section[aria-label="World summary"]') !== null) stop();
+  });
+  observer.observe(document.body, { childList: true, subtree: true });
   try {
     last = performance.now();
     chooseFile(file);
     await expect.element(page.getByRole("region", { name: "World summary" })).toMatchTextContent("4200 × 1200");
   } finally {
-    window.clearInterval(timer);
+    stop();
   }
   expect(ticks).toBeGreaterThan(3);
   expect(maxGap).toBeLessThan(250);
