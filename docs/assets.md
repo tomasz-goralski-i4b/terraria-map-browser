@@ -318,10 +318,13 @@ project); nothing is derived from game files.
 4. **Hand-assembled verbatim blocks for the two easy-to-miss rules** (no compressor needed, bits written by the
    test builder):
    - *Repeated-offset queue:* an uncompressed block that sets R0–R2 = 4, 1, 1, followed by a verbatim block whose
-     main tree gives length 8 to the literals plus a few match symbols (header 0, slots 1 and 3 — e.g. by giving
-     symbols 256 + 8 and 256 + 24 short codes and shortening the literal codes so the tree stays complete). Body:
-     some literals, a slot-3 match (offset 1), then a slot-1 match; the expected output copies from offset 4. A
-     decoder that does not push slot 3 onto the queue copies from offset 1 and fails.
+     main tree is complete with two match symbols (length header 0): literals 0–253 get length 8; literals 254 and
+     255 and the match symbols 264 (256 + 8, slot 1) and 280 (256 + 24, slot 3) get length 9; every other length is
+     0. Capacity: 254/256 + 4/512 = 1. (Giving all 256 literals length 8 already fills the tree, so any added match
+     symbol would oversubscribe it.) Canonical codes: bytes 0–253 keep their own value as 8-bit codes; 254, 255, 264
+     and 280 get the 9-bit codes 508–511, so payload literals 254/255 must use those. Body: some literals, a slot-3
+     match (offset 1), then a slot-1 match; the expected output copies from offset 4. A decoder that does not push
+     slot 3 onto the queue copies from offset 1 and fails.
    - *Pretree symbol 19 over changing old lengths:* two consecutive verbatim blocks; the first leaves four
      consecutive main-tree lengths at different values (e.g. 8, 9, 10, 11), the second updates them with one
      symbol-19 run (`n = 4`, `z' = 1`). Assert the resulting lengths are all 7 (directly on the tree reader, or via
