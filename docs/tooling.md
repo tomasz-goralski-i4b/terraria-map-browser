@@ -104,8 +104,10 @@ built package entry and reports readiness; its fixture is test tooling, not a co
 smoke imports the same package export without `window` or `Worker` globals. The package deliberately has no
 runtime dependencies or codec logic yet. Build before either test so `dist/index.js` and declarations exist.
 
-Browser projects are registered explicitly in `vitest.config.ts`; add a browser project there for each new
-package containing `tests/**/*.browser.test.ts`. Vitest saves failure screenshots under `.vitest/attachments/`;
+Browser projects are registered explicitly in `vitest.config.ts` (`browserProjects`), because each may need its own
+plugins or commands; add one there for each new package containing `tests/**/*.browser.test.{ts,tsx}`. Loading the
+config fails with the package name when browser tests exist without a browser project, so they cannot be skipped
+silently (follow-up #69). Vitest saves failure screenshots under `.vitest/attachments/`;
 `.vitest/` is gitignored so red-phase browser runs cannot stage generated binary artifacts through `git add -A`.
 
 Install the matching browser once locally with `pnpm exec playwright install chromium`. CI uses
@@ -113,6 +115,11 @@ Install the matching browser once locally with `pnpm exec playwright install chr
 ([Playwright browser setup](https://playwright.dev/docs/browsers)). Browser installation is an explicit setup
 step, not a dependency install hook. `bash scripts/verify.sh` builds and typechecks the package and harnesses,
 lints them with zero warnings, and runs both Node and browser projects through `scripts/test.sh`.
+
+**Decision (2026-10-07, follow-up #69):** headless Chromium is a confirmed prerequisite — in CI (the install step
+in `.github/workflows/ci.yml`) and on every machine that runs `verify.sh`, including agent worktrees. The browser
+viewer (`apps/web`) and the Worker codec are tested in a real browser, so the extra CI time is accepted. Agent
+worktrees share the user-level Playwright browser cache, so one local install covers all of them.
 
 For focused checks: `pnpm --filter @studio/world-codec build`, `pnpm --filter @studio/world-codec lint`,
 `pnpm --filter @studio/world-codec test`, and `pnpm --filter @studio/world-codec test:browser`.
