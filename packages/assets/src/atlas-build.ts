@@ -109,8 +109,11 @@ export async function buildSpriteAtlas(contentDir: ContentDirectory, options?: B
   const cacheable = cache !== undefined && unreadable.length === 0;
   if (cacheable) {
     const cached = await loadCachedAtlas(cache, fingerprint);
+    throwIfAborted(signal);
     if (cached?.index.pageSize === pageSize && cached.index.padding === padding) {
-      return { atlas: cached, missing: await loadCachedMissing(cache, fingerprint), fromCache: true, fingerprint };
+      const cachedMissing = await loadCachedMissing(cache, fingerprint);
+      throwIfAborted(signal);
+      return { atlas: cached, missing: cachedMissing, fromCache: true, fingerprint };
     }
   }
 

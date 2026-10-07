@@ -306,8 +306,9 @@ touches the network; the Worker reports the number of `fetch` calls it saw (alwa
   sampling never bleeds into a neighbour. A sheet that does not fit an empty page (including padding) is rejected with
   `AtlasSheetTooLargeError`.
 - **Index:** `(kind, id) → { page, x, y, width, height, frameWidth, frameHeight, gapX, gapY }`: the per-sheet frame and gutter
-  of "Sprite layout" (default tiles 16×16 / 2, walls 32×32 / 4; the ids that section names as exceptions — e.g. tile 4
-  20×20, tile 3 16×20, tile 15 gutter 2×4 — carry their own values, all others the default), the family defaults, the page size, padding and `ATLAS_FORMAT_VERSION`.
+  of "Sprite layout" (default tiles 16×16 / 2, walls 32×32 / 4; the 56 tile ids whose grid or gutter differs from the default — e.g. tile 4
+  20×20, tile 3 and 24 16×20, tile 15 gutter 2×4, tiles 751/752 18×18 with no gutter — carry their own values, restated from A12's
+  per-id `textureGrid`/`frameGap`; all others the default), the family defaults, the page size, padding and `ATLAS_FORMAT_VERSION`.
 - **Cache:** the origin private file system, one directory per fingerprint holding `page-<n>.rgba` (raw RGBA) and
   `index.json`, written last so an entry without it is never read. The fingerprint hashes the name, size and
   last-modified time of every matched sheet plus the format version; storing a new entry removes the old ones. A build

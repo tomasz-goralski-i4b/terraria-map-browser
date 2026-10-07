@@ -1,7 +1,7 @@
 import type { AtlasEntry, PackableSheet, SheetKind, SheetMetrics, SpriteAtlas } from "./atlas-types.js";
 
 /** Bump when the page layout or index shape changes; it is part of the cache key. */
-export const ATLAS_FORMAT_VERSION = 2;
+export const ATLAS_FORMAT_VERSION = 3;
 
 /** Page edge used when the caller passes none. */
 export const DEFAULT_PAGE_SIZE = 4096;
@@ -22,27 +22,78 @@ interface SheetLayout {
 }
 
 /**
- * Tile ids whose texture grid or gutter differs from the 16×16 / 2×2 default, restated from the per-id statistics in
- * docs/assets.md ("Sprite layout", "Blocks"; source A12). Only the ids that document names are listed; every other id
- * uses the default until a follow-up derives the full table.
+ * Tile ids whose texture grid or gutter differs from the 16×16 / 2×2 default, as
+ * `[id, frameWidth, frameHeight, gapX, gapY]`. Restated in our own words from the per-id `textureGrid` and `frameGap`
+ * fields of A12 (TEdit `tiles.json` @ 99928583, all 754 ids 0–753; see docs/assets.md "Sprite layout"); 56 ids
+ * differ, every other id uses the default.
  */
-const TILE_LAYOUT_EXCEPTIONS: ReadonlyMap<number, Partial<SheetLayout>> = new Map([
-  [3, { frameHeight: 20 }], // short plants: 16×20 grid
-  [4, { frameWidth: 20, frameHeight: 20 }], // torches
-  [5, { frameWidth: 20, frameHeight: 20 }], // trees
-  [323, { frameWidth: 20, frameHeight: 20 }], // palm trees
-  [15, { gapY: 4 }], // chairs
-  [216, { gapY: 4 }], // rockets
-  [497, { gapY: 4 }], // toilets
-  [172, { gapY: 3 }], // sinks
-  [751, { gapX: 0, gapY: 0 }],
-  [752, { gapX: 0, gapY: 0 }],
-]);
+const TILE_LAYOUT_EXCEPTIONS: ReadonlyMap<number, SheetLayout> = new Map(
+  (
+    [
+      [3, 16, 20, 2, 2],
+      [4, 20, 20, 2, 2],
+      [5, 20, 20, 2, 2],
+      [15, 16, 16, 2, 4],
+      [16, 16, 18, 2, 2],
+      [18, 16, 18, 2, 2],
+      [24, 16, 20, 2, 2],
+      [33, 16, 20, 2, 2],
+      [49, 16, 20, 2, 2],
+      [61, 16, 20, 2, 2],
+      [71, 16, 20, 2, 2],
+      [73, 16, 32, 2, 2],
+      [74, 16, 32, 2, 2],
+      [81, 24, 26, 2, 2],
+      [82, 16, 20, 2, 2],
+      [83, 16, 20, 2, 2],
+      [84, 16, 20, 2, 2],
+      [110, 16, 20, 2, 2],
+      [113, 16, 32, 2, 2],
+      [172, 16, 16, 2, 3],
+      [174, 16, 20, 2, 2],
+      [184, 20, 16, 2, 2],
+      [201, 16, 20, 2, 2],
+      [216, 16, 16, 2, 4],
+      [227, 32, 38, 2, 2],
+      [323, 20, 20, 2, 2],
+      [324, 20, 20, 2, 2],
+      [372, 16, 20, 2, 2],
+      [388, 16, 18, 2, 2],
+      [389, 16, 18, 2, 2],
+      [442, 20, 20, 2, 2],
+      [476, 20, 18, 2, 2],
+      [497, 16, 16, 2, 4],
+      [529, 16, 15, 2, 2],
+      [567, 26, 18, 2, 2],
+      [579, 20, 20, 2, 2],
+      [583, 20, 20, 2, 2],
+      [584, 20, 20, 2, 2],
+      [585, 20, 20, 2, 2],
+      [586, 20, 20, 2, 2],
+      [587, 20, 20, 2, 2],
+      [588, 20, 20, 2, 2],
+      [589, 20, 20, 2, 2],
+      [596, 20, 20, 2, 2],
+      [616, 20, 20, 2, 2],
+      [624, 20, 18, 2, 2],
+      [634, 20, 20, 2, 2],
+      [637, 16, 20, 2, 2],
+      [646, 16, 20, 2, 2],
+      [656, 24, 34, 2, 2],
+      [700, 20, 16, 2, 2],
+      [701, 24, 34, 2, 2],
+      [703, 16, 20, 2, 2],
+      [726, 20, 20, 2, 2],
+      [751, 18, 18, 0, 0],
+      [752, 18, 18, 0, 0],
+    ] as const
+  ).map(([id, frameWidth, frameHeight, gapX, gapY]) => [id, { frameWidth, frameHeight, gapX, gapY }]),
+);
 
 function layoutOf(kind: SheetKind, id: number): SheetLayout {
   const { cell, gap } = METRICS[kind];
   const base: SheetLayout = { frameWidth: cell, frameHeight: cell, gapX: gap, gapY: gap };
-  return kind === "tile" ? { ...base, ...TILE_LAYOUT_EXCEPTIONS.get(id) } : base;
+  return kind === "tile" ? (TILE_LAYOUT_EXCEPTIONS.get(id) ?? base) : base;
 }
 
 export interface PackOptions {
