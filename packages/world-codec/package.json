@@ -7,6 +7,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./worker": {
+      "types": "./dist/world-worker.d.ts",
+      "import": "./dist/world-worker.js"
     }
   },
   "types": "./dist/index.d.ts",
