@@ -47,6 +47,23 @@ function dropFile(file: File): void {
   map.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: transfer }));
 }
 
+function findCancel(): HTMLButtonElement | undefined {
+  return [...document.querySelectorAll("button")].find((button) => button.textContent.trim() === "Cancel");
+}
+
+function clickCancelWhenShown(): Promise<void> {
+  return new Promise((resolve) => {
+    const observer = new MutationObserver(() => {
+      const cancel = findCancel();
+      if (cancel === undefined) return;
+      observer.disconnect();
+      cancel.click();
+      resolve();
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+  });
+}
+
 async function worldFile(name: string): Promise<File> {
   return new File([await fixtureBytes(name)], name);
 }
@@ -119,10 +136,10 @@ test("cancel during loading returns to the previous state", async () => {
   chooseFile(await worldFile("SCCO1.wld"));
   await expect.element(page.getByRole("region", { name: "World summary" })).toMatchTextContent("SCCR1");
 
+  // A Small parse can finish before a driver click lands, so Cancel is clicked in the same task React renders it.
+  const cancelled = clickCancelWhenShown();
   chooseFile(await worldFile("SCCR2.wld"));
-  const cancel = page.getByRole("button", { name: "Cancel" });
-  await expect.element(cancel).toBeVisible();
-  await cancel.click();
+  await cancelled;
   await expect.element(page.getByRole("button", { name: "Cancel" })).not.toBeInTheDocument();
   await expect.element(page.getByRole("region", { name: "World summary" })).toMatchTextContent("SCCR1");
   await expect.element(page.getByRole("alert")).not.toBeInTheDocument();
