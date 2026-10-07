@@ -7,6 +7,10 @@ export type WorldFormatErrorKind =
   | "MalformedMetadata"
   | "MalformedTiles";
 
+type WorldFormatDiagnostic =
+  | { readonly x: number; readonly y: number; readonly field?: string }
+  | { readonly field: string; readonly x?: never; readonly y?: never };
+
 /** A world file violates the format contract. */
 export class WorldFormatError extends Error {
   /** Error category. */
@@ -22,7 +26,7 @@ export class WorldFormatError extends Error {
   /** Tile row of the offending record, for `MalformedTiles`. */
   readonly y?: number;
 
-  constructor(kind: WorldFormatErrorKind, offset: number, reason: string, diagnostic?: { readonly x?: number; readonly y?: number; readonly field?: string }) {
+  constructor(kind: WorldFormatErrorKind, offset: number, reason: string, diagnostic?: WorldFormatDiagnostic) {
     super(`${kind} at offset ${String(offset)}: ${reason}`);
     this.name = "WorldFormatError";
     this.kind = kind;
