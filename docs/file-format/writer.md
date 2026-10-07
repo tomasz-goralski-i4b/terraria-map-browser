@@ -88,6 +88,11 @@ save:
   field: only that field's bytes are replaced (a String gets a new length prefix); all other bytes stay; width
   and height are not editable through metadata (they define the tile grid); editing the name or the world id
   also rewrites the footer (W-S5).
+- **Reference implementation (.NET).** `WorldReader.ReadForSave` returns a `WorldEnvelope`: the M1 `World`, the
+  source `WorldSectionTable`, and owned copies of the file header (`0 … pointer[0]`, including frame-important
+  bits), the metadata section, each of sections 3–10 as a separate named `OpaqueSection` (kept apart from the tile
+  planes), and the footer. The footer is validated as in "Footer (M2)" before the envelope is returned; `Read`
+  keeps ignoring it. The envelope holds no reference to the stream or path, so it stays valid after both are gone.
 - **W-S1 Sections 3–10.** The bytes from `pointer[2]` to `pointer[10]` are copied as **one** span. No section in
   this range stores an absolute file offset: every reader of them is sequential and is only checked against the
   pointer at its end (T8, lines 1438-1498), so moving the span does not change its meaning. They do store tile

@@ -19,6 +19,7 @@ public static class WorldReader
     private const short ExpectedSectionCount = 11;
     private const string ExpectedSignature = "relogic";
     private const string ChineseBuildSignature = "xindong";
+    private static readonly UTF8Encoding FooterUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
 
     /// <summary>The explicit set of format versions accepted in M1.</summary>
     public static IReadOnlySet<int> SupportedVersions { get; } = new[] { 326 }.ToFrozenSet();
@@ -36,7 +37,9 @@ public static class WorldReader
     /// <remarks>Requires a readable, seekable stream.</remarks>
     /// <exception cref="ArgumentException">The stream is not readable or seekable.</exception>
     /// <exception cref="WorldFormatException">The file violates the format contract.</exception>
-    public static World Read(Stream stream)
+    public static World Read(Stream stream) => ReadWorld(stream).World;
+
+    private static (World World, WorldSectionTable Table) ReadWorld(Stream stream)
     {
         ArgumentNullException.ThrowIfNull(stream);
         ValidateStreamCapabilities(stream);
@@ -58,7 +61,128 @@ public static class WorldReader
             new(nameof(WorldSectionTable.CreativePowers), table.CreativePowers),
             new(nameof(WorldSectionTable.Footer), table.Footer),
         ];
-        return new World(header, metadata, tiles, skipped);
+        return (new World(header, metadata, tiles, skipped), table);
+    }
+
+    /// <summary>Reads a world for saving: <see cref="Read"/> plus every unmodelled source byte (docs/file-format/writer.md).</summary>
+    /// <remarks>Requires a readable, seekable stream; the result does not reference it.</remarks>
+    /// <exception cref="ArgumentException">The stream is not readable or seekable.</exception>
+    /// <exception cref="WorldFormatException">The file violates the format contract, including the footer.</exception>
+    public static WorldEnvelope ReadForSave(Stream stream)
+    {
+        var (world, table) = ReadWorld(stream);
+        var footer = ReadSlice(stream, table.Footer);
+        ValidateFooter(footer, table.Footer.Start, world.Metadata);
+
+        // Sections 3-10 are the skipped sections minus the trailing footer entry.
+        var opaque = new List<OpaqueSection>(world.SkippedSections.Count - 1);
+        foreach (var skipped in world.SkippedSections)
+        {
+            if (skipped.Name != nameof(WorldSectionTable.Footer))
+            {
+                opaque.Add(new OpaqueSection(skipped.Name, ReadSlice(stream, skipped.Boundary)));
+            }
+        }
+
+        return new WorldEnvelope
+        {
+            World = world,
+            Table = table,
+            FileHeaderBytes = ReadSlice(stream, table.FileHeader),
+            MetadataBytes = ReadSlice(stream, table.Metadata),
+            OpaqueSections = opaque,
+            FooterBytes = footer,
+        };
+    }
+
+    private static byte[] ReadSlice(Stream stream, WorldSectionBoundary section)
+    {
+        // Sections lie within a file shorter than 2 GiB (checked by ReadSectionTable).
+        var bytes = new byte[checked((int)(section.End - section.Start))];
+        stream.Position = section.Start;
+        stream.ReadExactly(bytes);
+        return bytes;
+    }
+
+    /// <summary>Footer checks in the order of docs/file-format/writer.md, "Footer (M2)".</summary>
+    private static void ValidateFooter(ReadOnlySpan<byte> footer, long start, WorldMetadata metadata)
+    {
+        const int MarkerAndIdLength = 1 + sizeof(int);
+        var idEnd = footer.Length - sizeof(int);
+        var namePrefix = start + 1;
+
+        // Step 1: the length prefix and name must fit before the last four bytes.
+        if (footer.Length < MarkerAndIdLength + 1)
+        {
+            throw new WorldFormatException(WorldFormatError.MalformedFooter, namePrefix, "truncated");
+        }
+
+        var prefixLength = 0;
+        long nameLength = 0;
+        var prefixValid = false;
+        while (prefixLength < 5 && 1 + prefixLength < idEnd)
+        {
+            var current = footer[1 + prefixLength];
+            nameLength |= (long)(current & 0x7F) << (7 * prefixLength);
+            prefixLength++;
+            if ((current & 0x80) == 0)
+            {
+                prefixValid = prefixLength < 5 || current <= 0x07;
+                break;
+            }
+        }
+
+        // A prefix still open at the end of the name area, or a name longer than the area, is truncation.
+        if (!prefixValid && prefixLength < 5)
+        {
+            throw new WorldFormatException(WorldFormatError.MalformedFooter, namePrefix, "truncated");
+        }
+
+        if (prefixValid && 1 + prefixLength + nameLength > idEnd)
+        {
+            throw new WorldFormatException(WorldFormatError.MalformedFooter, namePrefix, "truncated");
+        }
+
+        // Step 2.
+        if (footer[0] != 1)
+        {
+            throw new WorldFormatException(WorldFormatError.MalformedFooter, start, "invalid marker");
+        }
+
+        // Step 3.
+        if (!prefixValid)
+        {
+            throw new WorldFormatException(WorldFormatError.MalformedFooter, namePrefix, "invalid name");
+        }
+
+        var nameBytes = footer.Slice(1 + prefixLength, (int)nameLength);
+        try
+        {
+            _ = FooterUtf8.GetString(nameBytes);
+        }
+        catch (DecoderFallbackException)
+        {
+            throw new WorldFormatException(WorldFormatError.MalformedFooter, namePrefix, "invalid name");
+        }
+
+        // Steps 4-5.
+        var nameEnd = 1 + prefixLength + (int)nameLength;
+        if (!nameBytes.SequenceEqual(FooterUtf8.GetBytes(metadata.Name)))
+        {
+            throw new WorldFormatException(WorldFormatError.InconsistentFooter, namePrefix, "name differs from the metadata", nameof(WorldSectionTable.Footer), "name");
+        }
+
+        var idOffset = start + nameEnd;
+        if (BinaryPrimitives.ReadInt32LittleEndian(footer[nameEnd..]) != metadata.WorldId)
+        {
+            throw new WorldFormatException(WorldFormatError.InconsistentFooter, idOffset, "world id differs from the metadata", nameof(WorldSectionTable.Footer), "worldId");
+        }
+
+        // Step 6.
+        if (footer.Length > nameEnd + sizeof(int))
+        {
+            throw new WorldFormatException(WorldFormatError.MalformedFooter, idOffset + sizeof(int), "trailing bytes");
+        }
     }
 
     /// <summary>Reads world metadata (section 1) after <see cref="ReadSectionTable"/>.</summary>

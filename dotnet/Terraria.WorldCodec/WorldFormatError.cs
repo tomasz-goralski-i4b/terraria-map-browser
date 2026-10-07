@@ -9,4 +9,6 @@ public enum WorldFormatError
     MalformedSectionTable,
     MalformedMetadata,
     MalformedTiles,
+    MalformedFooter,
+    InconsistentFooter,
 }
