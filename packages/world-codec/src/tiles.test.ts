@@ -243,7 +243,7 @@ describe("readWorldTiles — runs and columns R1–R10 (2 x 4)", () => {
 
   it("does not let a run continue into the next column", () => {
     // Column 0 ends with a run reaching y 3; column 1 starts fresh with its own record.
-    const result = readWorldTiles(build(2, 4, [0x42, 0x01, 0x03, 0x00, 0x40, 0x03]).file);
+    const result = readWorldTiles(build(2, 4, [0x42, 0x01, 0x03, 0x40, 0x03]).file);
     expect(grid(result)[1]).toEqual([EMPTY, EMPTY, EMPTY, EMPTY]);
   });
 });
