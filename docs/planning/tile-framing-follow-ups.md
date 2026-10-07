@@ -14,7 +14,8 @@ docs/assets.md ("Tile framing") specifies.
   neighbours (absent / type), for each edge neighbour that is a relative of the centre whether its own cell keeps
   its rim toward the centre, and the tile's world `x, y`; output = the cell of variant `(7x + 11y) mod 3`.
 - Neighbour letters by the "Viewer contract" rules 1–5 of docs/assets.md, in that order (rule 5 for ore ↔ ore is
-  provisional: keep it behind one clearly named function so H4 can change it in one place).
+  provisional, and so is rule 3 for non-stone blocks such as ores in dirt: keep both behind one clearly named
+  function so H4 can change them in one place).
 - Cell choice by the documented steps: side code from the sheet map, the `d → x` fallback for the 28 side codes
   without a cell, and the corner order for side code `oooo`. The sheet map and the interior looks are restated as a
   typed constant from the doc (our measurement, not a TEdit table).

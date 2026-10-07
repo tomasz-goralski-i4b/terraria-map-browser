@@ -311,10 +311,10 @@ open.
 - **Frame-important ids** (header bitset, F) store `frameX`/`frameY` and never take this path.
 - All **other** ids are framed from their neighbours when the world loads. In A12 that is **342** ids (`isFramed`
   absent):
-  - **329** carry `canBlend` and use the block framer of this section (A8 5709), except the two sub-families below.
-    This covers dirt, stone, ores, sand, bricks, wood and similar blocks;
-  - **18 gemspark ids** use a separate 8-way framer (A13 15–16), deferred;
-  - **10 grass ids** (`isGrass`: 2, 23, 60, 70, 109, 199, 477, 492, 661, 662) use extra grass rules, deferred;
+  - **329** carry `canBlend`. **301** of them use the block framer of this section (A8 5709): dirt, stone, ores,
+    sand, bricks, wood and similar blocks. The other 28 are two sub-families:
+    - **18 gemspark ids** use a separate 8-way framer (A13 15–16), deferred;
+    - **10 grass ids** (`isGrass`: 2, 23, 60, 70, 109, 199, 477, 492, 661, 662) use extra grass rules, deferred;
   - **13 ids** without `canBlend` (cactus 80, vines, beams, columns, decorative cobweb 697, …) have their own
     framing, deferred.
 - Sheet sizes (S): dirt, stone and most blocks use **288 × 270** = 16 columns × 15 rows of 18-pixel cells.
@@ -345,9 +345,9 @@ For every cell we record a **look**: one letter per side (N, E, S, W) and one pe
 Results:
 
 - **Stone (`Tiles_1`) and copper ore (`Tiles_7`) measure identically.** Their 183 non-empty cells form **61
-  distinct looks**, each held by exactly **3 cells**: the three variants. 24 looks have no rim (16 side patterns,
-  plus 8 extra corner looks among the all-open cells). 37 looks have at least one rim side, and 4 of the
-  all-open looks have a rim corner.
+  distinct looks**, each held by exactly **3 cells**: the three variants. 24 looks have no rim side: the 16
+  `o`/`x` side patterns plus 8 extra corner looks among the all-open cells (4 notch looks and 4 rim-corner looks).
+  The other 37 looks have at least one rim side.
 - **Dirt (`Tiles_0`)** has the same 24 non-rim looks in the same cells. Its 111 rim slots hold plain dirt copies:
   dirt has no partner, so its framer never reaches them.
 - **Other dirt-partner sheets** (288 × 270, measured with the same script): 31 match stone cell for cell. 24 more
@@ -443,7 +443,7 @@ TEdit never draws. Rule 5 for ore ↔ ore has no art evidence either way and is 
 Given the wanted letters:
 
 1. **Sides** (`NESW`, the wanted letters of N, E, S, W) other than `oooo`: take the look with exactly these sides
-   in the sheet map. 28 of the 81 possible side codes containing `d` have no cell (`dddx ddox ddxd ddxo ddxx dodx
+   in the sheet map. 28 of the 65 side codes that contain `d` have no cell (`dddx ddox ddxd ddxo ddxx dodx
    doxd doxx dxdd dxdo dxod dxxd dxxo oddx odxd odxx oxdd oxxd xddd xddo xddx xdod xdox xodd xodx xxdd xxdo
    xxod`). For those, **turn every `d` side into `x`** and look again. All 16 `o`/`x` codes exist, so this always
    finds a cell. The fallback is chosen; X: TEdit falls back the same way. In game it is still unobserved (H5).
@@ -476,9 +476,9 @@ seam (example 14).
 
 - **Inputs.** Ordinary blocks have three variants (`v0`–`v2`), hand-drawn copies of the same look (S: 3 cells per
   look). The `.wld` stores no frame for these tiles (F), so it stores no variant either.
-- **Game behaviour (cited, not yet observed).** TEdit's default rule lookup draws a random number 0–2 per tile
-  (A10 41, 253–256). TEdit's wall framer states that the game picks the variant at random when it frames a tile
-  whose frame the `.wld` does not store (A9 150–153). Only `largeFrameType` tiles follow a fixed pattern
+- **Game behaviour (cited, not yet observed).** TEdit's wall framer states that the game picks the variant at
+  random when it frames a tile whose frame the `.wld` does not store (A9 150–153). TEdit's rule lookup still has a
+  random overload (A10 41, 253–256), but its block path passes a deterministic variant instead (A8 5801). Only `largeFrameType` tiles follow a fixed pattern
   (A13 271–289). If that is right, the game changes variants on every reload and no viewer can reproduce the exact
   picture. H2 checks this.
 - **Large-frame tiles** (`largeFrameType` 1 or 2 in A12: 24 ids, e.g. 273, 274, 284, 325, 357, 409, 618, 669–676)
@@ -504,8 +504,8 @@ as eight 2-pixel columns `i = 0…7` of the chosen cell:
 | 4 bottom-right | SE | cell rows 2i … 15, placed at the top | W, N |
 | 5 bottom-left | SW | cell rows 0 … 2i+1, placed at the top | E, N |
 
-A slope therefore keeps the surface outline of its cell and slides it diagonally, column by column. It is not a
-plain clip of the 16 × 16 cell. The half block uses only the upper half of the cell.
+Shapes 2–4 therefore keep the outline of the cell and slide it diagonally, column by column; only shape 5 is a
+plain per-column crop of the 16 × 16 cell. The half block uses only the upper half of the cell.
 
 **Which cell a shaped tile uses.** TEdit's block framer (A8 5709–5813) ignores shapes completely. It chooses the
 cell from the 3 × 3 neighbourhood exactly as for a full block (neither the centre's shape nor the neighbours' shapes
@@ -583,8 +583,9 @@ modded tiles, walls (already in "Walls"), tile animation, paint and lighting.
 
 - **O1** Does the game re-roll the variant on every load (H2)? The recommendation stands either way.
 - **O2** Ore ↔ ore and ore ↔ dirt. Rule 3 (dirt is a rim partner for ores, not a connection) rests on the art (S).
-  Rule 5 (two different ores show a seam) is provisional. TEdit joins both. H4 decides. Only rule 5 and examples
-  16a/16b would change.
+  Rule 5 (two different ores show a seam) is provisional. TEdit joins both. H4 decides. If H4 shows a seam
+  between ores, only rule 5 and examples 16a/16b change; if it shows only a rim corner for ore in dirt, rule 3 for
+  non-stone blocks and example 15 change too.
 - **O3** The 28 rim side codes without art fall back to an outline (step 1). The game might instead pick a
   partial rim (H5). The corner priority for three or four missing corners is cited, not observed.
 - **O4** Large-frame variant patterns (24 ids): restate them from an independent in-game observation, not from A13.
