@@ -41,10 +41,38 @@ describe("shared vector contracts", () => {
   });
 
   it.each(variants)("decodes $name at its declared entry", ({ vector, variant }) => {
-    const actual = decodeVectorCase(vector, variant);
-    if (variant.error) expect(actual).toMatchObject({ error: variant.error });
-    else expect(actual).toEqual({ result: variant.result });
-    expect(() => { assertVectorCase(vector, variant); }).not.toThrow();
+    assertVectorCase(vector, variant);
+  });
+
+  it("keeps late REC overflow diagnostics when the vector is renamed", () => {
+    const row = variants.find(({ vector }) => vector.id === "R6");
+    if (!row) throw new Error("Missing shared vector R6");
+    assertVectorCase({ ...row.vector, id: "LateColumnOverflow" }, row.variant);
+  });
+
+  it.each([ ["00", 0], ["4001", 1], ["800200", 2] ] as const)(
+    "keeps an empty REC run separate from filler for %s", (hex, run) => {
+      const row = variants.find(({ vector }) => vector.id === "T1");
+      if (!row?.variant.result) throw new Error("Missing shared vector T1 result");
+      assertVectorCase(row.vector, { hex, result: { ...row.variant.result, run } });
+    },
+  );
+
+  it.each(["02", "020400", "4201", "820103"])("does not repair truncated REC bytes %s with filler", (hex) => {
+    const row = variants.find(({ vector }) => vector.id === "T2");
+    if (!row) throw new Error("Missing shared vector T2");
+    assertVectorCase(row.vector, { hex, error: {
+      code: "MalformedTiles", offset: 0, x: 0, y: 0, reason: "truncated record",
+    } });
+  });
+
+  it("detects a changed expected M3 pixel bound", () => {
+    const row = variants.find(({ vector }) => vector.id === "M3");
+    if (!row?.variant.result) throw new Error("Missing shared vector M3 result");
+    const bounds = row.variant.result["bounds"] as Record<string, number>;
+    expect(() => { assertVectorCase(row.vector, { ...row.variant,
+      result: { ...row.variant.result, bounds: { ...bounds, right: 67216 } },
+    }); }).toThrow(/M3/);
   });
 
   it("rejects a schema-invalid vector document by file name", () => {

@@ -74,6 +74,7 @@ describe("readWorldMetadata — complete format-326 walk and shared M1/M3", () =
     expect(result.metadata).toEqual({
       name: "SCCR1", seed: "948580918", guid: "87e466e7853c3f48b75abc85e36d4b86",
       worldId: 1743427911, width: 2, height: 4, mode: "classic", evil: "corruption",
+      bounds: { left: 0, right: 32, top: 0, bottom: 64 },
     });
     expect(result.sections).toEqual(readWorldHeader(file).sections);
     expect(file).toEqual(original);
@@ -92,6 +93,24 @@ describe("readWorldMetadata — complete format-326 walk and shared M1/M3", () =
     [0, "classic"], [1, "expert"], [2, "master"], [3, "journey"],
     [7, { mode: "unknown", raw: 7 }], [-1, { mode: "unknown", raw: -1 }],
   ])("keeps mode %i", (mode, expected) => { expect(read({ mode }).metadata.mode).toEqual(expected); });
+
+  it("preserves signed pixel bounds independently of tile dimensions and input view offset", () => {
+    const fixture = buildMetadata();
+    const start = fieldOffset(fixture.offsets, "height") - 16;
+    const bounds = { left: -32, right: 67200, top: -16, bottom: 19200 };
+    const view = new DataView(fixture.bytes.buffer);
+    Object.values(bounds).forEach((value, index) => { view.setInt32(start + index * 4, value, true); });
+    const file = wrapMetadata(fixture.bytes);
+    const backing = new Uint8Array(file.length + 13);
+    backing.set(file, 13);
+    expect(readWorldMetadata(backing.subarray(13)).metadata).toMatchObject({ bounds, width: 2, height: 4 });
+  });
+
+  it.each([0, 1, 2, 3])("rejects truncated pixel bound %i at its own start", (index) => {
+    const fixture = buildMetadata();
+    const offset = fieldOffset(fixture.offsets, "height") - 16 + index * 4;
+    expectMetadataError(wrapMetadata(fixture.bytes.subarray(0, offset + 3)), METADATA_START + offset, "overruns section");
+  });
 
   it.each([[0, "corruption"], [1, "crimson"]])("decodes crimson Bool %i", (crimson, evil) => {
     expect(read({ crimson }).metadata.evil).toBe(evil);
