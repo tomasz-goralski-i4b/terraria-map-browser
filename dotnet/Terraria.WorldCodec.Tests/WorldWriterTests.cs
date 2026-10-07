@@ -385,6 +385,35 @@ public class WorldWriterTests
     }
 
     [Fact]
+    public void Write_ModelHeaderWithAnotherRevision_ThrowsUnsupportedWriteAndWritesNothing()
+    {
+        var envelope = ReadForSave(Build(2, 4, ShrinkingTilesCanonical, revision: 7));
+
+        AssertRejected(envelope with { World = envelope.World with { Header = envelope.World.Header with { Revision = 8 } } });
+    }
+
+    [Fact]
+    public void Write_ModelHeaderClearingAReservedFlagBit_ThrowsUnsupportedWriteAndWritesNothing()
+    {
+        var envelope = ReadForSave(Build(2, 4, ShrinkingTilesCanonical, flags: 0b10));
+
+        AssertRejected(envelope with { World = envelope.World with { Header = envelope.World.Header with { Flags = 0 } } });
+    }
+
+    [Theory]
+    [InlineData(12)]
+    [InlineData(16)]
+    [InlineData(23)]
+    public void Write_FileHeaderBytesWithAnotherRevisionOrFlags_ThrowsUnsupportedWriteAndWritesNothing(int offset)
+    {
+        var envelope = ReadForSave(Build(2, 4, ShrinkingTilesCanonical, revision: 7, flags: 0b10));
+        var header = envelope.FileHeaderBytes.ToArray();
+        header[offset] ^= 0x80;
+
+        AssertRejected(envelope with { FileHeaderBytes = header });
+    }
+
+    [Fact]
     public void ComputePointers_RegeneratesAllElevenPointersFromTheEmittedLengths()
     {
         long[] opaque = [10, 20, 30, 40, 50, 60, 70, 80];
