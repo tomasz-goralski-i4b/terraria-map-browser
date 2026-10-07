@@ -63,6 +63,20 @@ public sealed class InspectorCommandTests
     [InlineData("\u001b", "\\u001b")]
     [InlineData("\u0000", "\\u0000")]
     [InlineData("\u0085", "\\u0085")]
+    [InlineData("\u2028", "\\u2028")]
+    [InlineData("\u2029", "\\u2029")]
+    [InlineData("\u061c", "\\u061c")]
+    [InlineData("\u200e", "\\u200e")]
+    [InlineData("\u200f", "\\u200f")]
+    [InlineData("\u202a", "\\u202a")]
+    [InlineData("\u202b", "\\u202b")]
+    [InlineData("\u202c", "\\u202c")]
+    [InlineData("\u202d", "\\u202d")]
+    [InlineData("\u202e", "\\u202e")]
+    [InlineData("\u2066", "\\u2066")]
+    [InlineData("\u2067", "\\u2067")]
+    [InlineData("\u2068", "\\u2068")]
+    [InlineData("\u2069", "\\u2069")]
     public async Task Inspect_ControlCharactersInNameAndSeed_ReportsLiteralUnicodeEscapes(string control, string escaped)
     {
         using var directory = new InspectorDirectory();
@@ -339,6 +353,74 @@ public sealed class InspectorCommandTests
         Assert.Equal(hashBefore, SHA256.HashData(File.ReadAllBytes(path)));
         Assert.Equal(filesBefore, Directory.GetFiles(directory.Path, "*", SearchOption.AllDirectories));
         Assert.Equal(malformedTiles ? 1 : 0, result.ExitCode);
+    }
+
+    [Theory]
+    [InlineData("inspect", false)]
+    [InlineData("export-json", false)]
+    [InlineData("diff", false)]
+    [InlineData("diff", true)]
+    public void Run_PostReadConversionFailure_ReturnsOneInternalErrorLine(string command, bool failingRight)
+    {
+        var world = SyntheticTileWorld.Read(SummaryWorld.Build(2, 4,
+            metadata: new SyntheticMetadata { Name = "Forest Observatory" }));
+        var failedWorld = world with { SkippedSections = new UnavailableSkippedSections() };
+        const string Left = "Forest Observatory.wld";
+        const string Right = "Crimson Coast.wld";
+        string[] arguments = command == "diff" ? [command, Left, Right] : [command, Left];
+        var reads = 0;
+        World ReadWorld(string path)
+        {
+            reads++;
+            return path == (failingRight ? Right : Left) ? failedWorld : world;
+        }
+
+        using var output = new StringWriter(CultureInfo.InvariantCulture);
+        using var error = new StringWriter(CultureInfo.InvariantCulture);
+
+        var exitCode = InspectorCommand.Run(arguments, output, error, ReadWorld);
+
+        Assert.Equal(command == "diff" ? 2 : 1, reads);
+        Assert.Equal(1, exitCode);
+        Assert.Empty(output.ToString());
+        Assert.Equal("Internal error: could not complete the command." + error.NewLine, error.ToString());
+    }
+
+    [Theory]
+    [InlineData("inspect")]
+    [InlineData("export-json")]
+    [InlineData("diff")]
+    public void Run_ReaderOutOfMemoryException_PropagatesWithoutDiagnostic(string command)
+    {
+        const string Left = "Forest Observatory.wld";
+        const string Right = "Crimson Coast.wld";
+        string[] arguments = command == "diff" ? [command, Left, Right] : [command, Left];
+        // Simulate resource exhaustion without exhausting the test runner's actual memory.
+#pragma warning disable CA2201 // The runtime exception is deliberately injected to test the CLI fatal-error boundary.
+        var failure = new OutOfMemoryException("Could not allocate world tile planes.");
+#pragma warning restore CA2201
+        using var output = new StringWriter(CultureInfo.InvariantCulture);
+        using var error = new StringWriter(CultureInfo.InvariantCulture);
+
+        var thrown = Assert.Throws<OutOfMemoryException>(() =>
+            InspectorCommand.Run(arguments, output, error, _ => throw failure));
+
+        Assert.Same(failure, thrown);
+        Assert.Empty(output.ToString());
+        Assert.Empty(error.ToString());
+    }
+
+    // Simulates a decoded world's section collection becoming unavailable during conversion.
+    private sealed class UnavailableSkippedSections : IReadOnlyList<SkippedSection>
+    {
+        public int Count => throw new InvalidOperationException("Skipped-section summary is unavailable.");
+
+        public SkippedSection this[int index] => throw new InvalidOperationException("Skipped-section summary is unavailable.");
+
+        public IEnumerator<SkippedSection> GetEnumerator() =>
+            throw new InvalidOperationException("Skipped-section summary is unavailable.");
+
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
     }
 
     private static byte[] BuildWorld(SyntheticMetadata metadata, string tileHex)
