@@ -37,6 +37,25 @@ A paint byte of `0` and an absent paint byte are the same in CWM (the game uses 
 distinct by value: a block and a wall with the same `ContentRef` (e.g. vanilla id 1) share one entry — the plane
 that refers to it says whether it is a block or a wall. Unknown ids appear as `{ kind: "unknown", runtimeId }`.
 
+## TypeScript model API
+
+`packages/world-model` exports `createWorld(width, height, { maxBytes? })`. Dimensions must be positive
+safe integers; cell and plane byte totals must also be safe integers. The ten plane buffers require exactly
+15 bytes per coordinate. An optional nonnegative safe-integer `maxBytes` limits their combined size,
+excluding palette and object overhead; rejection reports the requested bytes and dimensions before any
+plane is allocated.
+
+The returned `CanonicalWorld` exposes dimensions, mutable `planes`, and a shared read-only `palette`.
+Populate it with `setTile(x, y, tile)` in column-major order to obtain the contract's first-appearance palette
+order; each assignment interns the block before the wall. References are deduplicated by value, including
+all mod-reference fields. Palette indices `0` through `65534` are available; `65535` is reserved for absence.
+Replacing a tile resets all its planes but retains previously interned palette entries.
+
+`tileAt(x, y)` creates a fresh semantic view from the current planes and reuses palette references by
+identity. It omits sentinel frames, zero paints, full shape and false additive flags, while preserving a
+present liquid kind with amount zero. Both methods reject noninteger or out-of-bounds coordinates. Tiles
+are never retained as a grid of objects.
+
 ## Chunks and digests
 
 The world is cut into **128 × 128 chunks**; chunk `(cx, cy)` covers `x ∈ [128·cx, 128·cx + w)`,
