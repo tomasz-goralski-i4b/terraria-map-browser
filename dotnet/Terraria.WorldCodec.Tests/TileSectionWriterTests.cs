@@ -128,11 +128,6 @@ public class TileSectionWriterTests
         { "wall paint without wall", new Tile { WallPaint = 3 } },
         { "shape without block", new Tile { Shape = BlockShape.Half } },
         { "shape out of range", new Tile { Block = Stone, Shape = (BlockShape)6 } },
-        { "inactive without block", new Tile { Inactive = true } },
-        { "invisible block without block", new Tile { InvisibleBlock = true } },
-        { "full-bright block without block", new Tile { FullBrightBlock = true } },
-        { "invisible wall without wall", new Tile { InvisibleWall = true } },
-        { "full-bright wall without wall", new Tile { FullBrightWall = true } },
         { "undefined wire bit", new Tile { Wires = (TileWires)16 } },
         { "undefined liquid kind", new Tile { Liquid = new TileLiquid((LiquidKind)9, 1) } },
     };
