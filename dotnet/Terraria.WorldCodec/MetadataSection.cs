@@ -7,8 +7,8 @@ internal static class MetadataSection
     public static WorldMetadata Read(MetadataSectionReader r, WorldSectionTable table)
     {
         // Rows 1-12 (format 326: every row except 58 is present).
-        var name = r.String("name");
-        var seed = r.String("seed");
+        var name = r.String("name", MetadataSectionReader.MaxNameOrSeedBytes);
+        var seed = r.String("seed", MetadataSectionReader.MaxNameOrSeedBytes);
         r.Skip(sizeof(ulong), "worldGenVersion");
         var guidHex = Convert.ToHexStringLower(r.Bytes(16, "guid"));
         var worldId = r.Int32("worldId");
@@ -63,7 +63,7 @@ internal static class MetadataSection
         var anglerFinishers = r.Count(sizeof(int), 1, "anglerFinishers");
         for (var index = 0; index < anglerFinishers; index++)
         {
-            r.String("anglerFinishers");
+            r.String("anglerFinishers", MetadataSectionReader.MaxOtherStringBytes);
         }
 
         // Rows 33-35.
@@ -113,7 +113,7 @@ internal static class MetadataSection
 
         // Rows 56-57; row 58 is absent for 326; row 59.
         r.Bools(1 + 2);
-        r.String("worldGenManifest");
+        r.String("worldGenManifest", MetadataSectionReader.MaxOtherStringBytes);
 
         if (r.Remaining != 0)
         {

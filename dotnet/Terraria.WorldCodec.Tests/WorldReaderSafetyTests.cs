@@ -207,6 +207,24 @@ public sealed class WorldReaderSafetyTests
         Assert.Equal(0, stream.SeekAttempts);
     }
 
+    [Theory]
+    [InlineData(0, 1, "section pointer must match the header end")]
+    [InlineData(1, -1, "section pointer is before metadata start")]
+    public void ReadSectionTable_InvalidLeadingPointer_ReportsItsOwnReason(int index, int displacement, string reason)
+    {
+        var file = SyntheticWorld.Build(new SyntheticMetadata { Name = "SCCR1" }.Build().Bytes, 2);
+        var headerEnd = BinaryPrimitives.ReadInt32LittleEndian(file.AsSpan(26));
+        BinaryPrimitives.WriteInt32LittleEndian(file.AsSpan(26 + (index * 4)), headerEnd + displacement);
+        using var stream = new RecordingStream(file);
+        var header = WorldReader.ReadHeader(stream);
+
+        var error = Assert.Throws<WorldFormatException>(() => WorldReader.ReadSectionTable(stream, header));
+
+        Assert.Equal(WorldFormatError.MalformedSectionTable, error.Error);
+        Assert.Equal(26 + (index * 4), error.Offset);
+        Assert.Equal(reason, error.Reason);
+    }
+
     private static void AssertMetadataError(WorldFormatException error, long offset, string field)
     {
         Assert.Equal(WorldFormatError.MalformedMetadata, error.Error);
