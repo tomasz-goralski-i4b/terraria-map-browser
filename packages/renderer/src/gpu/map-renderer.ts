@@ -6,7 +6,7 @@ import type { ContentRef } from "@studio/world-model";
 import { CHUNK_SIZE, visibleChunks } from "../camera/camera.js";
 import type { Camera, ChunkCoord } from "../camera/camera.js";
 import type { ChunkLayers } from "../chunk/render.js";
-import { contentColor, liquidColors } from "../palette/map-palette.js";
+import { backgroundColor, contentColor, liquidColors } from "../palette/map-palette.js";
 import type { MapPalette } from "../palette/map-palette.js";
 import { fragmentSource, vertexSource } from "./shaders.js";
 
@@ -14,12 +14,17 @@ import { fragmentSource, vertexSource } from "./shaders.js";
 export interface RenderableWorld {
   readonly width: number;
   readonly height: number;
+  /** The world's surface level: the sky is above it. */
   readonly surfaceY: number;
+  /** The world's rock level; without one the dirt layer reaches the underworld (only drawn with a map palette). */
+  readonly rockY?: number;
   readonly planes: {
     readonly block: Uint16Array;
     readonly wall: Uint16Array;
     readonly liquid: Uint8Array;
     readonly liquidAmount: Uint8Array;
+    readonly paint: Uint8Array;
+    readonly wallPaint: Uint8Array;
   };
   /** Append-only palette. */
   readonly palette: readonly ContentRef[];
@@ -28,12 +33,15 @@ export interface RenderableWorld {
 export interface MapRendererOptions {
   /** Upper bound of chunk textures kept on the GPU (LRU). Default 1536, enough for a whole Large world. */
   readonly maxCachedChunks?: number;
-  /** Map colours for vanilla content, as in `renderChunk`; without one, placeholders are drawn. */
+  /** Map colours (content, paint, background by depth), as in `renderChunk`; without one, placeholders are drawn. */
   readonly mapPalette?: MapPalette;
 }
 
 export interface MapRendererStats {
-  /** Texture upload calls since creation: one per chunk upload (all planes) and one per palette append. */
+  /**
+   * Texture upload calls since creation: one per chunk upload (all planes), one per palette append and one per
+   * background (once per world).
+   */
   readonly textureUploads: number;
   /** Draw calls issued by the last `render()`. */
   readonly drawCalls: number;
@@ -70,8 +78,8 @@ const PALETTE_CAPACITY = 0xffff;
 const PALETTE_HEIGHT = PALETTE_ROW;
 const DEFAULT_MAX_CACHED_CHUNKS = 1536;
 const UNIFORM_NAMES = [
-  "uBlock", "uWall", "uLiquid", "uAmount", "uPalette", "uCamera", "uZoom", "uViewport", "uOrigin", "uSize", "uSurfaceY",
-  "uPaletteLength", "uLayers", "uLiquids",
+  "uBlock", "uWall", "uLiquid", "uAmount", "uPaint", "uWallPaint", "uPalette", "uBackground", "uCamera", "uZoom",
+  "uViewport", "uOrigin", "uSize", "uPaletteLength", "uLayers", "uLiquids", "uPaintRow", "uPaintCount",
 ] as const;
 type UniformName = (typeof UNIFORM_NAMES)[number];
 
@@ -80,6 +88,8 @@ interface ChunkTextures {
   readonly wall: WebGLTexture;
   readonly liquid: WebGLTexture;
   readonly amount: WebGLTexture;
+  readonly paint: WebGLTexture;
+  readonly wallPaint: WebGLTexture;
 }
 
 /** Everything owned by one GL context; rebuilt after a context loss. */
@@ -152,6 +162,9 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   const chunks = new Map<number, ChunkTextures>();
   const paletteMirror = new Uint8Array(PALETTE_WIDTH * PALETTE_HEIGHT * 4);
   let paletteUploaded = 0;
+  // Per-row background colours plus the paint row, for the world they were computed for.
+  let background: { readonly texture: WebGLTexture; readonly world: RenderableWorld; readonly paintRow: number } | null = null;
+  const paintCount = mapPalette === undefined ? 0 : Math.min(PALETTE_ROW, mapPalette.paints.length);
   let textureUploads = 0;
   let drawCalls = 0;
   let drawn: readonly ChunkCoord[] = [];
@@ -163,6 +176,8 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     gl.deleteTexture(textures.wall);
     gl.deleteTexture(textures.liquid);
     gl.deleteTexture(textures.amount);
+    gl.deleteTexture(textures.paint);
+    gl.deleteTexture(textures.wallPaint);
   };
 
   const clearChunks = (): void => {
@@ -183,7 +198,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     }
     const firstRow = Math.floor(paletteUploaded / PALETTE_ROW);
     const lastRow = Math.floor((total - 1) / PALETTE_ROW);
-    gl.activeTexture(gl.TEXTURE4);
+    gl.activeTexture(gl.TEXTURE6);
     gl.bindTexture(gl.TEXTURE_2D, resources.palette);
     gl.pixelStorei(gl.UNPACK_ROW_LENGTH, PALETTE_WIDTH);
     // Only the appended entries: a partial first/last row is cut at the entry, in both colour halves.
@@ -226,6 +241,8 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       wall: plane(gl.R16UI, gl.UNSIGNED_SHORT, source.planes.wall),
       liquid: plane(gl.R8UI, gl.UNSIGNED_BYTE, source.planes.liquid),
       amount: plane(gl.R8UI, gl.UNSIGNED_BYTE, source.planes.liquidAmount),
+      paint: plane(gl.R8UI, gl.UNSIGNED_BYTE, source.planes.paint),
+      wallPaint: plane(gl.R8UI, gl.UNSIGNED_BYTE, source.planes.wallPaint),
     };
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
     gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 0);
@@ -233,6 +250,33 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     gl.pixelStorei(gl.UNPACK_SKIP_ROWS, 0);
     textureUploads++;
     return textures;
+  };
+
+  /**
+   * Background colour of every world row, resolved on the CPU by the same `backgroundColor` as `renderChunk` (so the
+   * GPU output is exact), 256 rows per texture row; the last texture row holds the paint colours by paint ID.
+   */
+  /** Drops the background of the previous world: its texture and the reference that would keep its planes alive. */
+  const releaseBackground = (): void => {
+    if (background !== null && !gl.isContextLost()) gl.deleteTexture(background.texture);
+    background = null;
+  };
+
+  const uploadBackground = (source: RenderableWorld): void => {
+    if (background?.world === source) return;
+    releaseBackground();
+    const paintRow = Math.ceil(source.height / PALETTE_ROW);
+    const texels = new Uint8Array(PALETTE_ROW * (paintRow + 1) * 4);
+    const depth = { surfaceY: source.surfaceY, height: source.height, ...(source.rockY === undefined ? {} : { rockY: source.rockY }) };
+    for (let y = 0; y < source.height; y++) texels.set(backgroundColor(y, depth, mapPalette), y * 4);
+    for (let paint = 0; paint < paintCount; paint++) {
+      const color = mapPalette?.paints[paint] ?? 0;
+      texels.set([(color >>> 16) & 0xff, (color >>> 8) & 0xff, color & 0xff, 255], (paintRow * PALETTE_ROW + paint) * 4);
+    }
+    const texture = integerTexture(gl, gl.RGBA8UI, PALETTE_ROW, paintRow + 1);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, PALETTE_ROW, paintRow + 1, gl.RGBA_INTEGER, gl.UNSIGNED_BYTE, texels);
+    textureUploads++;
+    background = { texture, world: source, paintRow };
   };
 
   const chunkTextures = (source: RenderableWorld, chunk: ChunkCoord, chunksX: number): ChunkTextures => {
@@ -264,28 +308,37 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     if (world === null) return;
 
     uploadPalette(world.palette);
+    gl.activeTexture(gl.TEXTURE7);
+    uploadBackground(world);
     const { uniforms } = resources;
     gl.useProgram(resources.program);
+    // Units 0–5: the chunk planes; 6: palette; 7: background and paint colours.
     gl.uniform1i(uniforms.uBlock, 0);
     gl.uniform1i(uniforms.uWall, 1);
     gl.uniform1i(uniforms.uLiquid, 2);
     gl.uniform1i(uniforms.uAmount, 3);
-    gl.uniform1i(uniforms.uPalette, 4);
+    gl.uniform1i(uniforms.uPaint, 4);
+    gl.uniform1i(uniforms.uWallPaint, 5);
+    gl.uniform1i(uniforms.uPalette, 6);
+    gl.uniform1i(uniforms.uBackground, 7);
     gl.uniform2f(uniforms.uCamera, camera.x, camera.y);
     gl.uniform1f(uniforms.uZoom, camera.zoom);
     gl.uniform2f(uniforms.uViewport, viewport.width, viewport.height);
-    gl.uniform1i(uniforms.uSurfaceY, world.surfaceY);
     gl.uniform1i(uniforms.uPaletteLength, paletteUploaded);
     gl.uniform1i(uniforms.uLayers, layers);
     gl.uniform3iv(uniforms.uLiquids, liquidUniform);
-    gl.activeTexture(gl.TEXTURE4);
+    gl.uniform1i(uniforms.uPaintRow, background?.paintRow ?? 0);
+    gl.uniform1i(uniforms.uPaintCount, paintCount);
+    gl.activeTexture(gl.TEXTURE6);
     gl.bindTexture(gl.TEXTURE_2D, resources.palette);
+    gl.activeTexture(gl.TEXTURE7);
+    gl.bindTexture(gl.TEXTURE_2D, background?.texture ?? null);
 
     const chunksX = Math.ceil(world.width / CHUNK_SIZE);
     const visible = visibleChunks(camera, viewport, world);
     for (const chunk of visible) {
       const textures = chunkTextures(world, chunk, chunksX);
-      [textures.block, textures.wall, textures.liquid, textures.amount].forEach((texture, unit) => {
+      [textures.block, textures.wall, textures.liquid, textures.amount, textures.paint, textures.wallPaint].forEach((texture, unit) => {
         gl.activeTexture(gl.TEXTURE0 + unit);
         gl.bindTexture(gl.TEXTURE_2D, texture);
       });
@@ -320,6 +373,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     // Every GL object died with the context: rebuild them and let chunks upload again on demand.
     chunks.clear();
     paletteUploaded = 0;
+    background = null;
     resources = createResources(gl);
     schedule();
   };
@@ -330,6 +384,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     setWorld: (next) => {
       if (next !== world) {
         clearChunks();
+        releaseBackground();
         paletteUploaded = 0;
         world = next;
       }
@@ -362,6 +417,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
         gl.deleteTexture(resources.palette);
         gl.deleteProgram(resources.program);
       }
+      releaseBackground();
     },
   };
 }

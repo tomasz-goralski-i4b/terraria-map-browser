@@ -25,20 +25,35 @@ uniform usampler2D uBlock;
 uniform usampler2D uWall;
 uniform usampler2D uLiquid;
 uniform usampler2D uAmount;
+uniform usampler2D uPaint;
+uniform usampler2D uWallPaint;
 // Row r holds palette entries 256r…256r+255: block colours in x 0…255, wall colours in x 256…511.
 uniform usampler2D uPalette;
+// Background colour of world row y at texel (y % 256, y / 256), resolved on the CPU by backgroundColor();
+// row uPaintRow holds the paint colours by paint ID.
+uniform usampler2D uBackground;
+uniform int uPaintRow;
+uniform int uPaintCount; // 0 without a map palette: paint is ignored
 uniform vec2 uCamera;
 uniform float uZoom;
 uniform vec2 uViewport;
 uniform ivec2 uOrigin;
 uniform ivec2 uSize;
-uniform int uSurfaceY;
 uniform int uPaletteLength;
 uniform int uLayers; // bit 0 background, 1 walls, 2 blocks, 3 liquids
 uniform ivec3 uLiquids[4]; // colours of CWM liquid kinds 1–4
 out vec4 outColor;
 
 const uint ABSENT = 65535u;
+
+// Mirrors paintedColor() in ../palette/map-palette.ts.
+ivec3 painted(ivec3 base, int paint, bool wall) {
+  if (paint == 0 || paint >= uPaintCount) return base;
+  if (paint == 29) return ivec3(base.b / 34);
+  if (paint == 30) return wall ? (255 - base) >> 1 : 255 - base;
+  ivec3 tint = ivec3(texelFetch(uBackground, ivec2(paint, uPaintRow), 0).rgb);
+  return tint * max(base.r, max(base.g, base.b)) / 255;
+}
 
 bool paletteColor(uint index, int xOffset, out ivec3 color) {
   if (index == ABSENT || int(index) >= uPaletteLength) return false;
@@ -54,12 +69,12 @@ void main() {
   int tileY = uOrigin.y + local.y;
 
   ivec4 color = ivec4(0);
-  if ((uLayers & 1) != 0) color = tileY < uSurfaceY ? ivec4(100, 160, 220, 255) : ivec4(40, 30, 20, 255);
+  if ((uLayers & 1) != 0) color = ivec4(texelFetch(uBackground, ivec2(tileY % 256, tileY / 256), 0));
   ivec3 content;
   if ((uLayers & 4) != 0 && paletteColor(texelFetch(uBlock, texel, 0).r, 0, content)) {
-    color = ivec4(content, 255);
+    color = ivec4(painted(content, int(texelFetch(uPaint, texel, 0).r), false), 255);
   } else if ((uLayers & 2) != 0 && paletteColor(texelFetch(uWall, texel, 0).r, 256, content)) {
-    color = ivec4(content, 255);
+    color = ivec4(painted(content, int(texelFetch(uWallPaint, texel, 0).r), true), 255);
   }
 
   uint liquid = texelFetch(uLiquid, texel, 0).r;

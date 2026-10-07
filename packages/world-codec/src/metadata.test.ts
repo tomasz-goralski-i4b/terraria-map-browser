@@ -74,7 +74,7 @@ describe("readWorldMetadata — complete format-326 walk and shared M1/M3", () =
     expect(result.metadata).toEqual({
       name: "SCCR1", seed: "948580918", guid: "87e466e7853c3f48b75abc85e36d4b86",
       worldId: 1743427911, width: 2, height: 4, mode: "classic", evil: "corruption",
-      bounds: { left: 0, right: 32, top: 0, bottom: 64 },
+      bounds: { left: 0, right: 32, top: 0, bottom: 64 }, surfaceLevel: 300, rockLevel: 420.5,
     });
     expect(result.sections).toEqual(readWorldHeader(file).sections);
     expect(file).toEqual(original);
@@ -114,6 +114,18 @@ describe("readWorldMetadata — complete format-326 walk and shared M1/M3", () =
 
   it.each([[0, "corruption"], [1, "crimson"]])("decodes crimson Bool %i", (crimson, evil) => {
     expect(read({ crimson }).metadata.evil).toBe(evil);
+  });
+
+  it.each([[0, 0], [550.9999, 850.0001], [-3.5, 1e6]])("preserves surface level %d and rock level %d", (surfaceLevel, rockLevel) => {
+    expect(read({ surfaceLevel, rockLevel }).metadata).toMatchObject({ surfaceLevel, rockLevel, evil: "corruption" });
+  });
+
+  it.each([
+    ["surfaceLevel", Number.NaN], ["surfaceLevel", Number.POSITIVE_INFINITY], ["rockLevel", Number.NEGATIVE_INFINITY],
+  ] as const)("rejects a non-finite %s (%d) at its own start", (field, value) => {
+    const fixture = buildMetadata({ [field]: value });
+    expectMetadataError(wrapMetadata(fixture.bytes), METADATA_START + fieldOffset(fixture.offsets, field),
+      `${field}: not a finite number`, field);
   });
 
   it.each([-2147483648, -1, 0, 1743427911, 2147483647])("preserves signed world ID %i", (worldId) => {

@@ -10,7 +10,8 @@ reference implementation; the interactive backend is WebGL2 (`MapRenderer`, #87)
 `{ width, height, pixels }`, with row-major straight-alpha RGBA bytes at one pixel per tile.
 Chunk coordinates are indices of 128 × 128 regions; right and bottom edges are cropped.
 Negative, non-integer or past-the-edge chunk indices throw a `RangeError`.
-`options.surfaceY` is the first underground row (the CWM does not contain a surface depth).
+`options.surfaceY` and `options.rockY` are the world's surface and rock levels (`surfaceLevel`/`rockLevel` of the
+world metadata, fractional): the sky is above `surfaceY`, the rock layer starts at `rockY`.
 `options.layers` independently enables background, walls, blocks and liquids.
 `options.mapPalette` supplies map colours (see below); without it every block and wall uses its placeholder.
 
@@ -20,16 +21,29 @@ the same `mapPalette`, which the browser tests assert for every layer combinatio
 ## Terraria map palette
 
 `terrariaMapPalette` (`src/palette/terraria-map-palette.generated.ts`) holds Terraria's map colours: per vanilla
-tile and wall ID one colour per map option, plus water, lava, honey and shimmer. It is generated from a local game
+tile and wall ID one colour per map option, water, lava, honey and shimmer, the background colours and the paint
+colours. It is generated from a local game
 installation and committed ([ADR 0002](../../docs/adr/0002-shipped-map-palette.md)); after a game update run
 
 ```powershell
 ./scripts/map-palette/export.ps1 -TerrariaAssembly '<Terraria directory>/TerrariaServer.exe'
 ```
 
-and commit the regenerated module. `contentColor` uses the first map option of vanilla content and falls back to
-the placeholder for IDs without a map colour, mod and unknown content. Frame-dependent options, paint and depth
-shading are not applied yet.
+and commit the regenerated module. With a map palette:
+
+- **Content** (`contentColor`): the first map option of vanilla content; IDs without a map colour, mod and unknown
+  content keep their placeholder. Frame-dependent options are not applied yet.
+- **Background** (`backgroundColor`): above `surfaceY` the sky gradient entry `floor(y / surfaceY × 255)`; below it
+  the dirt colour, from `rockY` the rock colour, and in the bottom 200 rows the underworld colour. Terraria draws
+  the dirt and rock layers in one colour each; only the sky is a gradient.
+- **Paint** (`paintedColor`, `paint` on blocks, `wallPaint` on walls): a colour paint keeps the base brightness,
+  each paint channel × `max(base channels)` / 255, truncated. Negative paint (30) inverts blocks and inverts walls
+  at half brightness (`(255 − c) >> 1`). Shadow paint (29) is a near-black grey, approximated as `floor(blue / 34)`.
+
+These rules were observed from the game's own map functions on synthetic input (ADR 0002), not read from its code.
+`scripts/map-palette/observe.test.mjs` checks them against a local installation (`TERRARIA_ASSEMBLY`, opt-in): for
+Terraria 1.4.5.8 every background row matches; of 44,051 painted colours 6 are one step brighter than the game's
+(its floating-point rounding of exact products); the shadow approximation is exact for 83 % and at most 5/255 off.
 
 ## Placeholder colours
 

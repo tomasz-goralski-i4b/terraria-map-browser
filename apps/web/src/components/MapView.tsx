@@ -1,11 +1,9 @@
 import { useMemo } from "react";
 import type { RenderableWorld } from "@studio/renderer";
 import { useAppStore } from "../store.js";
+import { toRenderableWorld } from "../world/renderable-world.js";
 import { getDefaultWorldSession } from "../world/world-session.js";
 import { MapCanvas } from "./MapCanvas.js";
-
-/** The world metadata does not carry the surface row yet; Terraria puts it at roughly 30 % of the height. */
-const SURFACE_FRACTION = 0.3;
 
 /**
  * Session messages stay above the canvas of a previously loaded world (which fills the view) and keep receiving
@@ -13,14 +11,9 @@ const SURFACE_FRACTION = 0.3;
  */
 const MESSAGE_STYLE: React.CSSProperties = { position: "relative", zIndex: 2 };
 
-/** The loaded world's planes and palette by reference; nothing is copied. */
 function loadedRenderableWorld(): RenderableWorld | null {
   const loaded = getDefaultWorldSession().getLoadedWorld();
-  if (loaded === null) return null;
-  const { width, height } = loaded.metadata;
-  return {
-    width, height, surfaceY: Math.round(height * SURFACE_FRACTION), planes: loaded.planes, palette: loaded.palette,
-  };
+  return loaded === null ? null : toRenderableWorld(loaded);
 }
 
 export interface MapViewProps {

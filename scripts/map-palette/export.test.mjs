@@ -41,6 +41,8 @@ test("exports every map option of each content ID as a TypeScript module", { ski
       tiles: [[0x76583e], [0x6c7078, 0x60666e], []],
       walls: [[], [0x52565c]],
       liquids: [0x2068d2, 0xe44418, 0xdea424, 0x9854d8],
+      background: { sky: Array.from({ length: 256 }, (_, i) => (i << 8) | 0xff), dirt: 0x5a3c28, rock: 0x464646, hell: 0x321414 },
+      paints: [0xffffff, 0xc80000, 0x0000c8],
     });
   });
 });
@@ -67,5 +69,7 @@ test("exports the palette of a local Terraria installation", {
     assert.ok(palette.tiles.length >= 700);
     assert.ok(palette.walls.length >= 350);
     assert.equal(palette.liquids.length, 4);
+    assert.equal(palette.background.sky.length, 256);
+    assert.ok(palette.paints.length >= 31);
   });
 });

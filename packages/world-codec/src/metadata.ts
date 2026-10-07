@@ -23,6 +23,10 @@ export interface WorldMetadata {
   readonly height: number;
   readonly mode: WorldMode;
   readonly evil: "corruption" | "crimson";
+  /** Row of the surface (`Main.worldSurface`): the sky is above it. Fractional, as stored. */
+  readonly surfaceLevel: number;
+  /** Row where the rock (cavern) layer starts (`Main.rockLayer`). Fractional, as stored. */
+  readonly rockLevel: number;
 }
 
 export interface WorldMetadataResult extends WorldHeader {
@@ -58,6 +62,15 @@ class MetadataReader {
     if (size === 1) return this.reader.readUint8(start);
     if (size === 2) return this.reader.readInt16(start);
     return this.reader.readInt32(start);
+  }
+
+  /** A Double that must be finite: layer levels are used as coordinates. */
+  level(field: string): number {
+    const start = this.offset;
+    this.skip(8);
+    const value = this.reader.readFloat64(start);
+    if (!Number.isFinite(value)) this.fail(start, `${field}: not a finite number`, field);
+    return value;
   }
 
   bool(): boolean {
@@ -184,7 +197,10 @@ export function readWorldMetadata(bytes: Uint8Array): WorldMetadataResult {
   const mode: WorldMode = modes[rawMode] ?? { mode: "unknown", raw: rawMode };
   reader.bools(9); // special seeds (row 13)
   reader.skip(16); // creation time and last played (rows 14–15)
-  reader.skip(1 + 17 * 4 + 2 * 4 + 3 * 8); // moon, backgrounds, spawn, levels/time (16–19)
+  reader.skip(1 + 17 * 4 + 2 * 4); // moon, backgrounds, spawn (16–18)
+  const surfaceLevel = reader.level("surfaceLevel");
+  const rockLevel = reader.level("rockLevel");
+  reader.skip(8); // time (19)
   reader.bool(); reader.skip(4); reader.bools(2); // day, phase, blood moon, eclipse (20)
   reader.skip(8); // dungeon coordinates (21)
   const evil = reader.bool() ? "crimson" : "corruption";
@@ -210,5 +226,5 @@ export function readWorldMetadata(bytes: Uint8Array): WorldMetadataResult {
   reader.bools(3); // dual dungeons and lightning (56–57); row 58 absent in 326
   reader.string("worldGenManifest"); // 59
   reader.finish();
-  return { ...world, metadata: { name, seed, guid, worldId, bounds, width, height, mode, evil } };
+  return { ...world, metadata: { name, seed, guid, worldId, bounds, width, height, mode, evil, surfaceLevel, rockLevel } };
 }

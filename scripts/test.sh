@@ -5,7 +5,7 @@ rc=0
 echo "== backlog automation routing"
 run_logged backlog-tests node --test scripts/backlog/automation-routing.test.mjs scripts/backlog/resume.test.mjs scripts/backlog/usage-probe.test.mjs scripts/backlog/security.test.mjs || rc=1
 echo "== map palette exporter"
-run_logged map-palette-tests node --test scripts/map-palette/export.test.mjs || rc=1
+run_logged map-palette-tests node --test scripts/map-palette/export.test.mjs scripts/map-palette/observe.test.mjs || rc=1
 # Microsoft.Testing.Platform mode (opted in via global.json "test.runner").
 echo "== dotnet test"
 run_logged dotnet-test dotnet test --solution "$SLN" --no-build --no-progress || rc=1

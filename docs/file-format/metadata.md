@@ -54,7 +54,7 @@ the name shift with string lengths. Rows marked *list* repeat their element type
 | 16 | moon type | UInt8 | always | 264 | consume |
 | 17 | tree x-boundaries ×3, tree styles ×4, cave-back x ×3, cave-back styles ×4, ice / jungle / hell back styles | Int32 ×17 | always | 265 | consume |
 | 18 | spawn x, spawn y | Int32 ×2 | always | | consume |
-| 19 | surface level, rock level, time | Double ×3 | always | | consume |
+| 19 | surface level, rock level, time | Double ×3 | always | | **expose** `surfaceLevel`, `rockLevel` (must be finite → otherwise `MalformedMetadata`); time: consume |
 | 20 | day time | Bool; moon phase Int32; blood moon Bool; eclipse Bool | always | | consume |
 | 21 | dungeon x, dungeon y | Int32 ×2 | always | | consume |
 | 22 | **crimson** | Bool | always | 380 | **expose** `evil` (false = corruption, true = crimson) |
