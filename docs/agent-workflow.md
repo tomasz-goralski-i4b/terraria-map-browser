@@ -51,6 +51,7 @@ and runs started by automations can be `autonomous`.
 | `status:pr-ready` | `open-pr.sh` | draft PR exists, waiting for CI |
 | `status:ready-to-merge` | `merge-ready.sh` | second model approved + CI green — **your turn to merge** |
 | `status:stalled` | promoter (watchdog), or a gate when an agent wrote `.tdd/blocked.md` | the chain stopped without a PR (usage limit, crash, a decision only you can make — the issue comment says which) — **needs you**; area stays busy |
+| `later` | you | parked: the promoter ignores it; swap it back to `backlog` to resume |
 | `human` | planner | your work (e.g. a fixture from the game); close the issue when done — it unblocks dependants |
 | `flow:tdd|tests|foundation|spike` + `agent:claude|codex` | planner | workflow and implementer choice |
 | `area:*` | planner | the promoter runs one issue at a time per area |

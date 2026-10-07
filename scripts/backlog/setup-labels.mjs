@@ -9,6 +9,7 @@ const labels = [
   ["status:stalled", "b60205", "Chain stopped without a PR (usage limit, crash) — needs a human; area stays busy"],
   ["status:deferred", "c2e0c6", "Waiting for provider usage (out of credits / near a limit) — the local promoter resumes it"],
   ["follow-up", "fef2c0", "Non-blocking review notes from a merged chain — triage: plan, decide or close"],
+  ["later", "bfdadc", "Parked by a human decision — not promoted until put back to backlog"],
   ["human", "e99695", "Needs a human (e.g. the game, a decision) — the promoter skips it, agents wait for it to close"],
   ["flow:tdd", "5319e7", "tdd-feature workflow"],
   ["flow:foundation", "5319e7", "foundation workflow (no TDD)"],
