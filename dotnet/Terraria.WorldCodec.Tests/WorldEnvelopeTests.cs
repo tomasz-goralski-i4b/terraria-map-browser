@@ -58,7 +58,7 @@ public class WorldEnvelopeTests
     [Fact]
     public void ReadForSave_SyntheticWorld_KeepsMetadataBytesOfFieldsM1OnlyConsumes()
     {
-        var metadata = new SyntheticMetadata { KillCounts = [3, 1, 4], Manifest = "{\"passes\":[\"a\",\"b\"]}" };
+        var metadata = new SyntheticMetadata { KillCounts = [3, 1, 4], Manifest = "{\"passes\":[\"Terrain\",\"Dunes\",\"Corruption\"]}" };
         var file = Build(SentinelSections(), Footer(SyntheticName, SyntheticWorldId), metadata);
 
         var envelope = ReadForSave(file);
@@ -203,6 +203,29 @@ public class WorldEnvelopeTests
         var error = Assert.Throws<WorldFormatException>(() => ReadForSave(file));
 
         AssertError(error, WorldFormatError.MalformedFooter, FooterStart(file) + 1, "invalid name");
+    }
+
+    [Fact]
+    public void ReadForSave_FooterNameLengthAboveInt32Max_ThrowsInvalidNameAtNamePrefix()
+    {
+        // 80 80 80 80 08 encodes 2^31, one above the largest String length.
+        var footer = Hex("01 80 80 80 80 08").Concat(new byte[4]).ToArray();
+        var file = Build(SentinelSections(), footer);
+
+        var error = Assert.Throws<WorldFormatException>(() => ReadForSave(file));
+
+        AssertError(error, WorldFormatError.MalformedFooter, FooterStart(file) + 1, "invalid name");
+    }
+
+    [Fact]
+    public void ReadForSave_FooterNameLengthAboveInt32MaxWithBadMarker_ThrowsInvalidMarkerAtMarker()
+    {
+        var footer = Hex("00 80 80 80 80 08").Concat(new byte[4]).ToArray();
+        var file = Build(SentinelSections(), footer);
+
+        var error = Assert.Throws<WorldFormatException>(() => ReadForSave(file));
+
+        AssertError(error, WorldFormatError.MalformedFooter, FooterStart(file), "invalid marker");
     }
 
     [Fact]
