@@ -1,3 +1,7 @@
+// The WebGL2 backend draws into a DOM canvas; the DOM types are declared here, where they are used, so the rest of
+// the package keeps the DOM-free lib of the base config.
+/// <reference lib="dom" />
+
 import type { ContentRef } from "@studio/world-model";
 import { CHUNK_SIZE, visibleChunks } from "../camera/camera.js";
 import type { Camera, ChunkCoord } from "../camera/camera.js";
