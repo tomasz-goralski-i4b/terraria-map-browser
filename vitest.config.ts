@@ -9,6 +9,61 @@ import { distServer, setDistServerOffline } from "./apps/web/tests/support/dist-
 // Search source and test tooling, never compiled copies in dist/.
 const packageDirs = globSync("{packages,apps}/*/src").map((src) => dirname(src));
 
+// Browser projects are registered by hand: each may need its own plugins or commands.
+const browserProjects = [
+  {
+    extends: true as const,
+    root: "packages/world-codec",
+    test: {
+      name: "@studio/world-codec/browser",
+      include: ["tests/**/*.browser.test.{ts,tsx}"],
+      browser: {
+        enabled: true,
+        headless: true,
+        provider: playwright(),
+        instances: [{ browser: "chromium" as const }],
+      },
+    },
+  },
+  {
+    extends: true as const,
+    root: "apps/web",
+    // Serves the production build (built by scripts/build.sh) for the offline PWA test.
+    plugins: [react(), distServer(resolve("apps/web/dist"))],
+    test: {
+      name: "@studio/web/browser",
+      include: ["tests/**/*.browser.test.{ts,tsx}"],
+      browser: {
+        enabled: true,
+        headless: true,
+        provider: playwright(),
+        instances: [{ browser: "chromium" as const }],
+        commands: {
+          setAppOffline: (_context: unknown, offline: boolean) => {
+            setDistServerOffline(offline);
+          },
+        },
+      },
+    },
+  },
+];
+
+// The Node projects exclude *.browser.test.*, so browser tests of a package without a browser project above would be
+// silently skipped. Fail loading the config instead.
+const unregistered = [
+  ...new Set(
+    globSync("{packages,apps}/*/tests/**/*.browser.test.{ts,tsx}").map((file) =>
+      file.replaceAll("\\", "/").split("/").slice(0, 2).join("/"),
+    ),
+  ),
+].filter((root) => !browserProjects.some((project) => project.root === root));
+if (unregistered.length > 0) {
+  throw new Error(
+    `Browser tests without a browser project in vitest.config.ts: ${unregistered.join(", ")}. ` +
+      "Register one (docs/tooling.md, browser tests).",
+  );
+}
+
 export default defineConfig({
   test: {
     passWithNoTests: false,
@@ -23,41 +78,7 @@ export default defineConfig({
           exclude: ["**/*.browser.test.ts", "**/*.browser.test.tsx"],
         },
       })),
-      {
-        extends: true,
-        root: "packages/world-codec",
-        test: {
-          name: "@studio/world-codec/browser",
-          include: ["tests/**/*.browser.test.ts"],
-          browser: {
-            enabled: true,
-            headless: true,
-            provider: playwright(),
-            instances: [{ browser: "chromium" }],
-          },
-        },
-      },
-      {
-        extends: true,
-        root: "apps/web",
-        // Serves the production build (built by scripts/build.sh) for the offline PWA test.
-        plugins: [react(), distServer(resolve("apps/web/dist"))],
-        test: {
-          name: "@studio/web/browser",
-          include: ["tests/**/*.browser.test.{ts,tsx}"],
-          browser: {
-            enabled: true,
-            headless: true,
-            provider: playwright(),
-            instances: [{ browser: "chromium" }],
-            commands: {
-              setAppOffline: (_context: unknown, offline: boolean) => {
-                setDistServerOffline(offline);
-              },
-            },
-          },
-        },
-      },
+      ...browserProjects,
     ],
   },
 });
