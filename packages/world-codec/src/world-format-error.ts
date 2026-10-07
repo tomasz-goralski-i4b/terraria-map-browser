@@ -22,13 +22,14 @@ export class WorldFormatError extends Error {
   /** Tile row of the offending record, for `MalformedTiles`. */
   readonly y?: number;
 
-  constructor(kind: WorldFormatErrorKind, offset: number, reason: string, tile?: { readonly x?: number; readonly y?: number; readonly field?: string }) {
+  constructor(kind: WorldFormatErrorKind, offset: number, reason: string, diagnostic?: { readonly x?: number; readonly y?: number; readonly field?: string }) {
     super(`${kind} at offset ${String(offset)}: ${reason}`);
     this.name = "WorldFormatError";
     this.kind = kind;
     this.offset = offset;
     this.reason = reason;
-    if (tile?.x !== undefined) this.x = tile.x;
-    if (tile?.y !== undefined) this.y = tile.y;
+    if (diagnostic?.field !== undefined) this.field = diagnostic.field;
+    if (diagnostic?.x !== undefined) this.x = diagnostic.x;
+    if (diagnostic?.y !== undefined) this.y = diagnostic.y;
   }
 }

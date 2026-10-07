@@ -34,8 +34,8 @@ class MetadataReader {
     this.end = end;
   }
 
-  fail(offset: number, reason: string): never {
-    throw new WorldFormatError("MalformedMetadata", offset, reason);
+  fail(offset: number, reason: string, field?: string): never {
+    throw new WorldFormatError("MalformedMetadata", offset, reason, field === undefined ? undefined : { field });
   }
 
   skip(size: number): void {
@@ -66,14 +66,14 @@ class MetadataReader {
     const start = this.offset;
     let length = 0;
     for (let index = 0; index < 5; index++) {
-      if (this.offset === this.end) this.fail(start, `${field}: truncated length prefix`);
+      if (this.offset === this.end) this.fail(start, `${field}: truncated length prefix`, field);
       const byte = this.int(1);
-      if (index === 4 && byte > 7) this.fail(start, `${field}: invalid length prefix`);
+      if (index === 4 && byte > 7) this.fail(start, `${field}: invalid length prefix`, field);
       length += (byte & 127) * 2 ** (7 * index);
       if ((byte & 128) === 0) break;
     }
-    if (length > cap) this.fail(start, `${field}: string exceeds safety limit`);
-    if (length > this.end - this.offset) this.fail(start, `${field}: overruns section`);
+    if (length > cap) this.fail(start, `${field}: string exceeds safety limit`, field);
+    if (length > this.end - this.offset) this.fail(start, `${field}: overruns section`, field);
     const payload = this.offset;
     this.skip(length);
     return this.utf8(payload, length, field, start);
@@ -96,16 +96,16 @@ class MetadataReader {
       } else if (first >= 0xf0 && first <= 0xf4) {
         point = first & 7; continuation = 3; minimum = 0x10000;
       } else if (first > 0x7f) {
-        this.fail(prefix, `${field}: invalid UTF-8`);
+        this.fail(prefix, `${field}: invalid UTF-8`, field);
       }
-      if (cursor + continuation > end) this.fail(prefix, `${field}: invalid UTF-8`);
+      if (cursor + continuation > end) this.fail(prefix, `${field}: invalid UTF-8`, field);
       for (let index = 0; index < continuation; index++) {
         const byte = this.reader.readUint8(cursor++);
-        if ((byte & 0xc0) !== 0x80) this.fail(prefix, `${field}: invalid UTF-8`);
+        if ((byte & 0xc0) !== 0x80) this.fail(prefix, `${field}: invalid UTF-8`, field);
         point = point * 64 + (byte & 63);
       }
       if (point < minimum || point > 0x10ffff || (point >= 0xd800 && point <= 0xdfff)) {
-        this.fail(prefix, `${field}: invalid UTF-8`);
+        this.fail(prefix, `${field}: invalid UTF-8`, field);
       }
       points.push(point);
       if (points.length === 1024) {
@@ -128,7 +128,7 @@ class MetadataReader {
     const count = this.int(countSize);
     // For strings, even an empty value requires one prefix byte.
     if (count < 0 || count > Math.floor((this.end - this.offset) / elementSize)) {
-      this.fail(start, `${field}: list does not fit in section`);
+      this.fail(start, `${field}: list does not fit in section`, field);
     }
     if (strings) {
       for (let index = 0; index < count; index++) this.string(field);
@@ -140,9 +140,9 @@ class MetadataReader {
   dimension(field: string): number {
     const start = this.offset;
     const value = this.int();
-    if (value <= 0) this.fail(start, `${field}: must be positive`);
+    if (value <= 0) this.fail(start, `${field}: must be positive`, field);
     // Implementation safety limit, independent of vanilla preset sizes.
-    if (value > 65536) this.fail(start, `${field}: exceeds safety limit`);
+    if (value > 65536) this.fail(start, `${field}: exceeds safety limit`, field);
     return value;
   }
 
@@ -168,7 +168,7 @@ export function readWorldMetadata(bytes: Uint8Array): WorldMetadataResult {
   // Each column needs a record byte. Side limits above keep this product exact
   // in JS number arithmetic (no 32-bit bitwise multiplication or byte sizing).
   if (width > world.sections.tiles.end - world.sections.tiles.start || width * height > 2 ** 28) {
-    reader.fail(widthOffset, "width: tile section too short or dimensions exceed safety limit");
+    reader.fail(widthOffset, "width: tile section too short or dimensions exceed safety limit", "width");
   }
   const rawMode = reader.int();
   const modes = ["classic", "expert", "master", "journey"] as const;
