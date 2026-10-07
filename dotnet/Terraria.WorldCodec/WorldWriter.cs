@@ -111,7 +111,8 @@ public static class WorldWriter
             }
         }
 
-        if (envelope.MetadataBytes.Length != table.Metadata.End - table.Metadata.Start)
+        if (envelope.MetadataBytes.Length != table.Metadata.End - table.Metadata.Start
+            || table.Metadata.Start != bytes.Length)
         {
             throw new WorldWriteException("metadata bytes contradict the section table");
         }
@@ -120,6 +121,54 @@ public static class WorldWriter
             || !envelope.OpaqueSections.Select(section => section.Name).SequenceEqual(OpaqueSectionNames))
         {
             throw new WorldWriteException("sections 3-10 are missing or out of order");
+        }
+
+        WorldSectionBoundary[] sourceBoundaries =
+        [
+            table.Chests,
+            table.Signs,
+            table.NpcsAndMobs,
+            table.TileEntities,
+            table.WeightedPressurePlates,
+            table.TownManager,
+            table.Bestiary,
+            table.CreativePowers,
+        ];
+        for (var index = 0; index < sourceBoundaries.Length; index++)
+        {
+            var boundary = sourceBoundaries[index];
+            if (envelope.OpaqueSections[index].Bytes.Length != boundary.End - boundary.Start
+                || boundary.End <= boundary.Start)
+            {
+                throw new WorldWriteException($"section {OpaqueSectionNames[index]} contradicts its source boundary");
+            }
+        }
+
+        ValidateMetadataAgainstModel(envelope);
+    }
+
+    // The preserved metadata bytes are what gets written, so the model fields must still say the same thing.
+    private static void ValidateMetadataAgainstModel(WorldEnvelope envelope)
+    {
+        var world = envelope.World;
+        WorldMetadata preserved;
+        try
+        {
+            using var stream = new MemoryStream();
+            stream.Write(envelope.FileHeaderBytes.Span);
+            stream.Write(envelope.MetadataBytes.Span);
+            preserved = WorldReader.ReadMetadata(stream, world.Header, envelope.Table);
+        }
+        catch (WorldFormatException exception)
+        {
+            throw new WorldWriteException($"metadata bytes are malformed: {exception.Message}");
+        }
+
+        if (preserved != world.Metadata
+            || world.Tiles.Width != preserved.Width
+            || world.Tiles.Height != preserved.Height)
+        {
+            throw new WorldWriteException("metadata or tile grid contradict the preserved metadata bytes");
         }
     }
 
