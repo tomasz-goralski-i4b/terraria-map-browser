@@ -78,6 +78,8 @@ commit_state() {
 # An agent that cannot proceed without a human writes .tdd/blocked.md and ends its step (autonomous runs override
 # questions with "continue", so asking in chat only loops). Every gate after an agent step calls this first: the
 # chain stops with exit 3, and the issue gets status:stalled plus the agent's note, so the watchdog adds nothing.
+# A gate that runs again on the same note (resume, manual re-run) does not post it twice: .tdd/blocked-posted keeps
+# the note that is already on the issue.
 stop_if_blocked() {
   [ -f .tdd/blocked.md ] || return 0
   echo "BLOCKED: the agent needs a human decision (.tdd/blocked.md):"
@@ -86,10 +88,12 @@ stop_if_blocked() {
   [ -f .tdd/issue ] && n=$(tr -dc '0-9' < .tdd/issue)
   if [ -n "$n" ] && command -v gh >/dev/null; then
     gh issue edit "$n" --add-label status:stalled >/dev/null 2>&1 || true
-    { printf '🛑 **Blocked — needs a human decision** (step before `%s`).\n\n' "$(basename "$0" .sh)"
-      cat .tdd/blocked.md
-      printf '\n\nDecide in the issue body (Scope / Acceptance criteria / flow label), then remove and re-add `agent:ready`.\n'
-    } | gh issue comment "$n" --body-file - >/dev/null 2>&1 || true
+    if ! cmp -s .tdd/blocked.md .tdd/blocked-posted; then
+      { printf '🛑 **Blocked — needs a human decision** (step before `%s`).\n\n' "$(basename "$0" .sh)"
+        cat .tdd/blocked.md
+        printf '\n\nDecide in the issue body (Scope / Acceptance criteria / flow label), then remove and re-add `agent:ready`.\n'
+      } | gh issue comment "$n" --body-file - >/dev/null 2>&1 && cp .tdd/blocked.md .tdd/blocked-posted
+    fi
   fi
   exit 3
 }

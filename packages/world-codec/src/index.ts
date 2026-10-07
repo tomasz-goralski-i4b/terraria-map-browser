@@ -10,3 +10,4 @@ export {
 } from "./header.js";
 export { WorldFormatError, type WorldFormatErrorKind } from "./world-format-error.js";
 export { readWorldMetadata, type WorldMetadata, type WorldMetadataResult, type WorldMode } from "./metadata.js";
+export { readWorldTiles, type TileContentRef, type TilePlanes, type WorldTilesResult } from "./tiles.js";
