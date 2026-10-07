@@ -163,7 +163,9 @@ fixed by XNB:
   Then for each target length: pretree symbol `z`:
   - 0–16: `new = (old − z) mod 17`;
   - 17: `4 + read(4)` zeros; 18: `20 + read(5)` zeros;
-  - 19: `n = 4 + read(1)`, then another pretree symbol `z'`, and `n` lengths become `(old − z') mod 17`.
+  - 19: `n = 4 + read(1)`, then another pretree symbol `z'`; **one** value `v = (old_first − z') mod 17` is
+    computed from the old length of the *first* position of the run only, and all `n` positions are set to `v`
+    (A6 602–608). Example: old lengths `[8, 9, 10, 11]`, `n = 4`, `z' = 1` → `[7, 7, 7, 7]`, not `[7, 8, 9, 10]`.
 
   `old` is the length from the previous block (all zero at stream start). Main and length tree lengths are never
   reset between blocks or chunks.
@@ -173,7 +175,10 @@ fixed by XNB:
   symbol), match length = header (+ footer) + 2; position slot `m >> 3`.
   - Slots 0, 1, 2 = repeated offsets R0, R1, R2 (using R1 or R2 swaps it with R0).
   - Slot 3 = offset 1. Slots ≥ 4: `offset = position_base[slot] − 2 + extra`, where `extra_bits` is 0,0,0,0,1,1,2,2,…
-    up to 17 and `position_base` its running sum (A6 76–95); the new offset is pushed to the front (R2 ← R1 ← R0).
+    up to 17 and `position_base` its running sum (A6 76–95).
+  - **Every slot ≥ 3 — slot 3 included — pushes its offset to the front of the queue:**
+    `(R0, R1, R2) ← (offset, old R0, old R1)`, in verbatim and aligned blocks alike (A6 265–280). Example: from
+    `(4, 1, 1)`, a slot-3 match gives `(1, 4, 1)`, so a following slot-1 match copies from offset 4.
   - In aligned blocks, a slot with `extra_bits ≥ 3` reads `extra_bits − 3` verbatim bits, shifts them left by 3 and
     adds one aligned-tree symbol; with exactly 3 it uses the aligned symbol alone; with 1–2 it reads verbatim bits
   as in a verbatim block (A6 362–395).
@@ -310,9 +315,20 @@ project); nothing is derived from game files.
    With 256 literals of length 8 the canonical code of a literal is the byte itself, so the block body is the
    payload written MSB first into 16-bit little-endian words. This exercises tree reading, delta coding and the bit
    reader without writing an LZX compressor.
-4. **Aligned blocks and real matches** are only covered by the opt-in integration test (L uses aligned blocks
+4. **Hand-assembled verbatim blocks for the two easy-to-miss rules** (no compressor needed, bits written by the
+   test builder):
+   - *Repeated-offset queue:* an uncompressed block that sets R0–R2 = 4, 1, 1, followed by a verbatim block whose
+     main tree gives length 8 to the literals plus a few match symbols (header 0, slots 1 and 3 — e.g. by giving
+     symbols 256 + 8 and 256 + 24 short codes and shortening the literal codes so the tree stays complete). Body:
+     some literals, a slot-3 match (offset 1), then a slot-1 match; the expected output copies from offset 4. A
+     decoder that does not push slot 3 onto the queue copies from offset 1 and fails.
+   - *Pretree symbol 19 over changing old lengths:* two consecutive verbatim blocks; the first leaves four
+     consecutive main-tree lengths at different values (e.g. 8, 9, 10, 11), the second updates them with one
+     symbol-19 run (`n = 4`, `z' = 1`). Assert the resulting lengths are all 7 (directly on the tree reader, or via
+     a payload whose decoding only succeeds with those lengths).
+5. **Aligned blocks and general matches** are only covered by the opt-in integration test (L uses aligned blocks
    exclusively) unless a later issue adds a minimal encoder.
-5. **Negative vectors:** bad magic, platform ≠ `w`, version ≠ 5, unknown flag bit, file-size mismatch, truncated
+6. **Negative vectors:** bad magic, platform ≠ `w`, version ≠ 5, unknown flag bit, file-size mismatch, truncated
    header, truncated chunk, block type 0 or 4–7, E8 flag set, frame total ≠ decompressed size, wrong reader name,
    surface format ≠ 0, data length ≠ `w × h × 4`, trailing bytes. Each gets a precise error (names decided by the
    implementation issue; the two codecs must agree).
