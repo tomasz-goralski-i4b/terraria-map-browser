@@ -25,11 +25,9 @@ function newClient(): WorldWorkerClient {
   return client;
 }
 
-/** Compile-time guard, never called: a client must own a Worker factory so that abort can stop a running decode. */
-export function constructorWithoutFactoryIsNotPublic(worker: Worker): void {
-  // @ts-expect-error -- the constructor is private; WorldWorkerClient.create(factory) is the only construction mode
-  void new WorldWorkerClient(worker);
-}
+/** Compile-time guard: a client must own a Worker factory so that abort can stop a running decode. */
+type HasPublicConstructor = typeof WorldWorkerClient extends abstract new (...args: never[]) => unknown ? true : false;
+export const constructorIsPrivate: HasPublicConstructor = false;
 afterEach(() => {
   for (const client of clients.splice(0)) client.dispose();
 });
@@ -175,28 +173,6 @@ describe("world Worker", () => {
 
     const result = await client.parse(bytes.buffer.slice(0));
     expect(result.palette.length).toBeGreaterThan(0);
-  });
-
-  it("cancel_ForAlreadyCompletedRequest_DoesNotBlockLaterRequestWithSameId", async () => {
-    const worker = new Worker(new URL("../src/world-worker.ts", import.meta.url), { type: "module" });
-    try {
-      const bytes = await loadWorld("SCCO1.wld");
-      const next = (): Promise<{ type: string }> => Promise.race([
-        new Promise<{ type: string }>((resolve) => {
-          worker.addEventListener("message", (event: MessageEvent<{ type: string }>) => { resolve(event.data); }, { once: true });
-        }),
-        new Promise<{ type: string }>((resolve) => window.setTimeout(() => { resolve({ type: "timeout" }); }, 3_000)),
-      ]);
-      const first = next();
-      worker.postMessage({ type: "parse", requestId: 7, input: bytes.buffer.slice(0) });
-      expect((await first).type).toBe("parsed");
-      worker.postMessage({ type: "cancel", requestId: 7 });
-      const second = next();
-      worker.postMessage({ type: "parse", requestId: 7, input: bytes.buffer.slice(0) });
-      expect((await second).type).toBe("parsed");
-    } finally {
-      worker.terminate();
-    }
   });
 
   it("parse_AfterAbortedRequest_SameClientStillParses", async () => {

@@ -29,15 +29,15 @@ function cancelledFailure(message: string): WorldWorkerFailure {
 /** Main-thread client of the world-parsing Worker; requests are independent, a failure never poisons the next. */
 export class WorldWorkerClient {
   #worker: Worker;
-  readonly #createWorker: (() => Worker) | undefined;
+  readonly #createWorker: () => Worker;
   readonly #pending = new Map<number, Pending>();
   #nextRequestId = 1;
   #disposed = false;
 
-  constructor(worker: Worker, createWorker?: () => Worker) {
-    this.#worker = worker;
+  private constructor(createWorker: () => Worker) {
     this.#createWorker = createWorker;
-    this.#attach(worker);
+    this.#worker = createWorker();
+    this.#attach(this.#worker);
   }
 
   #attach(worker: Worker): void {
@@ -61,10 +61,10 @@ export class WorldWorkerClient {
 
   /**
    * Creates a client that owns its Worker through `createWorker`: aborting an in-flight parse terminates that
-   * Worker (a decode cannot be interrupted) and continues on a fresh one.
+   * Worker (a decode cannot be interrupted) and continues on a fresh one. This is the only construction mode.
    */
   static create(createWorker: () => Worker): WorldWorkerClient {
-    return new WorldWorkerClient(createWorker(), createWorker);
+    return new WorldWorkerClient(createWorker);
   }
 
   /** Parses a `File` or transfers an `ArrayBuffer` (which detaches in the caller). Rejects with `WorldWorkerError`. */
@@ -82,10 +82,6 @@ export class WorldWorkerClient {
         const pending = this.#settle(requestId);
         if (pending === undefined) return;
         pending.reject(new WorldWorkerError(requestId, cancelledFailure("The parse request was aborted")));
-        if (this.#createWorker === undefined) {
-          this.#post({ type: "cancel", requestId });
-          return;
-        }
         // A running decode cannot be interrupted: drop the busy Worker (and every request on it), continue on a new one.
         this.#rejectAll(cancelledFailure("The world Worker was restarted after another request was aborted"));
         this.#worker.terminate();

@@ -1,10 +1,15 @@
 import type { WorldFormatErrorKind } from "./world-format-error.js";
 import type { WorldTilesResult } from "./tiles.js";
 
-/** Main thread → Worker. `input` is a `File` (read inside the Worker) or an ArrayBuffer that is transferred. */
-export type WorldWorkerRequest =
-  | { readonly type: "parse"; readonly requestId: number; readonly input: File | ArrayBuffer }
-  | { readonly type: "cancel"; readonly requestId: number };
+/**
+ * Main thread → Worker. `input` is a `File` (read inside the Worker) or an ArrayBuffer that is transferred.
+ * There is no cancel message: a decode cannot be interrupted, so the client cancels by terminating the Worker.
+ */
+export interface WorldWorkerRequest {
+  readonly type: "parse";
+  readonly requestId: number;
+  readonly input: File | ArrayBuffer;
+}
 
 /** Structured failure; `code` is a format error kind, or `Cancelled` / `Internal`. */
 export interface WorldWorkerFailure {
