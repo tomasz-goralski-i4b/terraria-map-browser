@@ -19,7 +19,9 @@ export type WorldWorkerResponse =
   | { readonly type: "failed"; readonly requestId: number; readonly error: WorldWorkerFailure };
 
 /** Every unique plane ArrayBuffer of `result`, once each, for `postMessage(..., { transfer })`. */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars -- RED stub, implemented in the green phase
-export function collectTransferList(_result: WorldTilesResult): ArrayBuffer[] {
-  throw new Error("not implemented");
+export function collectTransferList(result: WorldTilesResult): ArrayBuffer[] {
+  const unique = new Set<ArrayBuffer>();
+  const planes: ArrayBufferView[] = Object.values<ArrayBufferView>(result.planes as unknown as Record<string, ArrayBufferView>);
+  for (const plane of planes) unique.add(plane.buffer as ArrayBuffer);
+  return [...unique];
 }
