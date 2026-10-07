@@ -85,3 +85,9 @@ git diff --stat packages/test-fixtures/snapshots/m1   # the PR shows exactly wha
 ```
 The tests of a refreshing run pass by construction — run them again without the variable to confirm.
 If a world in the corpus ever falls outside the M1 contract, report it as a blocker instead of loosening the assertions.
+
+## TypeScript contract checks
+
+After building (`pnpm build`), run `pnpm vitest run packages/world-codec/tests/shared-contracts.test.ts`.
+This checks the shared REC/SEC/META vectors and corpus golden summaries with the independent TypeScript
+codec, without invoking .NET or refreshing any expectations.

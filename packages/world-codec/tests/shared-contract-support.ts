@@ -107,30 +107,39 @@ function gameMode(metadata: WorldMetadata): number {
 
 /** Full-world filler gives the public codec the declared REC/SEC seam without copying its decoder. */
 function tileHarness(vector: ContractVector, input: Uint8Array): { bytes: Uint8Array; start: number } {
-  let width = vector.entry === "SEC" ? contextNumber(vector, "width") : 1;
-  let height = vector.entry === "SEC" ? contextNumber(vector, "height") : contextNumber(vector, "columnHeight");
-  let tiles = input;
+  const width = vector.entry === "SEC" ? contextNumber(vector, "width") : 1;
+  const height = vector.entry === "SEC" ? contextNumber(vector, "height") : contextNumber(vector, "columnHeight");
+  const metadata = buildMetadata({ width, height }).bytes;
+  const start = METADATA_START + metadata.length;
+  const framing = vector.context["frameImportant"] as { k: number; frame: number[] };
+  const wrapTiles = (tiles: Uint8Array): Uint8Array => {
+    const bytes = wrapMetadata(metadata, tiles.length);
+    bytes.set(tiles, start);
+    new DataView(bytes.buffer).setInt16(70, framing.k, true);
+    bytes.fill(0, 72, 72 + Math.ceil(framing.k / 8));
+    for (const id of framing.frame) bytes[72 + Math.floor(id / 8)] = (bytes[72 + Math.floor(id / 8)] ?? 0) | (1 << (id % 8));
+    return bytes;
+  };
+  let bytes = wrapTiles(input);
   if (vector.entry === "REC") {
-    const runWidth = (input[0] ?? 0) >> 6;
-    if (runWidth === 0 && vector.id !== "R6") height = 1;
-    else if (runWidth === 1 || runWidth === 2) {
-      // Only the input's terminal run count sizes the filler; expected results are never consulted.
-      const run = runWidth === 1 ? input.at(-1) ?? 0 : new ByteReader(input).readInt16(input.length - 2);
-      if (run >= 0 && run < height) {
-        tiles = new Uint8Array(input.length + height - run - 1);
+    try { readWorldTiles(bytes); } catch (error) {
+      // Only pad after complete records: an absent next record starts exactly at inputEnd.
+      // A truncated payload starts earlier, so filler cannot repair malformed supplied bytes.
+      // The codec gives the remaining rows without a second decoder or vector-name exceptions.
+      if (error instanceof WorldFormatError && error.kind === "MalformedTiles" && error.reason === "truncated record" &&
+        error.offset === start + input.length && error.y !== undefined && error.y > 0) {
+        const tiles = new Uint8Array(input.length + (height - error.y) * 2);
         tiles.set(input);
+        // Toggle the first record's red wire so even an empty run differs from its filler.
+        const firstRedWire = ((input[0] ?? 0) & 1) !== 0 && ((input[1] ?? 0) & 2) !== 0;
+        for (let offset = input.length; offset < tiles.length; offset += 2) {
+          tiles[offset] = 1;
+          tiles[offset + 1] = firstRedWire ? 0 : 2;
+        }
+        bytes = wrapTiles(tiles);
       }
     }
-    width = 1;
   }
-  const metadata = buildMetadata({ width, height }).bytes;
-  const bytes = wrapMetadata(metadata, tiles.length);
-  const start = METADATA_START + metadata.length;
-  bytes.set(tiles, start);
-  const framing = vector.context["frameImportant"] as { k: number; frame: number[] };
-  new DataView(bytes.buffer).setInt16(70, framing.k, true);
-  bytes.fill(0, 72, 72 + Math.ceil(framing.k / 8));
-  for (const id of framing.frame) bytes[72 + Math.floor(id / 8)] = (bytes[72 + Math.floor(id / 8)] ?? 0) | (1 << (id % 8));
   return { bytes, start };
 }
 
@@ -169,11 +178,8 @@ export function decodeVectorCase(vector: ContractVector, variant: VectorCase): u
       const { metadata } = readWorldMetadata(harness.bytes);
       const result: Record<string, unknown> = { kind: "metadata", height: metadata.height, width: metadata.width };
       if (vector.context["startsAt"] === "name") {
-        const reader = new ByteReader(input);
-        const bounds = input.length - 28; // prefix ends after bounds, dimensions and gameMode (rows 6–12)
         Object.assign(result, { name: metadata.name, seed: metadata.seed, guid: metadata.guid, worldId: metadata.worldId,
-          bounds: { left: reader.readInt32(bounds), right: reader.readInt32(bounds + 4),
-            top: reader.readInt32(bounds + 8), bottom: reader.readInt32(bounds + 12) }, gameMode: gameMode(metadata) });
+          bounds: metadata.bounds, gameMode: gameMode(metadata) });
       }
       return { result };
     }
@@ -183,7 +189,7 @@ export function decodeVectorCase(vector: ContractVector, variant: VectorCase): u
         tiles: Array.from({ length: world.metadata.width * world.metadata.height }, (_, index) => semanticTile(world, index)) } };
     }
     const tile = semanticTile(world, 0);
-    // Successful run records have an owned tile followed by empty filler. Count what the codec
+    // Successful run records have a tile followed by distinct filler. Count what the codec
     // actually expanded; reading the expected run (or echoing the encoded count) would hide defects.
     let run = 0;
     while (run + 1 < world.metadata.height && JSON.stringify(semanticTile(world, run + 1)) === JSON.stringify(tile)) run++;

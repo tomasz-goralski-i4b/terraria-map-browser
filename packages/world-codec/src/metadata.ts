@@ -4,12 +4,21 @@ import { WorldFormatError } from "./world-format-error.js";
 
 export type WorldMode = "classic" | "expert" | "master" | "journey" | { mode: "unknown"; raw: number };
 
+/** Signed pixel bounds stored in metadata rows 6–9; not inferred from tile dimensions. */
+export interface WorldBounds {
+  readonly left: number;
+  readonly right: number;
+  readonly top: number;
+  readonly bottom: number;
+}
+
 /** Validated format-326 metadata, before any tile planes are allocated. */
 export interface WorldMetadata {
   readonly name: string;
   readonly seed: string;
   readonly guid: string;
   readonly worldId: number;
+  readonly bounds: WorldBounds;
   readonly width: number;
   readonly height: number;
   readonly mode: WorldMode;
@@ -161,7 +170,7 @@ export function readWorldMetadata(bytes: Uint8Array): WorldMetadataResult {
   reader.skip(8); // world-gen version (row 3)
   const guid = reader.guid();
   const worldId = reader.int();
-  reader.skip(16); // pixel bounds (rows 6–9)
+  const bounds: WorldBounds = { left: reader.int(), right: reader.int(), top: reader.int(), bottom: reader.int() };
   const height = reader.dimension("height");
   const widthOffset = reader.offset;
   const width = reader.dimension("width");
@@ -201,5 +210,5 @@ export function readWorldMetadata(bytes: Uint8Array): WorldMetadataResult {
   reader.bools(3); // dual dungeons and lightning (56–57); row 58 absent in 326
   reader.string("worldGenManifest"); // 59
   reader.finish();
-  return { ...world, metadata: { name, seed, guid, worldId, width, height, mode, evil } };
+  return { ...world, metadata: { name, seed, guid, worldId, bounds, width, height, mode, evil } };
 }
