@@ -1,4 +1,6 @@
-import type { WorldHeader } from "./header.js";
+import { ByteReader } from "./byte-reader.js";
+import { readWorldHeader, type WorldHeader } from "./header.js";
+import { WorldFormatError } from "./world-format-error.js";
 
 export type WorldMode = "classic" | "expert" | "master" | "journey" | { mode: "unknown"; raw: number };
 
@@ -18,8 +20,186 @@ export interface WorldMetadataResult extends WorldHeader {
   readonly metadata: WorldMetadata;
 }
 
-/** Reads the validated header and all metadata fields, bounded by pointer[1]. */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars -- RED keeps the input signature without implementing parsing.
-export function readWorldMetadata(_bytes: Uint8Array): WorldMetadataResult {
-  throw new Error("not implemented");
+/** A cursor bounded by the metadata section, never by the whole file. */
+class MetadataReader {
+  private readonly reader: ByteReader;
+  private readonly bytes: Uint8Array;
+  private readonly end: number;
+  offset: number;
+
+  constructor(bytes: Uint8Array, start: number, end: number) {
+    this.bytes = bytes;
+    this.reader = new ByteReader(bytes);
+    this.offset = start;
+    this.end = end;
+  }
+
+  fail(offset: number, reason: string): never {
+    throw new WorldFormatError("MalformedMetadata", offset, reason);
+  }
+
+  skip(size: number): void {
+    if (size > this.end - this.offset) this.fail(this.offset, "overruns section");
+    this.offset += size;
+  }
+
+  int(size = 4): number {
+    const start = this.offset;
+    this.skip(size);
+    if (size === 1) return this.reader.readUint8(start);
+    if (size === 2) return this.reader.readInt16(start);
+    return this.reader.readInt32(start);
+  }
+
+  bool(): boolean {
+    const start = this.offset;
+    const value = this.int(1);
+    if (value > 1) this.fail(start, "invalid boolean");
+    return value === 1;
+  }
+
+  bools(count: number): void {
+    for (let index = 0; index < count; index++) this.bool();
+  }
+
+  string(field: string, cap = 1048576): string {
+    const start = this.offset;
+    let length = 0;
+    for (let index = 0; index < 5; index++) {
+      if (this.offset === this.end) this.fail(start, `${field}: truncated length prefix`);
+      const byte = this.int(1);
+      if (index === 4 && byte > 7) this.fail(start, `${field}: invalid length prefix`);
+      length += (byte & 127) * 2 ** (7 * index);
+      if ((byte & 128) === 0) break;
+    }
+    if (length > cap) this.fail(start, `${field}: string exceeds safety limit`);
+    if (length > this.end - this.offset) this.fail(start, `${field}: overruns section`);
+    const payload = this.offset;
+    this.skip(length);
+    return this.utf8(payload, length, field, start);
+  }
+
+  /** Strict UTF-8 without Node/DOM dependencies; preserve BOM and NUL as data. */
+  private utf8(start: number, length: number, field: string, prefix: number): string {
+    const chunks: string[] = [];
+    const points: number[] = [];
+    const end = start + length;
+    for (let cursor = start; cursor < end;) {
+      const first = this.reader.readUint8(cursor++);
+      let point = first;
+      let continuation = 0;
+      let minimum = 0;
+      if (first >= 0xc2 && first <= 0xdf) {
+        point = first & 31; continuation = 1; minimum = 0x80;
+      } else if (first >= 0xe0 && first <= 0xef) {
+        point = first & 15; continuation = 2; minimum = 0x800;
+      } else if (first >= 0xf0 && first <= 0xf4) {
+        point = first & 7; continuation = 3; minimum = 0x10000;
+      } else if (first > 0x7f) {
+        this.fail(prefix, `${field}: invalid UTF-8`);
+      }
+      if (cursor + continuation > end) this.fail(prefix, `${field}: invalid UTF-8`);
+      for (let index = 0; index < continuation; index++) {
+        const byte = this.reader.readUint8(cursor++);
+        if ((byte & 0xc0) !== 0x80) this.fail(prefix, `${field}: invalid UTF-8`);
+        point = point * 64 + (byte & 63);
+      }
+      if (point < minimum || point > 0x10ffff || (point >= 0xd800 && point <= 0xdfff)) {
+        this.fail(prefix, `${field}: invalid UTF-8`);
+      }
+      points.push(point);
+      if (points.length === 1024) {
+        chunks.push(String.fromCodePoint(...points));
+        points.length = 0;
+      }
+    }
+    chunks.push(String.fromCodePoint(...points));
+    return chunks.join("");
+  }
+
+  guid(): string {
+    const start = this.offset;
+    this.skip(16);
+    return Array.from(this.bytes.subarray(start, this.offset), (byte) => byte.toString(16).padStart(2, "0")).join("");
+  }
+
+  list(field: string, countSize: number, elementSize: number, strings = false): void {
+    const start = this.offset;
+    const count = this.int(countSize);
+    // For strings, even an empty value requires one prefix byte.
+    if (count < 0 || count > Math.floor((this.end - this.offset) / elementSize)) {
+      this.fail(start, `${field}: list does not fit in section`);
+    }
+    if (strings) {
+      for (let index = 0; index < count; index++) this.string(field);
+    } else {
+      this.skip(count * elementSize);
+    }
+  }
+
+  dimension(field: string): number {
+    const start = this.offset;
+    const value = this.int();
+    if (value <= 0) this.fail(start, `${field}: must be positive`);
+    // Implementation safety limit, independent of vanilla preset sizes.
+    if (value > 65536) this.fail(start, `${field}: exceeds safety limit`);
+    return value;
+  }
+
+  finish(): void {
+    if (this.offset !== this.end) this.fail(this.offset, "unread bytes");
+  }
+}
+
+/** Reads the validated header and all format-326 metadata rows, bounded by pointer[1]. */
+export function readWorldMetadata(bytes: Uint8Array): WorldMetadataResult {
+  const world = readWorldHeader(bytes);
+  const reader = new MetadataReader(bytes, world.sections.metadata.start, world.sections.metadata.end);
+  const name = reader.string("name", 4096);
+  const seed = reader.string("seed", 4096);
+  // Consume UInt64/Int64 as eight raw bytes, never through a lossy JS number.
+  reader.skip(8); // world-gen version (row 3)
+  const guid = reader.guid();
+  const worldId = reader.int();
+  reader.skip(16); // pixel bounds (rows 6–9)
+  const height = reader.dimension("height");
+  const widthOffset = reader.offset;
+  const width = reader.dimension("width");
+  // Each column needs a record byte. Side limits above keep this product exact
+  // in JS number arithmetic (no 32-bit bitwise multiplication or byte sizing).
+  if (width > world.sections.tiles.end - world.sections.tiles.start || width * height > 2 ** 28) {
+    reader.fail(widthOffset, "width: tile section too short or dimensions exceed safety limit");
+  }
+  const rawMode = reader.int();
+  const modes = ["classic", "expert", "master", "journey"] as const;
+  const mode: WorldMode = modes[rawMode] ?? { mode: "unknown", raw: rawMode };
+  reader.bools(9); // special seeds (row 13)
+  reader.skip(16); // creation time and last played (rows 14–15)
+  reader.skip(1 + 17 * 4 + 2 * 4 + 3 * 8); // moon, backgrounds, spawn, levels/time (16–19)
+  reader.bool(); reader.skip(4); reader.bools(2); // day, phase, blood moon, eclipse (20)
+  reader.skip(8); // dungeon coordinates (21)
+  const evil = reader.bool() ? "crimson" : "corruption";
+  reader.bools(18); // bosses, NPCs and invasions (23–25)
+  reader.bools(2); reader.skip(1 + 4); reader.bools(2); // orb, meteor, altar, hardmode, doom (26–27)
+  reader.skip(3 * 4 + 2 * 8 + 1); // invasion, slime rain and sundial (28–30)
+  reader.bool(); reader.skip(4 + 4 + 3 * 4 + 8 + 4 + 2 + 4); // rain, ores, backgrounds, clouds/wind (31)
+  reader.list("anglerFinishers", 4, 1, true); // 32
+  reader.bool(); reader.skip(4); reader.bools(3); reader.skip(8); // NPCs, quest, invasion/cultist (33)
+  reader.list("killCounts", 2, 4); // 34
+  reader.list("claimableBanners", 2, 2); // 35
+  reader.bools(19); // fast-forward, bosses, pillars/apocalypse (36–38)
+  reader.bools(2); reader.skip(4); reader.list("partyingNpcs", 4, 4); // party (39)
+  reader.bool(); reader.skip(12); // sandstorm (40)
+  reader.bools(4); reader.skip(5); reader.bool(); // bartender/army, backgrounds, combat book (41–43)
+  reader.skip(4); reader.bools(3); // lantern night (44)
+  reader.list("treeTopVariations", 4, 4); // 45
+  reader.bools(2); reader.skip(16); reader.bools(3); // holidays, ores, pets (46–48)
+  reader.bools(12); reader.bools(9); // bosses, NPC unlocks, book II, satchel, slimes (49–50)
+  reader.bool(); reader.skip(1); // dusk and moondial (51)
+  reader.bools(2); reader.bools(2); reader.skip(8); // holidays, vampire/infected, meteor/coins (52–54)
+  reader.bool(); reader.list("teamSpawns", 1, 4); // team seed and coordinates (55)
+  reader.bools(3); // dual dungeons and lightning (56–57); row 58 absent in 326
+  reader.string("worldGenManifest"); // 59
+  reader.finish();
+  return { ...world, metadata: { name, seed, guid, worldId, width, height, mode, evil } };
 }
