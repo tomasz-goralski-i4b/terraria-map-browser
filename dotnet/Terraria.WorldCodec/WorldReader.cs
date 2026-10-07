@@ -105,7 +105,7 @@ public static class WorldReader
     }
 
     /// <summary>Footer checks in the order of docs/file-format/writer.md, "Footer (M2)".</summary>
-    private static void ValidateFooter(ReadOnlySpan<byte> footer, long start, WorldMetadata metadata)
+    internal static void ValidateFooter(ReadOnlySpan<byte> footer, long start, WorldMetadata metadata)
     {
         const int MarkerAndIdLength = 1 + sizeof(int);
         var idEnd = footer.Length - sizeof(int);

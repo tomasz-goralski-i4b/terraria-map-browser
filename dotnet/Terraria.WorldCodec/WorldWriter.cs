@@ -1,3 +1,6 @@
+using System.Buffers.Binary;
+using System.Text;
+
 namespace Terraria.WorldCodec;
 
 /// <summary>
@@ -6,12 +9,119 @@ namespace Terraria.WorldCodec;
 /// </summary>
 public static class WorldWriter
 {
+    private const string Signature = "relogic";
+    private const int SignatureOffset = 4;
+    private const int FileTypeOffset = 11;
+    private const int RevisionOffset = 12;
+    private const int FlagsOffset = 16;
+    private const int SectionCountOffset = 24;
+    private const int PointerTableOffset = 26;
+    private const int FrameCountOffset = PointerTableOffset + (SectionCount * sizeof(int));
+    private const short SectionCount = 11;
+
+    private static readonly string[] OpaqueSectionNames =
+    [
+        nameof(WorldSectionTable.Chests),
+        nameof(WorldSectionTable.Signs),
+        nameof(WorldSectionTable.NpcsAndMobs),
+        nameof(WorldSectionTable.TileEntities),
+        nameof(WorldSectionTable.WeightedPressurePlates),
+        nameof(WorldSectionTable.TownManager),
+        nameof(WorldSectionTable.Bestiary),
+        nameof(WorldSectionTable.CreativePowers),
+    ];
+
     /// <summary>Writes <paramref name="envelope"/> as one complete world file.</summary>
     /// <remarks>Nothing is written to <paramref name="output"/> unless the whole file could be built.</remarks>
     /// <exception cref="WorldWriteException">The envelope is unsupported, contradicts itself or the file would reach 2 GiB.</exception>
     /// <exception cref="WorldFormatException">The envelope footer is inconsistent with its metadata.</exception>
     /// <exception cref="TileEncodingException">A tile cannot be encoded.</exception>
-    public static void Write(WorldEnvelope envelope, Stream output) => throw new NotImplementedException();
+    public static void Write(WorldEnvelope envelope, Stream output)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        ArgumentNullException.ThrowIfNull(output);
+
+        var header = envelope.World.Header;
+        ValidateEnvelope(envelope);
+        WorldReader.ValidateFooter(envelope.FooterBytes.Span, envelope.Table.Footer.Start, envelope.World.Metadata);
+
+        var tiles = TileSectionWriter.Write(envelope.World.Tiles, envelope.Table.FrameImportant);
+        var pointers = ComputePointers(
+            envelope.FileHeaderBytes.Length,
+            envelope.MetadataBytes.Length,
+            tiles.Length,
+            envelope.OpaqueSections.Select(section => (long)section.Bytes.Length).ToArray(),
+            envelope.FooterBytes.Length);
+
+        var fileHeader = envelope.FileHeaderBytes.ToArray();
+        BinaryPrimitives.WriteInt32LittleEndian(fileHeader, header.Version);
+        Encoding.ASCII.GetBytes(Signature).CopyTo(fileHeader, SignatureOffset);
+        fileHeader[FileTypeOffset] = (byte)WorldFileType.World;
+        BinaryPrimitives.WriteUInt32LittleEndian(fileHeader.AsSpan(RevisionOffset), header.Revision);
+        BinaryPrimitives.WriteUInt64LittleEndian(fileHeader.AsSpan(FlagsOffset), header.Flags);
+        BinaryPrimitives.WriteInt16LittleEndian(fileHeader.AsSpan(SectionCountOffset), SectionCount);
+        for (var index = 0; index < pointers.Length; index++)
+        {
+            BinaryPrimitives.WriteInt32LittleEndian(fileHeader.AsSpan(PointerTableOffset + (index * sizeof(int))), pointers[index]);
+        }
+
+        // Built completely in memory (the bound is 2 GiB, W-S3) so a failure never leaves a partial file in the stream.
+        using var file = new MemoryStream(pointers[^1] + envelope.FooterBytes.Length);
+        file.Write(fileHeader);
+        file.Write(envelope.MetadataBytes.Span);
+        file.Write(tiles);
+        foreach (var section in envelope.OpaqueSections)
+        {
+            file.Write(section.Bytes.Span);
+        }
+
+        file.Write(envelope.FooterBytes.Span);
+        output.Write(file.GetBuffer().AsSpan(0, (int)file.Length));
+    }
+
+    private static void ValidateEnvelope(WorldEnvelope envelope)
+    {
+        var header = envelope.World.Header;
+        var table = envelope.Table;
+        var bytes = envelope.FileHeaderBytes.Span;
+        if (!WorldReader.SupportedVersions.Contains(header.Version))
+        {
+            throw new WorldWriteException($"format version {header.Version} is not supported");
+        }
+
+        if (bytes.Length < FrameCountOffset + sizeof(short)
+            || BinaryPrimitives.ReadInt32LittleEndian(bytes) != header.Version)
+        {
+            throw new WorldWriteException("file header bytes contradict the header");
+        }
+
+        var frameImportant = table.FrameImportant;
+        if (BinaryPrimitives.ReadInt16LittleEndian(bytes[FrameCountOffset..]) != frameImportant.Count
+            || bytes.Length != FrameCountOffset + sizeof(short) + ((frameImportant.Count + 7) / 8))
+        {
+            throw new WorldWriteException("frame-important bits contradict the section table");
+        }
+
+        for (var id = 0; id < frameImportant.Count; id++)
+        {
+            var bit = (bytes[FrameCountOffset + sizeof(short) + (id / 8)] & (1 << (id % 8))) != 0;
+            if (bit != frameImportant[id])
+            {
+                throw new WorldWriteException("frame-important bits contradict the section table");
+            }
+        }
+
+        if (envelope.MetadataBytes.Length != table.Metadata.End - table.Metadata.Start)
+        {
+            throw new WorldWriteException("metadata bytes contradict the section table");
+        }
+
+        if (envelope.OpaqueSections.Count != OpaqueSectionNames.Length
+            || !envelope.OpaqueSections.Select(section => section.Name).SequenceEqual(OpaqueSectionNames))
+        {
+            throw new WorldWriteException("sections 3-10 are missing or out of order");
+        }
+    }
 
     /// <summary>
     /// The 11 section pointers for the given section output lengths (W-S2): <c>pointer[0]</c> is the header length and
@@ -28,5 +138,25 @@ public static class WorldWriter
         long metadataLength,
         long tileLength,
         IReadOnlyList<long> opaqueLengths,
-        long footerLength) => throw new NotImplementedException();
+        long footerLength)
+    {
+        ArgumentNullException.ThrowIfNull(opaqueLengths);
+
+        long[] lengths = [headerLength, metadataLength, tileLength, .. opaqueLengths];
+        var pointers = new int[lengths.Length];
+        long position = 0;
+        for (var index = 0; index < lengths.Length; index++)
+        {
+            // Lengths are non-negative and each is below 2^63 / 11 for any real buffer; the bound is checked per step.
+            position += lengths[index];
+            if (position + footerLength > int.MaxValue)
+            {
+                throw new WorldWriteException("file too large");
+            }
+
+            pointers[index] = (int)position;
+        }
+
+        return pointers;
+    }
 }
