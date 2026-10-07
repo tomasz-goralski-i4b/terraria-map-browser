@@ -27,6 +27,20 @@ const browserProjects = [
   },
   {
     extends: true as const,
+    root: "packages/assets",
+    test: {
+      name: "@studio/assets/browser",
+      include: ["tests/**/*.browser.test.{ts,tsx}"],
+      browser: {
+        enabled: true,
+        headless: true,
+        provider: playwright(),
+        instances: [{ browser: "chromium" as const }],
+      },
+    },
+  },
+  {
+    extends: true as const,
     root: "apps/web",
     // Serves the production build (built by scripts/build.sh) for the offline PWA test.
     plugins: [react(), distServer(resolve("apps/web/dist"))],
