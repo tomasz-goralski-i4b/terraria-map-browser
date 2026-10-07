@@ -51,6 +51,13 @@ order; each assignment interns the block before the wall. References are dedupli
 all mod-reference fields. Palette indices `0` through `65534` are available; `65535` is reserved for absence.
 Replacing a tile resets all its planes but retains previously interned palette entries.
 
+`setTile` rejects noninteger or out-of-range values with `RangeError`: frames must fit Int16
+(-32768 through 32767), paints and liquid amounts must fit a byte (0 through 255), and wires must be
+0 through 15. Shape must be a defined `BlockShape`; liquid kind must be water, lava, honey or shimmer.
+Validation and capacity checks for both distinct new references happen before changing any plane or
+palette entry. A rejected assignment leaves both unchanged. A full palette still accepts existing
+references or absent content; matching new block and wall references require only one free slot.
+
 `tileAt(x, y)` creates a fresh semantic view from the current planes and reuses palette references by
 identity. It omits sentinel frames, zero paints, full shape and false additive flags, while preserving a
 present liquid kind with amount zero. Both methods reject noninteger or out-of-bounds coordinates. Tiles

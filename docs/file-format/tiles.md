@@ -141,8 +141,9 @@ default, so existing consumers keep working):
 | `fullBrightBlock`, `fullBrightWall` | boolean | byte-4 bits 3, 4 |
 
 In .NET these are additional properties of the tile record (nullable `WallPaint`, `BlockShape` enum, bools).
-The TS `Tile` type is owned by `packages/world-model`; adding them there is a follow-up (see below). With
-these fields, every bit and byte of a canonical record can be re-encoded; only the non-canonical forms listed
+The TS [`Tile` type](../../packages/world-model/src/index.ts) in `packages/world-model` defines these fields;
+see [TypeScript model API](../cwm.md#typescript-model-api) for their CWM storage and semantic views.
+With these fields, every bit and byte of a canonical record can be re-encoded; only the non-canonical forms listed
 above (2-byte small ids, small Int16 runs, run 0, empty optional flag bytes) do not survive byte-for-byte —
 their meaning does.
 

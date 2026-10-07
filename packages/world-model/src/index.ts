@@ -91,6 +91,27 @@ function contentKey(ref: ContentRef): string {
   }
 }
 
+function validateInteger(value: number | undefined, minimum: number, maximum: number, field: string): void {
+  if (value !== undefined && (!Number.isInteger(value) || value < minimum || value > maximum)) {
+    throw new RangeError(`${field} must be an integer in ${String(minimum)}..${String(maximum)}`);
+  }
+}
+
+function validateTile(tile: Tile): void {
+  validateInteger(tile.frameX, -32768, 32767, "frameX");
+  validateInteger(tile.frameY, -32768, 32767, "frameY");
+  validateInteger(tile.paint, 0, 255, "paint");
+  validateInteger(tile.wallPaint, 0, 255, "wallPaint");
+  validateInteger(tile.liquid?.amount, 0, 255, "liquid.amount");
+  validateInteger(tile.wires, 0, 15, "wires");
+  if (tile.shape !== undefined && !shapes.includes(tile.shape)) {
+    throw new RangeError("shape must be a known BlockShape");
+  }
+  if (tile.liquid !== undefined && !liquidKinds.includes(tile.liquid.kind)) {
+    throw new RangeError("liquid.kind must be water, lava, honey or shimmer");
+  }
+}
+
 export function createWorld(
   width: number,
   height: number,
@@ -137,9 +158,8 @@ export function createWorld(
     return x * height + y;
   }
 
-  function intern(ref: ContentRef | undefined): number {
-    if (ref === undefined) return absentContent;
-    const key = contentKey(ref);
+  function intern(ref: ContentRef | undefined, key: string | undefined): number {
+    if (ref === undefined || key === undefined) return absentContent;
     const existing = paletteIndices.get(key);
     if (existing !== undefined) return existing;
     if (palette.length >= absentContent) throw new RangeError("CWM palette exceeds 65535 entries");
@@ -153,8 +173,18 @@ export function createWorld(
     width, height, planes, palette,
     setTile(x, y, tile) {
       const index = coordinateIndex(x, y);
-      planes.block[index] = intern(tile.block);
-      planes.wall[index] = intern(tile.wall);
+      validateTile(tile);
+      const blockKey = tile.block === undefined ? undefined : contentKey(tile.block);
+      const wallKey = tile.wall === undefined ? undefined : contentKey(tile.wall);
+      let additions = blockKey !== undefined && !paletteIndices.has(blockKey) ? 1 : 0;
+      if (wallKey !== undefined && wallKey !== blockKey && !paletteIndices.has(wallKey)) additions++;
+      if (palette.length + additions > absentContent) {
+        throw new RangeError("CWM palette exceeds 65535 entries");
+      }
+      const blockIndex = intern(tile.block, blockKey);
+      const wallIndex = intern(tile.wall, wallKey);
+      planes.block[index] = blockIndex;
+      planes.wall[index] = wallIndex;
       planes.frameX[index] = tile.frameX ?? -1;
       planes.frameY[index] = tile.frameY ?? -1;
       planes.paint[index] = tile.paint ?? 0;
@@ -162,7 +192,7 @@ export function createWorld(
       planes.liquid[index] = tile.liquid === undefined ? 0 : liquidKinds.indexOf(tile.liquid.kind) + 1;
       planes.liquidAmount[index] = tile.liquid?.amount ?? 0;
       planes.shape[index] = tile.shape === undefined ? 0 : shapes.indexOf(tile.shape);
-      let flags = (tile.wires & 15) | (tile.actuator ? 1 << 4 : 0);
+      let flags = tile.wires | (tile.actuator ? 1 << 4 : 0);
       for (const [field, bit] of booleanFlags) {
         if (tile[field]) flags |= 1 << bit;
       }
