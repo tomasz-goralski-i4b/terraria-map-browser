@@ -28,14 +28,21 @@ function cancelledFailure(message: string): WorldWorkerFailure {
 
 /** Main-thread client of the world-parsing Worker; requests are independent, a failure never poisons the next. */
 export class WorldWorkerClient {
-  readonly #worker: Worker;
+  #worker: Worker;
+  readonly #createWorker: (() => Worker) | undefined;
   readonly #pending = new Map<number, Pending>();
   #nextRequestId = 1;
   #disposed = false;
 
-  constructor(worker: Worker) {
+  constructor(worker: Worker, createWorker?: () => Worker) {
     this.#worker = worker;
+    this.#createWorker = createWorker;
+    this.#attach(worker);
+  }
+
+  #attach(worker: Worker): void {
     worker.addEventListener("message", (event: MessageEvent<WorldWorkerResponse>) => {
+      if (worker !== this.#worker) return;
       const response = event.data;
       const pending = this.#settle(response.requestId);
       if (pending === undefined) return;
@@ -43,9 +50,11 @@ export class WorldWorkerClient {
       else pending.reject(new WorldWorkerError(response.requestId, response.error));
     });
     worker.addEventListener("error", (event) => {
+      if (worker !== this.#worker) return;
       this.#rejectAll({ code: "Internal", offset: 0, message: event.message || "The world Worker failed" });
     });
     worker.addEventListener("messageerror", () => {
+      if (worker !== this.#worker) return;
       this.#rejectAll({ code: "Internal", offset: 0, message: "A Worker message could not be deserialized" });
     });
   }
@@ -55,8 +64,7 @@ export class WorldWorkerClient {
    * Worker (a decode cannot be interrupted) and continues on a fresh one.
    */
   static create(createWorker: () => Worker): WorldWorkerClient {
-    void createWorker;
-    throw new Error("not implemented");
+    return new WorldWorkerClient(createWorker(), createWorker);
   }
 
   /** Parses a `File` or transfers an `ArrayBuffer` (which detaches in the caller). Rejects with `WorldWorkerError`. */
@@ -73,8 +81,18 @@ export class WorldWorkerClient {
       const onAbort = (): void => {
         const pending = this.#settle(requestId);
         if (pending === undefined) return;
-        this.#post({ type: "cancel", requestId });
         pending.reject(new WorldWorkerError(requestId, cancelledFailure("The parse request was aborted")));
+        if (this.#createWorker === undefined) {
+          this.#post({ type: "cancel", requestId });
+          return;
+        }
+        // A running decode cannot be interrupted: drop the busy Worker (and every request on it), continue on a new one.
+        this.#rejectAll(cancelledFailure("The world Worker was restarted after another request was aborted"));
+        this.#worker.terminate();
+        if (!this.#disposed) {
+          this.#worker = this.#createWorker();
+          this.#attach(this.#worker);
+        }
       };
       signal?.addEventListener("abort", onAbort, { once: true });
       this.#pending.set(requestId, {
