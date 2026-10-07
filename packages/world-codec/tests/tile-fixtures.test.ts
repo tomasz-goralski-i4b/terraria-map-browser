@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { Session } from "node:inspector";
+import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 import { readWorldTiles, type TilePlanes } from "@studio/world-codec";
 
@@ -73,14 +75,43 @@ describe("readWorldTiles — vanilla corpus", () => {
     120_000,
   );
 
-  it("readWorldTiles_SmallFixture_RetainsHeapProportionalToPaletteNotTiles", () => {
+  it("readWorldTiles_SmallFixture_AllocatesHeapObjectsProportionalToPaletteNotTiles", async () => {
     const bytes = new Uint8Array(readFileSync(new URL("SCCO1.wld", worldsDir)));
-    const before = process.memoryUsage().heapUsed;
+    const session = new Session();
+    session.connect();
+    const post = promisify(session.post.bind(session)) as (method: string, params?: object) => Promise<unknown>;
+    await post("HeapProfiler.enable");
+    // Sample every heap allocation made during the decode (including objects the GC already reclaimed), so a
+    // per-record or per-coordinate object cannot hide behind garbage collection the way a heapUsed delta can.
+    await post("HeapProfiler.startSampling", {
+      samplingInterval: 64,
+      includeObjectsCollectedByMajorGC: true,
+      includeObjectsCollectedByMinorGC: true,
+    });
     const result = readWorldTiles(bytes);
-    const retained = process.memoryUsage().heapUsed - before;
-    // 5.04 million tiles: one retained JS object per coordinate would cost hundreds of MB of heap; planes live in
-    // ArrayBuffers outside the heap, so only the palette (and small scratch) may remain.
+    const { profile } = (await post("HeapProfiler.stopSampling")) as { profile: { head: SamplingNode } };
+    await post("HeapProfiler.disable");
+    session.disconnect();
+
     expect(result.planes.block).toHaveLength(4200 * 1200);
-    expect(retained).toBeLessThan(32 * 1024 * 1024);
+    // The whole call tree, not a per-file filter: the codec may be loaded as .ts or compiled .js, and nothing else
+    // allocates between start and stop.
+    const allocated = sumSelfSize(profile.head);
+    // 5.04 million tiles: even one 16-byte object per coordinate is ~80 MB. Planes are typed arrays (backing stores
+    // outside the sampled heap), so only the palette and small scratch objects may be allocated by the decoder.
+    expect(allocated).toBeLessThan(4 * 1024 * 1024);
   }, 120_000);
 });
+
+interface SamplingNode {
+  readonly head: SamplingNode;
+  readonly selfSize: number;
+  readonly children: readonly SamplingNode[];
+}
+
+/** Total sampled bytes allocated over the whole call tree. */
+function sumSelfSize(node: SamplingNode): number {
+  let total = node.selfSize;
+  for (const child of node.children) total += sumSelfSize(child);
+  return total;
+}
