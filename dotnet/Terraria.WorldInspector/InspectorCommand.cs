@@ -16,8 +16,9 @@ internal static class InspectorCommand
         {
             exitCode = RunCore(arguments, report, error, readWorld);
         }
-        catch (Exception)
+        catch (Exception exception) when (exception is not OutOfMemoryException)
         {
+            // Bound ordinary failures without hiding fatal resource exhaustion.
             // The CLI boundary must not expose unexpected exception messages or stack traces.
             error.WriteLine("Internal error: could not complete the command.");
             return 1;
@@ -148,7 +149,10 @@ internal static class InspectorCommand
         var escaped = new StringBuilder(text.Length);
         foreach (var character in text)
         {
-            if (char.IsControl(character))
+            if (char.IsControl(character)
+                || char.GetUnicodeCategory(character) is UnicodeCategory.LineSeparator or UnicodeCategory.ParagraphSeparator
+                || character is '\u061c' or '\u200e' or '\u200f'
+                    or (>= '\u202a' and <= '\u202e') or (>= '\u2066' and <= '\u2069'))
             {
                 escaped.Append("\\u").Append(((int)character).ToString("x4", CultureInfo.InvariantCulture));
             }
