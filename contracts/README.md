@@ -84,3 +84,9 @@ META boundaries, mismatched section dimensions, missing chunks, wrong edge sizes
   `node --test scripts/contracts-validation.test.mjs` exercises the regression and positive boundary cases.
 - Wrapping a `REC` vector in a whole-file harness is filler and must not change the result (see the
   documentation).
+
+The xUnit harness uses compile-checked internal codec entry points, exposed only to `Terraria.WorldCodec.Tests`.
+It consumes exactly one record for REC, except the documented four-record R6 column prefix, and rejects trailing
+bytes after those records. `SharedContractVectorTests` owns the T1–T13 successful examples; the hand-written tile
+tests retain additional boundaries, optional-field absence and malformed full-world diagnostics. Run/grid tests
+and metadata tests retain their full-section/full-world checks beyond the shared REC and META fragments.

@@ -1,5 +1,3 @@
-using System.Reflection;
-using System.Runtime.ExceptionServices;
 using System.Text.Json;
 
 namespace Terraria.WorldCodec.Tests;
@@ -99,7 +97,7 @@ internal static class SharedContractVectorHarness
         {
             object result = entry == "META"
                 ? ReadMetadata(stream, boundary, context)
-                : ReadTiles(stream, boundary, context, entry);
+                : ReadTiles(stream, boundary, context, entry, vector.GetProperty("id").GetString()!);
             return JsonSerializer.SerializeToElement(new { result });
         }
         catch (WorldFormatException exception)
@@ -125,12 +123,10 @@ internal static class SharedContractVectorHarness
         }
     }
 
-    private const BindingFlags Methods = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static;
-
     // Name and seed cap from docs/file-format/metadata.md, restated here rather than read from the codec.
     private const int MaxNameOrSeedBytes = 4096;
 
-    private static object ReadTiles(Stream stream, WorldSectionBoundary boundary, JsonElement context, string entry)
+    private static object ReadTiles(Stream stream, WorldSectionBoundary boundary, JsonElement context, string entry, string vectorId)
     {
         var frame = context.GetProperty("frameImportant");
         var flags = new bool[frame.GetProperty("k").GetInt32()];
@@ -139,10 +135,10 @@ internal static class SharedContractVectorHarness
             flags[id.GetInt32()] = true;
         }
 
-        var reader = CreateReader("TileSectionReader", stream, boundary, flags);
+        var reader = new TileSectionReader(stream, boundary, flags);
         if (entry == "SEC")
         {
-            var grid = (TileGrid)Invoke(reader, "Read", context.GetProperty("width").GetInt32(), context.GetProperty("height").GetInt32())!;
+            var grid = reader.Read(context.GetProperty("width").GetInt32(), context.GetProperty("height").GetInt32());
             var tiles = new List<object>();
             for (var x = 0; x < grid.Width; x++)
             {
@@ -159,15 +155,17 @@ internal static class SharedContractVectorHarness
         var column = position.GetProperty("x").GetInt32();
         var row = position.GetProperty("y").GetInt32();
         var height = context.GetProperty("columnHeight").GetInt32();
-        (Tile Tile, int Run) record;
-        do
+        // docs/file-format/vectors.md declares four records for R6; all other REC inputs contain one.
+        var recordCount = vectorId == "R6" ? 4 : 1;
+        var record = reader.ReadRecord(column, row, height);
+        for (var index = 1; index < recordCount; index++)
         {
-            // GREEN adds this narrow overload: it sets offsets/coordinates and checks run bounds.
-            // Reflection keeps frozen tests compilable without changing production in RED.
-            record = ((Tile Tile, int Run))Invoke(reader, "ReadRecord", column, row, height)!;
             row += record.Run + 1;
+            record = reader.ReadRecord(column, row, height);
         }
-        while ((long)reader.GetType().GetField("position", Methods)!.GetValue(reader)! < boundary.End);
+
+        Assert.True(reader.AbsolutePosition == boundary.End,
+            $"{vectorId}: expected exactly {recordCount} record(s); trailing bytes at offset {reader.AbsolutePosition}");
 
         return new { kind = "record", tile = NormalizeTile(record.Tile), run = record.Run };
     }
@@ -175,43 +173,42 @@ internal static class SharedContractVectorHarness
     private static Dictionary<string, object?> ReadMetadata(Stream stream, WorldSectionBoundary boundary, JsonElement context)
     {
         // M3 is a prefix: bound reads to inputEnd and stop after gameMode, leaving the absent tail alone.
-        var reader = CreateReader("MetadataSectionReader", stream, boundary);
+        var reader = new MetadataSectionReader(stream, boundary);
         var result = new Dictionary<string, object?> { ["kind"] = "metadata" };
         var startsAt = context.GetProperty("startsAt").GetString();
         if (startsAt == "bool")
         {
-            result["bool"] = Invoke(reader, "Bool", new object?[] { null });
+            result["bool"] = reader.Bool();
             return result;
         }
 
         if (startsAt == "name")
         {
-            result["name"] = Invoke(reader, "String", "name", MaxNameOrSeedBytes);
-            result["seed"] = Invoke(reader, "String", "seed", MaxNameOrSeedBytes);
-            Invoke(reader, "Skip", sizeof(ulong), "worldGenVersion");
+            result["name"] = reader.String("name", MaxNameOrSeedBytes);
+            result["seed"] = reader.String("seed", MaxNameOrSeedBytes);
+            reader.Skip(sizeof(ulong), "worldGenVersion");
             var guid = new byte[16];
             for (var index = 0; index < guid.Length; index++)
             {
-                guid[index] = (byte)Invoke(reader, "UInt8", "guid")!;
+                guid[index] = reader.UInt8("guid");
             }
 
             result["guid"] = Convert.ToHexStringLower(guid);
-            result["worldId"] = Invoke(reader, "Int32", "worldId");
+            result["worldId"] = reader.Int32("worldId");
             result["bounds"] = new
             {
-                left = Invoke(reader, "Int32", "left"),
-                right = Invoke(reader, "Int32", "right"),
-                top = Invoke(reader, "Int32", "top"),
-                bottom = Invoke(reader, "Int32", "bottom"),
+                left = reader.Int32("left"),
+                right = reader.Int32("right"),
+                top = reader.Int32("top"),
+                bottom = reader.Int32("bottom"),
             };
         }
 
-        var metadata = CodecType("MetadataSection");
-        result["height"] = Invoke(metadata, "ReadDimension", reader, "height", WorldReader.MaxWorldHeight);
-        result["width"] = Invoke(metadata, "ReadDimension", reader, "width", WorldReader.MaxWorldWidth);
+        result["height"] = MetadataSection.ReadDimension(reader, "height", WorldReader.MaxWorldHeight);
+        result["width"] = MetadataSection.ReadDimension(reader, "width", WorldReader.MaxWorldWidth);
         if (startsAt == "name")
         {
-            result["gameMode"] = Invoke(reader, "Int32", "gameMode");
+            result["gameMode"] = reader.Int32("gameMode");
         }
 
         return result;
@@ -253,27 +250,6 @@ internal static class SharedContractVectorHarness
         ModContentRef mod => new { kind = "mod", mod = mod.Mod, internalName = mod.InternalName, runtimeId = mod.RuntimeId, modVersion = mod.ModVersion },
         _ => throw new InvalidDataException("Unknown decoded content reference"),
     };
-
-    private static Type CodecType(string name) => typeof(CodecAssembly).Assembly.GetType("Terraria.WorldCodec." + name, throwOnError: true)!;
-
-    private static object CreateReader(string name, params object[] arguments) =>
-        Activator.CreateInstance(CodecType(name), Methods, binder: null, args: arguments, culture: null)!;
-
-    private static object? Invoke(object target, string name, params object?[] arguments)
-    {
-        var type = target as Type ?? target.GetType();
-        var method = type.GetMethods(Methods).SingleOrDefault(candidate => candidate.Name == name && candidate.GetParameters().Length == arguments.Length);
-        Assert.True(method is not null, $"Missing codec seam {type.Name}.{name} with {arguments.Length} arguments");
-        try
-        {
-            return method!.Invoke(target is Type ? null : target, arguments);
-        }
-        catch (TargetInvocationException exception) when (exception.InnerException is not null)
-        {
-            ExceptionDispatchInfo.Capture(exception.InnerException).Throw();
-            throw;
-        }
-    }
 
     private static void Require(bool condition, string fileName, string path, string reason)
     {

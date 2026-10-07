@@ -123,7 +123,7 @@ internal static class MetadataSection
         return new WorldMetadata(name, seed, guidHex, worldId, width, height, gameMode, evil);
     }
 
-    private static int ReadDimension(MetadataSectionReader reader, string field, int max)
+    internal static int ReadDimension(MetadataSectionReader reader, string field, int max)
     {
         var start = reader.AbsolutePosition;
         var value = reader.Int32(field);
