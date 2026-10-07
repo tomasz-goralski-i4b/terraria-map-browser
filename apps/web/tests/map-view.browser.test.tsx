@@ -4,6 +4,8 @@ import { render } from "vitest-browser-react";
 import { screenToTile, visibleChunks } from "@studio/renderer";
 import type { Camera, RenderableWorld } from "@studio/renderer";
 import { MapView } from "../src/components/MapView.js";
+import { useAppStore } from "../src/store.js";
+import { getDefaultWorldSession } from "../src/world/world-session.js";
 
 const width = 1200;
 const height = 600;
@@ -64,6 +66,14 @@ function wheel(x: number, y: number, deltaY: number): void {
 
 function key(name: string): void {
   canvas().dispatchEvent(new KeyboardEvent("keydown", { key: name, bubbles: true, cancelable: true }));
+}
+
+// Captured before any test overrides it; deleting an override would remove the property altogether.
+const originalDevicePixelRatio = Object.getOwnPropertyDescriptor(window, "devicePixelRatio");
+
+function restoreDevicePixelRatio(): void {
+  if (originalDevicePixelRatio === undefined) Reflect.deleteProperty(window, "devicePixelRatio");
+  else Object.defineProperty(window, "devicePixelRatio", originalDevicePixelRatio);
 }
 
 beforeEach(() => {
@@ -303,6 +313,103 @@ test("a devicePixelRatio change at fixed CSS size resizes the backing store", as
       expect(canvas().clientWidth).toBe(css);
     });
   } finally {
-    Reflect.deleteProperty(window, "devicePixelRatio");
+    restoreDevicePixelRatio();
+  }
+});
+
+/** Ratio of canvas backing pixels to CSS pixels, i.e. the devicePixelRatio the canvas was sized with. */
+function backingScale(): number {
+  return canvas().width / canvas().clientWidth;
+}
+
+async function doubleDevicePixelRatio(): Promise<void> {
+  const css = canvas().clientWidth;
+  const ratio = window.devicePixelRatio;
+  Object.defineProperty(window, "devicePixelRatio", { configurable: true, value: ratio * 2 });
+  window.dispatchEvent(new Event("resize"));
+  await vi.waitFor(() => {
+    expect(canvas().width).toBe(Math.round(css * ratio * 2));
+  });
+}
+
+test("after a devicePixelRatio change the status bar reports the tile under the resting pointer", async () => {
+  await mountMap();
+  await page.getByRole("button", { name: "1:1" }).click();
+  pointer("pointermove", 120, 90, 0);
+  await vi.waitFor(() => {
+    expect(statusText()).toBe(tileText(camera(), 120 * backingScale(), 90 * backingScale()));
+  });
+  try {
+    await doubleDevicePixelRatio();
+    // The pointer has not moved: it still rests at CSS (120, 90), which is now twice as many backing pixels.
+    await vi.waitFor(() => {
+      expect(statusText()).toBe(tileText(camera(), 120 * backingScale(), 90 * backingScale()));
+    });
+  } finally {
+    restoreDevicePixelRatio();
+  }
+});
+
+test("after a devicePixelRatio change keyboard zoom keeps the tile under the resting pointer fixed", async () => {
+  await mountMap();
+  await page.getByRole("button", { name: "1:1" }).click();
+  pointer("pointermove", 100, 70, 0);
+  try {
+    await doubleDevicePixelRatio();
+    const scale = backingScale();
+    const before = camera();
+    const tile = screenToTile(before, 100 * scale, 70 * scale);
+    key("+");
+    await vi.waitFor(() => {
+      expect(camera().zoom).not.toBe(before.zoom);
+    });
+    const same = screenToTile(camera(), 100 * scale, 70 * scale);
+    expect(same.x).toBeCloseTo(tile.x, 6);
+    expect(same.y).toBeCloseTo(tile.y, 6);
+  } finally {
+    restoreDevicePixelRatio();
+  }
+});
+
+/** The element a real pointer would hit at the centre of `element`. */
+function hitAtCentre(element: Element): Element | null {
+  const rect = element.getBoundingClientRect();
+  return document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+}
+
+function resetLoadState(): void {
+  useAppStore.setState({ phase: "idle", loadingFileName: null, error: null });
+}
+
+test("while another world loads over a drawn map, the loading message and Cancel stay on top of the canvas", async () => {
+  try {
+    await mountMap();
+    useAppStore.getState().setLoading("replacement.wld");
+    const cancel = page.getByRole("button", { name: "Cancel" });
+    await expect.element(cancel).toBeInTheDocument();
+    const button = cancel.element();
+    expect(hitAtCentre(button)).toBe(button);
+    const message = button.parentElement;
+    if (message === null) throw new Error("Cancel has no message around it");
+    expect(message.contains(hitAtCentre(message))).toBe(true);
+
+    const cancelled = vi.spyOn(getDefaultWorldSession(), "cancel").mockImplementation(() => undefined);
+    await cancel.click();
+    expect(cancelled).toHaveBeenCalledOnce();
+  } finally {
+    resetLoadState();
+  }
+});
+
+test("a failed replacement load shows its error on top of the drawn map", async () => {
+  try {
+    await mountMap();
+    useAppStore.getState().setFailed({ code: "BadHeader", offset: 4, message: "Not a world file.", fileName: "broken.wld" });
+    const alert = page.getByRole("alert");
+    await expect.element(alert).toMatchTextContent("broken.wld");
+    const element = alert.element();
+    expect(element.contains(hitAtCentre(element))).toBe(true);
+  } finally {
+    resetLoadState();
   }
 });
