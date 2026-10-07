@@ -201,4 +201,76 @@ describe("world Worker", () => {
     const result = await client.parse(bytes.buffer.slice(0));
     expect(result.palette.length).toBeGreaterThan(0);
   });
+
+  describe("abort of an in-flight parse", () => {
+    interface Tracked { readonly client: WorldWorkerClient; readonly created: Worker[]; readonly terminated: Worker[] }
+    function trackedClient(): Tracked {
+      const created: Worker[] = [];
+      const terminated: Worker[] = [];
+      const client = WorldWorkerClient.create(() => {
+        const worker = new Worker(new URL("../src/world-worker.ts", import.meta.url), { type: "module" });
+        const terminate = worker.terminate.bind(worker);
+        worker.terminate = () => { terminated.push(worker); terminate(); };
+        created.push(worker);
+        return worker;
+      });
+      clients.push(client);
+      return { client, created, terminated };
+    }
+
+    it("abort_WhileParsing_TerminatesTheBusyWorker_RejectsCancelled_AndReplacesIt", async () => {
+      const { client, created, terminated } = trackedClient();
+      const bytes = await loadWorld("SCCO1.wld");
+      const controller = new AbortController();
+      const aborted = client.parse(bytes.buffer.slice(0), { signal: controller.signal });
+      controller.abort();
+      const error = await aborted.catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(WorldWorkerError);
+      expect((error as WorldWorkerError).code).toBe("Cancelled");
+      expect(terminated).toEqual([created[0]]);
+
+      const result = await client.parse(bytes.buffer.slice(0));
+      expect(result.palette.length).toBeGreaterThan(0);
+      expect(created).toHaveLength(2);
+      expect(terminated).toEqual([created[0]]);
+    });
+
+    it("abort_WhileParsing_RejectsOtherPendingRequestsAsCancelled_AndLaterParseSucceeds", async () => {
+      const { client } = trackedClient();
+      const bytes = await loadWorld("SCCO1.wld");
+      const controller = new AbortController();
+      const aborted = client.parse(bytes.buffer.slice(0), { signal: controller.signal });
+      const bystander = client.parse(bytes.buffer.slice(0));
+      controller.abort();
+      expect(((await aborted.catch((e: unknown) => e)) as WorldWorkerError).code).toBe("Cancelled");
+      expect(((await bystander.catch((e: unknown) => e)) as WorldWorkerError).code).toBe("Cancelled");
+      const result = await client.parse(bytes.buffer.slice(0));
+      expect(result.palette.length).toBeGreaterThan(0);
+    });
+
+    it("abort_AfterCompletion_DoesNotTerminateTheWorker", async () => {
+      const { client, created, terminated } = trackedClient();
+      const bytes = await loadWorld("SCCO1.wld");
+      const controller = new AbortController();
+      await client.parse(bytes.buffer.slice(0), { signal: controller.signal });
+      controller.abort();
+      const result = await client.parse(bytes.buffer.slice(0));
+      expect(result.palette.length).toBeGreaterThan(0);
+      expect(created).toHaveLength(1);
+      expect(terminated).toHaveLength(0);
+    });
+
+    it("dispose_AfterAbortReplacement_TerminatesTheReplacementWorker", async () => {
+      const { client, created, terminated } = trackedClient();
+      const bytes = await loadWorld("SCCO1.wld");
+      const controller = new AbortController();
+      const aborted = client.parse(bytes.buffer.slice(0), { signal: controller.signal });
+      controller.abort();
+      await aborted.catch(() => undefined);
+      await client.parse(bytes.buffer.slice(0));
+      client.dispose();
+      expect(created).toHaveLength(2);
+      expect(terminated).toEqual([created[0], created[1]]);
+    });
+  });
 });

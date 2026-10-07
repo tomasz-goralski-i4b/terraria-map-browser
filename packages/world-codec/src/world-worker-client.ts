@@ -50,6 +50,15 @@ export class WorldWorkerClient {
     });
   }
 
+  /**
+   * Creates a client that owns its Worker through `createWorker`: aborting an in-flight parse terminates that
+   * Worker (a decode cannot be interrupted) and continues on a fresh one.
+   */
+  static create(createWorker: () => Worker): WorldWorkerClient {
+    void createWorker;
+    throw new Error("not implemented");
+  }
+
   /** Parses a `File` or transfers an `ArrayBuffer` (which detaches in the caller). Rejects with `WorldWorkerError`. */
   parse(input: File | ArrayBuffer, options?: { readonly signal?: AbortSignal }): Promise<WorldTilesResult> {
     const requestId = this.#nextRequestId++;
