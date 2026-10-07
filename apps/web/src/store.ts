@@ -15,6 +15,10 @@ export interface LoadError {
 export interface AppState {
   readonly status: string;
   readonly setStatus: (status: string) => void;
+  readonly paletteNotice: string;
+  readonly paletteRevision: number;
+  readonly setPaletteNotice: (notice: string) => void;
+  readonly paletteChanged: (notice: string) => void;
   readonly phase: LoadPhase;
   readonly loadingFileName: string | null;
   /** Summary of the currently loaded world; kept when a later open fails or is cancelled. */
@@ -29,6 +33,10 @@ export interface AppState {
 
 export const useAppStore = create<AppState>()((set) => ({
   status: "Ready",
+  paletteNotice: "Placeholder colours. No local map palette imported.",
+  paletteRevision: 0,
+  setPaletteNotice: (paletteNotice) => { set({ paletteNotice }); },
+  paletteChanged: (paletteNotice) => { set((state) => ({ paletteNotice, paletteRevision: state.paletteRevision + 1 })); },
   setStatus: (status) => {
     set({ status });
   },

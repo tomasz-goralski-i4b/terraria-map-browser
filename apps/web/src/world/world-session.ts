@@ -1,5 +1,7 @@
 import { WorldWorkerClient, WorldWorkerError, type WorldTilesResult } from "@studio/world-codec";
 import { useAppStore, type LoadError } from "../store.js";
+import { getDefaultMapPaletteImporter } from "./map-palette-importer.js";
+import type { MapPalette } from "@studio/renderer";
 
 /** Small display facts about the loaded world; the planes and palette themselves stay outside React and the store. */
 export interface WorldSummary {
@@ -27,6 +29,7 @@ export interface WorldSession {
   readonly reset: () => void;
   /** The loaded world (planes, palette, metadata) as a plain reference, not React state. */
   readonly getLoadedWorld: () => WorldTilesResult | null;
+  readonly getMapPalette: () => MapPalette | null;
 }
 
 function summarize(world: WorldTilesResult): WorldSummary {
@@ -48,8 +51,9 @@ function toLoadError(error: unknown, fileName: string): LoadError {
   return { code: "Internal", offset: 0, message: error instanceof Error ? error.message : String(error), fileName };
 }
 
-export function createWorldSession(parser: WorldParser): WorldSession {
+export function createWorldSession(parser: WorldParser, importPalette: () => MapPalette | null = () => null): WorldSession {
   let loaded: WorldTilesResult | null = null;
+  let mapPalette: MapPalette | null = null;
   let current: AbortController | null = null;
 
   const cancel = (): void => {
@@ -63,9 +67,11 @@ export function createWorldSession(parser: WorldParser): WorldSession {
     const store = useAppStore.getState();
     store.setLoading(file.name);
     try {
+      const imported = importPalette();
       const world = await parser.parse(file, { signal: controller.signal });
       if (current !== controller) return;
       loaded = world;
+      mapPalette = imported;
       useAppStore.getState().setLoaded(summarize(world));
     } catch (error) {
       // A superseded request is settled by the newer open; only the latest one reports.
@@ -80,9 +86,10 @@ export function createWorldSession(parser: WorldParser): WorldSession {
   const reset = (): void => {
     cancel();
     loaded = null;
+    mapPalette = null;
   };
 
-  return { open, cancel, reset, getLoadedWorld: () => loaded };
+  return { open, cancel, reset, getLoadedWorld: () => loaded, getMapPalette: () => mapPalette };
 }
 
 let defaultSession: WorldSession | undefined;
@@ -97,6 +104,12 @@ export function resetDefaultWorldSession(): void {
 export function getDefaultWorldSession(): WorldSession {
   defaultSession ??= createWorldSession(
     WorldWorkerClient.create(() => new Worker(new URL("./world.worker.ts", import.meta.url), { type: "module" })),
+    () => {
+      const importer = getDefaultMapPaletteImporter();
+      const palette = importer.load();
+      useAppStore.getState().setPaletteNotice(importer.notice());
+      return palette;
+    },
   );
   return defaultSession;
 }

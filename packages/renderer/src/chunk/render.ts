@@ -1,4 +1,6 @@
 import type { CanonicalWorld, ContentRef } from "@studio/world-model";
+import { importedContentColor } from "../map-palette.js";
+import type { MapPalette } from "../map-palette.js";
 
 export type Rgba = readonly [number, number, number, number];
 
@@ -12,6 +14,7 @@ export interface ChunkLayers {
 export interface ChunkRenderOptions {
   readonly surfaceY: number;
   readonly layers: ChunkLayers;
+  readonly mapPalette?: MapPalette;
 }
 
 export interface ChunkPixels {
@@ -39,17 +42,28 @@ interface PaletteColors {
 // CWM palettes are append-only, so a cached colour stays valid and only new entries need hashing.
 const paletteColorCache = new WeakMap<readonly ContentRef[], PaletteColors>();
 
-function paletteColors(palette: readonly ContentRef[]): PaletteColors {
-  let colors = paletteColorCache.get(palette);
+const importedCaches = new WeakMap<MapPalette, WeakMap<readonly ContentRef[], PaletteColors>>();
+
+function paletteColors(palette: readonly ContentRef[], mapPalette?: MapPalette): PaletteColors {
+  let cache = paletteColorCache;
+  if (mapPalette !== undefined) {
+    let imported = importedCaches.get(mapPalette);
+    if (imported === undefined) {
+      imported = new WeakMap();
+      importedCaches.set(mapPalette, imported);
+    }
+    cache = imported;
+  }
+  let colors = cache.get(palette);
   if (colors === undefined) {
     colors = { block: [], wall: [] };
-    paletteColorCache.set(palette, colors);
+    cache.set(palette, colors);
   }
   for (let index = colors.block.length; index < palette.length; index++) {
     const ref = palette[index];
     if (ref === undefined) break;
-    colors.block.push(placeholderColor(ref, "block"));
-    colors.wall.push(placeholderColor(ref, "wall"));
+    colors.block.push(importedContentColor(mapPalette, ref, "block") ?? placeholderColor(ref, "block"));
+    colors.wall.push(importedContentColor(mapPalette, ref, "wall") ?? placeholderColor(ref, "wall"));
   }
   return colors;
 }
@@ -91,9 +105,11 @@ export function renderChunk(
   const { layers, surfaceY } = options;
   const { planes } = world;
   // Palette colours are cached outside the pixel loop; no semantic tile views are created.
-  const colors = paletteColors(world.palette);
+  const colors = paletteColors(world.palette, options.mapPalette);
   const blockColors = layers.blocks ? colors.block : [];
   const wallColors = layers.walls ? colors.wall : [];
+  const liquids: readonly Rgba[] = options.mapPalette === undefined ? liquidColors
+    : [[0, 0, 0, 0], ...options.mapPalette.liquids.map((colour): Rgba => [...colour, 255])];
 
   for (let y = 0; y < height; y++) {
     const sky = originY + y < surfaceY;
@@ -114,7 +130,8 @@ export function renderChunk(
         alpha = color[3];
       }
 
-      const liquid = layers.liquids ? liquidColors[planes.liquid[index] ?? 0] : undefined;
+      const liquidKind = planes.liquid[index] ?? 0;
+      const liquid = layers.liquids ? liquids[liquidKind] : undefined;
       const amount = planes.liquidAmount[index] ?? 0;
       if (liquid !== undefined && liquid[3] !== 0 && amount !== 0) {
         // Earlier layers are either opaque or absent. On transparent pixels retain straight RGB.

@@ -30,3 +30,10 @@ For example, vanilla id 1 is block `[157, 173, 94, 255]`, wall `[78, 86, 47, 255
 Rendering reads the column-major planes directly, without semantic tile views or per-tile objects.
 Placeholder colours are hashed once per palette entry and cached per palette (CWM palettes are
 append-only), not once per chunk.
+
+## Local map palette (POC)
+
+An optional `mapPalette` replaces known vanilla block/wall base colours and liquid colours in both CPU and WebGL2
+rendering. It preserves all exported options but currently selects option zero; missing IDs retain placeholders.
+It does not yet reproduce paint, frame-dependent variants, lighting or depth gradients.
+See [the POC and unresolved deployment workflow](../../docs/planning/local-map-palette-poc.md).

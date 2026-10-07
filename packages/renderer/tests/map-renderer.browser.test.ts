@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { WebGl2UnavailableError, createMapRenderer, renderChunk, visibleChunks } from "../src/index.js";
 import type { ChunkLayers, MapRenderer, RenderableWorld } from "../src/index.js";
+import { syntheticMapPalette } from "./map-palette.fixture.js";
 
 const created: MapRenderer[] = [];
 afterEach(() => {
@@ -65,7 +66,10 @@ function cpuReference(world: RenderableWorld, layers: ChunkLayers): Uint8Array {
   const out = new Uint8Array(world.width * world.height * 4);
   for (let cy = 0; cy < Math.ceil(world.height / 128); cy++) {
     for (let cx = 0; cx < Math.ceil(world.width / 128); cx++) {
-      const chunk = renderChunk(world as never, cx, cy, { surfaceY: world.surfaceY, layers });
+      const chunk = renderChunk(world as never, cx, cy, {
+        surfaceY: world.surfaceY, layers,
+        ...(world.mapPalette === undefined ? {} : { mapPalette: world.mapPalette }),
+      });
       for (let y = 0; y < chunk.height; y++) {
         const dest = ((cy * 128 + y) * world.width + cx * 128) * 4;
         out.set(chunk.pixels.subarray(y * chunk.width * 4, (y + 1) * chunk.width * 4), dest);
@@ -79,6 +83,33 @@ const layerCombos: ChunkLayers[] = Array.from({ length: 16 }, (_, bits) => ({
   background: (bits & 1) !== 0, walls: (bits & 2) !== 0, blocks: (bits & 4) !== 0, liquids: (bits & 8) !== 0,
 }));
 const allLayers: ChunkLayers = { background: true, walls: true, blocks: true, liquids: true };
+
+test.each(layerCombos)("local map palette GPU equals CPU for layers %o", (layers) => {
+  const world = { ...syntheticWorld(130, 129), mapPalette: syntheticMapPalette };
+  const canvas = makeCanvas(world.width, world.height);
+  const renderer = makeRenderer(canvas);
+  renderer.setWorld(world);
+  renderer.setCamera({ x: 0, y: 0, zoom: 1 });
+  renderer.setLayers(layers);
+  renderer.render();
+  expect(readCanvas(canvas)).toEqual(cpuReference(world, layers));
+});
+
+test("replacing the local palette recolours existing IDs without uploading chunk planes again", () => {
+  const world = syntheticWorld(128, 128);
+  const canvas = makeCanvas(world.width, world.height);
+  const renderer = makeRenderer(canvas);
+  renderer.setWorld(world);
+  renderer.render();
+  const before = renderer.stats().textureUploads;
+  renderer.setWorld({ ...world, mapPalette: syntheticMapPalette });
+  renderer.render();
+  expect(renderer.stats().textureUploads).toBe(before + 1);
+  expect(readCanvas(canvas)).toEqual(cpuReference({ ...world, mapPalette: syntheticMapPalette }, allLayers));
+  renderer.setWorld(world);
+  renderer.render();
+  expect(readCanvas(canvas)).toEqual(cpuReference(world, allLayers));
+});
 
 describe("GPU output equals renderChunk", () => {
   // 300 × 200: a 3 × 2 chunk grid whose right and bottom chunks are partial.

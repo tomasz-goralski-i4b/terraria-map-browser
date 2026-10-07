@@ -35,10 +35,10 @@ uniform ivec2 uSize;
 uniform int uSurfaceY;
 uniform int uPaletteLength;
 uniform int uLayers; // bit 0 background, 1 walls, 2 blocks, 3 liquids
+uniform ivec3 uLiquidColors[4];
 out vec4 outColor;
 
 const uint ABSENT = 65535u;
-const ivec3 LIQUID[5] = ivec3[5](ivec3(0), ivec3(40, 110, 230), ivec3(255, 80, 20), ivec3(240, 180, 40), ivec3(180, 100, 240));
 
 bool paletteColor(uint index, int xOffset, out ivec3 color) {
   if (index == ABSENT || int(index) >= uPaletteLength) return false;
@@ -65,7 +65,7 @@ void main() {
   uint liquid = texelFetch(uLiquid, texel, 0).r;
   int amount = int(texelFetch(uAmount, texel, 0).r);
   if ((uLayers & 8) != 0 && liquid >= 1u && liquid <= 4u && amount != 0) {
-    ivec3 tint = LIQUID[liquid];
+    ivec3 tint = uLiquidColors[int(liquid) - 1];
     if (color.a == 255) {
       color.rgb = (2 * (tint * amount + color.rgb * (255 - amount)) + 255) / 510;
     } else {

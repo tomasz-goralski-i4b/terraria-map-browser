@@ -1,6 +1,7 @@
 import { useRef } from "react";
 import { useAppStore } from "../store.js";
 import { getDefaultWorldSession } from "../world/world-session.js";
+import { MapPaletteImport } from "./MapPaletteImport.js";
 
 interface FilePickerWindow {
   showOpenFilePicker?: (options: {
@@ -58,6 +59,7 @@ export function Toolbar(): React.JSX.Element {
         Connect Terraria assets
       </button>
       <span role="status">{status}</span>
+      <MapPaletteImport />
     </nav>
   );
 }

@@ -1,19 +1,21 @@
 import { useMemo } from "react";
-import type { RenderableWorld } from "@studio/renderer";
+import type { MapPalette, RenderableWorld } from "@studio/renderer";
 import { useAppStore } from "../store.js";
 import { getDefaultWorldSession } from "../world/world-session.js";
 import { MapCanvas } from "./MapCanvas.js";
+import { getDefaultMapPaletteImporter } from "../world/map-palette-importer.js";
 
 /** The world metadata does not carry the surface row yet; Terraria puts it at roughly 30 % of the height. */
 const SURFACE_FRACTION = 0.3;
 
 /** The loaded world's planes and palette by reference; nothing is copied. */
-function loadedRenderableWorld(): RenderableWorld | null {
+function loadedRenderableWorld(mapPalette: MapPalette | null): RenderableWorld | null {
   const loaded = getDefaultWorldSession().getLoadedWorld();
   if (loaded === null) return null;
   const { width, height } = loaded.metadata;
   return {
     width, height, surfaceY: Math.round(height * SURFACE_FRACTION), planes: loaded.planes, palette: loaded.palette,
+    ...(mapPalette === null ? {} : { mapPalette }),
   };
 }
 
@@ -28,8 +30,10 @@ export function MapView({ renderer, world }: MapViewProps): React.JSX.Element {
   const loadingFileName = useAppStore((state) => state.loadingFileName);
   const summary = useAppStore((state) => state.summary);
   const error = useAppStore((state) => state.error);
+  useAppStore((state) => state.paletteRevision);
+  const mapPalette = getDefaultMapPaletteImporter().load();
   // A new summary means a newly loaded world; the session is not reactive, the store is.
-  const sessionWorld = useMemo(() => (summary === null ? null : loadedRenderableWorld()), [summary]);
+  const sessionWorld = useMemo(() => (summary === null ? null : loadedRenderableWorld(mapPalette)), [summary, mapPalette]);
   const drawn = world === undefined ? sessionWorld : world;
 
   return (

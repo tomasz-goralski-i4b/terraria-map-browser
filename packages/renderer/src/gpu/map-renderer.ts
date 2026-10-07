@@ -2,6 +2,8 @@ import type { ContentRef } from "@studio/world-model";
 import { CHUNK_SIZE, visibleChunks } from "../camera/camera.js";
 import type { Camera, ChunkCoord } from "../camera/camera.js";
 import { placeholderColor } from "../chunk/render.js";
+import { importedContentColor } from "../map-palette.js";
+import type { MapPalette } from "../map-palette.js";
 import type { ChunkLayers } from "../chunk/render.js";
 import { fragmentSource, vertexSource } from "./shaders.js";
 
@@ -18,6 +20,7 @@ export interface RenderableWorld {
   };
   /** Append-only palette. */
   readonly palette: readonly ContentRef[];
+  readonly mapPalette?: MapPalette;
 }
 
 export interface MapRendererOptions {
@@ -64,7 +67,7 @@ const PALETTE_HEIGHT = PALETTE_ROW;
 const DEFAULT_MAX_CACHED_CHUNKS = 1536;
 const UNIFORM_NAMES = [
   "uBlock", "uWall", "uLiquid", "uAmount", "uPalette", "uCamera", "uZoom", "uViewport", "uOrigin", "uSize", "uSurfaceY",
-  "uPaletteLength", "uLayers",
+  "uPaletteLength", "uLayers", "uLiquidColors",
 ] as const;
 type UniformName = (typeof UNIFORM_NAMES)[number];
 
@@ -168,8 +171,8 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       if (ref === undefined) break;
       const row = Math.floor(index / PALETTE_ROW);
       const column = index % PALETTE_ROW;
-      paletteMirror.set(placeholderColor(ref, "block"), (row * PALETTE_WIDTH + column) * 4);
-      paletteMirror.set(placeholderColor(ref, "wall"), (row * PALETTE_WIDTH + PALETTE_ROW + column) * 4);
+      paletteMirror.set(importedContentColor(world?.mapPalette, ref, "block") ?? placeholderColor(ref, "block"), (row * PALETTE_WIDTH + column) * 4);
+      paletteMirror.set(importedContentColor(world?.mapPalette, ref, "wall") ?? placeholderColor(ref, "wall"), (row * PALETTE_WIDTH + PALETTE_ROW + column) * 4);
     }
     const firstRow = Math.floor(paletteUploaded / PALETTE_ROW);
     const lastRow = Math.floor((total - 1) / PALETTE_ROW);
@@ -267,6 +270,9 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     gl.uniform1i(uniforms.uSurfaceY, world.surfaceY);
     gl.uniform1i(uniforms.uPaletteLength, paletteUploaded);
     gl.uniform1i(uniforms.uLayers, layers);
+    gl.uniform3iv(uniforms.uLiquidColors, new Int32Array(
+      world.mapPalette?.liquids.flat() ?? [40, 110, 230, 255, 80, 20, 240, 180, 40, 180, 100, 240],
+    ));
     gl.activeTexture(gl.TEXTURE4);
     gl.bindTexture(gl.TEXTURE_2D, resources.palette);
 
@@ -318,7 +324,9 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   return {
     setWorld: (next) => {
       if (next !== world) {
-        clearChunks();
+        if (next?.planes !== world?.planes || next?.width !== world?.width || next?.height !== world?.height) {
+          clearChunks();
+        }
         paletteUploaded = 0;
         world = next;
       }

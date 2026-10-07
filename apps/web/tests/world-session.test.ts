@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, test } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
+import { parseMapPalette } from "@studio/renderer";
 import { WorldWorkerError, type WorldTilesResult } from "@studio/world-codec";
 import { useAppStore } from "../src/store.js";
 import { createWorldSession, type WorldParser } from "../src/world/world-session.js";
@@ -39,6 +40,21 @@ beforeEach(() => {
 });
 
 describe("world session", () => {
+  test("opening each world invokes the local palette importer without a .NET call", async () => {
+    const palette = parseMapPalette(JSON.stringify({
+      schemaVersion: 1, gameVersion: "1.4.5.8",
+      tiles: [[[118, 88, 62]], [[108, 112, 120]]], walls: [[], [[82, 86, 92]]],
+      liquids: [[32, 104, 210], [228, 68, 24], [222, 164, 36], [152, 84, 216]],
+    }));
+    const importer = vi.fn(() => palette);
+    const parser = { parse: () => Promise.resolve(fakeWorld("Copper Vale")) };
+    const session = createWorldSession(parser, importer);
+    await session.open(file("CopperVale.wld"));
+    await session.open(file("CopperValeExplored.wld"));
+    expect(importer).toHaveBeenCalledTimes(2);
+    expect(session.getMapPalette()).toBe(palette);
+  });
+
   test("open_whileParsing_isLoadingWithFileName", async () => {
     const { parser, requests } = controllableParser();
     const session = createWorldSession(parser);

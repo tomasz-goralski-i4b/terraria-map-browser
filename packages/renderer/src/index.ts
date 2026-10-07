@@ -3,6 +3,8 @@
 export const RENDERER_PACKAGE = "@studio/renderer";
 export { placeholderColor, renderChunk } from "./chunk/render.js";
 export type { ChunkLayers, ChunkPixels, ChunkRenderOptions, Rgba } from "./chunk/render.js";
+export { MAX_MAP_PALETTE_BYTES, parseMapPalette } from "./map-palette.js";
+export type { MapPalette, MapRgb } from "./map-palette.js";
 export {
   CHUNK_SIZE, MAX_ZOOM, MIN_ZOOM, actualSize, clampCamera, clampZoom, fitWorld, panBy, screenToTile, tileToScreen,
   visibleChunks, zoomAt,
