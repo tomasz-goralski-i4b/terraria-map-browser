@@ -134,3 +134,7 @@ walks this bounded section without allocating tile planes. It returns `metadata`
 to the supplied `Uint8Array` view. Unexposed numeric fields, including the 64-bit values, are consumed as
 raw bytes; strings and booleans are validated even when their values are not exposed. No write envelope
 is retained by this read API.
+
+TypeScript `WorldFormatError.field` is optional: named string, list-count and dimension rejections
+set it to the metadata field name. Rejections without a named field leave it undefined. Existing
+`reason` prefixes and error messages are preserved; callers can inspect `field` without parsing them.

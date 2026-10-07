@@ -7,6 +7,10 @@ export type WorldFormatErrorKind =
   | "MalformedMetadata"
   | "MalformedTiles";
 
+type WorldFormatDiagnostic =
+  | { readonly x: number; readonly y: number; readonly field?: string }
+  | { readonly field: string; readonly x?: never; readonly y?: never };
+
 /** A world file violates the format contract. */
 export class WorldFormatError extends Error {
   /** Error category. */
@@ -15,20 +19,21 @@ export class WorldFormatError extends Error {
   readonly offset: number;
   /** Human-readable diagnostic. */
   readonly reason: string;
+  /** Metadata field associated with the rejection, when known. */
+  readonly field?: string;
   /** Tile column of the offending record, for `MalformedTiles`. */
   readonly x?: number;
   /** Tile row of the offending record, for `MalformedTiles`. */
   readonly y?: number;
 
-  constructor(kind: WorldFormatErrorKind, offset: number, reason: string, tile?: { readonly x: number; readonly y: number }) {
+  constructor(kind: WorldFormatErrorKind, offset: number, reason: string, diagnostic?: WorldFormatDiagnostic) {
     super(`${kind} at offset ${String(offset)}: ${reason}`);
     this.name = "WorldFormatError";
     this.kind = kind;
     this.offset = offset;
     this.reason = reason;
-    if (tile !== undefined) {
-      this.x = tile.x;
-      this.y = tile.y;
-    }
+    if (diagnostic?.field !== undefined) this.field = diagnostic.field;
+    if (diagnostic?.x !== undefined) this.x = diagnostic.x;
+    if (diagnostic?.y !== undefined) this.y = diagnostic.y;
   }
 }

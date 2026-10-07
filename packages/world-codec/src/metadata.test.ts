@@ -23,11 +23,7 @@ function expectMetadataError(bytes: Uint8Array, offset: number, reason?: string,
   const error = caught as WorldFormatError;
   expect({ kind: error.kind, offset: error.offset }).toEqual({ kind: "MalformedMetadata", offset });
   if (reason !== undefined) expect(error.reason).toContain(reason);
-  if (field !== undefined) {
-    // The existing error API has a reason; implementations may also add a structured field diagnostic.
-    const diagnostic = error as WorldFormatError & { readonly field?: string };
-    expect(diagnostic.field ?? error.reason).toContain(field);
-  }
+  if (field !== undefined) expect(error.field).toBe(field);
 }
 
 /** Replace a string including its prefix while retaining the independently generated remaining fields. */
@@ -155,16 +151,16 @@ describe("readWorldMetadata — Bool, UTF-8 and bounded strings (M4/M5)", () => 
     [0x80, 0x80, 0x80, 0x80, 0x80, 0], [0x80, 0x80, 0x80, 0x80, 0x01],
   ])("rejects overflowing/overlong M5 name prefix %j", (...raw) => {
     const fixture = replaceString("name", raw);
-    expectMetadataError(fixture.bytes, fixture.offset);
+    expectMetadataError(fixture.bytes, fixture.offset, undefined, "name");
   });
 
   it("rejects a valid length that exceeds metadata despite payload bytes in the tile section", () => {
     const bytes = wrapMetadata(Uint8Array.from([0x80, 0x08]), 2048);
-    expectMetadataError(bytes, METADATA_START);
+    expectMetadataError(bytes, METADATA_START, undefined, "name");
   });
 
   it("rejects a truncated name prefix at its start", () => {
-    expectMetadataError(wrapMetadata(Uint8Array.from([0x80])), METADATA_START);
+    expectMetadataError(wrapMetadata(Uint8Array.from([0x80])), METADATA_START, undefined, "name");
   });
 
   it.each(["seed", "anglerFinisher0", "worldGenManifest"])("validates length prefixes in consumed string %s", (field) => {
@@ -212,7 +208,7 @@ describe("readWorldMetadata — counts and exact section consumption", () => {
     else view.setUint8(offset, count);
     const file = wrapMetadata(fixture.bytes);
     const allocations = guardLargeAllocations();
-    expectMetadataError(file, METADATA_START + offset);
+    expectMetadataError(file, METADATA_START + offset, "list does not fit in section", field);
     expect(allocations).toEqual([]);
   });
 
@@ -262,13 +258,14 @@ describe("readWorldMetadata — reference dimension safety (M1/M2)", () => {
     const fixture = buildMetadata({ width, height });
     const file = wrapMetadata(fixture.bytes, Math.max(2, Math.min(width, 65536)));
     const allocations = guardLargeAllocations();
-    expectMetadataError(file, METADATA_START + fieldOffset(fixture.offsets, field));
+    const reason = width <= 0 || height <= 0 ? "must be positive" : "safety limit";
+    expectMetadataError(file, METADATA_START + fieldOffset(fixture.offsets, field), reason, field);
     expect(allocations).toEqual([]);
   });
 
   it("rejects width greater than tile section byte length", () => {
     const fixture = buildMetadata({ width: 10 });
-    expectMetadataError(wrapMetadata(fixture.bytes, 9), METADATA_START + fieldOffset(fixture.offsets, "width"));
+    expectMetadataError(wrapMetadata(fixture.bytes, 9), METADATA_START + fieldOffset(fixture.offsets, "width"), "tile section too short", "width");
   });
 
   it("rejects illegal dimensions before buffering a large declared metadata section", () => {
