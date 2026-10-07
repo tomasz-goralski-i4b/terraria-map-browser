@@ -15,8 +15,10 @@
   "devDependencies": {
     "@eslint/js": "catalog:",
     "@types/node": "catalog:",
+    "@vitejs/plugin-react": "catalog:",
     "@vitest/browser-playwright": "catalog:",
     "eslint": "catalog:",
+    "eslint-plugin-react-hooks": "catalog:",
     "playwright": "catalog:",
     "typescript": "catalog:",
     "typescript-eslint": "catalog:",

@@ -4,6 +4,9 @@
     { "path": "packages/world-model" },
     { "path": "packages/world-codec" },
     { "path": "packages/world-codec/tests" },
-    { "path": "packages/world-codec/tests/fixtures" }
+    { "path": "packages/world-codec/tests/fixtures" },
+    { "path": "packages/renderer" },
+    { "path": "packages/renderer/tests" },
+    { "path": "apps/web" }
   ]
 }

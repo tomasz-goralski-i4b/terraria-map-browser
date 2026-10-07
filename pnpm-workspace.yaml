@@ -7,15 +7,26 @@ packages:
 catalog:
   "@eslint/js": ^10.0.1
   "@types/node": ^24.19.1
+  "@types/react": ^19.2.0
+  "@types/react-dom": ^19.2.0
+  "@vitejs/plugin-react": ^6.1.0
   "@vitest/browser-playwright": ^5.0.3
   eslint: ^10.12.0
+  eslint-plugin-react-hooks: ^7.1.1
   playwright: ^1.63.0
+  react: ^19.3.0
+  react-dom: ^19.3.0
   # TypeScript 7 (native compiler) runs `tsc -b`; it ships no JS API that typescript-eslint can load.
   typescript7: npm:typescript@~7.0.2
   # The "typescript" module seen by typescript-eslint and editors: the TypeScript 6 API (bin: tsc6).
   typescript: npm:@typescript/typescript6@~6.0.2
   typescript-eslint: ^8.71.0
+  # The Vite major/minor Vitest 5 already resolves, so the tree has a single Vite.
+  vite: ^8.3.2
+  vite-plugin-pwa: ^2.0.0
   vitest: ^5.0.3
+  vitest-browser-react: ^2.3.0
+  zustand: ^5.0.15
 
 catalogMode: strict
 
