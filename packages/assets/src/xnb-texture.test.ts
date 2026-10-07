@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readXnbTexture, XnbFormatError, type XnbErrorKind, type XnbReadOptions } from "./index.js";
 import {
+  BitWriter,
   buildTexturePayload,
   lzxBadBlockTypeFrames,
   lzxLiteralFrames,
@@ -13,6 +14,7 @@ import {
   setInt32,
   wrapLzx,
   wrapUncompressed,
+  writeUncompressedHeader,
 } from "./xnb-fixture.js";
 
 function catchError(action: () => unknown): unknown {
@@ -56,6 +58,34 @@ function expectDecodes(bytes: Uint8Array, width: number, height: number, rgba: U
   expect(decoded.height).toBe(height);
   expect(decoded.rgba).toBeInstanceOf(Uint8Array);
   expect(Array.from(decoded.rgba)).toEqual(Array.from(rgba));
+}
+
+/** Hand-built aligned match after an uncompressed prefix; no decoder tables or compressor are used. */
+function alignedMatchFrames(payload: Uint8Array, slot: 8 | 10): ReturnType<typeof lzxLiteralFrames> {
+  if (payload.length - PAYLOAD.data !== 68) throw new Error("the aligned-match fixture needs 68 data bytes");
+  const writer = new BitWriter();
+  const prefixLength = payload.length - 4;
+  writer.bits(0, 1); // no Intel E8
+  writeUncompressedHeader(writer, prefixLength, 1, 1, 1);
+  writer.raw(payload.subarray(0, prefixLength));
+  if (prefixLength % 2 === 1) writer.raw([0]);
+
+  writer.bits(2, 3); // aligned block
+  writer.bits(4, 24); // one four-byte match
+  // Complete, non-uniform aligned tree: symbol 5 has code 1101, unlike its raw three-bit value 101.
+  for (const length of [2, 2, 3, 3, 4, 4, 4, 4]) writer.bits(length, 3);
+  // Each tree run has a complete pretree: symbols 0–11 have length 4; symbols 12–19 have length 5.
+  // Starting from zero lengths, delta 8 gives main length 9 (512 symbols); delta 0 leaves the length tree empty.
+  for (const [count, delta] of [[256, 8], [256, 8], [249, 0]] as const) {
+    for (let symbol = 0; symbol < 20; symbol++) writer.bits(symbol < 12 ? 4 : 5, 4);
+    for (let symbol = 0; symbol < count; symbol++) writer.bits(delta, 4);
+  }
+  writer.bits(256 + slot * 8 + 2, 9); // all main lengths are 9: canonical code = symbol; length = 2 + 2
+  // Slot 8: base 16, three extra bits, offset = 16 - 2 + 5 = 19.
+  // Slot 10: base 32, four extra bits, offset = 32 - 2 + (1 << 3) + 5 = 43.
+  if (slot === 10) writer.bits(1, 1);
+  writer.bits(0b1101, 4); // aligned symbol 5
+  return [{ output: payload.length, compressed: writer.toBytes() }];
 }
 
 describe("readXnbTexture — uncompressed", () => {
@@ -116,6 +146,18 @@ describe("readXnbTexture — LZX", () => {
   it("readXnbTexture_LzxAlignedBlockWithLiterals_DecodesAlignedHeader", () => {
     const { payload, rgba } = texture(2, 3);
     expectDecodes(wrapLzx(lzxLiteralFrames(payload, { aligned: true }), payload.length), 2, 3, rgba);
+  });
+
+  it.each([
+    [3, 8, [62, 69, 76, 83]],
+    [4, 10, [150, 157, 164, 171]],
+  ] as const)("readXnbTexture_LzxAlignedMatchWith%iExtraBits_DecodesDistinctRgba", (_extraBits, slot, tail) => {
+    const rgba = patternRgba(17, 1);
+    // The match starts at pixel byte 64. Offsets 19 and 43 copy bytes 45–48 and 21–24 respectively.
+    // Expected bytes are fixed independently of the bitstream and decoder's offset calculation.
+    rgba.set(tail, 64);
+    const payload = buildTexturePayload(17, 1, rgba);
+    expectDecodes(wrapLzx(alignedMatchFrames(payload, slot), payload.length), 17, 1, rgba);
   });
 
   it("readXnbTexture_LzxSlotThreeMatch_PushesItsOffsetOntoTheRepeatQueue", () => {
