@@ -157,7 +157,12 @@ export function readXnbTexture(bytes: Uint8Array, options?: XnbReadOptions): Xnb
   if (fileSize < bytes.length) throw new XnbFormatError("SizeMismatch", 6, "the file size is smaller than the supplied bytes");
   if (fileSize > bytes.length) throw new XnbFormatError("Truncated", bytes.length, "the file is shorter than its size field");
 
-  if ((flags & FLAG_LZX) === 0) return parseTexturePayload(bytes.subarray(HEADER_SIZE), limits);
+  if ((flags & FLAG_LZX) === 0) {
+    if (fileSize - HEADER_SIZE > limits.maxDecompressedBytes) {
+      throw new XnbFormatError("TooLarge", 6, `the payload exceeds ${String(limits.maxDecompressedBytes)} bytes`);
+    }
+    return parseTexturePayload(bytes.subarray(HEADER_SIZE), limits);
+  }
 
   need(10, 4);
   const decompressedSize = view.getUint32(10, true);

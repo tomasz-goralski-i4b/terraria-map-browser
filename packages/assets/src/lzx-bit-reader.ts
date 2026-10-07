@@ -14,6 +14,8 @@ export class LzxBitReader {
   private readonly data: Uint8Array;
   private readonly end: number;
   private readonly chunkStart: number;
+  /** Bit position (in the supplied view) of the first synthesized bit loaded; consuming past it overran. */
+  private missingFrom = Number.POSITIVE_INFINITY;
 
   constructor(data: Uint8Array, start: number, end: number, chunkStart: number) {
     this.data = data;
@@ -24,6 +26,8 @@ export class LzxBitReader {
 
   private ensure(count: number): void {
     while (this.bitCount < count) {
+      // A word's high byte comes first in the bit order, so a lone final byte leaves the whole word's lead bits missing.
+      if (this.pos + 1 >= this.end) this.missingFrom = Math.min(this.missingFrom, this.pos * 8);
       const word = this.pos < this.end ? (this.data[this.pos] ?? 0) | ((this.pos + 1 < this.end ? (this.data[this.pos + 1] ?? 0) : 0) << 8) : 0;
       this.bitBuffer = (this.bitBuffer << 16) | word;
       this.bitCount += 16;
@@ -85,6 +89,6 @@ export class LzxBitReader {
 
   /** True when bits beyond the end of the chunk have been consumed. */
   overran(): boolean {
-    return this.pos * 8 - this.bitCount > this.end * 8;
+    return this.pos * 8 - this.bitCount > this.missingFrom;
   }
 }
