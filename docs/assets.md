@@ -273,6 +273,293 @@ Expected sheet sizes (consistent with the size arithmetic, confirmed only by the
 | Trees (5, 323, …), tree tops/branches, variant sheets (`Tiles_5_N`, `Tiles_2_Beach`, `Tiles_59_2`, …) | placeholder | yes |
 | Paint, actuated/inactive tint, illumination, liquids, wires | — | yes |
 
+## Tile framing
+
+How a block whose frame is **not** stored in the `.wld` picks its cell in `Tiles_<id>`. This section refines the
+"Other blocks" and "Diagonal rules" notes of "Sprite layout": it covers the diagonal rules, blending with a merge
+partner (stone ↔ dirt), slopes, half blocks and the variant. Grass rules, gemspark 8-way framing and the 13
+non-block self-framed ids (vines, beams, …) stay deferred (see "Not covered").
+
+### Sources and evidence
+
+| Id | Source | Revision | Used for |
+|---|---|---|---|
+| A8 | TEdit `src/TEdit/View/WorldRenderXna.xaml.cs` | `99928583` | block path 5709–5813: which tiles take it 5709, cobweb 5729–5735, stone family 5736–5746, merge test 5747–5766, back-check 5768–5783, merge-partner mask 5784–5795, grass 5796–5799, variant 5801, source rectangle 5813; half block and slope drawing 5899–5954 |
+| A10 | TEdit `src/TEdit/Render/BlendRules.cs` | `99928583` | rule buckets: plain 93–112, merge-partner 120–148 and 168–179, grass 150–166 and 181–249; random variant 41 and 253–256; deterministic variant 258–264; bucket index 263; rule fields 370–375; cell names 401–415; matching 418–451; back-check table 44–67 |
+| A13 | TEdit `src/TEdit.Terraria/Render/TileFraming.cs` | `99928583` | gemspark ids 15–16; open faces per block shape 43–51; variant choice 277–289 (large-frame patterns 18–32) |
+| A14 | TEdit `src/TEdit.Terraria/Objects/TileProperty.cs` | `99928583` | `Merges` 162–178; `HasSlopes` 108 |
+| A12 | TEdit `src/TEdit.Terraria/Data/tiles.json` | `99928583` | per-id `isFramed`, `canBlend`, `isStone`, `isGrass`, `mergeWith`, `largeFrameType`; dirt line 3, stone 14, grass 27, cobweb 4131, mud 4230, jungle grass 4242 |
+| F | [header.md](file-format/header.md) (frame-important bitset), [tiles.md](file-format/tiles.md) ("Record layout", byte-2 bits 4–6 = block shape) | this repo | which ids are framed at runtime; the shape values 0–5 |
+| S | **Sheet art**, local install L (1.4.5.8): `Tiles_0`, `Tiles_1`, `Tiles_7` decoded with `packages/assets` and inspected cell by cell, enlarged, outside the repository (nothing saved here) | checked 2026-10-07 | every cell marked "S" below was looked at and shows the outline/blend the rule promises |
+| G | **In-game check** of a small generated world | **pending** — human steps H1–H5 below | — |
+
+TEdit's rule list cites seancode's Terrafirma UV notes as its origin (A10 82–85); the page was not reachable as a
+pinned revision and is not used as a source. Nothing below is taken from decompiled game code. The game itself has
+not been observed yet: every rule is either "cited" (A-id) or additionally "S" (consistent with the art in the
+game's own sheet); none is marked "G" until H1–H5 are done.
+
+### Which tiles are framed at runtime
+
+- **Frame-important ids** (header bitset, F) store `frameX`/`frameY`; they never take this path.
+- All **other** ids are framed from their neighbours on load. In A12 that is **342** ids (`isFramed` absent):
+  - **329** carry `canBlend` and take the block framer of this section (A8 5709) — dirt, stone, ores, sand,
+    bricks, wood, … — except the two sub-families below;
+  - **18 gemspark ids** use a separate 8-way framer (A13 15–16) — deferred;
+  - **10 grass ids** (`isGrass`: 2, 23, 60, 70, 109, 199, 477, 492, 661, 662) use the block framer with extra
+    grass rules (A10 150–249) — deferred;
+  - **13 ids** without `canBlend` (cactus 80, vines, beams, columns, decorative cobweb 697, …) have their own
+    framing — deferred.
+- Every block sheet of this family is **16 columns × 15 rows** of 18-pixel cells, 288 × 270 (S: `Tiles_0`,
+  `Tiles_1`, `Tiles_7`, `Tiles_57`, `Tiles_58`, `Tiles_59`, `Tiles_147`). Grass sheets are taller (`Tiles_60`
+  288 × 396 = 22 rows, `Tiles_2` 288 × 1980 = 110 rows) — part of the deferred grass work.
+
+Notation: `(c, r)` is a cell, column `c` and row `r`, both 0-based; the source rectangle is
+`(18c, 18r, 16, 16)` (stride 18, see "Sprite layout"). A10 writes cells as `<row letter><1-based column>`, so A10's
+`D10` is our `(9, 3)`. x grows to the right, y downwards; N/E/S/W are the edge neighbours, NE/NW/SE/SW the corners.
+
+### Inputs: the 3 × 3 neighbourhood
+
+For the centre tile `c` (type `t`) each of the 8 neighbours `n` is classified (A8 5729–5795, A14 162–178):
+
+1. **Absent** — no active tile, or outside the world (A8 treats a missing neighbour as absent). Actuated tiles
+   still count as present (A8 tests presence only).
+2. **Connected** — the centre treats `n` as "more of itself":
+   - `n` has the same type `t`; or
+   - `t` is in the **stone family** (`isStone`, 33 ids: stone 1, ebonstone 25, pearlstone 117, crimstone 203, the
+     gem stones 63–68, …) and `n` is in the stone family too (A8 5736–5746); or
+   - `t` is **any other block** and `n` names `t` as its merge partner (dirt sees stone, sand, ores, bricks,
+     … as connected, A8 5750–5757 with A14 173). TEdit also connects two tiles that name the *same* partner
+     (copper ore ↔ iron ore, A14 175), and connects a tile to its own partner (copper ore → dirt, A14 174) — see
+     open question O2.
+   - Cobweb (51, partner "−1" in A12) connects to every present neighbour, edges only (A8 5729–5735).
+3. **Merge partner** — `t` has a merge partner `p` (A12 `mergeWith`: **dirt (0)** for 119 ids, **mud (59)** for
+   jungle and mushroom grass, **ash (57)** for hellstone 58) and `n` has type `p` (A8 5784–5795). Such a
+   neighbour is shown as a *blend edge* (the partner's texture drawn into the centre's rim), not as a seam.
+   For the stone family a dirt neighbour is a merge partner and **not** connected.
+4. Anything else is treated like **absent** (the centre draws its outline towards it).
+
+Example: stone next to dirt. From dirt's side, stone names dirt as partner → connected, so dirt draws no edge.
+From stone's side, dirt is a merge partner → stone draws its dirt-blend rim. This matches the sheets (S): `Tiles_0`
+has no stone-transition cells at all, `Tiles_1` has a full set of dirt-rimmed cells.
+
+Write `Cn` for the set of connected neighbours and `Bn` for the merge-partner neighbours (both may include corners).
+
+### Decision rules
+
+The **edge part of `Cn`** (which of N/E/S/W are connected) selects one of 16 cases. Within a case, rules are tried
+top to bottom; the first rule whose condition holds gives three cells `v0 / v1 / v2`, one per variant (next
+section). Rules marked *partner* apply only when `t` has a merge partner; a tile without one (e.g. dirt) uses
+only the unmarked rules. "`Bn` edges = X" means the merge-partner **edges** are exactly X (corners not compared).
+
+**Plain cases** (A10 93–108; all 16 checked on `Tiles_0`, S):
+
+| Connected edges | Cells v0 / v1 / v2 | Look |
+|---|---|---|
+| none | (9,3) (10,3) (11,3) | outlined all round |
+| E | (9,0) (9,1) (9,2) | left end of a horizontal run |
+| W | (12,0) (12,1) (12,2) | right end |
+| N | (6,3) (7,3) (8,3) | bottom end of a vertical run |
+| S | (6,0) (7,0) (8,0) | top end |
+| E W | (6,4) (7,4) (8,4) | horizontal middle |
+| N S | (5,0) (5,1) (5,2) | vertical middle |
+| E S | (0,3) (2,3) (4,3) | top-left corner of a mass |
+| W S | (1,3) (3,3) (5,3) | top-right corner |
+| E N | (0,4) (2,4) (4,4) | bottom-left corner |
+| W N | (1,4) (3,4) (5,4) | bottom-right corner |
+| E W S | (1,0) (2,0) (3,0) | top surface |
+| E W N | (1,2) (2,2) (3,2) | bottom surface |
+| N S E | (0,0) (0,1) (0,2) | left surface |
+| N S W | (4,0) (4,1) (4,2) | right surface |
+| all four | see below | interior |
+
+**All four edges connected** — the corners decide (A10 108–112; tried in this order, the first match wins;
+checked on `Tiles_0`, S: the "missing" corners carry a small light notch):
+
+1. SW and SE both not connected → (6,2) (7,2) (8,2)
+2. NE and NW both not connected → (6,1) (7,1) (8,1)
+3. NE and SE both not connected → (11,0) (11,1) (11,2)
+4. NW and SW both not connected → (10,0) (10,1) (10,2)
+5. otherwise → (1,1) (2,1) (3,1) (plain interior)
+
+One missing corner alone does not change the frame. With all four corners missing rule 1 wins.
+
+**Merge-partner rules** (A10 120–148 and 168–179). They are tried **before** the plain rule of the same case;
+if none matches, the plain rule (and, for "all four", rules 1–5) applies. Cells checked on `Tiles_1`/`Tiles_7`
+are marked S.
+
+| Connected edges | `Bn` condition | Cells v0 / v1 / v2 | |
+|---|---|---|---|
+| none | edges = N E S W | (6,11) (7,11) (8,11) | S |
+| none | edges = N S | (6,12) (6,13) (6,14) | S |
+| none | edges = E W | (9,11) (10,11) (11,11) | |
+| none | edges = S | (6,5) (6,6) (6,7) | S |
+| none | edges = W | (0,13) (1,13) (2,13) | S |
+| none | edges = N | (6,8) (6,9) (6,10) | |
+| none | edges = E | (3,13) (4,13) (5,13) | S |
+| E | edges = N W S | (12,5) (12,6) (12,7) | S |
+| E | edges = W | (0,14) (1,14) (2,14) | |
+| W | edges = N E S | (12,8) (12,9) (12,10) | |
+| W | edges = E | (3,14) (4,14) (5,14) | |
+| N | edges = E W S | (11,8) (11,9) (11,10) | |
+| N | edges = S | (7,5) (7,6) (7,7) | |
+| S | edges = N E W | (11,5) (11,6) (11,7) | |
+| S | edges = N | (7,8) (7,9) (7,10) | |
+| E W | edges = S | (13,0) (14,0) (15,0) | |
+| E W | edges = N | (13,1) (14,1) (15,1) | S |
+| E W | edges = N S | (8,10) (9,10) (10,10) | S |
+| N S | edges = W | (13,3) (14,3) (15,3) | |
+| N S | edges = E | (13,2) (14,2) (15,2) | S |
+| N S | edges = E W | (10,7) (10,8) (10,9) | |
+| E N | edges = W S | (2,6) (2,8) (2,10) | S |
+| E N | edges = S | (4,5) (4,6) (4,7) | S |
+| E N | edges = W | (0,12) (1,12) (2,12) | |
+| W N | edges = E S | (3,6) (3,8) (3,10) | |
+| W N | edges = S | (5,5) (5,6) (5,7) | |
+| W N | edges = E | (3,12) (4,12) (5,12) | |
+| E S | edges = N W | (2,5) (2,7) (2,9) | |
+| E S | edges = W | (0,11) (1,11) (2,11) | |
+| E S | edges = N | (4,8) (4,9) (4,10) | |
+| W S | edges = N E | (3,5) (3,7) (3,9) | |
+| W S | edges = N | (5,8) (5,9) (5,10) | |
+| W S | edges = E | (3,11) (4,11) (5,11) | |
+| E W N | edges = S | (8,5) (9,5) (10,5) | |
+| E W S | edges = N | (8,6) (9,6) (10,6) | S |
+| N S E | edges = W | (9,7) (9,8) (9,9) | S |
+| N S W | edges = E | (8,7) (8,8) (8,9) | S |
+| all four | SE corner is partner | (0,5) (0,7) (0,9) | S |
+| all four | SW corner is partner | (1,5) (1,7) (1,9) | |
+| all four | NW corner is partner | (1,6) (1,8) (1,10) | |
+| all four | NE corner is partner | (0,6) (0,8) (0,10) | S |
+
+Within one case the listed `Bn` conditions are mutually exclusive except "all four", which is tried in the order
+shown (SE, SW, NW, NE). The order of the rows inside a case therefore only matters for "all four".
+
+How the variant cells were derived: each A10 rule names a first and a last cell; v1 is the cell halfway between
+them, rounded towards the last (A10 410–414). We list all three cells instead of the rule, so the table above is
+ours; every value was recomputed from the two named cells and, where marked S, checked against the sheet art.
+
+**Gaps.** A `Bn` edge set that is not listed for its case (e.g. stone with only dirt to the N and E and nothing
+connected) falls back to the plain cell, which draws an outline where the game probably draws a dirt rim. The
+sheet holds more blend cells than the rules reach (O3).
+
+**Back-check** (A8 5768–5783, A10 44–67). TEdit runs a second pass: a connection from the centre to a neighbour
+that is a merge relative (not the same type) is dropped when the neighbour's own chosen cell shows a closed edge
+towards the centre. A10's 22 × 16 table records, per cell, which edges the cell leaves open. M4 does not need it:
+with the recommended model (O2) a partner's cell always leaves its blend edge open. A later issue can derive the
+open edges from the "Look" column above instead of copying A10's table.
+
+### Variant
+
+- **Inputs.** Ordinary blocks have three variants (`v0`–`v2`), each a different hand-drawn copy of the same shape.
+  The `.wld` stores no frame for these tiles (F), so the variant is not stored either.
+- **Game behaviour (cited, not yet observed).** TEdit's default rule lookup draws a random number 0–2 per tile
+  (A10 41, 253–256), and TEdit's wall framer states that the game picks the variant at random when it frames a
+  tile whose frame the `.wld` does not store (A9 150–153); only `largeFrameType` tiles follow a fixed pattern
+  (A13 271–289). If so, the game itself changes variants on every reload and a
+  viewer cannot reproduce the exact picture — H2 checks this.
+- **Large-frame tiles** (`largeFrameType` 1 or 2 in A12: 24 ids, e.g. 273, 274, 284, 325, 357, 409, 618, 669–676)
+  pick the variant from a fixed repeating pattern over `(x mod 3, y mod 4)` (type 1) or `(x mod 2, y mod 2)`
+  (type 2) (A13 18–32, 281–285); a pattern value above 2 is clamped to 2 (A10 264). The pattern values are not
+  restated here (O4); until then these ids use the default rule.
+- **Recommended viewer behaviour:** `v = (7x + 11y) mod 3`, with `x`, `y` the tile's world coordinates — the same
+  deterministic substitute TEdit uses (A13 288) and the one M4 already uses for walls. Deterministic, so renders
+  are reproducible and testable; adjacent tiles rarely share a variant, which is the visual point of the
+  variants. Never use `Math.random`.
+
+### Slopes and half blocks
+
+Block shape is byte-2 bits 4–6 of a tile record (F): 0 full, 1 half, 2–5 slopes. The names in F say which corner
+is **cut away**; drawing them (A8 5909–5949) confirms that reading. Derived from that drawing code — each shape is
+drawn as eight 2-pixel columns `i = 0…7` of the chosen cell:
+
+| Shape | Cut corner | Column `i` draws | Full (solid) faces |
+|---|---|---|---|
+| 1 half | top half | cell rows 0–7, placed in tile rows 8–15 | S (W and E only half) |
+| 2 top-right | NE | cell rows 0 … 15−2i, moved down by 2i | W, S |
+| 3 top-left | NW | cell rows 0 … 2i+1, moved down by 14−2i | E, S |
+| 4 bottom-right | SE | cell rows 2i … 15, placed at the top | W, N |
+| 5 bottom-left | SW | cell rows 0 … 2i+1, placed at the top | E, N |
+
+So a slope keeps the surface outline of its cell and slides it diagonally, column by column; it is not a plain
+clip of the 16 × 16 cell. The half block uses only the upper half of the cell.
+
+**Which cell a shaped tile uses.** TEdit's block framer (A8 5709–5813) ignores shapes completely: the cell is
+chosen from the 3 × 3 neighbourhood exactly as for a full block (the centre's own shape and its neighbours' shapes
+play no role), and only the drawing changes. TEdit's newer 8-way framer for gemsparks (A13 137–269) is stricter:
+a neighbour connects only if both facing faces are full (per a face table, A13 43–51), and a corner only if the two
+edges next to it connect. A13's face table agrees with the column above for shapes 0–3 but not for 4 and 5
+(A13 gives shape 4 the faces N and E, shape 5 the faces N and S, which contradicts its own drawing code) — O5.
+
+**M4 rule:** choose the cell ignoring shapes (as A8), then draw by the shape table. Whether the game breaks a
+connection across a sloped face for ordinary blocks is open (O5, H3).
+
+### Worked examples
+
+`#` = centre, `d` dirt, `s` stone, `.` empty. Variant 0 everywhere (e.g. tile at `x = 0, y = 0`); for another
+variant take `v1`/`v2` from the same rule. Rows are N, middle, S.
+
+| # | Centre | Neighbourhood | Case → rule | Cell | Source rectangle | Basis |
+|---|---|---|---|---|---|---|
+| 1 | dirt | `...` / `.#.` / `...` | none → plain | (9,3) | (162, 54, 16, 16) | A10 93, S |
+| 2 | dirt | `...` / `.#d` / `...` | E → plain | (9,0) | (162, 0, 16, 16) | A10 94, S |
+| 3 | dirt | `...` / `d#d` / `ddd` | E W S (top surface) | (1,0) | (18, 0, 16, 16) | A10 106, S |
+| 4 | dirt | `...` / `.#d` / `.dd` | E S (top-left corner) | (0,3) | (0, 54, 16, 16) | A10 102, S |
+| 5 | dirt | `ddd` / `d#d` / `ddd` | all four, all corners → interior | (1,1) | (18, 18, 16, 16) | A10 108, S |
+| 6 | dirt | `.d.` / `d#d` / `ddd` | all four, NE and NW missing | (6,1) | (108, 18, 16, 16) | A10 111, S |
+| 7 | dirt | `.d.` / `d#d` / `.d.` | all four, all corners missing → rule 1 wins | (6,2) | (108, 36, 16, 16) | A10 112, S |
+| 8 | dirt | `ddd` / `d#s` / `ddd` | stone names dirt as partner → E connected → interior | (1,1) | (18, 18, 16, 16) | A8 5750, A14 173, S (`Tiles_0` has no stone edges) |
+| 9 | stone | `sss` / `s#d` / `sss` | N S W, `Bn` edges = E (dirt to the right) | (8,7) | (144, 126, 16, 16) | A10 148, S |
+| 10 | stone | `ddd` / `d#d` / `ddd` | none, `Bn` edges = N E S W (stone pocket in dirt) | (6,11) | (108, 198, 16, 16) | A10 126, S |
+| 11 | stone | `.d.` / `s#s` / `...` | E W, `Bn` edges = N (dirt above, air below) | (13,1) | (234, 18, 16, 16) | A10 171, S |
+| 12 | stone | `sss` / `s#s` / `ssd` | all four, SE corner is dirt | (0,5) | (0, 90, 16, 16) | A10 179, S |
+| 13 | stone | `ss.` / `d#s` / `dd.` | E N, `Bn` edges = W S | (2,6) | (36, 108, 16, 16) | A10 131, S |
+| 14 | dirt, shape 2 (top-right cut) | `...` / `d#.` / `dd.` | W S (shape ignored) | (1,3) | (18, 54, 16, 16), drawn column by column per shape 2 | A10 105, A8 5909–5918 |
+| 15 | dirt, shape 1 (half) | `...` / `d#d` / `...` | E W | (6,4) | (108, 72, 16, 8) drawn into tile rows 8–15 | A10 98, A8 5903–5907 |
+
+Example 8 shows the asymmetry of merging: the same dirt/stone pair gives dirt a seamless interior and stone a dirt
+rim (example 9 from the other side). Examples 6 and 7 are the inner corners where two empty diagonals meet a
+solid mass.
+
+### Human steps (in-game check, G)
+
+A small world made with our own generator or a fresh "small" world, nothing committed. Screenshots go to
+`local-renders/` (gitignored).
+
+- **H1** Build the 15 worked examples in a flat dirt/stone area (Journey mode, 1:1 zoom, lighting full), save,
+  read the tiles with `Terraria.WorldInspector`, screenshot, and compare each centre tile with the listed cell.
+- **H2** Save and reload the world twice; note whether the dirt/stone variants of the same tiles change (random
+  per load) or stay (seeded).
+- **H3** Hammer a dirt block into each of the shapes 1–5 inside a dirt mass; check whether its full neighbours
+  draw an outline towards the cut faces (O5) and that the shape value read by the inspector matches the "Cut
+  corner" column.
+- **H4** Place copper ore fully surrounded by dirt, and copper next to iron ore; check whether the ore draws a full
+  dirt rim (cell (6,11)) and whether the two ores show a seam (O2).
+- **H5** Stone with dirt only to the N and E and air elsewhere: record what the game draws (O3).
+
+### Not covered (deferred)
+
+Grass rules (A10 150–249, the relaxed corner matching A10 454–505 and the taller grass sheets), gemspark 8-way
+framing (A13), the back-check, the large-frame patterns, cactus/vines/beams/columns, modded tiles, walls (already
+in "Walls"), tile animation, paint and lighting.
+
+### Open questions
+
+- **O1** Does the game re-roll the variant on every load (H2)? The recommendation stands either way.
+- **O2** Merge relatives. TEdit connects a dirt-merging tile to dirt and to every other dirt-merging tile; only the
+  stone family keeps dirt as a pure blend partner. The ore sheets carry the same full dirt-rim cells as stone
+  (S: `Tiles_7` (6,11) and (8,7) show dirt rims), which only appear if dirt is a *partner*, not a connection, for
+  ores too. **Recommended:** treat every tile with a partner like the stone family — connected = same type (or
+  same stone family), partner = its `mergeWith` type — and let only the partner itself (dirt) see its relatives
+  as connected. Confirm with H4 before relying on it for ore ↔ ore seams.
+- **O3** Unlisted `Bn` edge combinations fall back to a plain outline (H5); the sheets contain blend cells that
+  no listed rule reaches.
+- **O4** Large-frame variant patterns (24 ids): restate the patterns from an independent observation (H-step in
+  the follow-up) rather than from A13.
+- **O5** Slopes: do full neighbours of a sloped tile keep their connection (A8) or break it at a cut face (A13
+  style)? And A13's face entries for shapes 4 and 5 disagree with the drawing code.
+
+Proposed follow-up issues: [planning/tile-framing-follow-ups.md](planning/tile-framing-follow-ups.md).
+
 ## License review of existing decoders
 
 The repository is public; it has no `LICENSE` file yet (open question 1). "Read" = may be read to understand the
