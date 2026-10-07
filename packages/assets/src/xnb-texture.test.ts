@@ -62,6 +62,7 @@ function expectDecodes(bytes: Uint8Array, width: number, height: number, rgba: U
 
 /** Hand-built aligned match after an uncompressed prefix; no decoder tables or compressor are used. */
 function alignedMatchFrames(payload: Uint8Array, slot: 8 | 10): ReturnType<typeof lzxLiteralFrames> {
+  if (payload.length - PAYLOAD.data !== 68) throw new Error("the aligned-match fixture needs 68 data bytes");
   const writer = new BitWriter();
   const prefixLength = payload.length - 4;
   writer.bits(0, 1); // no Intel E8
@@ -148,9 +149,9 @@ describe("readXnbTexture — LZX", () => {
   });
 
   it.each([
-    { extraBits: 3, slot: 8, tail: [62, 69, 76, 83] },
-    { extraBits: 4, slot: 10, tail: [150, 157, 164, 171] },
-  ] as const)("readXnbTexture_LzxAlignedMatchWith$extraBits ExtraBits_DecodesDistinctRgba", ({ slot, tail }) => {
+    [3, 8, [62, 69, 76, 83]],
+    [4, 10, [150, 157, 164, 171]],
+  ] as const)("readXnbTexture_LzxAlignedMatchWith%iExtraBits_DecodesDistinctRgba", (_extraBits, slot, tail) => {
     const rgba = patternRgba(17, 1);
     // The match starts at pixel byte 64. Offsets 19 and 43 copy bytes 45–48 and 21–24 respectively.
     // Expected bytes are fixed independently of the bitstream and decoder's offset calculation.
