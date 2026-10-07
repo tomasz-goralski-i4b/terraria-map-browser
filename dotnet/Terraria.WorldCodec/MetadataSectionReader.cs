@@ -6,16 +6,21 @@ namespace Terraria.WorldCodec;
 /// <summary>
 /// Cursor over the bytes of the metadata section (docs/file-format.md, "Primitive types").
 /// Every read is bounded by the section end; errors carry the absolute offset of the field start.
-/// Reads the seekable stream through a small window, so memory and I/O follow the fields actually consumed,
-/// not the declared section length.
+/// Reads the seekable stream one field at a time, with no read-ahead: a buffer refill fetches exactly the
+/// requested field, so a string payload is never consumed before its length prefix has been validated, and memory
+/// and I/O follow the fields actually consumed, not the declared section length.
 /// </summary>
 internal sealed class MetadataSectionReader(Stream stream, WorldSectionBoundary section)
 {
+    /// <summary>Safety cap for the world name and seed strings (docs/file-format/metadata.md).</summary>
+    public const int MaxNameOrSeedBytes = 4096;
+
+    /// <summary>Safety cap for every other metadata string (docs/file-format/metadata.md).</summary>
+    public const int MaxOtherStringBytes = 1_048_576;
+
     private const string SectionName = "Metadata";
     private const int MaxLengthPrefixBytes = 5;
     private const int WindowSize = 4096;
-    private const int MaxNameAndSeedBytes = 4096;
-    private const int MaxOtherStringBytes = 1_048_576;
 
     private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
 
@@ -68,8 +73,11 @@ internal sealed class MetadataSectionReader(Stream stream, WorldSectionBoundary 
         }
     }
 
-    /// <summary>LEB128 length prefix followed by strict UTF-8.</summary>
-    public string String(string? field = null)
+    /// <summary>
+    /// LEB128 length prefix followed by strict UTF-8 of at most <paramref name="maxBytes"/> bytes; the cap is
+    /// checked before the payload is read.
+    /// </summary>
+    public string String(string field, int maxBytes)
     {
         var start = AbsolutePosition;
         uint length = 0;
@@ -103,7 +111,6 @@ internal sealed class MetadataSectionReader(Stream stream, WorldSectionBoundary 
             throw Error(start, "string length overruns section", field);
         }
 
-        var maxBytes = field is "name" or "seed" ? MaxNameAndSeedBytes : MaxOtherStringBytes;
         if (length > maxBytes)
         {
             throw Error(start, "string length exceeds safety limit", field);

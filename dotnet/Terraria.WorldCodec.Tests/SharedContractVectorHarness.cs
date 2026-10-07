@@ -127,6 +127,9 @@ internal static class SharedContractVectorHarness
 
     private const BindingFlags Methods = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static;
 
+    // Name and seed cap from docs/file-format/metadata.md, restated here rather than read from the codec.
+    private const int MaxNameOrSeedBytes = 4096;
+
     private static object ReadTiles(Stream stream, WorldSectionBoundary boundary, JsonElement context, string entry)
     {
         var frame = context.GetProperty("frameImportant");
@@ -183,8 +186,8 @@ internal static class SharedContractVectorHarness
 
         if (startsAt == "name")
         {
-            result["name"] = Invoke(reader, "String", "name");
-            result["seed"] = Invoke(reader, "String", "seed");
+            result["name"] = Invoke(reader, "String", "name", MaxNameOrSeedBytes);
+            result["seed"] = Invoke(reader, "String", "seed", MaxNameOrSeedBytes);
             Invoke(reader, "Skip", sizeof(ulong), "worldGenVersion");
             var guid = new byte[16];
             for (var index = 0; index < guid.Length; index++)
