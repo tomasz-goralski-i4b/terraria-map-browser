@@ -10,6 +10,9 @@
     }
   },
   "types": "./dist/index.d.ts",
+  "dependencies": {
+    "@studio/world-model": "workspace:*"
+  },
   "scripts": {
     "build": "tsc -b",
     "lint": "eslint src tests --max-warnings=0",

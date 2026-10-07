@@ -6,5 +6,6 @@
     "types": [],
     "isolatedDeclarations": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  "references": [{ "path": "../world-model" }]
 }
