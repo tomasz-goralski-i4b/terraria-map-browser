@@ -18,7 +18,8 @@ public static class WorldDiff
         Func<TileRegion, IReadOnlyList<Tile>> readLeftChunk,
         Func<TileRegion, IReadOnlyList<Tile>> readRightChunk,
         TextWriter output,
-        int maximum = 100)
+        int maximum = 100,
+        PaletteResolvedDigests? resolved = null)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(maximum);
         ArgumentNullException.ThrowIfNull(readLeftChunk);

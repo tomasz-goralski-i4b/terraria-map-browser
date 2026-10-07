@@ -169,6 +169,101 @@ public sealed class DiffCommandTests
         Assert.Contains("palette", Lines(output.ToString())[0], StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public void Write_DifferentPaletteAndOneChangedChunk_ReadsOnlyThatChunk()
+    {
+        // A new block first seen at (0,0) shifts every palette index on the right, so every block/wall index digest
+        // differs; palette-resolved digests still prove the other chunks equal (#63).
+        var leftWorld = SyntheticTileWorld.Read(SummaryWorld.Snapshot());
+        var rightWorld = SyntheticTileWorld.Read(SummaryWorld.SnapshotWith(new Dictionary<int, string> { [0] = "02 1e 40 7f" }));
+        using var left = Summary(leftWorld);
+        using var right = Summary(rightWorld);
+        Assert.False(JsonElement.DeepEquals(left.RootElement.GetProperty("palette"), right.RootElement.GetProperty("palette")));
+        using var output = new StringWriter(CultureInfo.InvariantCulture);
+        var leftRequests = new List<TileRegion>();
+        var rightRequests = new List<TileRegion>();
+        var code = WorldDiff.Write(left.RootElement, right.RootElement,
+            region => ReadChunk(leftWorld, region, leftRequests), region => ReadChunk(rightWorld, region, rightRequests), output,
+            resolved: PaletteResolvedDigests.For(leftWorld, rightWorld));
+        Assert.Equal(3, code);
+        Assert.Equal([new TileRegion(0, 0, 128, 128)], leftRequests);
+        Assert.Equal(leftRequests, rightRequests);
+        Assert.Equal(["tiles[0,0].block: {\"kind\":\"vanilla\",\"id\":1} -> {\"kind\":\"vanilla\",\"id\":30}"], TileLines(output.ToString()));
+    }
+
+    [Fact]
+    public void Write_PalettePermutationWithoutRemappedDigests_ResolvesAndSkipsEveryChunk()
+    {
+        var world = SyntheticTileWorld.Read(SummaryWorld.Snapshot());
+        using var left = Summary(world);
+        var reordered = JsonNode.Parse(left.RootElement.GetRawText())!.AsObject();
+        var palette = reordered["palette"]!.AsArray();
+        var entries = palette.Select(entry => entry!.DeepClone()).Reverse().ToArray();
+        palette.Clear();
+        foreach (var entry in entries)
+        {
+            palette.Add(entry);
+        }
+
+        using var right = JsonDocument.Parse(reordered.ToJsonString());
+        using var output = new StringWriter(CultureInfo.InvariantCulture);
+        var code = WorldDiff.Write(left.RootElement, right.RootElement,
+            _ => throw new InvalidOperationException("Equal left chunk must not be decoded."),
+            _ => throw new InvalidOperationException("Equal right chunk must not be decoded."), output,
+            resolved: PaletteResolvedDigests.For(world, world));
+        Assert.Equal(0, code);
+        Assert.Equal("No differences.", output.ToString().Trim());
+    }
+
+    [Fact]
+    public void Write_MetadataKeySetsDiffer_ReportsAbsentSidesInLeftThenRightOrder()
+    {
+        var world = SyntheticTileWorld.Read(SummaryWorld.Snapshot());
+        using var summary = Summary(world);
+        var leftNode = JsonNode.Parse(summary.RootElement.GetRawText())!.AsObject();
+        var rightNode = leftNode.DeepClone().AsObject();
+        var seed = rightNode["metadata"]!["seed"]!.ToJsonString();
+        leftNode["metadata"]!.AsObject().Remove("seed");
+        leftNode["metadata"]!["legacyField"] = 1;
+        rightNode["metadata"]!["futureField"] = 7;
+        using var left = JsonDocument.Parse(leftNode.ToJsonString());
+        using var right = JsonDocument.Parse(rightNode.ToJsonString());
+        using var output = new StringWriter(CultureInfo.InvariantCulture);
+        var code = WorldDiff.Write(left.RootElement, right.RootElement,
+            _ => throw new InvalidOperationException("Metadata-only diff must not decode left tiles."),
+            _ => throw new InvalidOperationException("Metadata-only diff must not decode right tiles."), output);
+        Assert.Equal(3, code);
+        Assert.Equal(
+        [
+            "metadata.legacyField: 1 -> absent",
+            $"metadata.seed: absent -> {seed}",
+            "metadata.futureField: absent -> 7",
+        ], Lines(output.ToString()));
+    }
+
+    [Theory]
+    [InlineData("01 0a", "01 02", "\"red, green\" -> \"red\"")]
+    [InlineData("00", "01 0c", "\"none\" -> \"blue, green\"")]
+    public async Task Diff_WiresChanged_PrintsWireNames(string left, string right, string values)
+    {
+        var result = await RunPairAsync(
+            SummaryWorld.Build(1, 1, new Dictionary<int, string> { [0] = left }),
+            SummaryWorld.Build(1, 1, new Dictionary<int, string> { [0] = right }));
+        Assert.Equal(3, result.ExitCode);
+        Assert.Equal([$"tiles[0,0].wires: {values}"], TileLines(result.OutputText));
+    }
+
+    [Theory]
+    [InlineData]
+    [InlineData("survey")]
+    public async Task Inspector_TopLevelUsage_ListsDiffCommand(params string[] arguments)
+    {
+        using var directory = new TemporaryDirectory();
+        var result = await InspectorProcess.RunAsync(directory.Path, arguments);
+        Assert.Equal(2, result.ExitCode);
+        Assert.Contains("Terraria.WorldInspector diff <left.wld> <right.wld> [--max n]", result.Error, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
