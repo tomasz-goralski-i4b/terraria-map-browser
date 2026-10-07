@@ -122,7 +122,8 @@ Notes and rules:
     `width · height ≤ 2²⁸`, so a hostile file cannot make the reader allocate gigabytes. TEdit has no limit
     (T11). Vanilla's largest preset is commonly given as 8400 × 2400 — not checked against a pinned source,
     but either way far below the limit; F worlds are 4200 × 1200.
-  - The pixel bounds (rows 6–9) are not cross-checked against the dimensions in M1 (open question).
+  - The pixel bounds (rows 6–9) are intentionally not cross-checked against dimensions (decision #116).
+    The TypeScript reader exposes the stored values unchanged as `WorldMetadata.bounds`.
 
 Version gates are listed for completeness; M1 accepts only format 326, for which **every** row except 58 is
 present. A reader for 326 may therefore be a straight sequence; the gates matter only when the version range
