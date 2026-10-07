@@ -9,6 +9,8 @@ run_logged contracts-validation node --test scripts/contracts-validation.test.mj
 node scripts/check-contracts.mjs || exit 1
 echo "== draft PR body"
 bash scripts/tdd/open-pr-body.test.sh || exit 1
+echo "== blocked note"
+bash scripts/tdd/blocked-note.test.sh || exit 1
 echo "== fixtures"
 node scripts/check-fixtures.mjs || exit 1
 bash scripts/test.sh || exit $?
