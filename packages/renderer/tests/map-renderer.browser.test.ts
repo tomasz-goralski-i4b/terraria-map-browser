@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { WebGl2UnavailableError, createMapRenderer, renderChunk, visibleChunks } from "../src/index.js";
 import type { ChunkLayers, MapRenderer, RenderableWorld } from "../src/index.js";
 
@@ -134,6 +134,59 @@ describe("GPU output equals renderChunk", () => {
     renderer.render();
     expect(renderer.stats().textureUploads - before).toBeLessThanOrEqual(1);
     expect(readCanvas(canvas)).toEqual(cpuReference(grown, allLayers));
+  });
+
+  /** Texels of the palette texture written by texSubImage2D while `action` runs, as "x,y" keys. */
+  function paletteTexelsWritten(action: () => void): Set<string> {
+    const texels = new Set<string>();
+    const proto = WebGL2RenderingContext.prototype;
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- called with the real receiver below
+    const original = proto.texSubImage2D;
+    const spy = vi.spyOn(proto, "texSubImage2D").mockImplementation(function (this: WebGL2RenderingContext, ...args: unknown[]) {
+      if (args[6] === this.RGBA_INTEGER) {
+        const [, , x, y, w, h] = args as [unknown, unknown, number, number, number, number];
+        for (let row = y; row < y + h; row++) {
+          for (let column = x; column < x + w; column++) texels.add(`${String(column)},${String(row)}`);
+        }
+      }
+      (original as unknown as (...rest: unknown[]) => void).apply(this, args);
+    });
+    try {
+      action();
+    } finally {
+      spy.mockRestore();
+    }
+    return texels;
+  }
+
+  function appendUpload(from: number, to: number): { written: Set<string>; expected: Set<string> } {
+    const base = syntheticWorld(128, 128);
+    const entries = Array.from({ length: to }, (_, id) => ({ kind: "vanilla", id }) as const);
+    const growing: RenderableWorld = { ...base, palette: entries.slice(0, from) };
+    const renderer = makeRenderer(makeCanvas(128, 128));
+    renderer.setWorld(growing);
+    renderer.render();
+    const written = paletteTexelsWritten(() => {
+      (growing.palette as unknown[]).push(...entries.slice(from));
+      renderer.setWorld(growing);
+      renderer.render();
+    });
+    const expected = new Set<string>();
+    for (let index = from; index < to; index++) {
+      expected.add(`${String(index % 256)},${String(Math.floor(index / 256))}`);
+      expected.add(`${String(256 + (index % 256))},${String(Math.floor(index / 256))}`);
+    }
+    return { written, expected };
+  }
+
+  test("appending palette entries within a row uploads only the new texels", () => {
+    const { written, expected } = appendUpload(2, 4);
+    expect([...written].sort()).toEqual([...expected].sort());
+  });
+
+  test("appending palette entries across the entry 255/256 row boundary uploads only the new texels", () => {
+    const { written, expected } = appendUpload(255, 257);
+    expect([...written].sort()).toEqual([...expected].sort());
   });
 });
 

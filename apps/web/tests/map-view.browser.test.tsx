@@ -174,3 +174,135 @@ test("without WebGL2 the map shows an error message instead of throwing", async 
   );
   await expect.element(page.getByRole("alert")).toMatchTextContent("WebGL2");
 });
+
+function statusText(): string {
+  return document.querySelector("[role=status]")?.textContent ?? "";
+}
+
+function tileText(cam: Camera, x: number, y: number): string {
+  const tile = screenToTile(cam, x, y);
+  return `${String(Math.floor(tile.x))}, ${String(Math.floor(tile.y))}`;
+}
+
+test("the status bar follows the tile under a resting pointer after keyboard pans", async () => {
+  await mountMap();
+  await page.getByRole("button", { name: "1:1" }).click();
+  pointer("pointermove", 120, 90, 0);
+  await vi.waitFor(() => {
+    expect(statusText()).toBe(tileText(camera(), 120, 90));
+  });
+  const before = statusText();
+  key("ArrowRight");
+  await vi.waitFor(() => {
+    expect(statusText()).not.toBe(before);
+    expect(statusText()).toBe(tileText(camera(), 120, 90));
+  });
+});
+
+test("the status bar follows the tile under a resting pointer after a wheel zoom elsewhere", async () => {
+  await mountMap();
+  await page.getByRole("button", { name: "1:1" }).click();
+  pointer("pointermove", 120, 90, 0);
+  await vi.waitFor(() => {
+    expect(statusText()).toBe(tileText(camera(), 120, 90));
+  });
+  // The wheel event carries its own position, but the resting pointer is the one the status bar reports.
+  const before = statusText();
+  wheel(300, 200, -300);
+  await vi.waitFor(() => {
+    expect(camera().zoom).toBeGreaterThan(1);
+    expect(statusText()).not.toBe(before);
+    expect(statusText()).toBe(tileText(camera(), 120, 90));
+  });
+});
+
+test("the status bar updates while dragging", async () => {
+  await mountMap();
+  await page.getByRole("button", { name: "1:1" }).click();
+  // No earlier hover: the drag move itself must report the tile under the pointer.
+  pointer("pointerdown", 200, 150, 1);
+  pointer("pointermove", 150, 120, 1);
+  await vi.waitFor(() => {
+    expect(statusText()).toBe(tileText(camera(), 150, 120));
+  });
+  pointer("pointerup", 150, 120, 0);
+});
+
+test("the status bar is cleared when the pointer leaves the canvas", async () => {
+  await mountMap();
+  pointer("pointermove", 120, 90, 0);
+  await vi.waitFor(() => {
+    expect(statusText()).not.toBe("—");
+  });
+  pointer("pointerout", 120, 90, 0);
+  await vi.waitFor(() => {
+    expect(statusText()).toBe("—");
+  });
+  key("ArrowRight");
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(statusText()).toBe("—");
+});
+
+test.each(["+", "-"])("the %s key zooms around the last pointer position", async (name) => {
+  await mountMap();
+  await page.getByRole("button", { name: "1:1" }).click();
+  pointer("pointermove", 100, 70, 0);
+  const before = camera();
+  const tile = screenToTile(before, 100, 70);
+  key(name);
+  await vi.waitFor(() => {
+    expect(camera().zoom).not.toBe(before.zoom);
+  });
+  const same = screenToTile(camera(), 100, 70);
+  expect(same.x).toBeCloseTo(tile.x, 6);
+  expect(same.y).toBeCloseTo(tile.y, 6);
+});
+
+test("replacing the world refreshes the status bar for the resting pointer", async () => {
+  const small: RenderableWorld = { ...syntheticWorld(), width: 600, height: 300 };
+  const count = 600 * 300;
+  const replacement: RenderableWorld = {
+    ...small,
+    planes: { block: new Uint16Array(count), wall: new Uint16Array(count), liquid: new Uint8Array(count), liquidAmount: new Uint8Array(count) },
+  };
+  const view = await render(
+    <div style={{ width: viewport.width, height: viewport.height, position: "relative" }}>
+      <MapView renderer="@studio/renderer" world={world} />
+    </div>,
+  );
+  await vi.waitFor(() => {
+    expect(canvas().dataset["camera"]).toBeDefined();
+  });
+  pointer("pointermove", 200, 150, 0);
+  await vi.waitFor(() => {
+    expect(statusText()).toBe(tileText(camera(), 200, 150));
+  });
+  const old = statusText();
+  await view.rerender(
+    <div style={{ width: viewport.width, height: viewport.height, position: "relative" }}>
+      <MapView renderer="@studio/renderer" world={replacement} />
+    </div>,
+  );
+  await vi.waitFor(() => {
+    expect(statusText()).not.toBe(old);
+    expect(statusText()).toBe(tileText(camera(), 200, 150));
+  });
+});
+
+test("a devicePixelRatio change at fixed CSS size resizes the backing store", async () => {
+  await mountMap();
+  const css = canvas().clientWidth;
+  const ratio = window.devicePixelRatio;
+  expect(canvas().width).toBe(Math.round(css * ratio));
+  try {
+    Object.defineProperty(window, "devicePixelRatio", { configurable: true, value: ratio * 2 });
+    // Browsers report a ratio change (zoom, moving between monitors) as a window resize.
+    window.dispatchEvent(new Event("resize"));
+    await vi.waitFor(() => {
+      expect(canvas().width).toBe(Math.round(css * ratio * 2));
+      expect(canvas().clientWidth).toBe(css);
+    });
+  } finally {
+    Reflect.deleteProperty(window, "devicePixelRatio");
+  }
+});
