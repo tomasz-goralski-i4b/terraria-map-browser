@@ -29,8 +29,12 @@ interface MapSession {
   world: RenderableWorld;
   camera: Camera;
   viewport: Size;
+  /**
+   * Pointer positions are kept in CSS pixels relative to the canvas, because a devicePixelRatio change rescales
+   * the backing store under a resting pointer; they are converted to backing pixels only when used.
+   */
   readonly pointers: Map<number, Point>;
-  /** Last pointer position over the canvas (backing pixels); null while the pointer is outside. */
+  /** Last pointer position over the canvas (CSS pixels); null while the pointer is outside. */
   hover: Point | null;
 }
 
@@ -41,14 +45,22 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
   const [error, setError] = useState<string | null>(null);
   const [hoverTile, setHoverTile] = useState<Point | null>(null);
 
+  /** Canvas backing-store pixels of a point in CSS pixels relative to the canvas, at the current canvas geometry. */
+  const toBacking = useCallback((point: Point): Point => {
+    const canvas = canvasRef.current;
+    if (canvas === null || canvas.clientWidth === 0 || canvas.clientHeight === 0) return point;
+    return { x: (point.x * canvas.width) / canvas.clientWidth, y: (point.y * canvas.height) / canvas.clientHeight };
+  }, []);
+
   /** The status bar reports the tile under the resting pointer, so it is recomputed whenever the camera or world moves. */
   const refreshHover = useCallback((session: MapSession): void => {
-    const tile = session.hover === null ? null : session.renderer.tileAt(session.hover.x, session.hover.y);
+    const hover = session.hover === null ? null : toBacking(session.hover);
+    const tile = hover === null ? null : session.renderer.tileAt(hover.x, hover.y);
     setHoverTile((previous) => {
       if (tile === null) return null;
       return previous !== null && previous.x === tile.x && previous.y === tile.y ? previous : { x: tile.x, y: tile.y };
     });
-  }, []);
+  }, [toBacking]);
 
   const applyCamera = useCallback((session: MapSession, camera: Camera): void => {
     session.camera = camera;
@@ -62,12 +74,12 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
     );
   }, [refreshHover]);
 
-  /** Canvas backing-store pixels of a pointer event. */
-  const canvasPoint = (clientX: number, clientY: number): Point => {
+  /** CSS pixels of a pointer event relative to the canvas. */
+  const localPoint = (clientX: number, clientY: number): Point => {
     const canvas = canvasRef.current;
     if (canvas === null) return { x: clientX, y: clientY };
     const rect = canvas.getBoundingClientRect();
-    return { x: ((clientX - rect.left) * canvas.width) / rect.width, y: ((clientY - rect.top) * canvas.height) / rect.height };
+    return { x: clientX - rect.left, y: clientY - rect.top };
   };
 
   useEffect(() => {
@@ -91,7 +103,7 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
     const onWheel = (event: WheelEvent): void => {
       event.preventDefault();
       const rate = event.ctrlKey ? PINCH_ZOOM_PER_PIXEL : WHEEL_ZOOM_PER_PIXEL;
-      const point = canvasPoint(event.clientX, event.clientY);
+      const point = toBacking(localPoint(event.clientX, event.clientY));
       applyCamera(session, zoomAt(session.camera, session.camera.zoom * Math.exp(-event.deltaY * rate), point.x, point.y,
         session.viewport, session.world));
     };
@@ -140,7 +152,7 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
 
   const onPointerDown = (event: React.PointerEvent<HTMLCanvasElement>): void => {
     withSession((session) => {
-      session.pointers.set(event.pointerId, canvasPoint(event.clientX, event.clientY));
+      session.pointers.set(event.pointerId, localPoint(event.clientX, event.clientY));
       try {
         event.currentTarget.setPointerCapture(event.pointerId);
       } catch {
@@ -151,15 +163,17 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
 
   const onPointerMove = (event: React.PointerEvent<HTMLCanvasElement>): void => {
     withSession((session) => {
-      const point = canvasPoint(event.clientX, event.clientY);
-      const previous = session.pointers.get(event.pointerId);
-      session.hover = point;
-      if (previous === undefined) {
+      const local = localPoint(event.clientX, event.clientY);
+      const last = session.pointers.get(event.pointerId);
+      session.hover = local;
+      if (last === undefined) {
         refreshHover(session);
         return;
       }
-      const others = [...session.pointers].filter(([id]) => id !== event.pointerId).map(([, other]) => other);
-      session.pointers.set(event.pointerId, point);
+      const others = [...session.pointers].filter(([id]) => id !== event.pointerId).map(([, other]) => toBacking(other));
+      session.pointers.set(event.pointerId, local);
+      const point = toBacking(local);
+      const previous = toBacking(last);
       const other = others[0];
       if (other === undefined) {
         applyCamera(session, panBy(session.camera, point.x - previous.x, point.y - previous.y, session.viewport, session.world));
@@ -182,9 +196,8 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
     withSession((session) => {
       const { camera, viewport, world: current } = session;
       const pan = (dx: number, dy: number): Camera => panBy(camera, dx * KEY_PAN_PIXELS, dy * KEY_PAN_PIXELS, viewport, current);
-      const zoom = (factor: number): Camera =>
-        zoomAt(camera, camera.zoom * factor, session.hover?.x ?? viewport.width / 2, session.hover?.y ?? viewport.height / 2,
-          viewport, current);
+      const anchor = session.hover === null ? { x: viewport.width / 2, y: viewport.height / 2 } : toBacking(session.hover);
+      const zoom = (factor: number): Camera => zoomAt(camera, camera.zoom * factor, anchor.x, anchor.y, viewport, current);
       const next = {
         ArrowLeft: () => pan(1, 0),
         ArrowRight: () => pan(-1, 0),

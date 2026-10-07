@@ -7,6 +7,12 @@ import { MapCanvas } from "./MapCanvas.js";
 /** The world metadata does not carry the surface row yet; Terraria puts it at roughly 30 % of the height. */
 const SURFACE_FRACTION = 0.3;
 
+/**
+ * Session messages stay above the canvas of a previously loaded world (which fills the view) and keep receiving
+ * pointer input; inline so this holds without the app stylesheet, like the map overlays.
+ */
+const MESSAGE_STYLE: React.CSSProperties = { position: "relative", zIndex: 2 };
+
 /** The loaded world's planes and palette by reference; nothing is copied. */
 function loadedRenderableWorld(): RenderableWorld | null {
   const loaded = getDefaultWorldSession().getLoadedWorld();
@@ -47,7 +53,7 @@ export function MapView({ renderer, world }: MapViewProps): React.JSX.Element {
       }}
     >
       {phase === "loading" && (
-        <p>
+        <p style={MESSAGE_STYLE}>
           Loading {loadingFileName}…{" "}
           <button
             type="button"
@@ -60,7 +66,7 @@ export function MapView({ renderer, world }: MapViewProps): React.JSX.Element {
         </p>
       )}
       {phase === "failed" && error !== null && (
-        <p role="alert">
+        <p role="alert" style={MESSAGE_STYLE}>
           Could not open {error.fileName}: {error.code} at offset {error.offset}. {error.message}
         </p>
       )}
