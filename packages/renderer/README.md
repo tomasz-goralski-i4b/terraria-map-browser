@@ -12,8 +12,26 @@ Chunk coordinates are indices of 128 × 128 regions; right and bottom edges are 
 Negative, non-integer or past-the-edge chunk indices throw a `RangeError`.
 `options.surfaceY` is the first underground row (the CWM does not contain a surface depth).
 `options.layers` independently enables background, walls, blocks and liquids.
+`options.mapPalette` supplies map colours (see below); without it every block and wall uses its placeholder.
 
-## Placeholder palette
+`createMapRenderer(canvas, options)` is the WebGL2 backend. It draws exactly the pixels `renderChunk` produces for
+the same `mapPalette`, which the browser tests assert for every layer combination.
+
+## Terraria map palette
+
+`terrariaMapPalette` (`src/palette/terraria-map-palette.generated.ts`) holds Terraria's map colours: per vanilla
+tile and wall ID one colour per map option, plus water, lava, honey and shimmer. It is generated from a local game
+installation and committed ([ADR 0002](../../docs/adr/0002-shipped-map-palette.md)); after a game update run
+
+```powershell
+./scripts/map-palette/export.ps1 -TerrariaAssembly '<Terraria directory>/TerrariaServer.exe'
+```
+
+and commit the regenerated module. `contentColor` uses the first map option of vanilla content and falls back to
+the placeholder for IDs without a map colour, mod and unknown content. Frame-dependent options, paint and depth
+shading are not applied yet.
+
+## Placeholder colours
 
 These colours are generated independently and use no Terraria assets or third-party tables.
 For vanilla content, the stable key is ASCII `vanilla:<decimal id>`, independent of its palette
@@ -34,5 +52,5 @@ contribute nothing. Paint, frames, shape and flags do not alter this initial pla
 
 For example, vanilla id 1 is block `[157, 173, 94, 255]`, wall `[78, 86, 47, 255]`.
 Rendering reads the column-major planes directly, without semantic tile views or per-tile objects.
-Placeholder colours are hashed once per palette entry and cached per palette (CWM palettes are
-append-only), not once per chunk.
+Colours are resolved once per palette entry and cached per CWM palette and map palette (CWM palettes
+are append-only), not once per chunk.

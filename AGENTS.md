@@ -48,6 +48,8 @@ scripts/                           verify/build/test + TDD gates (scripts/tdd) +
 
 ## Hard rules
 - No Terraria assets, player worlds or commercial mods in the repo (`*.wld` is gitignored except generated fixtures).
+  The one exception is the map colour table generated from the game by `scripts/map-palette/export.ps1`
+  ([ADR 0002](docs/adr/0002-shipped-map-palette.md)); it is regenerated, never edited by hand.
 - We do not copy TEdit/tModLoader code — we describe the contract and implement independently. This covers their
   data tables too (tile colours, framing/blending lookups, settings XML): read them as a source, cite them
   (link + revision, file:line), restate the rules in our own words and derive values ourselves (e.g. frame-important
