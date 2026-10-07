@@ -214,12 +214,13 @@ Where `frameX`/`frameY` come from:
   ("self-framing"). The renderer has to do the same (A10). The base rule set picks one of 16 neighbour cases from the
   four direct neighbours of the same type, then one of three variants. Cell names in A10 are `<row letter><1-based
   column>`, so `B2`–`B4` = cells (1,1), (2,1), (3,1) → `frameX/frameY` (18,18), (36,18), (54,18).
-- **Diagonal rules (deferred).** When all four direct neighbours are the same type, A10 (lines 109–112) first tries
+- **Diagonal rules.** When all four direct neighbours are the same type, A10 (lines 109–112) first tries
   four higher-priority rules that also look at the diagonals: top-left and bottom-left missing → `A11`–`C11`;
   top-right and bottom-right missing → `A12`–`C12`; both top diagonals missing → `B7`–`B9`; both bottom diagonals
-  missing → `C7`–`C9`. Only if none matches does `B2`–`B4` apply. **M4 ignores these rules** and always uses
-  `B2`–`B4` for the four-neighbour case; worked example 1 therefore states all eight neighbours, so that it matches
-  the source as well.
+  missing → `C7`–`C9`. Only if none matches does `B2`–`B4` apply. The first M4 renderer ignores these rules and
+  always uses `B2`–`B4` for the four-neighbour case; worked example 1 therefore states all eight neighbours, so that
+  it matches the source as well. The full rules (diagonals, merge partners, slopes) are in "Tile framing" below,
+  which supersedes this summary for the framing follow-up.
 
 ### Walls (`Wall_<id>`)
 
@@ -267,7 +268,7 @@ Expected sheet sizes (consistent with the size arithmetic, confirmed only by the
 |---|---|---|
 | Frame-important tiles with a 16×16 grid (most furniture, multi-tile objects) | draw each tile's own cell at `(frameX, frameY)`; multi-tile objects need nothing extra because every tile carries its own frame | — |
 | Frame-important tiles with other grids (torches, plants, …) | draw with the tile's `textureGrid` size | exact per-id draw offsets |
-| Non-frame-important blocks | base self-framing (same-type neighbours, 16 cases × 3 variants, deterministic variant) | the four diagonal-sensitive rules of the four-neighbour case (A10 109–112), blending with dirt/stone/other types, grass rules, slopes and half bricks (block style), 8-way framing for gemspark-like tiles (A13) |
+| Non-frame-important blocks | base self-framing (same-type neighbours, 16 cases × 3 variants, deterministic variant) | diagonal corners, blending with merge partners, slopes and half blocks: specified in "Tile framing", implemented by its follow-up; grass rules and 8-way framing for gemspark-like tiles (A13) stay deferred |
 | Walls | 4-neighbour framing with the table above, variant `(7x + 11y) mod 3` (0–2, rows 0–4 only) | Terraria's random variant, the variant patterns of `LargeFrameType` 1/2 walls (variant 3, rows 5–6) |
 | Animated tiles (173 ids flagged `isAnimated` in A12, all frame-important) | draw the stored frame (static) | animation |
 | Trees (5, 323, …), tree tops/branches, variant sheets (`Tiles_5_N`, `Tiles_2_Beach`, `Tiles_59_2`, …) | placeholder | yes |
@@ -296,14 +297,14 @@ was converted into ours. Every numeric value below comes from the measurement or
 | A14 | TEdit `src/TEdit.Terraria/Objects/TileProperty.cs` | `99928583` | `Merges` 162–178 (how TEdit connects two tiles) |
 | A12 | TEdit `src/TEdit.Terraria/Data/tiles.json` | `99928583` | per-id `isFramed`, `canBlend`, `isStone`, `isGrass`, `mergeWith`, `largeFrameType`; dirt line 3, stone 14, grass 27, cobweb 4131, mud 4230, jungle grass 4242 |
 | F | [header.md](file-format/header.md) (frame-important bitset), [tiles.md](file-format/tiles.md) ("Record layout", byte-2 bits 4–6 = block shape) | this repo | which ids are framed at runtime; the shape values 0–5 |
-| S | **Sheet art**: local install L (1.4.5.8), sheets decoded with `packages/assets` and measured by a throwaway script outside the repository (nothing saved here) | measured 2026-10-07 | the cell catalogue ("Measuring the sheet") |
-| X | **Cross-check**: the selection rule and A10's rule list, both evaluated by the same throwaway script over every neighbourhood | run 2026-10-07 | agreement figures quoted where used |
-| G | **In-game check** of a small generated world | **pending**: human steps H1–H5 below | none yet |
+| S | **Sheet art**: local install L (1.4.5.8), sheets decoded with `packages/assets` and measured with [`packages/assets/tools/measure-tile-sheets.ts`](../packages/assets/tools/measure-tile-sheets.ts) (prints to the terminal; no pixels are saved) | measured 2026-10-07 | the cell catalogue ("Measuring the sheet") |
+| X | **Cross-check**: the selection rule and A10's rule list, both evaluated over every neighbourhood by a one-off script that is deliberately **not** committed, because it had to encode A10's rule list | run 2026-10-07 | agreement figures quoted where used |
+| G | **In-game check** of a small generated world | **pending**: human steps H1–H6 below | none yet |
 
 TEdit names seancode's Terrafirma UV notes as the origin of its rule list (A10 82–85). We could not reach a pinned
 revision of that page, so it is not used. Nothing below comes from decompiled game code. Evidence marks: **S**
 (measured in the art), **X** (agrees with TEdit), **cited** (taken from a TEdit rule, restated), **chosen** (our
-decision where neither art nor source decides). **G** (observed in game) is not used yet, because H1–H5 are still
+decision where neither art nor source decides). **G** (observed in game) is not used yet, because H1–H6 are still
 open.
 
 ### Which tiles are framed at runtime
@@ -340,7 +341,19 @@ For every cell we record a **look**: one letter per side (N, E, S, W) and one pe
   cut away).
 - **Corner** (2 × 2 corner pixels): `d` with ≥ 3 partner pixels, `x` (**notch**) with ≥ 3 outline or transparent
   pixels, else `o`. A corner carries information only when both of its sides are `o`. In dirt the notch is drawn
-  as four light highlight pixels (`191,143,111`, `169,125,93`) instead of outline.
+  as four light highlight pixels (`191,143,111`, `169,125,93`) instead of outline; they are passed as notch colours.
+
+The rules above are implemented in `packages/assets/tools/sheet-measure.ts` (unit-tested on synthetic sheets) and
+run against a local install with:
+
+```bash
+pnpm --filter @studio/assets build
+node packages/assets/tools/measure-tile-sheets.ts --content "<Terraria>/Content" --tile 1 --partner 0 --compare 7
+node packages/assets/tools/measure-tile-sheets.ts --content "<Terraria>/Content" --tile 0 --notch 191,143,111 --notch 169,125,93
+```
+
+It prints the outline colours, the look counts, the rim side codes without a cell, the sheet map below and the
+cells that differ from each `--compare` sheet. Every figure in this subsection comes from that output.
 
 Results:
 
@@ -348,13 +361,19 @@ Results:
   distinct looks**, each held by exactly **3 cells**: the three variants. 24 looks have no rim side: the 16
   `o`/`x` side patterns plus 8 extra corner looks among the all-open cells (4 notch looks and 4 rim-corner looks).
   The other 37 looks have at least one rim side.
-- **Dirt (`Tiles_0`)** has the same 24 non-rim looks in the same cells. Its 111 rim slots hold plain dirt copies:
-  dirt has no partner, so its framer never reaches them.
-- **Other dirt-partner sheets** (288 × 270, measured with the same script): 31 match stone cell for cell. 24 more
-  match on every side and rim and differ only because the four notch looks are drawn without a notch (bricks,
-  sand, …). For 27 the one-outline-colour classifier is unreliable (1–146 cells differ). 8 have no single outline
-  colour. Visual checks of wood (30) and mud (59) show rim art in the same 111 slots, coloured differently. Those
-  35 sheets are not proven to share the layout (O6).
+- **Dirt (`Tiles_0`)**, measured without a partner and with its notch colours, matches stone on all **60 cells
+  of the 20 looks without any rim** (the 16 side patterns and the 4 notch looks). The other 123 cells hold
+  different dirt art. Dirt has no partner, so the 111 rim-side slots are never selected. The 12 rim-corner slots
+  are different: in dirt they measure as **single notches** in the same corner (for example (0,5) has a notch SE
+  where stone has a rim corner SE; (0,9) and (1,9) measure as plain). Whether the game draws them for a dirt tile
+  with one missing diagonal is open (O7).
+- **Other dirt-partner sheets.** The 111 self-framed, non-grass ids whose partner is dirt (A12), measured with
+  `--partner 0 --compare 1`: 21 have taller 288 × 396 sheets (see above). Of the 90 sheets of 288 × 270, **29**
+  match stone cell for cell, and **19** match on every side and rim and differ only because the four notch looks
+  are drawn without a notch (bricks, sand, …). For **34** the classifier disagrees with stone in 1–158 cells, and
+  **8** have no outline colour at all (ids 9, 41, 43, 47, 120, 169, 190, 311). Visual checks of wood (30) and mud
+  (59) show rim art in the same 111 slots, coloured differently (mud's rims use grey, stone-like colours). Those
+  42 sheets are not proven to share the layout (O6).
 
 The **sheet map** below gives the measured side code `NESW` of every cell of `Tiles_1`. `----` marks an empty
 cell.
@@ -451,7 +470,8 @@ Given the wanted letters:
    every non-`o` corner equals the wanted corner letter: rim SE, rim SW, rim NW, rim NE, notches SE+SW, NW+NE,
    NE+SE, NW+SW, plain interior. The art shows *which* looks exist. The order only matters when several fit
    (three or four missing corners, or a rim corner together with a notch) and is **cited** (A10 108–112 and
-   168–179). Consequences: a single missing corner keeps the plain interior, because no one-notch look exists (S).
+   168–179). Consequences: a single missing corner keeps the plain interior, because no one-notch look exists in the
+   stone layout (S; dirt's rim-corner slots hold single notches, O7).
    Two opposite missing corners also keep the plain interior. With all four corners missing, the SE+SW notches win.
 3. **Variant:** cell `v` of the look, with `v` from "Variant".
 
@@ -572,6 +592,8 @@ Use a small world, made with our own generator or a fresh "small" world, and com
 - **H5** Example 14, **both tiles**: stone with dirt only to its N and E. Record whether the stone draws an outline
   or a partial rim, and whether the dirt tile to its E draws an edge toward the stone. Repeat with example 8 for the
   case where the rim exists.
+- **H6** A dirt mass with a single one-tile hole at a diagonal of one dirt tile (all four edges dirt, one corner
+  empty), once per corner. Record whether that tile shows a small notch in the corner (O7) or a plain interior.
 
 ### Not covered (deferred)
 
@@ -591,9 +613,13 @@ modded tiles, walls (already in "Walls"), tile animation, paint and lighting.
 - **O4** Large-frame variant patterns (24 ids): restate them from an independent in-game observation, not from A13.
 - **O5** Slopes: do full neighbours of a sloped tile keep their connection (A8) or break it at a cut face, as in
   A13? A13's face entries for shapes 4 and 5 also disagree with its own drawing code.
-- **O6** The layout has been measured only on the sheets listed under "Measuring the sheet". Still open: the 35
-  dirt-partner sheets where the simple classifier fails (wood and mud checked visually only), hellstone/ash (58/57,
-  rims in ash colours, not measured), and the 21 taller 288 × 396 sheets.
+- **O6** The layout has been measured only on the sheets listed under "Measuring the sheet". Still open: the 42
+  dirt-partner sheets where the one-classifier measurement disagrees with stone or finds no outline (wood and mud
+  checked visually only; mud's rim colours look like stone rather than dirt), hellstone/ash (58/57, not measured),
+  and the 21 taller 288 × 396 sheets.
+- **O7** Dirt's sheet holds single-notch art in the 12 slots where stone has rim corners. The contract keeps the
+  plain interior for one missing diagonal (cited order, A10 108–112). If H6 shows a notch, a partner-less block
+  would select those slots for one missing corner, and step 2 of "Choosing the cell" gains four single-notch looks.
 
 Proposed follow-up issues: [planning/tile-framing-follow-ups.md](planning/tile-framing-follow-ups.md).
 

@@ -12,7 +12,7 @@
   "types": "./dist/index.d.ts",
   "scripts": {
     "build": "tsc -b",
-    "lint": "eslint src tests --max-warnings=0",
+    "lint": "eslint src tests tools --max-warnings=0",
     "test": "pnpm --dir ../.. exec vitest run --project @studio/assets"
   }
 }

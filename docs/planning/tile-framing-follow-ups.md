@@ -94,36 +94,37 @@ half blocks and slopes.
 ```markdown
 ## Goal
 Confirm the tile-framing rules in the game itself, finish the sheet measurements and document the grass rules, so
-the open questions O1–O6 of docs/assets.md ("Tile framing") are closed.
+the open questions O1–O7 of docs/assets.md ("Tile framing") are closed.
 
 ## Scope
-- Human steps H1–H5 of docs/assets.md ("Tile framing"): results recorded as "observed in game" (G) next to each
+- Human steps H1–H6 of docs/assets.md ("Tile framing"): results recorded as "observed in game" (G) next to each
   rule, screenshots kept in `local-renders/` only. H4 decides rule 5 (ore ↔ ore) and the ore ↔ dirt rim.
-- Measure the remaining sheets (O6) with an improved classifier: the 35 dirt-partner sheets the one-outline-colour
-  classifier could not prove, hellstone/ash, and rows 15–21 of the 288 × 396 sheets.
+- Measure the remaining sheets (O6) by improving `packages/assets/tools/sheet-measure.ts`: the 42 dirt-partner
+  sheets it could not prove, hellstone/ash, and rows 15–21 of the 288 × 396 sheets.
 - Grass: restate the grass rule set (A10 150–249, relaxed corner matching 454–505) in our own words with worked
   examples, and explain the taller grass sheets (`Tiles_2` 110 rows, `Tiles_60` 22 rows).
 - Large-frame variant patterns (24 ids): describe them from in-game observation.
 
 ## Out of scope
-- Code; gemspark 8-way; walls; mods.
+- Production code (only the measuring tool changes); gemspark 8-way; walls; mods.
 
 ## Ownership
-- docs/assets.md ("Tile framing"), docs/planning/tile-framing-follow-ups.md
+- docs/assets.md ("Tile framing"), docs/planning/tile-framing-follow-ups.md, packages/assets/tools/,
+  packages/assets/tests/sheet-measure.test.ts
 
 ## Spec
 - docs/assets.md ("Tile framing")
 
 ## Compatibility impact
-- Vanilla: None (documentation only)
+- Vanilla: None (documentation and a dev tool only)
 - Modded worlds: None
 
 ## Acceptance criteria
-- Each of O1–O6 is answered (with the in-game observation or measurement) or restated with a reason why it stays
+- Each of O1–O7 is answered (with the in-game observation or measurement) or restated with a reason why it stays
   open.
 - The grass rules let an implementer map any 3 × 3 grass neighbourhood to one cell, with at least six worked examples.
 
 ## Proof
 - Test command: `bash scripts/verify.sh`
-- Manual test: H1–H5 in a small test world.
+- Manual test: H1–H6 in a small test world.
 ```
