@@ -9,3 +9,4 @@ export {
   type WorldSectionTable,
 } from "./header.js";
 export { WorldFormatError, type WorldFormatErrorKind } from "./world-format-error.js";
+export { readWorldMetadata, type WorldMetadata, type WorldMetadataResult, type WorldMode } from "./metadata.js";

@@ -127,3 +127,10 @@ Notes and rules:
 Version gates are listed for completeness; M1 accepts only format 326, for which **every** row except 58 is
 present. A reader for 326 may therefore be a straight sequence; the gates matter only when the version range
 is widened.
+
+The TypeScript `readWorldMetadata(bytes)` entry point validates the header and section table first, then
+walks this bounded section without allocating tile planes. It returns `metadata` (the exposed fields),
+`header`, and `sections`, including all eleven raw pointers and section boundaries. Offsets are relative
+to the supplied `Uint8Array` view. Unexposed numeric fields, including the 64-bit values, are consumed as
+raw bytes; strings and booleans are validated even when their values are not exposed. No write envelope
+is retained by this read API.
