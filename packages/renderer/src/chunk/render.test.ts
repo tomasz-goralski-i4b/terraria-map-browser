@@ -205,6 +205,7 @@ test.each([
 test("hashes each palette entry once across chunks and colours entries added later", () => {
   const world = createWorld(130, 1);
   world.setTile(0, 0, { block: dirt, wall: stone, wires: 0, actuator: false });
+  const added = { kind: "vanilla", id: 25 } as const;
   const imul = vi.spyOn(Math, "imul");
   try {
     renderChunk(world, 0, 0, options);
@@ -213,9 +214,21 @@ test("hashes each palette entry once across chunks and colours entries added lat
     renderChunk(world, 1, 0, options);
     renderChunk(world, 0, 0, options);
     expect(imul.mock.calls.length).toBe(firstRender);
+
+    // Hashing cost of exactly the one new entry, for both layers.
+    const beforeCost = imul.mock.calls.length;
+    placeholderColor(added, "block");
+    placeholderColor(added, "wall");
+    const newEntryCost = imul.mock.calls.length - beforeCost;
+
+    world.setTile(129, 0, { block: added, wall: added, wires: 0, actuator: false });
+    const beforeGrowth = imul.mock.calls.length;
+    expect(pixel(renderChunk(world, 1, 0, options), 1, 0)).toEqual([131, 92, 158, 255]);
+    expect(pixel(renderChunk(world, 1, 0, { ...options, layers: { ...allLayers, blocks: false } }), 1, 0))
+      .toEqual([65, 46, 79, 255]);
+    renderChunk(world, 0, 0, options);
+    expect(imul.mock.calls.length - beforeGrowth).toBe(newEntryCost);
   } finally {
     imul.mockRestore();
   }
-  world.setTile(129, 0, { block: { kind: "vanilla", id: 25 }, wires: 0, actuator: false });
-  expect(pixel(renderChunk(world, 1, 0, options), 1, 0)).toEqual([131, 92, 158, 255]);
 });
