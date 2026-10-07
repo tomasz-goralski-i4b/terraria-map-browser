@@ -114,6 +114,11 @@ Install the matching browser once locally with `pnpm exec playwright install chr
 step, not a dependency install hook. `bash scripts/verify.sh` builds and typechecks the package and harnesses,
 lints them with zero warnings, and runs both Node and browser projects through `scripts/test.sh`.
 
+**Decision (2026-10-07, follow-up #69):** headless Chromium is a confirmed prerequisite — in CI (the install step
+in `.github/workflows/ci.yml`) and on every machine that runs `verify.sh`, including agent worktrees. The browser
+viewer (`apps/web`) and the Worker codec are tested in a real browser, so the extra CI time is accepted. Agent
+worktrees share the user-level Playwright browser cache, so one local install covers all of them.
+
 For focused checks: `pnpm --filter @studio/world-codec build`, `pnpm --filter @studio/world-codec lint`,
 `pnpm --filter @studio/world-codec test`, and `pnpm --filter @studio/world-codec test:browser`.
 
