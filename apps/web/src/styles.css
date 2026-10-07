@@ -29,9 +29,30 @@ body {
 }
 
 .map-view {
+  position: relative;
   display: grid;
   place-items: center;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
   background: #111827;
+}
+
+.map-status {
+  padding: 0.25rem 0.5rem;
+  background: rgba(17, 24, 39, 0.85);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Over the map, but never in the way of dragging it. */
+.world-summary {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  padding: 0 0.75rem;
+  background: rgba(17, 24, 39, 0.85);
+  pointer-events: none;
 }
 
 .map-view dl {

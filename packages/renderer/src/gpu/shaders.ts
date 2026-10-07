@@ -1,0 +1,77 @@
+// GLSL for the chunk pass. The colour rules mirror `renderChunk` (../chunk/render.ts) and use integer arithmetic so
+// the output is bit-exact: no tie-breaking can differ because (l*a + c*(255-a)) / 255 never has a .5 fraction.
+
+export const vertexSource = `#version 300 es
+precision highp float;
+uniform vec2 uCamera;
+uniform float uZoom;
+uniform vec2 uViewport;
+uniform ivec2 uOrigin;
+uniform ivec2 uSize;
+void main() {
+  vec2 corner = vec2(float(gl_VertexID & 1), float(gl_VertexID >> 1));
+  vec2 tile = vec2(uOrigin) + corner * vec2(uSize);
+  vec2 screen = (tile - uCamera) * uZoom;
+  gl_Position = vec4(screen.x / uViewport.x * 2.0 - 1.0, 1.0 - screen.y / uViewport.y * 2.0, 0.0, 1.0);
+}
+`;
+
+export const fragmentSource = `#version 300 es
+precision highp float;
+precision highp int;
+precision highp usampler2D;
+// Chunk planes are stored transposed (planes are column-major): texel (s, t) = (y in chunk, x in chunk).
+uniform usampler2D uBlock;
+uniform usampler2D uWall;
+uniform usampler2D uLiquid;
+uniform usampler2D uAmount;
+// Row r holds palette entries 256r…256r+255: block colours in x 0…255, wall colours in x 256…511.
+uniform usampler2D uPalette;
+uniform vec2 uCamera;
+uniform float uZoom;
+uniform vec2 uViewport;
+uniform ivec2 uOrigin;
+uniform ivec2 uSize;
+uniform int uSurfaceY;
+uniform int uPaletteLength;
+uniform int uLayers; // bit 0 background, 1 walls, 2 blocks, 3 liquids
+out vec4 outColor;
+
+const uint ABSENT = 65535u;
+const ivec3 LIQUID[5] = ivec3[5](ivec3(0), ivec3(40, 110, 230), ivec3(255, 80, 20), ivec3(240, 180, 40), ivec3(180, 100, 240));
+
+bool paletteColor(uint index, int xOffset, out ivec3 color) {
+  if (index == ABSENT || int(index) >= uPaletteLength) return false;
+  color = ivec3(texelFetch(uPalette, ivec2(int(index) % 256 + xOffset, int(index) / 256), 0).rgb);
+  return true;
+}
+
+void main() {
+  vec2 screen = vec2(gl_FragCoord.x, uViewport.y - gl_FragCoord.y);
+  ivec2 tile = ivec2(floor(uCamera + screen / uZoom));
+  ivec2 local = clamp(tile - uOrigin, ivec2(0), uSize - 1);
+  ivec2 texel = ivec2(local.y, local.x);
+  int tileY = uOrigin.y + local.y;
+
+  ivec4 color = ivec4(0);
+  if ((uLayers & 1) != 0) color = tileY < uSurfaceY ? ivec4(100, 160, 220, 255) : ivec4(40, 30, 20, 255);
+  ivec3 content;
+  if ((uLayers & 4) != 0 && paletteColor(texelFetch(uBlock, texel, 0).r, 0, content)) {
+    color = ivec4(content, 255);
+  } else if ((uLayers & 2) != 0 && paletteColor(texelFetch(uWall, texel, 0).r, 256, content)) {
+    color = ivec4(content, 255);
+  }
+
+  uint liquid = texelFetch(uLiquid, texel, 0).r;
+  int amount = int(texelFetch(uAmount, texel, 0).r);
+  if ((uLayers & 8) != 0 && liquid >= 1u && liquid <= 4u && amount != 0) {
+    ivec3 tint = LIQUID[liquid];
+    if (color.a == 255) {
+      color.rgb = (2 * (tint * amount + color.rgb * (255 - amount)) + 255) / 510;
+    } else {
+      color = ivec4(tint, amount);
+    }
+  }
+  outColor = vec4(color) / 255.0;
+}
+`;

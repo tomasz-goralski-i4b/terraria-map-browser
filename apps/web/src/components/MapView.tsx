@@ -1,6 +1,21 @@
+import { useMemo } from "react";
 import type { RenderableWorld } from "@studio/renderer";
 import { useAppStore } from "../store.js";
 import { getDefaultWorldSession } from "../world/world-session.js";
+import { MapCanvas } from "./MapCanvas.js";
+
+/** The world metadata does not carry the surface row yet; Terraria puts it at roughly 30 % of the height. */
+const SURFACE_FRACTION = 0.3;
+
+/** The loaded world's planes and palette by reference; nothing is copied. */
+function loadedRenderableWorld(): RenderableWorld | null {
+  const loaded = getDefaultWorldSession().getLoadedWorld();
+  if (loaded === null) return null;
+  const { width, height } = loaded.metadata;
+  return {
+    width, height, surfaceY: Math.round(height * SURFACE_FRACTION), planes: loaded.planes, palette: loaded.palette,
+  };
+}
 
 export interface MapViewProps {
   readonly renderer: string;
@@ -8,12 +23,14 @@ export interface MapViewProps {
   readonly world?: RenderableWorld | null;
 }
 
-// The canvas, camera input and status bar land here (issue #87).
-export function MapView({ renderer }: MapViewProps): React.JSX.Element {
+export function MapView({ renderer, world }: MapViewProps): React.JSX.Element {
   const phase = useAppStore((state) => state.phase);
   const loadingFileName = useAppStore((state) => state.loadingFileName);
   const summary = useAppStore((state) => state.summary);
   const error = useAppStore((state) => state.error);
+  // A new summary means a newly loaded world; the session is not reactive, the store is.
+  const sessionWorld = useMemo(() => (summary === null ? null : loadedRenderableWorld()), [summary]);
+  const drawn = world === undefined ? sessionWorld : world;
 
   return (
     <main
@@ -47,10 +64,11 @@ export function MapView({ renderer }: MapViewProps): React.JSX.Element {
           Could not open {error.fileName}: {error.code} at offset {error.offset}. {error.message}
         </p>
       )}
+      {drawn !== null && <MapCanvas world={drawn} />}
       {summary === null ? (
         phase === "idle" && <p>No world loaded. Open a .wld file or drop it here.</p>
       ) : (
-        <section aria-label="World summary">
+        <section aria-label="World summary" className="world-summary">
           <h2>{summary.name}</h2>
           <dl>
             <dt>Size</dt>
