@@ -9,6 +9,9 @@ import { distServer, setDistServerOffline } from "./apps/web/tests/support/dist-
 // Search source and test tooling, never compiled copies in dist/.
 const packageDirs = globSync("{packages,apps}/*/src").map((src) => dirname(src));
 
+// Headless Chromium on a machine without a GPU needs a software GL backend (SwiftShader) to offer WebGL2.
+const softwareWebGl = ["--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"];
+
 // Browser projects are registered by hand: each may need its own plugins or commands.
 const browserProjects = [
   {
@@ -21,6 +24,20 @@ const browserProjects = [
         enabled: true,
         headless: true,
         provider: playwright(),
+        instances: [{ browser: "chromium" as const }],
+      },
+    },
+  },
+  {
+    extends: true as const,
+    root: "packages/renderer",
+    test: {
+      name: "@studio/renderer/browser",
+      include: ["tests/**/*.browser.test.{ts,tsx}"],
+      browser: {
+        enabled: true,
+        headless: true,
+        provider: playwright({ launchOptions: { args: softwareWebGl } }),
         instances: [{ browser: "chromium" as const }],
       },
     },
@@ -50,7 +67,7 @@ const browserProjects = [
       browser: {
         enabled: true,
         headless: true,
-        provider: playwright(),
+        provider: playwright({ launchOptions: { args: softwareWebGl } }),
         instances: [{ browser: "chromium" as const }],
         commands: {
           readWorldFixture: (_context: unknown, file: string) => {

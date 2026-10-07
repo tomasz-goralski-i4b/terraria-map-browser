@@ -239,3 +239,7 @@ plugin (`apps/web/tests/support/dist-server.ts`) so `pwa.browser.test.ts` can re
 1. Change the `Version` in `dotnet/Directory.Packages.props`.
 2. `dotnet restore dotnet/TerrariaMapStudio.slnx` — refreshes the `packages.lock.json` files.
 3. Update the table above, commit props + lock files together, `bash scripts/verify.sh`.
+
+The `@studio/renderer/browser` and `@studio/web/browser` projects launch Chromium with `--use-angle=swiftshader
+--enable-unsafe-swiftshader --ignore-gpu-blocklist` (`softwareWebGl` in `vitest.config.ts`): headless Chromium on a
+machine without a GPU only offers WebGL2 through the SwiftShader software rasteriser.

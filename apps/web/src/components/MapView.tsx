@@ -1,8 +1,15 @@
+import type { RenderableWorld } from "@studio/renderer";
 import { useAppStore } from "../store.js";
 import { getDefaultWorldSession } from "../world/world-session.js";
 
-// The canvas and the renderer backend are attached here by later issues.
-export function MapView({ renderer }: { readonly renderer: string }): React.JSX.Element {
+export interface MapViewProps {
+  readonly renderer: string;
+  /** World to draw, by reference; defaults to the world loaded by the default session. */
+  readonly world?: RenderableWorld | null;
+}
+
+// The canvas, camera input and status bar land here (issue #87).
+export function MapView({ renderer }: MapViewProps): React.JSX.Element {
   const phase = useAppStore((state) => state.phase);
   const loadingFileName = useAppStore((state) => state.loadingFileName);
   const summary = useAppStore((state) => state.summary);
