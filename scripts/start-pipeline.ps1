@@ -98,6 +98,29 @@ if (-not $cockpit) {
   Write-Host ''
   if (-not $cockpit) { throw 'The Cezar cockpit did not come up within 3 minutes - check the "Cezar" window.' }
   Write-Host "Cezar cockpit : started at $cockpit"
+
+  # A freshly started cockpit re-baselines every automation on its first poll ("from now on"), a minute or two
+  # after it answers health checks. The watcher promotes issues (adds agent:ready) on its first tick, so starting it
+  # earlier means those labels predate the baseline and no automation ever picks them up. Wait for the first poll.
+  $started = (Get-Date).ToUniversalTime()
+  Write-Host -NoNewline 'Waiting for every enabled automation to poll GitHub once'
+  $deadline = (Get-Date).AddMinutes(5)
+  $polled = $false
+  while (-not $polled -and (Get-Date) -lt $deadline) {
+    Start-Sleep -Seconds 5
+    Write-Host -NoNewline '.'
+    try {
+      $automations = (Get-Content (Join-Path $repo '.ai\cezar\automations.json') -Raw -Encoding UTF8 | ConvertFrom-Json).automations
+      $states = (Get-Content (Join-Path $repo '.ai\cezar\automation-state.json') -Raw -Encoding UTF8 | ConvertFrom-Json).states
+      $pending = @($automations | Where-Object { $_.enabled } | Where-Object {
+          $state = $states.($_.id)
+          -not $state -or -not $state.lastSuccessAt -or ([DateTime]::Parse($state.lastSuccessAt).ToUniversalTime() -lt $started)
+        })
+      $polled = ($pending.Count -eq 0)
+    } catch { }
+  }
+  Write-Host ''
+  if (-not $polled) { Write-Warning 'Automations have not polled within 5 minutes - starting the watcher anyway; re-add agent:ready to issues it promotes now if no run starts.' }
 }
 
 if (-not $watching) {
