@@ -31,6 +31,8 @@ TEST_PATHSPEC=(
   ':(glob)**/*.spec.ts'
   ':(glob)**/*.test.tsx'
   ':(glob)**/*.spec.tsx'
+  ':(glob)packages/*/tests/**'
+  ':(glob)apps/*/tests/**'
   ':(glob)packages/test-fixtures/**'
 )
 

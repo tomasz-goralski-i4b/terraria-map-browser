@@ -18,8 +18,8 @@ If the task points to GitHub issue `#N` (tasks from automations always do):
 2. If the prompt contains gate output or `.tdd/review.md` exists, address those findings first.
 3. Write a test for **every** acceptance criterion: .NET in `dotnet/*.Tests/` (`Method_State_Expected`), TS in
    `{packages,apps}/*/{src,tests}/**/*.test.ts(x)` (browser: `*.browser.test.ts(x)`). Builders and helpers stay in
-   the test project (.NET) or inside a `*.test.ts(x)` file (TS) — the gate treats any other changed TS file as
-   production code.
+   the test project (.NET) or under the package's `tests/` directory (TS) — a TS helper in `src/` without
+   `.test` in its name counts as production code.
 4. Prove the tests are not vacuous: break the production behaviour each test guards (locally, by hand), check
    that the test fails, then **revert** the change. Note what you tried in `.tdd/plan.md`, one line per test.
 5. Run `bash scripts/verify.sh` once at the end → `VERIFY: OK`.
