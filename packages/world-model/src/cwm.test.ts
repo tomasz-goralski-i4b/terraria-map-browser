@@ -246,7 +246,7 @@ describe("CWM tile validation", () => {
     it.each([minimum, maximum])("accepts boundary %s without wrapping", (value) => {
       const world = createWorld(1, 1);
       world.setTile(0, 0, { ...emptyTile, ...fieldValue(value) });
-      const field = _field === "liquid.amount" ? "liquidAmount" : _field;
+      const field = _field === "wires" ? "flags" : _field === "liquid.amount" ? "liquidAmount" : _field;
       const plane = world.planes[field as keyof WorldPlanes];
       expect(plane[0]).toBe(value);
     });
