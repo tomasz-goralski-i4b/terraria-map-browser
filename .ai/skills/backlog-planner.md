@@ -52,6 +52,10 @@ you get its output in the prompt — fix the file.
 `## Spec` lists the exact doc parts and sections the agent must read, e.g.
 `docs/file-format/tiles.md` ("Record layout", "Rules and limits") — every step reads only these, so keep it short
 (write "none" when no doc applies).
+`## Ownership` of an issue that adds a package or app also lists the root integration files it must touch: root
+`package.json` (devDependencies used by root configs), `tsconfig.json` (project references), `pnpm-workspace.yaml`
+(catalog), `pnpm-lock.yaml`, `vitest.config.ts` and `eslint.config.js` — otherwise the reviewer has to ask a human
+to confirm each one (follow-up #100).
 
 ## `.tdd/backlog.json` format
 ```json
