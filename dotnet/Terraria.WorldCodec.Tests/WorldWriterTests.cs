@@ -235,6 +235,53 @@ public class WorldWriterTests
         AssertRejected(envelope with { MetadataBytes = envelope.MetadataBytes[..^1] });
     }
 
+    [Theory]
+    [InlineData(0, 0)]
+    [InlineData(0, 1)]
+    [InlineData(2, 2)]
+    [InlineData(7, 1)]
+    public void Write_OpaqueSectionShorterThanItsSourceBoundary_ThrowsUnsupportedWriteAndWritesNothing(int section, int keep)
+    {
+        var envelope = ReadForSave(Build(2, 4, ShrinkingTilesCanonical));
+        var sections = envelope.OpaqueSections.ToArray();
+        if (keep >= sections[section].Bytes.Length)
+        {
+            throw new InvalidOperationException("The test must shorten the section.");
+        }
+
+        sections[section] = sections[section] with { Bytes = sections[section].Bytes[..keep] };
+
+        AssertRejected(envelope with { OpaqueSections = sections });
+    }
+
+    [Fact]
+    public void Write_OpaqueSectionEmptied_ThrowsUnsupportedWriteAndWritesNothing()
+    {
+        var envelope = ReadForSave(Build(2, 4, ShrinkingTilesCanonical));
+        var sections = envelope.OpaqueSections.ToArray();
+        sections[3] = sections[3] with { Bytes = ReadOnlyMemory<byte>.Empty };
+
+        AssertRejected(envelope with { OpaqueSections = sections });
+    }
+
+    [Fact]
+    public void Write_TileGridOfOtherDimensionsThanTheMetadata_ThrowsUnsupportedWriteAndWritesNothing()
+    {
+        var envelope = ReadForSave(Build(2, 4, ShrinkingTilesCanonical));
+        var other = ReadForSave(Build(1, 1, Hex("00")));
+
+        AssertRejected(envelope with { World = envelope.World with { Tiles = other.World.Tiles } });
+    }
+
+    [Fact]
+    public void Write_ExposedMetadataChangedFromThePreservedBytes_ThrowsUnsupportedWriteAndWritesNothing()
+    {
+        var envelope = ReadForSave(Build(2, 4, ShrinkingTilesCanonical));
+        var changed = envelope.World.Metadata with { Seed = (envelope.World.Metadata.Seed ?? string.Empty) + "x" };
+
+        AssertRejected(envelope with { World = envelope.World with { Metadata = changed } });
+    }
+
     [Fact]
     public void Write_FooterNameDifferingFromMetadata_ThrowsInconsistentFooterAndWritesNothing()
     {
