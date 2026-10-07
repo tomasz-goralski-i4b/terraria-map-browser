@@ -36,10 +36,14 @@ the input or create world or backup files, and provides no round-trip guarantee.
 Exit codes are `0` for success, `2` for invalid arguments (with usage), and `1` for I/O or
 format errors or unexpected internal failures. Reports go to stdout; diagnostics go to stderr
 without a stack trace. All three commands retain specific I/O and format diagnostics; unexpected
-failures produce one fixed internal-error line and leave stdout empty.
+failures, including failures during report conversion after a successful read, produce one fixed
+internal-error line and leave stdout empty. Fatal resource exhaustion (`OutOfMemoryException`)
+propagates instead of being replaced with this diagnostic.
 
 Inspect renders control characters in the world name and seed as literal four-digit Unicode
 escapes (for example, `\u000a` for LF and `\u001b` for ESC), keeping each field on one line.
+This also covers Unicode line/paragraph separators (U+2028/U+2029) and bidi controls
+(U+061C, U+200E/U+200F, U+202A–U+202E and U+2066–U+2069), preventing visual reordering.
 Printable non-ASCII text remains readable. Export-json uses the existing JSON string escaping.
 
 Export a deterministic world summary (metadata, dimensions, skipped sections, palette and
