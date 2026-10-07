@@ -18,7 +18,8 @@ public static class WorldDiff
         Func<TileRegion, IReadOnlyList<Tile>> readLeftChunk,
         Func<TileRegion, IReadOnlyList<Tile>> readRightChunk,
         TextWriter output,
-        int maximum = 100)
+        int maximum = 100,
+        PaletteResolvedDigests? resolved = null)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(maximum);
         ArgumentNullException.ThrowIfNull(readLeftChunk);
@@ -33,12 +34,19 @@ public static class WorldDiff
 
         foreach (var group in new[] { "metadata", "dimensions" })
         {
-            foreach (var property in leftSummary.GetProperty(group).EnumerateObject())
+            // Union of both key sets: left keys in their order, then keys only the right side has.
+            var leftGroup = leftSummary.GetProperty(group);
+            var rightGroup = rightSummary.GetProperty(group);
+            var names = leftGroup.EnumerateObject().Select(property => property.Name)
+                .Concat(rightGroup.EnumerateObject().Select(property => property.Name))
+                .Distinct(StringComparer.Ordinal);
+            foreach (var name in names)
             {
-                var right = rightSummary.GetProperty(group).GetProperty(property.Name);
-                if (!JsonElement.DeepEquals(property.Value, right))
+                var hasLeft = leftGroup.TryGetProperty(name, out var left);
+                var hasRight = rightGroup.TryGetProperty(name, out var right);
+                if (!hasLeft || !hasRight || !JsonElement.DeepEquals(left, right))
                 {
-                    Report($"{group}.{property.Name}", Compact(property.Value), Compact(right));
+                    Report($"{group}.{name}", hasLeft ? Compact(left) : "absent", hasRight ? Compact(right) : "absent");
                 }
             }
         }
@@ -109,6 +117,15 @@ public static class WorldDiff
                     continue;
                 }
 
+                // Different palettes: index digests of block/wall cannot be compared, but the other planes can, and
+                // palette-resolved digests decide block/wall — so an unchanged chunk is still skipped.
+                if (hasLeft && hasRight && !samePalette && resolved is not null
+                    && EqualExceptIndexPlanes(left, right)
+                    && resolved.Left(Region(left)) == resolved.Right(Region(right)))
+                {
+                    continue;
+                }
+
                 var leftRegion = hasLeft ? Region(left) : null;
                 var rightRegion = hasRight ? Region(right) : null;
                 candidates.Add(new ChunkPair(leftRegion, rightRegion,
@@ -148,7 +165,7 @@ public static class WorldDiff
                         TileDifference(x, y, "frameY", left.FrameY, right.FrameY);
                         TileDifference(x, y, "paint", left.Paint, right.Paint);
                         TileDifference(x, y, "wallPaint", left.WallPaint, right.WallPaint);
-                        TileDifference(x, y, "wires", (int)left.Wires, (int)right.Wires);
+                        TileDifference(x, y, "wires", WireNames(left.Wires), WireNames(right.Wires));
                         TileDifference(x, y, "actuator", left.Actuator, right.Actuator);
                         TileDifference(x, y, "liquid.kind", left.Liquid?.Kind, right.Liquid?.Kind);
                         TileDifference(x, y, "liquid.amount", left.Liquid?.Amount, right.Liquid?.Amount);
@@ -195,6 +212,18 @@ public static class WorldDiff
             ? null : tiles[((x - region.X) * region.Height) + y - region.Y];
 
     private static string Compact(JsonElement element) => JsonSerializer.Serialize(element);
+
+    /// <summary>Chunk entries equal in size and in every plane digest except the palette-indexed block/wall.</summary>
+    private static bool EqualExceptIndexPlanes(JsonElement left, JsonElement right) => left.EnumerateObject()
+        .Where(property => property.Name is not ("block" or "wall"))
+        .All(property => right.TryGetProperty(property.Name, out var other) && JsonElement.DeepEquals(property.Value, other));
+
+    /// <summary>Set wire colours as lower-case names in bit order, e.g. "red, green"; "none" when there are none.</summary>
+    private static string WireNames(TileWires wires) => wires == TileWires.None
+        ? "none"
+        : string.Join(", ", Enum.GetValues<TileWires>()
+            .Where(wire => wire != TileWires.None && wires.HasFlag(wire))
+            .Select(wire => wire.ToString().ToLowerInvariant()));
 
     private static string Value<T>(T value)
     {

@@ -22,6 +22,6 @@ dotnet run --project dotnet/Terraria.WorldInspector --no-build >"$smoke_stdout" 
 [ ! -s "$smoke_stdout" ] || { echo "SMOKE: unexpected inspector stdout"; exit 1; }
 usage=$(cat "$smoke_stderr")
 usage=${usage//$'\r'/}
-expected=$'Usage: Terraria.WorldInspector inspect <file.wld>\n       Terraria.WorldInspector export-json <file.wld> [--region x,y,w,h]'
+expected=$'Usage: Terraria.WorldInspector inspect <file.wld>\n       Terraria.WorldInspector export-json <file.wld> [--region x,y,w,h]\n       Terraria.WorldInspector diff <left.wld> <right.wld> [--max n]'
 [ "$usage" = "$expected" ] || { echo "SMOKE: unexpected inspector diagnostic: '$usage'"; exit 1; }
 echo "VERIFY: OK"
