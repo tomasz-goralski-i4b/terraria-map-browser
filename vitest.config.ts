@@ -90,6 +90,8 @@ export default defineConfig({
           environment: "node",
           include: ["src/**/*.test.ts", "tests/**/*.test.ts"],
           exclude: ["**/*.browser.test.ts", "**/*.browser.test.tsx"],
+          // The atlas tests compare multi-megabyte RGBA pages with toEqual, which takes seconds per page.
+          ...(root.replaceAll("\\", "/") === "packages/assets" ? { testTimeout: 60_000 } : {}),
         },
       })),
       ...browserProjects,

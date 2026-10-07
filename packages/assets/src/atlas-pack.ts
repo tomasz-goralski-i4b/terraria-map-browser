@@ -1,8 +1,18 @@
-/* eslint-disable @typescript-eslint/no-unused-vars -- red-phase stubs: the green phase uses every parameter */
-import type { AtlasEntry, PackableSheet, SheetKind, SpriteAtlas } from "./atlas-types.js";
+import type { AtlasEntry, PackableSheet, SheetKind, SheetMetrics, SpriteAtlas } from "./atlas-types.js";
 
 /** Bump when the page layout or index shape changes; it is part of the cache key. */
 export const ATLAS_FORMAT_VERSION = 1;
+
+/** Page edge used when the caller passes none. */
+export const DEFAULT_PAGE_SIZE = 4096;
+/** Transparent border used when the caller passes none. */
+export const DEFAULT_PADDING = 2;
+
+/** Frame and gutter metrics from docs/assets.md ("Sprite layout"). */
+const METRICS: Readonly<Record<SheetKind, SheetMetrics>> = {
+  tile: { cell: 16, gap: 2 },
+  wall: { cell: 32, gap: 4 },
+};
 
 export interface PackOptions {
   /** Power-of-two page edge in pixels. */
@@ -24,17 +34,104 @@ export class AtlasSheetTooLargeError extends Error {
   }
 }
 
+/** A horizontal strip of a page; sheets are placed left to right along it. */
+interface Shelf {
+  readonly y: number;
+  readonly height: number;
+  nextX: number;
+}
+
+interface PageLayout {
+  readonly shelves: Shelf[];
+  nextY: number;
+}
+
+interface Placement {
+  readonly page: number;
+  readonly x: number;
+  readonly y: number;
+}
+
+/** Finds room for a `width × height` rectangle (padding excluded) on an existing page, or `undefined`. */
+function place(pages: PageLayout[], width: number, height: number, pageSize: number, padding: number): Placement | undefined {
+  for (const [page, layout] of pages.entries()) {
+    for (const shelf of layout.shelves) {
+      if (shelf.height >= height && shelf.nextX + width + padding <= pageSize) {
+        const x = shelf.nextX;
+        shelf.nextX = x + width + padding;
+        return { page, x, y: shelf.y };
+      }
+    }
+    if (layout.nextY + height + padding <= pageSize) {
+      const shelf: Shelf = { y: layout.nextY, height, nextX: padding + width + padding };
+      layout.shelves.push(shelf);
+      layout.nextY += height + padding;
+      return { page, x: padding, y: shelf.y };
+    }
+  }
+  return undefined;
+}
+
 /** Packs sheets into pages, each placed exactly once, inside the page and without overlap (padding included). */
-export function packSheets(_sheets: readonly PackableSheet[], _options?: PackOptions): SpriteAtlas {
-  throw new Error("not implemented");
+export function packSheets(sheets: readonly PackableSheet[], options?: PackOptions): SpriteAtlas {
+  const pageSize = options?.pageSize ?? DEFAULT_PAGE_SIZE;
+  const padding = options?.padding ?? DEFAULT_PADDING;
+
+  for (const sheet of sheets) {
+    if (sheet.width + 2 * padding > pageSize || sheet.height + 2 * padding > pageSize) {
+      throw new AtlasSheetTooLargeError(
+        sheet.kind,
+        sheet.id,
+        `Sheet ${sheet.kind} ${String(sheet.id)} is ${String(sheet.width)}×${String(sheet.height)} px; with ${String(padding)} px ` +
+          `padding it does not fit into a ${String(pageSize)}×${String(pageSize)} atlas page.`,
+      );
+    }
+  }
+
+  // Tallest first keeps the shelves tight; the id tie-break makes the layout deterministic.
+  const ordered = [...sheets].sort((a, b) => b.height - a.height || a.kind.localeCompare(b.kind) || a.id - b.id);
+  const layouts: PageLayout[] = [];
+  const pages: Uint8Array[] = [];
+  const entries: AtlasEntry[] = [];
+
+  for (const sheet of ordered) {
+    let placement = place(layouts, sheet.width, sheet.height, pageSize, padding);
+    if (placement === undefined) {
+      layouts.push({ shelves: [], nextY: padding });
+      pages.push(new Uint8Array(pageSize * pageSize * 4));
+      placement = place(layouts, sheet.width, sheet.height, pageSize, padding);
+      if (placement === undefined) throw new Error("A sheet that passed the size check did not fit an empty page.");
+    }
+    const page = pages[placement.page];
+    if (page === undefined) throw new Error("Placement refers to a missing page.");
+    const rowBytes = sheet.width * 4;
+    for (let row = 0; row < sheet.height; row++) {
+      page.set(sheet.rgba.subarray(row * rowBytes, (row + 1) * rowBytes), ((placement.y + row) * pageSize + placement.x) * 4);
+    }
+    entries.push({ kind: sheet.kind, id: sheet.id, page: placement.page, x: placement.x, y: placement.y, width: sheet.width, height: sheet.height });
+  }
+
+  return {
+    pages,
+    index: { formatVersion: ATLAS_FORMAT_VERSION, pageSize, padding, pageCount: pages.length, metrics: METRICS, entries },
+  };
 }
 
 /** The entry of (kind, id), or `undefined` when the sheet is not in the atlas. */
-export function findSprite(_atlas: Pick<SpriteAtlas, "index">, _kind: SheetKind, _id: number): AtlasEntry | undefined {
-  throw new Error("not implemented");
+export function findSprite(atlas: Pick<SpriteAtlas, "index">, kind: SheetKind, id: number): AtlasEntry | undefined {
+  return atlas.index.entries.find((entry) => entry.kind === kind && entry.id === id);
 }
 
 /** Copies the entry's rectangle out of its page as `width × height × 4` bytes. */
-export function readSpritePixels(_atlas: SpriteAtlas, _entry: AtlasEntry): Uint8Array {
-  throw new Error("not implemented");
+export function readSpritePixels(atlas: SpriteAtlas, entry: AtlasEntry): Uint8Array {
+  const page = atlas.pages[entry.page];
+  if (page === undefined) throw new RangeError(`Atlas page ${String(entry.page)} does not exist.`);
+  const { pageSize } = atlas.index;
+  const rowBytes = entry.width * 4;
+  const out = new Uint8Array(rowBytes * entry.height);
+  for (let row = 0; row < entry.height; row++) {
+    const start = ((entry.y + row) * pageSize + entry.x) * 4;
+    out.set(page.subarray(start, start + rowBytes), row * rowBytes);
+  }
+  return out;
 }
