@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   actualSize, clampCamera, createMapRenderer, fitWorld, panBy, visibleChunks, zoomAt,
 } from "@studio/renderer";
@@ -30,6 +30,8 @@ interface MapSession {
   camera: Camera;
   viewport: Size;
   readonly pointers: Map<number, Point>;
+  /** Last pointer position over the canvas (backing pixels); null while the pointer is outside. */
+  hover: Point | null;
 }
 
 /** The canvas that owns the renderer and turns input into camera moves; it draws nothing itself. */
@@ -39,16 +41,26 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
   const [error, setError] = useState<string | null>(null);
   const [hoverTile, setHoverTile] = useState<Point | null>(null);
 
-  const applyCamera = (session: MapSession, camera: Camera): void => {
+  /** The status bar reports the tile under the resting pointer, so it is recomputed whenever the camera or world moves. */
+  const refreshHover = useCallback((session: MapSession): void => {
+    const tile = session.hover === null ? null : session.renderer.tileAt(session.hover.x, session.hover.y);
+    setHoverTile((previous) => {
+      if (tile === null) return null;
+      return previous !== null && previous.x === tile.x && previous.y === tile.y ? previous : { x: tile.x, y: tile.y };
+    });
+  }, []);
+
+  const applyCamera = useCallback((session: MapSession, camera: Camera): void => {
     session.camera = camera;
     session.renderer.setCamera(camera);
+    refreshHover(session);
     const canvas = canvasRef.current;
     if (canvas === null) return;
     canvas.dataset["camera"] = JSON.stringify(camera);
     canvas.dataset["visibleChunks"] = JSON.stringify(
       visibleChunks(camera, session.viewport, session.world).map((chunk) => [chunk.x, chunk.y]),
     );
-  };
+  }, [refreshHover]);
 
   /** Canvas backing-store pixels of a pointer event. */
   const canvasPoint = (clientX: number, clientY: number): Point => {
@@ -71,7 +83,7 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
       return undefined;
     }
     const session: MapSession = {
-      renderer, world, camera: { x: 0, y: 0, zoom: 1 }, viewport: { width: 0, height: 0 }, pointers: new Map(),
+      renderer, world, camera: { x: 0, y: 0, zoom: 1 }, viewport: { width: 0, height: 0 }, pointers: new Map(), hover: null,
     };
     sessionRef.current = session;
     renderer.setWorld(world);
@@ -98,9 +110,13 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
     resize();
     const observer = new ResizeObserver(resize);
     observer.observe(canvas);
+    // A devicePixelRatio change (browser zoom, another monitor) can leave the CSS size untouched, so the
+    // observer stays silent; browsers report it as a window resize.
+    window.addEventListener("resize", resize);
 
     return () => {
       observer.disconnect();
+      window.removeEventListener("resize", resize);
       canvas.removeEventListener("wheel", onWheel);
       renderer.dispose();
       sessionRef.current = null;
@@ -115,7 +131,7 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
     session.world = world;
     session.renderer.setWorld(world);
     applyCamera(session, session.viewport.width === 0 ? session.camera : fitWorld(session.viewport, world));
-  }, [world]);
+  }, [world, applyCamera]);
 
   const withSession = (action: (session: MapSession) => void): void => {
     const session = sessionRef.current;
@@ -137,9 +153,9 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
     withSession((session) => {
       const point = canvasPoint(event.clientX, event.clientY);
       const previous = session.pointers.get(event.pointerId);
+      session.hover = point;
       if (previous === undefined) {
-        const tile = session.renderer.tileAt(point.x, point.y);
-        setHoverTile(tile === null ? null : { x: tile.x, y: tile.y });
+        refreshHover(session);
         return;
       }
       const others = [...session.pointers].filter(([id]) => id !== event.pointerId).map(([, other]) => other);
@@ -167,7 +183,8 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
       const { camera, viewport, world: current } = session;
       const pan = (dx: number, dy: number): Camera => panBy(camera, dx * KEY_PAN_PIXELS, dy * KEY_PAN_PIXELS, viewport, current);
       const zoom = (factor: number): Camera =>
-        zoomAt(camera, camera.zoom * factor, viewport.width / 2, viewport.height / 2, viewport, current);
+        zoomAt(camera, camera.zoom * factor, session.hover?.x ?? viewport.width / 2, session.hover?.y ?? viewport.height / 2,
+          viewport, current);
       const next = {
         ArrowLeft: () => pan(1, 0),
         ArrowRight: () => pan(-1, 0),
@@ -197,6 +214,9 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
         onPointerUp={onPointerEnd}
         onPointerCancel={onPointerEnd}
         onPointerLeave={() => {
+          withSession((session) => {
+            session.hover = null;
+          });
           setHoverTile(null);
         }}
         onKeyDown={onKeyDown}

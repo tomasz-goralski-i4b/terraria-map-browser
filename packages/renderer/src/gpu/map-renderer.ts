@@ -175,10 +175,22 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     const lastRow = Math.floor((total - 1) / PALETTE_ROW);
     gl.activeTexture(gl.TEXTURE4);
     gl.bindTexture(gl.TEXTURE_2D, resources.palette);
-    gl.texSubImage2D(
-      gl.TEXTURE_2D, 0, 0, firstRow, PALETTE_WIDTH, lastRow - firstRow + 1, gl.RGBA_INTEGER, gl.UNSIGNED_BYTE,
-      paletteMirror, firstRow * PALETTE_WIDTH * 4,
-    );
+    gl.pixelStorei(gl.UNPACK_ROW_LENGTH, PALETTE_WIDTH);
+    // Only the appended entries: a partial first/last row is cut at the entry, in both colour halves.
+    for (let row = firstRow; row <= lastRow; row++) {
+      const start = row === firstRow ? paletteUploaded % PALETTE_ROW : 0;
+      const end = row === lastRow ? ((total - 1) % PALETTE_ROW) + 1 : PALETTE_ROW;
+      for (const half of [0, PALETTE_ROW]) {
+        gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, half + start);
+        gl.pixelStorei(gl.UNPACK_SKIP_ROWS, row);
+        gl.texSubImage2D(
+          gl.TEXTURE_2D, 0, half + start, row, end - start, 1, gl.RGBA_INTEGER, gl.UNSIGNED_BYTE, paletteMirror,
+        );
+      }
+    }
+    gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 0);
+    gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, 0);
+    gl.pixelStorei(gl.UNPACK_SKIP_ROWS, 0);
     textureUploads++;
     paletteUploaded = total;
   };
