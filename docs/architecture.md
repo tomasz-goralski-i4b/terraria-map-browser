@@ -178,6 +178,8 @@ Fallback for browsers without folder picking:
 
 Terraria and mod assets stay local. They do not end up in the repository, D1, or R2 without an explicit user action.
 
+Texture format (XNB/LZX), sprite layout and the asset test strategy: [assets.md](assets.md).
+
 ## PWA and local SQLite
 
 A PWA provides an icon, a separate window, offline cache, and an experience close to a desktop application. We use a fixed production domain, e.g. `mapstudio.example.com`; browser storage is tied to the origin, so a Cloudflare preview URL is not a place for persistent work.
