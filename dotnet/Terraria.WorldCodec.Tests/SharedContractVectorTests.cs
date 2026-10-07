@@ -228,6 +228,7 @@ public sealed class SharedContractVectorTests
 
         Assert.Contains(vectorId, exception.Message, StringComparison.Ordinal);
         Assert.Contains("record", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("trailing bytes", exception.Message, StringComparison.Ordinal);
     }
 
     [Theory]
