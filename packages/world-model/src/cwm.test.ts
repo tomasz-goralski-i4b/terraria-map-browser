@@ -202,3 +202,133 @@ describe("CWM semantic views", () => {
     expect(world.planes.flags[0]).toBe(1 << bit);
   });
 });
+
+describe("CWM tile validation", () => {
+  const populatedTile: Tile = {
+    block: { kind: "vanilla", id: 21 }, wall: { kind: "unknown", runtimeId: 400 },
+    frameX: 18, frameY: 36, paint: 31, wallPaint: 30,
+    liquid: { kind: "shimmer", amount: 200 }, shape: "slopeBottomLeft",
+    wires: 15, actuator: true, inactive: true, invisibleBlock: true, invisibleWall: true,
+    fullBrightBlock: true, fullBrightWall: true,
+  };
+  const ranges: [string, number, number, (value: number) => Partial<Tile>][] = [
+    ["frameX", -32768, 32767, (value) => ({ frameX: value })],
+    ["frameY", -32768, 32767, (value) => ({ frameY: value })],
+    ["paint", 0, 255, (value) => ({ paint: value })],
+    ["wallPaint", 0, 255, (value) => ({ wallPaint: value })],
+    ["liquid.amount", 0, 255, (value) => ({ liquid: { kind: "shimmer", amount: value } })],
+    ["wires", 0, 15, (value) => ({ wires: value })],
+  ];
+
+  function expectRejectedAssignment(tile: Tile): void {
+    const world = createWorld(2, 4);
+    world.setTile(1, 3, populatedTile);
+    const planesBefore = planeOrder.map((name) => Array.from(world.planes[name]));
+    const paletteBefore = [...world.palette];
+
+    expect(() => { world.setTile(1, 3, tile); }).toThrow(RangeError);
+
+    expect(planeOrder.map((name) => Array.from(world.planes[name]))).toEqual(planesBefore);
+    expect(world.palette).toEqual(paletteBefore);
+    expect(world.tileAt(1, 3)).toEqual(populatedTile);
+  }
+
+  describe.each(ranges)("%s range", (_field, minimum, maximum, fieldValue) => {
+    it.each([minimum - 1, maximum + 1, 0.5, NaN, Infinity, -Infinity])(
+      "rejects %s before changing any plane or palette entry", (value) => {
+        expectRejectedAssignment({
+          ...emptyTile, block: { kind: "unknown", runtimeId: 800 },
+          wall: { kind: "vanilla", id: 2 }, ...fieldValue(value),
+        });
+      },
+    );
+
+    it.each([minimum, maximum])("accepts boundary %s without wrapping", (value) => {
+      const world = createWorld(1, 1);
+      world.setTile(0, 0, { ...emptyTile, ...fieldValue(value) });
+      const field = _field === "liquid.amount" ? "liquidAmount" : _field;
+      const plane = world.planes[field as keyof WorldPlanes];
+      expect(plane[0]).toBe(value);
+    });
+  });
+
+  it("rejects an unknown shape supplied by an untyped caller", () => {
+    expectRejectedAssignment({ ...populatedTile, shape: "slopeUpward" as BlockShape });
+  });
+
+  it("rejects an unknown liquid kind supplied by an untyped caller", () => {
+    expectRejectedAssignment({
+      ...populatedTile, liquid: { kind: "steam" as NonNullable<Tile["liquid"]>["kind"], amount: 200 },
+    });
+  });
+});
+
+describe("CWM palette capacity", () => {
+  function worldWithPalette(entries: number): ReturnType<typeof createWorld> {
+    const world = createWorld(1, 2);
+    // Exercise the complete Uint16 content-ID space without retaining a tile-object grid.
+    for (let runtimeId = 0; runtimeId < entries; runtimeId++) {
+      world.setTile(0, 0, { ...emptyTile, block: { kind: "unknown", runtimeId } });
+    }
+    world.setTile(0, 1, {
+      block: { kind: "unknown", runtimeId: 400 }, wall: { kind: "unknown", runtimeId: 800 },
+      frameX: 18, frameY: 36, paint: 31, wallPaint: 30,
+      liquid: { kind: "honey", amount: 200 }, shape: "half", wires: 5, actuator: true,
+    });
+    expect(world.palette).toHaveLength(entries);
+    return world;
+  }
+
+  it.each([65534, 65535])("rejects two new refs atomically with %s palette entries", (entries) => {
+    const world = worldWithPalette(entries);
+    const planesBefore = planeOrder.map((name) => Array.from(world.planes[name]));
+    const paletteBefore = [...world.palette];
+
+    expect(() => {
+      world.setTile(0, 1, {
+        ...emptyTile, block: { kind: "unknown", runtimeId: 65535 }, wall: { kind: "vanilla", id: 1 },
+      });
+    }).toThrow(/palette exceeds 65535 entries/);
+
+    expect(planeOrder.map((name) => Array.from(world.planes[name]))).toEqual(planesBefore);
+    expect(world.palette).toEqual(paletteBefore);
+  });
+
+  it("preserves every plane when an existing block precedes an overflowing wall", () => {
+    const world = worldWithPalette(65535);
+    const planesBefore = planeOrder.map((name) => Array.from(world.planes[name]));
+
+    expect(() => {
+      world.setTile(0, 1, {
+        ...emptyTile, block: { kind: "unknown", runtimeId: 800 }, wall: { kind: "vanilla", id: 1 },
+      });
+    }).toThrow(RangeError);
+
+    expect(planeOrder.map((name) => Array.from(world.planes[name]))).toEqual(planesBefore);
+    expect(world.palette).toHaveLength(65535);
+  });
+
+  it("accepts existing refs and absent content at full capacity", () => {
+    const world = worldWithPalette(65535);
+    const replacement: Tile = {
+      ...emptyTile, block: { kind: "unknown", runtimeId: 800 }, wall: { kind: "unknown", runtimeId: 400 },
+    };
+    world.setTile(0, 1, replacement);
+    expect(world.tileAt(0, 1)).toEqual(replacement);
+    expect(world.palette).toHaveLength(65535);
+    world.setTile(0, 1, emptyTile);
+    expect(world.tileAt(0, 1)).toEqual(emptyTile);
+    expect(world.palette).toHaveLength(65535);
+  });
+
+  it("uses the last free slot once for matching new block and wall refs", () => {
+    const world = worldWithPalette(65534);
+    const ref: ContentRef = { kind: "unknown", runtimeId: 65535 };
+    world.setTile(0, 1, { ...emptyTile, block: ref, wall: { ...ref } });
+    expect(world.palette).toHaveLength(65535);
+    expect(world.palette[65534]).toEqual(ref);
+    expect(world.planes.block[1]).toBe(65534);
+    expect(world.planes.wall[1]).toBe(65534);
+    expect(world.tileAt(0, 1).block).toBe(world.tileAt(0, 1).wall);
+  });
+});
