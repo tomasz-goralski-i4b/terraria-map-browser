@@ -187,6 +187,10 @@ point at its own files (see the "Where" column).
 `packages/renderer` (`@studio/renderer`) is framework-free: `no-restricted-imports` in `eslint.config.js` and a test in
 `packages/renderer/tests` fail if it imports React.
 
+`packages/assets` (`@studio/assets`) reads Terraria `.xnb` textures (uncompressed and LZX) into RGBA with no runtime
+dependencies; its synthetic XNB/LZX inputs are built in `src/xnb-fixture.ts`. `tests/terraria-content.test.ts` runs
+against a local install only when `TERRARIA_CONTENT` is set (CI never sets it; the tests are then skipped).
+
 `scripts/build.sh` runs `vite build` after `tsc -b`. The `@studio/web/browser` Vitest project
 (`apps/web/tests/**/*.browser.test.ts(x)`) serves the production build under `/pwa-app/` through a test-only Vite
 plugin (`apps/web/tests/support/dist-server.ts`) so `pwa.browser.test.ts` can register the real service worker, cut the
