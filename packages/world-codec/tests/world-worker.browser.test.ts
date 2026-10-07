@@ -1,10 +1,18 @@
 import { server } from "vitest/browser";
 import { afterEach, describe, expect, it } from "vitest";
-import { WorldWorkerClient, WorldWorkerError } from "@studio/world-codec";
+import { readWorldTiles, WorldWorkerClient, WorldWorkerError } from "@studio/world-codec";
 
 async function loadWorld(name: string): Promise<Uint8Array<ArrayBuffer>> {
   const base64 = await server.commands.readFile(`../test-fixtures/worlds/${name}`, "base64");
   return Uint8Array.from(atob(base64), (char) => char.charCodeAt(0));
+}
+
+/** Index of the first differing element, or -1 (toEqual on whole planes is far too slow). */
+function firstMismatch(got: ArrayLike<number | bigint>, want: ArrayLike<number | bigint>): number {
+  for (let i = 0; i < want.length; i++) {
+    if (got[i] !== want[i]) return i;
+  }
+  return -1;
 }
 
 const clients: WorldWorkerClient[] = [];
@@ -93,5 +101,104 @@ describe("world Worker", () => {
     }
     expect(ticks).toBeGreaterThan(0);
     expect(longest).toBeLessThan(500);
+  });
+
+  it("parse_SyntheticWorld_ReceivesAllPlanesMetadataAndPaletteEqualToDirectDecode", async () => {
+    const bytes = await loadWorld("SCCO1.wld");
+    const expected = readWorldTiles(bytes.slice());
+    const actual = await newClient().parse(bytes.buffer.slice(0));
+    const { planes: expectedPlanes, palette: expectedPalette, ...expectedRest } = expected;
+    const { planes: actualPlanes, palette: actualPalette, ...actualRest } = actual;
+    expect(actualRest).toEqual(expectedRest);
+    expect(actualPalette).toEqual(expectedPalette);
+    const names = Object.keys(expectedPlanes) as (keyof typeof expectedPlanes)[];
+    expect(names).toHaveLength(10);
+    expect(Object.keys(actualPlanes).sort()).toEqual([...names].sort());
+    for (const name of names) {
+      const want = expectedPlanes[name];
+      const got = actualPlanes[name];
+      expect(got.constructor).toBe(want.constructor);
+      expect(got.length).toBe(want.length);
+      expect(firstMismatch(got, want), `plane ${name} first mismatch`).toBe(-1);
+    }
+  });
+
+  it("parse_Result_DetachesEveryUniqueWorkerSideOutputBufferAfterPosting", async () => {
+    const worker = new Worker(new URL("./fixtures/transfer-probe.worker.ts", import.meta.url), { type: "module" });
+    const client = new WorldWorkerClient(worker);
+    clients.push(client);
+    const probe = new Promise<{ uniqueBuffers: number; detached: boolean[] }>((resolve) => {
+      worker.addEventListener("message", (event: MessageEvent<{ type?: string; uniqueBuffers: number; detached: boolean[] }>) => {
+        if (event.data.type === "probe") resolve(event.data);
+      });
+    });
+    const bytes = await loadWorld("SCCO1.wld");
+    const expected = readWorldTiles(bytes.slice());
+    const result = await client.parse(bytes.buffer.slice(0));
+    const report = await Promise.race([
+      probe,
+      new Promise<never>((_, reject) => window.setTimeout(() => { reject(new Error("no probe report")); }, 5_000)),
+    ]);
+    expect(report.uniqueBuffers).toBeGreaterThan(0);
+    expect(report.detached.every(Boolean)).toBe(true);
+    expect(firstMismatch(result.planes.block, expected.planes.block)).toBe(-1);
+  });
+
+  it("parse_DetachedInputBuffer_RejectsWithWorldWorkerError_ReleasesAbortListener_AndLaterParseWorks", async () => {
+    const client = newClient();
+    const bytes = await loadWorld("SCCO1.wld");
+    const detached = bytes.buffer.slice(0);
+    structuredClone(detached, { transfer: [detached] });
+    expect(detached.byteLength).toBe(0);
+
+    const signal = new AbortController().signal;
+    let added = 0;
+    let removed = 0;
+    const add = signal.addEventListener.bind(signal);
+    const remove = signal.removeEventListener.bind(signal);
+    signal.addEventListener = ((...args: Parameters<typeof add>) => { added++; add(...args); }) as typeof add;
+    signal.removeEventListener = ((...args: Parameters<typeof remove>) => { removed++; remove(...args); }) as typeof remove;
+
+    const error = await client.parse(detached, { signal }).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(WorldWorkerError);
+    expect((error as WorldWorkerError).requestId).toBeGreaterThan(0);
+    expect(added).toBeGreaterThan(0);
+    expect(removed).toBe(added);
+
+    const result = await client.parse(bytes.buffer.slice(0));
+    expect(result.palette.length).toBeGreaterThan(0);
+  });
+
+  it("cancel_ForAlreadyCompletedRequest_DoesNotBlockLaterRequestWithSameId", async () => {
+    const worker = new Worker(new URL("../src/world-worker.ts", import.meta.url), { type: "module" });
+    try {
+      const bytes = await loadWorld("SCCO1.wld");
+      const next = (): Promise<{ type: string }> => Promise.race([
+        new Promise<{ type: string }>((resolve) => {
+          worker.addEventListener("message", (event: MessageEvent<{ type: string }>) => { resolve(event.data); }, { once: true });
+        }),
+        new Promise<{ type: string }>((resolve) => window.setTimeout(() => { resolve({ type: "timeout" }); }, 3_000)),
+      ]);
+      const first = next();
+      worker.postMessage({ type: "parse", requestId: 7, input: bytes.buffer.slice(0) });
+      expect((await first).type).toBe("parsed");
+      worker.postMessage({ type: "cancel", requestId: 7 });
+      const second = next();
+      worker.postMessage({ type: "parse", requestId: 7, input: bytes.buffer.slice(0) });
+      expect((await second).type).toBe("parsed");
+    } finally {
+      worker.terminate();
+    }
+  });
+
+  it("parse_AfterAbortedRequest_SameClientStillParses", async () => {
+    const client = newClient();
+    const bytes = await loadWorld("SCCO1.wld");
+    const controller = new AbortController();
+    const aborted = client.parse(bytes.buffer.slice(0), { signal: controller.signal });
+    controller.abort();
+    expect(((await aborted.catch((e: unknown) => e)) as WorldWorkerError).code).toBe("Cancelled");
+    const result = await client.parse(bytes.buffer.slice(0));
+    expect(result.palette.length).toBeGreaterThan(0);
   });
 });
