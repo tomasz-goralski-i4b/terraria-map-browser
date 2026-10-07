@@ -227,6 +227,14 @@ describe("readXnbTexture — rejected LZX streams", () => {
     expectXnbError(() => read(cut), "Truncated", secondChunk);
   });
 
+  it("readXnbTexture_LzxChunkTruncatedByOneByteInsideAWord_ThrowsTruncatedAtTheChunkStart", () => {
+    const [frame] = frames();
+    expect(frame).toBeDefined();
+    const cutFrame = { output: frame?.output ?? 0, compressed: (frame?.compressed ?? new Uint8Array()).slice(0, -1) };
+    const file = wrapLzx([cutFrame], payload.length);
+    expectXnbError(() => read(file), "Truncated", 14);
+  });
+
   it("readXnbTexture_LzxChunkHeaderCutInHalf_ThrowsTruncated", () => {
     const file = wrapLzx(frames(), payload.length);
     expectXnbError(() => read(withFileSize(file.slice(0, 16))), "Truncated", 14);
@@ -358,6 +366,16 @@ describe("readXnbTexture — size caps", () => {
   it("readXnbTexture_FileSizeAtTheCap_Decodes", () => {
     const file = wrapUncompressed(payload);
     expect(read(file, { limits: { maxFileBytes: file.length } }).width).toBe(2);
+  });
+
+  it("readXnbTexture_UncompressedPayloadAboveTheCap_ThrowsTooLargeAtSix", () => {
+    const file = wrapUncompressed(payload);
+    expectXnbError(() => read(file, { limits: { maxDecompressedBytes: payload.length - 1 } }), "TooLarge", 6);
+  });
+
+  it("readXnbTexture_UncompressedPayloadAtTheCap_Decodes", () => {
+    const file = wrapUncompressed(payload);
+    expect(read(file, { limits: { maxDecompressedBytes: payload.length } }).width).toBe(2);
   });
 
   it("readXnbTexture_DecompressedSizeAboveTheCap_ThrowsTooLargeAtTen", () => {
