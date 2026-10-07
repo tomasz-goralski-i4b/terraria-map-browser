@@ -295,6 +295,29 @@ is small (one platform, one version, one reader, one surface format, 64 KiB LZX 
 report the same errors, and every candidate library either drags in a framework or brings a copyleft license. The
 .NET implementation is the reference; the TS one is independent (ADR 0001).
 
+## Atlas
+
+`buildSpriteAtlas(contentDir)` (`packages/assets`) decodes every `Images/Tiles_<id>.xnb` and `Images/Wall_<id>.xnb`
+once (names matched case-insensitively; `Wall_Outline`, `Tiles_<id>_<n>` variants and everything else are ignored)
+and packs them into square RGBA pages, 4096 × 4096 by default. It runs in a Worker (`atlas-worker.ts`) and never
+touches the network; the Worker reports the number of `fetch` calls it saw (always 0).
+
+- **Packing:** shelf packing, tallest sheet first, with 2 transparent pixels of padding around every sheet so
+  sampling never bleeds into a neighbour. A sheet that does not fit an empty page (including padding) is rejected with
+  `AtlasSheetTooLargeError`.
+- **Index:** `(kind, id) → { page, x, y, width, height, frameWidth, frameHeight, gapX, gapY }`: the per-sheet frame and gutter
+  of "Sprite layout" (default tiles 16×16 / 2, walls 32×32 / 4; the 56 tile ids whose grid or gutter differs from the default — e.g. tile 4
+  20×20, tile 3 and 24 16×20, tile 15 gutter 2×4, tiles 751/752 18×18 with no gutter — carry their own values, restated from A12's
+  per-id `textureGrid`/`frameGap`; all others the default), the family defaults, the page size, padding and `ATLAS_FORMAT_VERSION`.
+- **Cache:** the origin private file system, one directory per fingerprint holding `page-<n>.rgba` (raw RGBA) and
+  `index.json`, written last so an entry without it is never read. The fingerprint hashes the name, size and
+  last-modified time of every matched sheet plus the format version; storing a new entry removes the old ones. A build
+  with an unchanged fingerprint decodes no `.xnb`; any changed, added or removed sheet rebuilds.
+- **Progress and cancellation:** `scan`, `decode` (one event per sheet), `pack` and `store` events; aborting (also during the cache
+  write) rejects with an `AbortError` and removes the uncommitted entry, so no partial cache entry exists.
+- **Missing sheets:** an undecodable file or unreadable file is listed in `missing` (name and reason) and the rest is built. The report is stored with the cache
+  entry (`missing.json`) and restored on a cache hit. A scan that could not read every matched file is never cached.
+
 ## Test strategy (no game files)
 
 ### Synthetic XNB files

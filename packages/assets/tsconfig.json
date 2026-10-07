@@ -4,6 +4,7 @@
     "rootDir": "src",
     "outDir": "dist",
     "types": [],
+    "lib": ["ES2024", "DOM"],
     "isolatedDeclarations": true
   },
   "include": ["src"]

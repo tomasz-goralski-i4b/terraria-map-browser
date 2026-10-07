@@ -27,6 +27,20 @@ const browserProjects = [
   },
   {
     extends: true as const,
+    root: "packages/assets",
+    test: {
+      name: "@studio/assets/browser",
+      include: ["tests/**/*.browser.test.{ts,tsx}"],
+      browser: {
+        enabled: true,
+        headless: true,
+        provider: playwright(),
+        instances: [{ browser: "chromium" as const }],
+      },
+    },
+  },
+  {
+    extends: true as const,
     root: "apps/web",
     // Serves the production build (built by scripts/build.sh) for the offline PWA test.
     plugins: [react(), distServer(resolve("apps/web/dist"))],
@@ -76,6 +90,8 @@ export default defineConfig({
           environment: "node",
           include: ["src/**/*.test.ts", "tests/**/*.test.ts"],
           exclude: ["**/*.browser.test.ts", "**/*.browser.test.tsx"],
+          // The atlas tests compare multi-megabyte RGBA pages with toEqual, which takes seconds per page.
+          ...(root.replaceAll("\\", "/") === "packages/assets" ? { testTimeout: 60_000 } : {}),
         },
       })),
       ...browserProjects,
