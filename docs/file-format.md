@@ -15,7 +15,7 @@ the table maps every section name to its file.
 | [header.md](file-format/header.md) | File header (version gates, **Check order**), Section table, Frame-important bits, Hex examples A–E |
 | [metadata.md](file-format/metadata.md) | Primitive types, World metadata (section 1; rows 1–59, **Dimensions**) |
 | [tiles.md](file-format/tiles.md) | Tile data (section 2): Order and coordinates, Record layout, Rules and limits; Model mapping; Sections skipped in M1 |
-| [vectors.md](file-format/vectors.md) | Metadata and tile vectors: Entry points, Metadata (M1–M5), Single records (vectors T1–T18), Runs and columns (R1–R10) |
+| [vectors.md](file-format/vectors.md) | Metadata and tile vectors: Entry points, Metadata (M1–M5), Single records (vectors T1–T17), Runs and columns (R1–R10) |
 | [writer.md](file-format/writer.md) | Footer (M2), Writer contract (M2, format 326): layout, header rules, tile encoding, noncanonical input, writer vectors (W-*), evidence |
 | [open-questions.md](file-format/open-questions.md) | Open questions (numbered; cited as "open question N") |
 

@@ -4,6 +4,8 @@ Issue drafts written by the `spike` steps while specifying the `.wld` format (mo
 specification so that chain steps do not read them). Some are already done or filed; check the backlog first.
 
 ```markdown
+**Status:** done (#5, #6).
+
 ## Goal
 The reference .NET codec recognises a .wld file and returns its header and section table, or a precise error.
 
@@ -23,7 +25,7 @@ The reference .NET codec recognises a .wld file and returns its header and secti
 
 ## Acceptance criteria
 - Vectors A–E from docs/file-format.md give the documented results.
-- All four M1 fixtures parse with the pointers and frame-important set listed in the manifest/doc.
+- All M1 fixtures parse with the pointers and frame-important set listed in the manifest/doc.
 
 ## Proof
 - Fixture: packages/test-fixtures/worlds/*.wld
@@ -31,6 +33,8 @@ The reference .NET codec recognises a .wld file and returns its header and secti
 ```
 
 ```markdown
+**Status:** not filed.
+
 ## Goal
 M1 accepts worlds from every 1.4.5.x build, not only 1.4.5.8.
 
@@ -56,6 +60,8 @@ M1 accepts worlds from every 1.4.5.x build, not only 1.4.5.8.
 ```
 
 ```markdown
+**Status:** done (#7).
+
 ## Goal
 The reference .NET codec reads world metadata (name, seed, GUID, id, dimensions, mode, evil) of a 1.4.5.8 world.
 
@@ -76,7 +82,7 @@ The reference .NET codec reads world metadata (name, seed, GUID, id, dimensions,
 
 ## Acceptance criteria
 - Vectors M1–M5 from docs/file-format.md give the documented results.
-- All four M1 fixtures give name, seed, dimensions and mode from the manifest; evil matches the tiles
+- All M1 fixtures give name, seed, dimensions and mode from the manifest; evil matches the tiles
   (the world named "SCCR1" in game is the corruption fixture `SCCO1.wld`).
 - Width/height ≤ 0 and the safety limits are rejected.
 
@@ -86,6 +92,8 @@ The reference .NET codec reads world metadata (name, seed, GUID, id, dimensions,
 ```
 
 ```markdown
+**Status:** done (#8).
+
 ## Goal
 The reference .NET codec decodes the tile section of a 1.4.5.8 world into Tile/ContentRef values.
 
@@ -106,7 +114,7 @@ The reference .NET codec decodes the tile section of a 1.4.5.8 world into Tile/C
 
 ## Acceptance criteria
 - Vectors T1–T17 and R1–R10 from docs/file-format.md give the documented results.
-- All four M1 fixtures decode and stop exactly at pointer[2].
+- All M1 fixtures decode and stop exactly at pointer[2].
 - Ids above 753 (blocks) / 366 (walls) map to unknown { runtimeId }.
 
 ## Proof
@@ -115,6 +123,8 @@ The reference .NET codec decodes the tile section of a 1.4.5.8 world into Tile/C
 ```
 
 ```markdown
+**Status:** done — the `Tile` type in `packages/world-model` carries every vanilla flag the codec reads.
+
 ## Goal
 The TS world model can represent every vanilla tile flag that the codec reads, so nothing is lost.
 
@@ -171,9 +181,11 @@ The M1 fixture corpus labels each world's evil biome correctly and includes a cr
 ```
 
 Follow-ups from the writer contract (#32). The writer, envelope, backup and in-game check themselves are
-already planned as #38–#41, #44 and #45; these cover what the contract leaves open.
+planned as #38–#41, #44 and #45 (#38 envelope and #39 tile encoder are done; #40, #41, #44 and #45 are open); these cover what the contract leaves open.
 
 ```markdown
+**Status:** not filed.
+
 ## Goal
 The corpus shows how Terraria 1.4.5.8 itself saves the tiles the writer contract treats specially.
 
@@ -205,6 +217,8 @@ The corpus shows how Terraria 1.4.5.8 itself saves the tiles the writer contract
 ```
 
 ```markdown
+**Status:** not filed (open question 14 is still open).
+
 ## Goal
 Every view of a tile agrees with the writer about "no paint", so round-trip comparisons need no special case.
 

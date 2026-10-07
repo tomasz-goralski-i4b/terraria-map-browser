@@ -22,7 +22,7 @@ If the task points to GitHub issue `#N` (tasks from automations always do):
    plus a short note on which modules the green phase will change.
 4. Write tests for **every** item on the list:
    - .NET: `dotnet/*.Tests/` (xUnit), names `Method_State_Expected`.
-   - TS: `packages/*/src/**/*.test.ts` (Vitest).
+   - TS: `{packages,apps}/*/{src,tests}/**/*.test.ts(x)` (Vitest); real-browser tests as `tests/**/*.browser.test.ts(x)`.
    - Binary fixtures: `packages/test-fixtures/` (explicitly generated only, never real player worlds).
 5. If the tests reference an API that does not exist yet, add **signatures/stubs only**:
    C# `throw new NotImplementedException();`, TS `throw new Error("not implemented");`. No logic.

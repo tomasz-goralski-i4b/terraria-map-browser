@@ -72,11 +72,11 @@ Kept from before: `strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTy
 |---|---|
 | `erasableSyntaxOnly` | Only type syntax that can be stripped (no `enum`, `namespace`, parameter properties) — the code runs under Node's type stripping and any transpiler without a TS-specific transform. |
 | `noUncheckedSideEffectImports` | `import "./x"` must resolve; a typo in a side-effect import is an error instead of a silent no-op. |
-| `isolatedDeclarations` (library packages: `packages/world-model`) | Exported API needs explicit types so declarations can be emitted per file without type checking; keeps the public surface deliberate. Apps will not need it. |
+| `isolatedDeclarations` (library packages: `packages/world-model`, `world-codec`, `renderer`, `assets`) | Exported API needs explicit types so declarations can be emitted per file without type checking; keeps the public surface deliberate. Apps will not need it. |
 | `noImplicitReturns`, `noPropertyAccessFromIndexSignature`, `allowUnreachableCode: false`, `allowUnusedLabels: false` | Stricter checks that cost nothing on the current code. |
 | `moduleDetection: "force"`, `libReplacement: false` | Current `tsc --init` defaults: every file is a module; no lookup of `@typescript/lib-*` replacement packages. |
 | `declarationMap`, `sourceMap` | Go-to-definition and stack traces land in `src/`, not `dist/`. |
-| `target`/`lib` `ES2024` | Everything ES2024 is available in Node 24 (and current browsers for the future PWA). |
+| `target`/`lib` `ES2024` | Everything ES2024 is available in Node 24 (and current browsers, the `apps/web` PWA). |
 
 Considered and not enabled:
 
@@ -99,10 +99,11 @@ excluding `*.browser.test.ts`, so compiled copies in `dist/` never run twice. Ne
 touching the config.
 
 `@studio/world-codec/browser` runs `tests/**/*.browser.test.ts` in real headless Chromium through
-[Vitest's Playwright provider](https://vitest.dev/config/browser/playwright). The module Worker smoke imports the
-built package entry and reports readiness; its fixture is test tooling, not a codec Worker API. A separate Node
-smoke imports the same package export without `window` or `Worker` globals. The package deliberately has no
-runtime dependencies or codec logic yet. Build before either test so `dist/index.js` and declarations exist.
+[Vitest's Playwright provider](https://vitest.dev/config/browser/playwright). The package implements the TS codec
+(header, metadata, tiles → CWM) and exposes a Worker entry (`@studio/world-codec/worker`); the browser tests
+(`worker.browser.test.ts`, `world-worker.browser.test.ts`, fixtures in `tests/fixtures/`) run it in a real module
+Worker. A separate Node smoke imports the package export without `window` or `Worker` globals. Build before these
+tests so `dist/` and declarations exist.
 
 Browser projects are registered explicitly in `vitest.config.ts` (`browserProjects`), because each may need its own
 plugins or commands; add one there for each new package containing `tests/**/*.browser.test.{ts,tsx}`. Loading the
@@ -113,8 +114,9 @@ silently (follow-up #69). Vitest saves failure screenshots under `.vitest/attach
 Install the matching browser once locally with `pnpm exec playwright install chromium`. CI uses
 `pnpm exec playwright install --with-deps chromium` to also install Linux system libraries
 ([Playwright browser setup](https://playwright.dev/docs/browsers)). Browser installation is an explicit setup
-step, not a dependency install hook. `bash scripts/verify.sh` builds and typechecks the package and harnesses,
-lints them with zero warnings, and runs both Node and browser projects through `scripts/test.sh`.
+step, not a dependency install hook. `bash scripts/verify.sh` runs the full build (.NET, `tsc -b`, Vite), lint with zero
+warnings, the contract and fixture checks, all Node and browser Vitest projects (`scripts/test.sh`) and the
+inspector smoke.
 
 **Decision (2026-10-07, follow-up #69):** headless Chromium is a confirmed prerequisite — in CI (the install step
 in `.github/workflows/ci.yml`) and on every machine that runs `verify.sh`, including agent worktrees. The browser

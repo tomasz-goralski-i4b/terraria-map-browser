@@ -17,7 +17,7 @@ The repository and test data must be independent of company code and the company
 - Monorepo: TypeScript + pnpm.
 - Reference format parser: .NET.
 - Target editor: TypeScript, PWA, browser.
-- Local data: SQLite WASM in OPFS.
+- Local data: OPFS (today: the sprite atlas cache, #90); SQLite WASM in OPFS planned for registries and history.
 - Code hosting: Cloudflare Pages/Workers.
 - Game and mod assets: local, on the user's side.
 - To start, we only use the company Claude Code and Codex licenses.
@@ -39,39 +39,46 @@ TypeScript implements the same contract independently. This way the web parser i
 
 ## Repository architecture
 
+Current layout (entries marked *planned* do not exist yet):
+
 ```text
 terraria-map-studio/
 ├── apps/
-│   ├── web/                         # PWA: React/Vite + renderer WebGL
-│   └── inspector-cli/               # TS tool for inspecting worlds
+│   └── web/                         # PWA: React 19 + Vite + Zustand; draws through packages/renderer
 ├── packages/
-│   ├── world-model/                 # format-independent domain model
-│   ├── world-codec/                 # .wld parser and writer in TS
-│   ├── mod-registry/                # mod registry, manifests and ID mapping
-│   ├── asset-index/                 # index of local assets and atlases
-│   ├── renderer/                    # world chunk rendering
-│   ├── local-store/                 # SQLite WASM/OPFS
-│   └── test-fixtures/               # explicitly generated fixtures and manifests
+│   ├── world-model/                 # format-independent domain model (CWM planes, ContentRef palette)
+│   ├── world-codec/                 # independent .wld codec in TS (Worker parse into CWM)
+│   ├── assets/                      # XNB/LZX texture decoding, local sprite atlas cached in OPFS
+│   ├── renderer/                    # framework-free; CPU reference renderChunk + WebGL2 MapRenderer
+│   ├── test-fixtures/               # explicitly generated fixtures and manifests
+│   ├── mod-registry/                # planned (M6): mod registry, manifests and ID mapping
+│   └── local-store/                 # planned: SQLite WASM in OPFS (registries, history)
 ├── dotnet/
 │   ├── Terraria.WorldCodec/         # reference parser/writer
-│   ├── Terraria.WorldInspector/     # CLI: inspect, diff, export JSON
-│   ├── Terraria.ModExporter/        # mod manifest export
+│   ├── Terraria.WorldInspector/     # CLI: inspect, diff, export-json
 │   ├── Terraria.WorldCodec.Synthetic/  # generated test inputs, never shipped
-│   └── Terraria.WorldCodec.Tests/
+│   ├── Terraria.WorldCodec.Tests/
+│   └── Terraria.ModExporter/        # planned (M6): mod manifest export
+├── contracts/                       # JSON Schemas + vectors shared by xUnit and Vitest
 ├── docs/
 │   ├── architecture.md
-│   ├── file-format.md           # index → file-format/*.md (one file per section family)
-│   ├── compatibility-matrix.md
-│   ├── mod-support.md
-│   ├── local-storage.md
-│   └── agent-workflow.md
+│   ├── adr/                         # architecture decisions (0001: .NET ↔ TS contract)
+│   ├── file-format.md               # index → file-format/*.md (one file per section family)
+│   ├── cwm.md                       # Canonical World Model
+│   ├── round-trip.md
+│   ├── assets.md
+│   ├── tooling.md
+│   ├── agent-workflow.md
+│   └── planning/                    # planner inputs and follow-up lists
+├── scripts/                         # verify/build/test, TDD gates, backlog tooling
+├── .ai/                             # Cezar workflows and agent skills
 ├── AGENTS.md
 ├── CLAUDE.md
 ├── WORKFLOW.md
 └── .github/
     ├── ISSUE_TEMPLATE/
     ├── pull_request_template.md
-    └── workflows/ci.yml
+    └── workflows/                   # ci.yml, issue-guard.yml, promote.yml
 ```
 
 ## World model
@@ -256,6 +263,8 @@ D1 is not used to store assets. R2 is for binary objects, D1 for metadata.
 
 ### M0 — foundation
 
+**Status:** done.
+
 **Goal:** an agent-friendly repo and repeatable work on PRs.
 
 - Monorepo, pnpm, .NET solution, and CI.
@@ -267,6 +276,8 @@ D1 is not used to store assets. R2 is for binary objects, D1 for metadata.
 **Done:** a test issue goes through worktree, draft PR, CI, and review.
 
 ### M1 — .NET world inspector
+
+**Status:** done (#1–#12).
 
 **Goal:** understand the format without a UI.
 
@@ -280,6 +291,8 @@ D1 is not used to store assets. R2 is for binary objects, D1 for metadata.
 
 ### M2 — round-trip safety
 
+**Status:** in progress — format 326 tile encoding and preservation of unexposed sections done (#38, #39); full writer, guarded save, corpus round trip and in-game check open (#40, #41, #44, #45).
+
 **Goal:** do not corrupt a world absent user changes.
 
 - `.wld` writer in .NET.
@@ -291,6 +304,8 @@ D1 is not used to store assets. R2 is for binary objects, D1 for metadata.
 
 ### M3 — TypeScript codec
 
+**Status:** in progress — TS header, metadata and tile decoding into CWM in a Worker done (#46–#52); CWM export/comparison, benchmarks and TS writer open (#42, #43, #53–#57).
+
 **Goal:** an independent TS codec consistent with the .NET reference.
 
 - TS parser for the M1/M2 fixtures.
@@ -301,6 +316,8 @@ D1 is not used to store assets. R2 is for binary objects, D1 for metadata.
 **Done:** the .NET and TS parsers produce identical results for the test corpus.
 
 ### M4 — browser viewer
+
+**Status:** in progress — viewer scaffold, open-file summary, CPU chunk render, XNB/LZX reader and OPFS sprite atlas done (#84–#86, #89, #90); WebGL2 pan/zoom (#87), layers and inspector (#88), sprites (#91) and the .NET PNG/visual-diff tools (#73–#76) open.
 
 **Goal:** open a world locally in the PWA.
 
@@ -402,32 +419,19 @@ For especially risky format changes, the reviewer gets a fresh worktree on the P
 - manual test of opening the world in the target game version.
 ```
 
-## GitHub Project as the control plane
-
-Statuses:
-
-```text
-Todo → Agent Ready → In Progress → PR Ready → Agent Review
-→ Human Review → Done
-
-                         ↘ Rework ↗
-```
+## GitHub Issues as the control plane
 
 The issue is the unit of work. We do not keep sprint state only in the agent's memory.
 
-Minimal labels:
+Pipeline state lives in issue labels, not in Project statuses — the label lifecycle (`backlog` → `agent:ready` →
+`status:pr-ready` → `status:ready-to-merge`, plus `status:stalled` / `status:deferred`) and who sets each label are
+described in [agent-workflow.md](agent-workflow.md). The other label families:
 
 ```text
-area:codec
-area:web
-area:mods
-area:infra
-agent:codex
-agent:claude
-compat:vanilla
-compat:mod-preserve
-compat:mod-render
-priority:high
+area:codec  area:codec-ts  area:model  area:assets  area:fixtures  area:web  area:mods  area:docs  area:infra
+agent:claude  agent:codex
+flow:tdd  flow:tests  flow:foundation  flow:spike
+follow-up  later  human
 ```
 
 ## Issue template
@@ -527,23 +531,18 @@ Every active ticket has an isolated workspace and an agent
 that runs until a workflow-defined handoff.
 ```
 
-We do not need to use the Symphony reference implementation right away. GitHub Project + Cezar can implement the same pattern for the initial POC.
+We do not need to use the Symphony reference implementation right away. GitHub Issues + labels + Cezar implement the same pattern for the initial POC.
 
 ## Minimal CI
 
-```text
-pnpm lint
-pnpm test
-pnpm build
-dotnet test
-```
-
-After M2, add:
+CI (`.github/workflows/ci.yml`) runs a single entry point that builds, lints and tests both stacks:
 
 ```text
-dotnet run --project dotnet/Terraria.WorldInspector -- roundtrip fixtures/
-pnpm --filter @studio/world-codec test:compatibility
+bash scripts/verify.sh   # must end with VERIFY: OK
 ```
+
+Planned additions: the guarded round trip over `packages/test-fixtures/worlds` (#41, #44) and the .NET ↔ TS CWM
+comparison with a performance gate (#56).
 
 After M5, add an end-to-end test of world import, editing, and copy export.
 
@@ -551,7 +550,7 @@ After M5, add an end-to-end test of world import, editing, and copy export.
 
 For each issue we measure:
 
-- time from `Agent Ready → draft PR`;
+- time from `agent:ready` → draft PR;
 - number of human interventions;
 - first CI result;
 - number of review/rework cycles;

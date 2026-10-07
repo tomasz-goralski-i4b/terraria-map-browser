@@ -38,7 +38,7 @@ loses its independent second implementation — the thing that catches spec mist
 | **Test vectors** | `contracts/vectors/*.json`: input bytes (hex) + expected result or error `{ code, offset }` | the **same** vectors run in xUnit and Vitest; today's T1–T17, R1–R10, M1–M5 move here |
 | **World summary** | `<world>.meta.json`: schema version, format version, metadata, dimensions, skipped sections, content palette — small, readable, diffable | golden files in git, `inspect`, `diff` |
 | **Chunk digests** | `<world>.chunks.json`: SHA-256 (truncated to 16 hex chars) per plane per 128 × 128 chunk | golden files in git (a Small world = 33 × 10 chunks → a few KB); a mismatch names the chunk and plane |
-| **Canonical World Model (CWM)** | binary, section 3 below (moves to `docs/cwm.md` in M2) | byte-for-byte .NET vs TS comparison in CI (generated, **never committed**); OPFS cache format in the browser |
+| **Canonical World Model (CWM)** | planes, palette and digests in [`docs/cwm.md`](../cwm.md); the binary file layout is pending (#42 .NET export, #53 TS serialization) | byte-for-byte .NET vs TS comparison in CI (generated, **never committed**); OPFS cache format in the browser |
 
 JSON Schemas for `meta.json`, `chunks.json` and the vector files live in `contracts/schemas/`; both sides validate
 their output against them in tests.
@@ -60,8 +60,8 @@ A world is a small JSON header plus one **typed array per tile field** ("plane")
 | `flags` | Uint16 | bit field: wires ×4, actuator, inactive, invisible block/wall, full-bright block/wall |
 
 `ContentRef` values live **once** in a palette (`vanilla id` / `mod internalName` / `unknown runtimeId`), not
-per tile — this is how mod content and unknown IDs survive without per-tile objects. ≈ 14 bytes per tile:
-≈ 70 MB for a Small world, ≈ 280 MB for a Large one, as flat buffers with zero GC objects. The semantic `Tile`
+per tile — this is how mod content and unknown IDs survive without per-tile objects. 15 bytes per tile:
+≈ 76 MB for a Small world, ≈ 302 MB for a Large one, as flat buffers with zero GC objects. The semantic `Tile`
 type stays as a *view* (`tileAt(x, y)`) for tests, the inspector and the UI — never as storage.
 
 ### 4. TypeScript runtime pipeline (M3–M5)

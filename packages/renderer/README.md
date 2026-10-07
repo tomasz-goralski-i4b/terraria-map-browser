@@ -1,6 +1,12 @@
 # Renderer
 
-Framework-free, pure rendering of CWM planes. `renderChunk(world, cx, cy, options)` returns
+Framework-free (never imports React) rendering of CWM planes. `renderChunk` below is the CPU
+reference implementation; the interactive backend is WebGL2 (`MapRenderer`, #87), whose output must equal
+`renderChunk` pixel for pixel. There is no Canvas2D backend.
+
+## CPU reference: `renderChunk`
+
+ `renderChunk(world, cx, cy, options)` returns
 `{ width, height, pixels }`, with row-major straight-alpha RGBA bytes at one pixel per tile.
 Chunk coordinates are indices of 128 × 128 regions; right and bottom edges are cropped.
 Negative, non-integer or past-the-edge chunk indices throw a `RangeError`.
