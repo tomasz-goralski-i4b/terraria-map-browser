@@ -155,6 +155,25 @@ public class TileSectionWriterTests
         Assert.Equal(Normalize(decoded), Normalize(Decode(bytes, 1, 1).Tiles[0, 0]));
     }
 
+    [Theory]
+    [InlineData("01 01 04", "inactive")]
+    [InlineData("01 01 01 02", "invisible")]
+    [InlineData("01 01 01 08", "full-bright")]
+    public void Write_BlockFlagWithoutBlockAcceptedByReader_IsPreservedByteForByte(string source, string flag)
+    {
+        var decoded = Decode(Hex(source), 1, 1).Tiles[0, 0];
+
+        var bytes = TileSectionWriter.Write(Grid(1, 1, (_, _) => decoded), FrameImportant());
+
+        Assert.True(Hex(source).AsSpan().SequenceEqual(bytes), flag);
+        var read = Decode(bytes, 1, 1).Tiles[0, 0];
+        Assert.Equal(Normalize(decoded), Normalize(read));
+        Assert.Null(read.Block);
+        Assert.Equal(flag == "inactive", read.Inactive);
+        Assert.Equal(flag == "invisible", read.InvisibleBlock);
+        Assert.Equal(flag == "full-bright", read.FullBrightBlock);
+    }
+
     [Fact]
     public void Write_EqualNeighboursStoredSeparately_AreMergedIntoOneRun()
     {
