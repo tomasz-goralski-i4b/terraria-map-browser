@@ -95,6 +95,17 @@ public static class WorldWriter
             throw new WorldWriteException("file header bytes contradict the header");
         }
 
+        // The reader accepts only these fixed values, so anything else did not come from a supported source file.
+        if (header.Signature != Signature
+            || header.FileType != WorldFileType.World
+            || header.SectionCount != SectionCount
+            || !bytes.Slice(SignatureOffset, Signature.Length).SequenceEqual(Encoding.ASCII.GetBytes(Signature))
+            || bytes[FileTypeOffset] != (byte)WorldFileType.World
+            || BinaryPrimitives.ReadInt16LittleEndian(bytes[SectionCountOffset..]) != SectionCount)
+        {
+            throw new WorldWriteException("fixed header fields are not those of a supported world");
+        }
+
         var frameImportant = table.FrameImportant;
         if (BinaryPrimitives.ReadInt16LittleEndian(bytes[FrameCountOffset..]) != frameImportant.Count
             || bytes.Length != FrameCountOffset + sizeof(short) + ((frameImportant.Count + 7) / 8))
@@ -144,7 +155,47 @@ public static class WorldWriter
             }
         }
 
+        ValidateSourceLayout(envelope);
         ValidateMetadataAgainstModel(envelope);
+    }
+
+    // The source sections must tile the file without gaps or overlaps, and the preserved pointer table must name
+    // exactly their starts: W-S2 relocates every section by the same delta relative to that layout.
+    private static void ValidateSourceLayout(WorldEnvelope envelope)
+    {
+        var table = envelope.Table;
+        WorldSectionBoundary[] sections =
+        [
+            table.FileHeader,
+            table.Metadata,
+            table.Tiles,
+            table.Chests,
+            table.Signs,
+            table.NpcsAndMobs,
+            table.TileEntities,
+            table.WeightedPressurePlates,
+            table.TownManager,
+            table.Bestiary,
+            table.CreativePowers,
+            table.Footer,
+        ];
+        if (table.FileHeader.Start != 0
+            || table.FileHeader.End != envelope.FileHeaderBytes.Length
+            || table.Tiles.End <= table.Tiles.Start
+            || table.Footer.End - table.Footer.Start != envelope.FooterBytes.Length)
+        {
+            throw new WorldWriteException("source layout contradicts the envelope bytes");
+        }
+
+        var bytes = envelope.FileHeaderBytes.Span;
+        for (var index = 1; index < sections.Length; index++)
+        {
+            var pointer = BinaryPrimitives.ReadInt32LittleEndian(bytes[(PointerTableOffset + ((index - 1) * sizeof(int)))..]);
+            if (sections[index].Start != sections[index - 1].End || sections[index].Start != pointer)
+            {
+                throw new WorldWriteException("source layout contradicts the preserved section pointers");
+            }
+        }
     }
 
     // The preserved metadata bytes are what gets written, so the model fields must still say the same thing.
