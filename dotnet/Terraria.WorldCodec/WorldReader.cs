@@ -61,6 +61,16 @@ public static class WorldReader
         return new World(header, metadata, tiles, skipped);
     }
 
+    /// <summary>Reads a world for saving: <see cref="Read"/> plus every unmodelled source byte (docs/file-format/writer.md).</summary>
+    /// <remarks>Requires a readable, seekable stream; the result does not reference it.</remarks>
+    /// <exception cref="ArgumentException">The stream is not readable or seekable.</exception>
+    /// <exception cref="WorldFormatException">The file violates the format contract, including the footer.</exception>
+    public static WorldEnvelope ReadForSave(Stream stream)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+        throw new NotImplementedException();
+    }
+
     /// <summary>Reads world metadata (section 1) after <see cref="ReadSectionTable"/>.</summary>
     /// <remarks>Requires a readable, seekable stream. Consumes every field of the section and leaves the stream at the start of the tile section.</remarks>
     /// <exception cref="ArgumentException">The stream is not readable or seekable.</exception>
