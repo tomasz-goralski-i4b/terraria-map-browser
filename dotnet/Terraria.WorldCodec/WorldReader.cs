@@ -127,7 +127,7 @@ public static class WorldReader
             prefixLength++;
             if ((current & 0x80) == 0)
             {
-                prefixValid = prefixLength < 5 || current <= 0x0F;
+                prefixValid = prefixLength < 5 || current <= 0x07;
                 break;
             }
         }
