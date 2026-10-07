@@ -129,6 +129,21 @@ describe("packSheets", () => {
     ["tile 3 (short plants, rectangular 16×20 grid)", "tile", 3, { frameWidth: 16, frameHeight: 20, gapX: 2, gapY: 2 }],
     ["tile 15 (chairs, asymmetric 2×4 gutter)", "tile", 15, { frameWidth: 16, frameHeight: 16, gapX: 2, gapY: 4 }],
     ["a wall", "wall", 1, { frameWidth: 32, frameHeight: 32, gapX: 4, gapY: 4 }],
+    // Further families, restated from A12 (TEdit tiles.json @ 99928583, textureGrid/frameGap per id).
+    ["tile 24 (corruption short plants, 16×20)", "tile", 24, { frameWidth: 16, frameHeight: 20, gapX: 2, gapY: 2 }],
+    ["tile 703 (16×20 family)", "tile", 703, { frameWidth: 16, frameHeight: 20, gapX: 2, gapY: 2 }],
+    ["tile 16 (16×18)", "tile", 16, { frameWidth: 16, frameHeight: 18, gapX: 2, gapY: 2 }],
+    ["tile 73 (16×32)", "tile", 73, { frameWidth: 16, frameHeight: 32, gapX: 2, gapY: 2 }],
+    ["tile 81 (24×26)", "tile", 81, { frameWidth: 24, frameHeight: 26, gapX: 2, gapY: 2 }],
+    ["tile 184 (20×16)", "tile", 184, { frameWidth: 20, frameHeight: 16, gapX: 2, gapY: 2 }],
+    ["tile 227 (32×38)", "tile", 227, { frameWidth: 32, frameHeight: 38, gapX: 2, gapY: 2 }],
+    ["tile 476 (20×18)", "tile", 476, { frameWidth: 20, frameHeight: 18, gapX: 2, gapY: 2 }],
+    ["tile 529 (16×15)", "tile", 529, { frameWidth: 16, frameHeight: 15, gapX: 2, gapY: 2 }],
+    ["tile 567 (26×18)", "tile", 567, { frameWidth: 26, frameHeight: 18, gapX: 2, gapY: 2 }],
+    ["tile 656 (24×34)", "tile", 656, { frameWidth: 24, frameHeight: 34, gapX: 2, gapY: 2 }],
+    ["tile 442 (20×20 family)", "tile", 442, { frameWidth: 20, frameHeight: 20, gapX: 2, gapY: 2 }],
+    ["tile 172 (sinks, 2×3 gutter)", "tile", 172, { frameWidth: 16, frameHeight: 16, gapX: 2, gapY: 3 }],
+    ["tile 751 (18×18 grid, no gutter)", "tile", 751, { frameWidth: 18, frameHeight: 18, gapX: 0, gapY: 0 }],
   ] as const)("packSheets_%s_IndexesItsEffectiveFrameAndGutter", (_label, kind, id, expected) => {
     const atlas = packSheets([sheet(kind, id, 40, 40)], { pageSize: 128 });
     expect(findSprite(atlas, kind, id)).toMatchObject(expected);
@@ -449,6 +464,44 @@ describe("buildSpriteAtlas", () => {
     expect(second.fromCache).toBe(true);
     expect(counter.calls()).toBe(calls);
     expect(second.missing).toEqual(first.missing);
+  });
+
+  it("buildSpriteAtlas_AbortedWhileCachedPagesLoad_RejectsWithAbortErrorAndKeepsTheCommittedEntry", async () => {
+    const content = contentWith(SHEETS);
+    const cache = new MemoryDirectory();
+    await buildSpriteAtlas(content, { cache, pageSize: 1024 });
+    const names = cache.names();
+    expect(names).toHaveLength(1);
+
+    const controller = new AbortController();
+    const getDirectory = cache.getDirectoryHandle.bind(cache);
+    cache.getDirectoryHandle = async (name, options) => {
+      const directory = await getDirectory(name, options);
+      const getFile = directory.getFileHandle.bind(directory);
+      directory.getFileHandle = async (fileName, fileOptions) => {
+        const handle = await getFile(fileName, fileOptions);
+        if (!fileName.startsWith("page-")) return handle;
+        const read = handle.getFile.bind(handle);
+        handle.getFile = async () => {
+          const file = await read();
+          return {
+            ...file,
+            arrayBuffer: async () => {
+              controller.abort();
+              return file.arrayBuffer();
+            },
+          };
+        };
+        return handle;
+      };
+      return directory;
+    };
+
+    const counter = countingDecoder();
+    await expect(
+      buildSpriteAtlas(content, { cache, decode: counter.decode, pageSize: 1024, signal: controller.signal }),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(cache.names()).toEqual(names);
   });
 
   it("buildSpriteAtlas_UnreadableMatchedSheet_IsListedAsMissingAndTheRestIsBuilt", async () => {
