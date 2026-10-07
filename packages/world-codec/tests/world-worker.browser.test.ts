@@ -16,11 +16,19 @@ function firstMismatch(got: ArrayLike<number | bigint>, want: ArrayLike<number |
 }
 
 const clients: WorldWorkerClient[] = [];
+function newWorker(): Worker {
+  return new Worker(new URL("../src/world-worker.ts", import.meta.url), { type: "module" });
+}
 function newClient(): WorldWorkerClient {
-  const worker = new Worker(new URL("../src/world-worker.ts", import.meta.url), { type: "module" });
-  const client = new WorldWorkerClient(worker);
+  const client = WorldWorkerClient.create(newWorker);
   clients.push(client);
   return client;
+}
+
+/** Compile-time guard, never called: a client must own a Worker factory so that abort can stop a running decode. */
+export function constructorWithoutFactoryIsNotPublic(worker: Worker): void {
+  // @ts-expect-error -- the constructor is private; WorldWorkerClient.create(factory) is the only construction mode
+  void new WorldWorkerClient(worker);
 }
 afterEach(() => {
   for (const client of clients.splice(0)) client.dispose();
@@ -125,7 +133,7 @@ describe("world Worker", () => {
 
   it("parse_Result_DetachesEveryUniqueWorkerSideOutputBufferAfterPosting", async () => {
     const worker = new Worker(new URL("./fixtures/transfer-probe.worker.ts", import.meta.url), { type: "module" });
-    const client = new WorldWorkerClient(worker);
+    const client = WorldWorkerClient.create(() => worker);
     clients.push(client);
     const probe = new Promise<{ uniqueBuffers: number; detached: boolean[] }>((resolve) => {
       worker.addEventListener("message", (event: MessageEvent<{ type?: string; uniqueBuffers: number; detached: boolean[] }>) => {
