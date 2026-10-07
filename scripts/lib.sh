@@ -29,6 +29,8 @@ TEST_PATHSPEC=(
   ':(glob)dotnet/**/*.Tests/**'
   ':(glob)**/*.test.ts'
   ':(glob)**/*.spec.ts'
+  ':(glob)**/*.test.tsx'
+  ':(glob)**/*.spec.tsx'
   ':(glob)packages/test-fixtures/**'
 )
 
