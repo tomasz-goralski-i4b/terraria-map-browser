@@ -57,6 +57,8 @@ internal sealed class TileSectionReader(Stream stream, WorldSectionBoundary sect
     private int recordX;
     private int recordY;
 
+    internal long AbsolutePosition => position;
+
     public TileGrid Read(int width, int height)
     {
         var tiles = new Tile[checked(width * height)];
@@ -79,7 +81,7 @@ internal sealed class TileSectionReader(Stream stream, WorldSectionBoundary sect
         return new TileGrid(width, height, tiles);
     }
 
-    private (Tile Tile, int Run) ReadRecord(int x, int y, int columnHeight)
+    internal (Tile Tile, int Run) ReadRecord(int x, int y, int columnHeight)
     {
         recordStart = position;
         recordX = x;

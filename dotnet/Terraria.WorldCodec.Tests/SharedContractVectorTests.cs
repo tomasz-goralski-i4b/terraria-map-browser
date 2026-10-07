@@ -209,6 +209,58 @@ public sealed class SharedContractVectorTests
         }
     }
 
+    [Theory]
+    [InlineData("tiles.vectors.json", "T1", "0000")]
+    [InlineData("tiles.vectors.json", "T2", "000201")]
+    [InlineData("tiles.vectors.json", "T2", "02010201")]
+    [InlineData("runs.vectors.json", "R1", "420100420100")]
+    [InlineData("runs.vectors.json", "R6", "0000000000")]
+    public void Decode_ExtraRecord_FailsWithVectorDiagnostic(string fileName, string vectorId, string hex)
+    {
+        using var document = ReadFixture(fileName);
+        var vector = document.RootElement.GetProperty("vectors").EnumerateArray()
+            .Single(vector => vector.GetProperty("id").GetString() == vectorId);
+        var vectorCase = JsonNode.Parse(vector.GetProperty("cases")[0].GetRawText())!;
+        vectorCase["hex"] = hex;
+        using var changed = JsonDocument.Parse(vectorCase.ToJsonString());
+
+        var exception = Assert.ThrowsAny<XunitException>(() => SharedContractVectorHarness.Decode(vector, changed.RootElement));
+
+        Assert.Contains(vectorId, exception.Message, StringComparison.Ordinal);
+        Assert.Contains("record", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("000000", true)]
+    [InlineData("00000000", false)]
+    public void Decode_R6ColumnPrefix_RequiresFourRecords(string hex, bool truncated)
+    {
+        using var document = ReadFixture("runs.vectors.json");
+        var vector = document.RootElement.GetProperty("vectors").EnumerateArray()
+            .Single(vector => vector.GetProperty("id").GetString() == "R6");
+        var vectorCase = JsonNode.Parse(vector.GetProperty("cases")[0].GetRawText())!;
+        vectorCase["hex"] = hex;
+        using var changed = JsonDocument.Parse(vectorCase.ToJsonString());
+
+        var actual = SharedContractVectorHarness.Decode(vector, changed.RootElement);
+
+        if (truncated)
+        {
+            var error = actual.GetProperty("error");
+            Assert.Equal("MalformedTiles", error.GetProperty("code").GetString());
+            Assert.Equal("truncated record", error.GetProperty("reason").GetString());
+            Assert.Equal(3, error.GetProperty("offset").GetInt64());
+            Assert.Equal(3, error.GetProperty("y").GetInt32());
+        }
+        else
+        {
+            var result = actual.GetProperty("result");
+            Assert.Equal("record", result.GetProperty("kind").GetString());
+            Assert.Equal(0, result.GetProperty("run").GetInt32());
+            Assert.Null(result.GetProperty("tile").GetProperty("block").GetString());
+        }
+    }
+
     private static JsonDocument ReadFixture(string fileName) => JsonDocument.Parse(File.ReadAllBytes(Path.Combine(VectorDirectory, fileName)));
 
     private static void AssertOutcome(string vectorId, JsonElement vectorCase, JsonElement actual)

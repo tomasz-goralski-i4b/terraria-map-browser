@@ -3,8 +3,8 @@ using static Terraria.WorldCodec.Tests.TileAssert;
 namespace Terraria.WorldCodec.Tests;
 
 /// <summary>
-/// Single tile records (docs/file-format.md, "Record layout", "Rules and limits", "Model mapping", vectors T1–T17).
-/// Each vector is the whole tile section of a synthetic 1 × 1 world; no game worlds are used.
+/// Additional tile record boundaries and full-world error diagnostics beyond the shared T1–T17 vectors.
+/// Each record is the whole tile section of a synthetic 1 × 1 world; no game worlds are used.
 /// </summary>
 public class WorldReaderTileRecordTests
 {
@@ -12,47 +12,21 @@ public class WorldReaderTileRecordTests
 
     private static readonly Dictionary<string, (string Bytes, Tile Expected)> ValidRecords = new()
     {
-        ["T1 empty"] = ("00", new Tile()),
-        ["T2 block id 1, not frame-important"] = ("02 01", new Tile { Block = Stone }),
-        ["T3 block id 255"] = ("02 ff", new Tile { Block = new VanillaContentRef(255) }),
-        ["T4 block id 256, two bytes"] = ("22 00 01", new Tile { Block = new VanillaContentRef(256) }),
-        ["T5 non-canonical two-byte 255"] = ("22 ff 00", new Tile { Block = new VanillaContentRef(255) }),
         ["highest vanilla block 753"] = ("22 f1 02", new Tile { Block = new VanillaContentRef(753) }),
-        ["T6 frame-important block"] = ("02 04 00 00 42 00", new Tile { Block = new VanillaContentRef(4), FrameX = 0, FrameY = 66 }),
         ["frames are signed Int16"] = ("02 05 ff ff 00 80", new Tile { Block = new VanillaContentRef(5), FrameX = -1, FrameY = short.MinValue }),
         ["frames come before block paint"] = (
             "03 01 08 04 10 00 20 00 05",
             new Tile { Block = new VanillaContentRef(4), FrameX = 16, FrameY = 32, Paint = 5 }),
         ["paint byte 255 kept"] = ("03 01 08 01 ff", new Tile { Block = Stone, Paint = 255 }),
-        ["T7 water 255"] = ("08 ff", new Tile { Liquid = new TileLiquid(LiquidKind.Water, 255) }),
         ["water 0 kept"] = ("08 00", new Tile { Liquid = new TileLiquid(LiquidKind.Water, 0) }),
-        ["T8 lava 0 kept"] = ("10 00", new Tile { Liquid = new TileLiquid(LiquidKind.Lava, 0) }),
         ["lava 255"] = ("10 ff", new Tile { Liquid = new TileLiquid(LiquidKind.Lava, 255) }),
         ["honey 128"] = ("18 80", new Tile { Liquid = new TileLiquid(LiquidKind.Honey, 128) }),
-        ["T9 shimmer 255"] = ("09 01 80 ff", new Tile { Liquid = new TileLiquid(LiquidKind.Shimmer, 255) }),
         ["shimmer 0 kept"] = ("09 01 80 00", new Tile { Liquid = new TileLiquid(LiquidKind.Shimmer, 0) }),
-        ["T10 everything"] = (
-            "07 13 3a 01 0d 04 02",
-            new Tile
-            {
-                Block = Stone,
-                Shape = BlockShape.Half,
-                Paint = 13,
-                Wall = new VanillaContentRef(4),
-                WallPaint = 2,
-                Wires = TileWires.Red | TileWires.Yellow,
-                Actuator = true,
-            }),
-        ["T11 wall 300, high byte after liquid amount"] = (
-            "0d 01 40 2c 0a 01",
-            new Tile { Wall = new VanillaContentRef(300), Liquid = new TileLiquid(LiquidKind.Water, 10) }),
         ["wall 255, one byte"] = ("04 ff", new Tile { Wall = new VanillaContentRef(255) }),
         ["wall 256, low byte 0"] = ("05 01 40 00 01", new Tile { Wall = new VanillaContentRef(256) }),
         ["highest vanilla wall 366"] = ("05 01 40 6e 01", new Tile { Wall = new VanillaContentRef(366) }),
         ["wall 367 is unknown"] = ("05 01 40 6f 01", new Tile { Wall = new UnknownContentRef(367) }),
-        ["T13 wall 400 is unknown"] = ("05 01 40 90 01", new Tile { Wall = new UnknownContentRef(400) }),
         ["wall paint"] = ("05 01 10 07 1f", new Tile { Wall = new VanillaContentRef(7), WallPaint = 31 }),
-        ["T12 invisible block"] = ("03 01 01 02 01", new Tile { Block = Stone, InvisibleBlock = true }),
         ["invisible wall"] = ("05 01 01 04 07", new Tile { Wall = new VanillaContentRef(7), InvisibleWall = true }),
         ["full-bright block"] = ("03 01 01 08 01", new Tile { Block = Stone, FullBrightBlock = true }),
         ["full-bright wall"] = ("05 01 01 10 07", new Tile { Wall = new VanillaContentRef(7), FullBrightWall = true }),
