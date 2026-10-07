@@ -14,7 +14,9 @@ interface WorkerScope {
 }
 const scope = globalThis as unknown as WorkerScope;
 
-/** Requests cancelled while their input was still being read; a late result is dropped. */
+/** Requests whose input is still being read; only these can still be stopped (a decode cannot be interrupted). */
+const active = new Set<number>();
+/** Active requests cancelled while their input was being read; their result is dropped. */
 const cancelled = new Set<number>();
 
 function toFailure(error: unknown): WorldWorkerFailure {
@@ -23,6 +25,7 @@ function toFailure(error: unknown): WorldWorkerFailure {
 }
 
 async function parse(requestId: number, input: File | ArrayBuffer): Promise<void> {
+  active.add(requestId);
   try {
     const buffer = input instanceof ArrayBuffer ? input : await input.arrayBuffer();
     if (cancelled.has(requestId)) return;
@@ -31,12 +34,15 @@ async function parse(requestId: number, input: File | ArrayBuffer): Promise<void
   } catch (error) {
     if (!cancelled.has(requestId)) scope.postMessage({ type: "failed", requestId, error: toFailure(error) });
   } finally {
+    active.delete(requestId);
     cancelled.delete(requestId);
   }
 }
 
 scope.onmessage = (event) => {
   const request = event.data;
-  if (request.type === "cancel") cancelled.add(request.requestId);
-  else void parse(request.requestId, request.input);
+  if (request.type === "cancel") {
+    // A completed or unknown request has nothing left to stop; remembering its ID would block a later request reusing it.
+    if (active.has(request.requestId)) cancelled.add(request.requestId);
+  } else void parse(request.requestId, request.input);
 };

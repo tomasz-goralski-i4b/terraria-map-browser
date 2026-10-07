@@ -73,7 +73,17 @@ export class WorldWorkerClient {
         reject,
         detach: () => { signal?.removeEventListener("abort", onAbort); },
       });
-      this.#post({ type: "parse", requestId, input }, input instanceof ArrayBuffer ? [input] : []);
+      try {
+        this.#post({ type: "parse", requestId, input }, input instanceof ArrayBuffer ? [input] : []);
+      } catch (error) {
+        // e.g. DataCloneError for an already-detached ArrayBuffer: settle so nothing stays registered.
+        this.#settle(requestId);
+        reject(new WorldWorkerError(requestId, {
+          code: "Internal",
+          offset: 0,
+          message: error instanceof Error ? error.message : String(error),
+        }));
+      }
     });
   }
 
