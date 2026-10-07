@@ -53,6 +53,10 @@ const browserProjects = [
         provider: playwright(),
         instances: [{ browser: "chromium" as const }],
         commands: {
+          readWorldFixture: (_context: unknown, file: string) => {
+            if (!/^[A-Za-z0-9]+\.wld$/.test(file)) throw new Error(`not a fixture world: ${file}`);
+            return readFileSync(join("packages/test-fixtures/worlds", file)).toString("base64");
+          },
           setAppOffline: (_context: unknown, offline: boolean) => {
             setDistServerOffline(offline);
           },
