@@ -33,3 +33,13 @@ body {
   place-items: center;
   background: #111827;
 }
+
+.map-view dl {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 0.25rem 1rem;
+}
+
+.map-view dd {
+  margin: 0;
+}

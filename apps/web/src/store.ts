@@ -36,16 +36,16 @@ export const useAppStore = create<AppState>()((set) => ({
   loadingFileName: null,
   summary: null,
   error: null,
-  setLoading: () => {
-    throw new Error("not implemented");
+  setLoading: (fileName) => {
+    set({ phase: "loading", loadingFileName: fileName, error: null });
   },
-  setLoaded: () => {
-    throw new Error("not implemented");
+  setLoaded: (summary) => {
+    set({ phase: "loaded", loadingFileName: null, summary, error: null });
   },
-  setFailed: () => {
-    throw new Error("not implemented");
+  setFailed: (error) => {
+    set({ phase: "failed", loadingFileName: null, error });
   },
   cancelLoading: () => {
-    throw new Error("not implemented");
+    set((state) => ({ phase: state.summary === null ? "idle" : "loaded", loadingFileName: null, error: null }));
   },
 }));
