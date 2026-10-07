@@ -1,0 +1,97 @@
+import { server } from "vitest/browser";
+import { afterEach, describe, expect, it } from "vitest";
+import { WorldWorkerClient, WorldWorkerError } from "@studio/world-codec";
+
+async function loadWorld(name: string): Promise<Uint8Array<ArrayBuffer>> {
+  const base64 = await server.commands.readFile(`../test-fixtures/worlds/${name}`, "base64");
+  return Uint8Array.from(atob(base64), (char) => char.charCodeAt(0));
+}
+
+const clients: WorldWorkerClient[] = [];
+function newClient(): WorldWorkerClient {
+  const worker = new Worker(new URL("../src/world-worker.ts", import.meta.url), { type: "module" });
+  const client = new WorldWorkerClient(worker);
+  clients.push(client);
+  return client;
+}
+afterEach(() => {
+  for (const client of clients.splice(0)) client.dispose();
+});
+
+describe("world Worker", () => {
+  it("parse_TransferredArrayBuffer_ReturnsPlanesPaletteAndMetadata_AndDetachesSender", async () => {
+    const bytes = await loadWorld("SCCO1.wld");
+    const buffer = bytes.buffer.slice(0);
+    const result = await newClient().parse(buffer);
+    expect(buffer.byteLength).toBe(0);
+    const { width, height } = result.metadata;
+    expect(result.planes.block).toBeInstanceOf(Uint16Array);
+    expect(result.planes.block.length).toBe(width * height);
+    expect(result.planes.block.buffer.byteLength).toBe(width * height * 2);
+    expect(result.palette.length).toBeGreaterThan(0);
+    expect(result.planes.block.some((value) => value !== 0xffff)).toBe(true);
+  });
+
+  it("parse_File_ParsesInsideTheWorker", async () => {
+    const bytes = await loadWorld("SCCO1.wld");
+    const result = await newClient().parse(new File([bytes], "SCCO1.wld"));
+    expect(result.planes.flags.length).toBe(result.metadata.width * result.metadata.height);
+  });
+
+  it("parse_MalformedFile_RejectsWithCodeOffsetAndRequestId", async () => {
+    const bytes = await loadWorld("SCCO1.wld");
+    const error = await newClient().parse(bytes.slice(0, 10).buffer).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(WorldWorkerError);
+    const failure = error as WorldWorkerError;
+    expect(failure.code).toBe("Truncated");
+    expect(typeof failure.offset).toBe("number");
+    expect(failure.requestId).toBeGreaterThan(0);
+  });
+
+  it("parse_AfterFailedRequest_StillParsesValidFile", async () => {
+    const client = newClient();
+    const bytes = await loadWorld("SCCO1.wld");
+    await expect(client.parse(bytes.slice(0, 10).buffer)).rejects.toBeInstanceOf(WorldWorkerError);
+    const result = await client.parse(bytes.buffer.slice(0));
+    expect(result.palette.length).toBeGreaterThan(0);
+  });
+
+  it("parse_AbortedSignal_RejectsWithCancelled", async () => {
+    const controller = new AbortController();
+    const bytes = await loadWorld("SCCO1.wld");
+    const pending = newClient().parse(bytes.buffer.slice(0), { signal: controller.signal });
+    controller.abort();
+    const error = await pending.catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(WorldWorkerError);
+    expect((error as WorldWorkerError).code).toBe("Cancelled");
+  });
+
+  it("dispose_WithPendingRequest_RejectsItAsCancelled_AndLaterParseFails", async () => {
+    const client = newClient();
+    const bytes = await loadWorld("SCCO1.wld");
+    const pending = client.parse(bytes.buffer.slice(0));
+    client.dispose();
+    expect(((await pending.catch((e: unknown) => e)) as WorldWorkerError).code).toBe("Cancelled");
+    await expect(client.parse(bytes.buffer.slice(0))).rejects.toBeInstanceOf(Error);
+  });
+
+  it("parse_SmallWorld_KeepsMainThreadHeartbeatRunning", async () => {
+    const bytes = await loadWorld("SCCO1.wld");
+    let ticks = 0;
+    let longest = 0;
+    let last = performance.now();
+    const timer = window.setInterval(() => {
+      const now = performance.now();
+      longest = Math.max(longest, now - last);
+      last = now;
+      ticks++;
+    }, 10);
+    try {
+      await newClient().parse(bytes.buffer.slice(0));
+    } finally {
+      window.clearInterval(timer);
+    }
+    expect(ticks).toBeGreaterThan(0);
+    expect(longest).toBeLessThan(500);
+  });
+});
