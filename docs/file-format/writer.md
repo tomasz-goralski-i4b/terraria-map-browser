@@ -34,7 +34,7 @@ with the metadata is either corruption or an unknown variant. Observed in F (all
 The rules both independent writers (.NET in M2, TS in M3) follow when saving a world that was **read by the M1/M2
 reader**. Creating worlds from scratch, other format versions and modded worlds are out of scope; a writer asked
 to save anything else refuses (`UnsupportedWrite`). The save procedure around the writer — backup, temporary
-file, replace, and the in-game check — is in [round-trip.md](round-trip.md).
+file, replace, and the in-game check — is in [round-trip.md](../round-trip.md).
 
 Terms:
 - **Source**: the bytes the world was read from. The writer keeps them (or the spans named below) until the save.
@@ -107,7 +107,7 @@ save:
   "file too large" }`) before anything is written; pointers are Int32.
 - **W-S4 Self-check.** The writer's output must satisfy every rule of "Section table" (strictly increasing,
   `pointer[0] = H`, `pointer[10] + 6 ≤ L`). It is re-read by the reader before it replaces anything
-  ([round-trip.md](round-trip.md), step B5).
+  ([round-trip.md](../round-trip.md), step B5).
 - **W-S5 Footer.** Only a source whose footer passed "Footer (M2)" can be saved. The footer is copied verbatim;
   when the name or id has been edited it is rebuilt as `01`, the metadata name String (same bytes), the world
   id. An inconsistent source footer is never "repaired" by regenerating it: the save is refused with the

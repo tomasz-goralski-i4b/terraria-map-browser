@@ -105,7 +105,7 @@ Notes and rules:
   (`SCCO1` 0, `SECR1` 1, `SMCO1` 2, `SJCO1` 3). Any other value is kept as `{ mode: "unknown", raw }`, not an
   error (preserve unknown data).
 - Evil: the Bool at row 22 is the only evil flag in the metadata. In F it agrees with the tiles of every
-  fixture (crimson-only tiles in `SECR1`, corruption-only in the other three) and, since the fix for open
+  fixture (crimson-only tiles in `SECR1` and `SCCR2`, corruption-only in the other three) and, since the fix for open
   question 5, with the manifest; `scripts/check-fixtures.mjs` enforces it.
 - Counts (rows 32, 34, 35, 39, 45, 55) must be ≥ 0 (signed types) and the list must fit before `pointer[1]`;
   otherwise `MalformedMetadata`. No other upper bound is defined by any source; this "fits in the section"
@@ -113,8 +113,9 @@ Notes and rules:
 - End: after row 59 the reader must be exactly at `pointer[1]`. Before → `MalformedMetadata { reason
   "unread bytes" }`; after → `MalformedMetadata { reason "overruns section" }`. TEdit instead keeps leftover
   bytes as opaque "unknown data" (T11, end) and fails only on overrun (T13). M1 is strict because only 326 is
-  accepted and all four fixtures end exactly (F, leftover 0); preserving trailing bytes is an M2/next-version
-  decision.
+  accepted and all four fixtures end exactly (F, leftover 0); for saving, the M2 writer copies
+  the metadata as one verbatim span (W-M1 in [writer.md](writer.md)); trailing bytes for a newer format are open
+  question 6.
 - **Dimensions** (our own rules; no source defines a minimum or maximum):
   - `width ≤ 0` or `height ≤ 0` → `MalformedMetadata { field "width"/"height", reason "must be positive" }`.
   - Every column needs at least one record byte, so `width ≤ pointer[2] − pointer[1]` (derived bound).

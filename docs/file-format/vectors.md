@@ -4,6 +4,9 @@ Part of the format specification; index and conventions: [../file-format.md](../
 
 ## Metadata and tile vectors
 
+Machine-readable copies run by both codecs live in `contracts/vectors/` with schemas in `contracts/schemas/`
+(see [contracts/README.md](../../contracts/README.md)).
+
 Synthetic vectors (not taken from any world). Unless stated otherwise: format 326, the real 326
 frame-important set (`k = 754`; ids 4 and 5 are frame-important, 1, 255 and 256 are not — T18), and a world of
 **width 2, height 4**.

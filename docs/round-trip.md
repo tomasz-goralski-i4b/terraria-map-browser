@@ -1,9 +1,9 @@
 # Round trip: backup, save and the in-game check (M2)
 
 How a world is saved safely, and how a human confirms that a saved world still works in the game. The byte-level
-rules of the writer are in [file-format/writer.md](file-format/writer.md) ("Footer (M2)" and "Writer contract"). Implemented
-by #41 (guarded save + `roundtrip` CLI); the in-game check is #45, whose results go to
-`docs/round-trip-validation.md` (human-owned).
+rules of the writer are in [file-format/writer.md](file-format/writer.md) ("Footer (M2)" and "Writer contract"). To be
+implemented by #41 (open: guarded save + `roundtrip` CLI); the in-game check is #45 (open), whose results will go
+to `docs/round-trip-validation.md` (human-owned, created by #45).
 
 **No gameplay-safety claim.** Until the in-game check below has passed for every fixture, a saved world is only
 *structurally* verified (our reader accepts it and the semantic model is unchanged). Nothing in the code, the

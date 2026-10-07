@@ -1,5 +1,8 @@
 # Planner input — M2 and M3 (2026-10-06)
 
+> **Historical:** the prompt used on 2026-10-06. The M1 issues and follow-ups it names are closed and the vectors
+> moved to `docs/file-format/vectors.md` and `contracts/vectors/`. Do not reuse it as-is.
+
 Run in Cezar: New task → workflow `plan-backlog` → paste the prompt below. Pick the runner/model in the dialog
 (planning is rare and high-leverage — a deep model is worth it).
 

@@ -112,7 +112,7 @@ content pipeline.
 sheet sizes: `Tiles_0` → 311 040 = 288 × 270 × 4; `Wall_1` → 336 960 = 468 × 180 × 4. That is consistent with one
 type reader, `SurfaceFormat.Color`, and one mip level, but it is an inference, not a decoded fact — the opt-in
 integration test (below) confirms it. A reader must reject any other surface format (DXT formats exist in XNA but
-are not expected here), mip count ≠ 1 (or ignore extra levels — decision for the implementation issue), a data length
+are not expected here), mip count ≠ 1 (`MalformedContent`, decided in #89), a data length
 ≠ `w × h × 4`, and trailing bytes after the last level.
 
 ## LZX as used in XNB
@@ -643,7 +643,8 @@ format, never copied; "Depend" = may be a build or runtime dependency.
 **Recommendation:** write both decoders (.NET and TS) **from this document**, with no dependency. The format subset
 is small (one platform, one version, one reader, one surface format, 64 KiB LZX window, no E8), the two codecs must
 report the same errors, and every candidate library either drags in a framework or brings a copyleft license. The
-.NET implementation is the reference; the TS one is independent (ADR 0001).
+.NET implementation is the reference; the TS one is independent (ADR 0001). The TS decoder was implemented first
+(#89); the .NET one is pending (#73) and must reproduce the same vectors and error kinds.
 
 ## Atlas
 
@@ -710,11 +711,11 @@ project); nothing is derived from game files.
    cases run in CI without game content or a compressor; broader real-content coverage remains opt-in.
 6. **Negative vectors:** bad magic, platform ≠ `w`, version ≠ 5, unknown flag bit, file-size mismatch, truncated
    header, truncated chunk, block type 0 or 4–7, E8 flag set, frame total ≠ decompressed size, wrong reader name,
-   surface format ≠ 0, data length ≠ `w × h × 4`, trailing bytes. Each gets a precise error (names decided by the
-   implementation issue; the two codecs must agree).
+   surface format ≠ 0, data length ≠ `w × h × 4`, trailing bytes. Each gets a precise error (`XnbErrorKind` in
+   `packages/assets/src/xnb-error.ts`; the .NET decoder must report the same kinds).
 
-Synthetic `.xnb` files that both codecs share are generated (like the `.wld` fixtures) and small; committing them
-needs a `.gitignore` rule `*.xnb` with an exception for the fixture directory (follow-up).
+Synthetic `.xnb` inputs are built in memory by test builders (`packages/assets/src/xnb-fixture.ts`); none are
+committed. The .NET decoder (#73) must reproduce the same vectors.
 
 ### Opt-in integration test: `TERRARIA_CONTENT`
 

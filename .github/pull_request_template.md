@@ -13,6 +13,6 @@ Closes #
 - 
 
 ## Agent
-- Cezar workflow: tdd-feature / tdd-feature-codex / foundation / spike
+- Cezar workflow: tdd-feature / tdd-feature-codex / foundation / foundation-codex / tests-only / spike
 - Implementer: claude / codex — Reviewer: codex / claude — verdict:
 - Rework cycles:

@@ -25,7 +25,8 @@ you get its output in the prompt — fix the file.
   - `spike` — research of the format/sources, result goes to `docs/`,
   - `human` — something an agent cannot do: generating a small world in Terraria, an in-game test, a decision.
 - `runner`: `claude` or `codex` — spread roughly evenly unless the task says otherwise; binary format changes
-  (writer, round-trip) go to `claude`. Omit for `human`.
+  (writer, round-trip) go to `claude`. Omit for `human`. `runner` only picks the implementer for `tdd` and
+  `foundation`; `spike` and `tests` always run on Claude (reviewed by Codex).
 - `area`: `codec` (.NET reference codec, `dotnet/`), `codec-ts` (TypeScript codec, `packages/world-codec`),
   `assets` (local game textures: XNB/LZX reading, asset index, reference renderer), `model`, `fixtures`, `docs`,
   `infra`, `web`, `mods`. The two codecs are independent implementations of one
@@ -48,7 +49,7 @@ you get its output in the prompt — fix the file.
 ## Acceptance criteria
 ## Proof
 ```
-`## Acceptance criteria` is required by the gate. Be concrete: type/method/file names, boundary values.
+`## Acceptance criteria` and (except for `human`) `## Spec` are required by the gate. Be concrete: type/method/file names, boundary values.
 `## Spec` lists the exact doc parts and sections the agent must read, e.g.
 `docs/file-format/tiles.md` ("Record layout", "Rules and limits") — every step reads only these, so keep it short
 (write "none" when no doc applies).

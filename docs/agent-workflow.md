@@ -51,6 +51,8 @@ and runs started by automations can be `autonomous`.
 | `status:pr-ready` | `open-pr.sh` | draft PR exists, waiting for CI |
 | `status:ready-to-merge` | `merge-ready.sh` | second model approved + CI green — **your turn to merge** |
 | `status:stalled` | promoter (watchdog), or a gate when an agent wrote `.tdd/blocked.md` | the chain stopped without a PR (usage limit, crash, a decision only you can make — the issue comment says which) — **needs you**; area stays busy |
+| `status:deferred` | promoter | the run stopped at `preflight` (usage LOW); the issue is back on `backlog` and is promoted again once usage is OK |
+| `follow-up` | `merge-ready` | non-blocking review notes of a merged PR; nothing runs automatically — triage by hand |
 | `later` | you | parked: the promoter ignores it; swap it back to `backlog` to resume |
 | `human` | planner | your work (e.g. a fixture from the game); close the issue when done — it unblocks dependants |
 | `flow:tdd|tests|foundation|spike` + `agent:claude|codex` | planner | workflow and implementer choice |
@@ -60,7 +62,7 @@ Promoter rules (`scripts/backlog/promote.mjs`): ordered by issue number, every `
 area free (an area stays busy until the PR is merged), globally in flight < `MAX_ACTIVE` (2 = Cezar's `maxParallel`).
 
 Automations (`.ai/cezar/automation-defs/*.json`) listen for `issue.labeled` = `agent:ready`, only on issues
-opened by the repo owner (the repo is public). Install/update (the cockpit must be running for this repo):
+authored by a trusted author (`.ai/cezar/trusted-authors.json`; the repo is public). Install/update (the cockpit must be running for this repo):
 ```bash
 bash scripts/backlog/install-automations.sh
 ```
@@ -139,24 +141,25 @@ The label is cleared automatically when a new Cezar run for the issue is live, o
 - A Cezar task `failed` (retries exhausted, BLOCKED, INFRA) → the issue stays on `agent:ready` and its area stays busy.
   Read the log, fix the issue/code, then remove and re-add `agent:ready` (the automation starts a new task),
   or set `backlog` and run the promoter.
-- `merge-ready` failed (CI red on GitHub, or no APPROVE) → the PR stays a draft with a comment; fix on the PR branch or Continue the task.
+- `merge-ready` failed (CI red on GitHub, or no APPROVE) → the PR stays a draft (CI red also gets a PR comment); fix on the PR branch or Continue the task.
 - PR feedback → Continue the task in Cezar with a comment, or fix it by hand on the PR branch.
 - Bad plan → close/edit the issues on GitHub; `create-issues` skips items whose backlog key or title already exists.
 
 ## The `tdd-feature` chain
 
 ```
-red ─► check-red ─► green ─► check-green ─► review ─► check-review-style ─► check-review ─► open-pr ─► merge-ready
- ▲        │           ▲          │                          │                    │
- └─retry──┘           └──retry───┘                          │                    │
-                      ▲                                     │                    │
-                      └──── REQUEST_CHANGES, all (style) ───┘                    │
- ▲                                                                               │
- └──────────── REQUEST_CHANGES with a (behaviour) finding: failing test first ───┘
+preflight ─► red ─► check-red ─► green ─► check-red-defect ─► check-green ─► review ─► check-review-style ─► check-review ─► open-pr ─► merge-ready
+             ▲      │            ▲                            │                        │                     │
+             └retry─┘            └───────────retry────────────┘                        │                     │
+                                 ▲                                                     │                     │
+                                 └─────────── REQUEST_CHANGES, all (style) ────────────┘                     │
+             ▲                                                                                               │
+             └─────────────── REQUEST_CHANGES with a (behaviour) finding: failing test first ────────────────┘
 ```
 
 | Step | Who | Does | The gate checks |
 |---|---|---|---|
+| preflight | script | — | both providers have usage left (`scripts/backlog/usage-probe.mjs`); LOW → exit 3, the promoter defers the issue |
 | red | implementer | `.tdd/plan.md`, tests, stubs | tests changed, build OK, tests FAIL → commit `test: red`, `.tdd/red-sha` |
 | green | implementer | minimal implementation, kept clean (names, duplication, docs) — there is no separate refactor step | tests unchanged since `red-sha`, `verify.sh` OK → commit, `.tdd/green-sha` |
 | (check-red-defect) | script | — | green wrote `.tdd/red-defect.md` ("this red test can never pass, per spec") → back to red, which fixes the test (`test: fix red-phase defect`) or rejects the report; once per run; shown to the reviewer and in the PR |
@@ -167,7 +170,8 @@ red ─► check-red ─► green ─► check-green ─► review ─► check-
 Rework: a REQUEST_CHANGES whose blocking findings are all `(style)` goes straight back to `green`
 (`check-review-style`); one `(behaviour)` or untagged finding goes back to `red` — failing test first.
 
-Every workflow except `plan-backlog` ends with `review → check-review → open-pr → merge-ready`:
+Every workflow except `plan-backlog` ends with `review → check-review → open-pr → merge-ready`
+(TDD workflows: `review → check-review-style → check-review → …`):
 the implementer never reviews its own work, and a PR is only marked ready when a second model approved it
 and CI is green. `spike` is researched by Claude and reviewed by Codex. Foundation issues select
 `foundation` (Claude implements, Codex reviews) with `agent:claude`, or `foundation-codex`
@@ -223,7 +227,7 @@ Review the tiering with the experiment metrics (first-CI result, rework cycles p
 | 0 | OK | next step |
 | 1 | the work is wrong, the agent can fix it | `retry` (with the output in the prompt), up to `max` |
 | 2 | infrastructure (missing tool, WSL) | stop — no agent attempts wasted (`retryOn: [1]`) |
-| 3 | human decision (BLOCKED verdict, `.tdd/blocked.md`, reviewer edited code) | stop |
+| 3 | human decision (BLOCKED verdict, `.tdd/blocked.md`, reviewer edited code), or usage LOW at `preflight` | stop |
 
 ## Cezar facts this relies on
 - Every agent step is a **new session** — hence the `.tdd/` handoff and skills that tell agents to read files.
@@ -233,4 +237,4 @@ Review the tiering with the experiment metrics (first-CI result, rework cycles p
 - Cezar keeps task worktrees inside the repo (`.ai/cezar/worktrees/`, gitignored); tooling must ignore `.ai/`.
 
 ## Experiment metrics (per issue, recorded in the PR)
-time Agent Ready → draft PR · human interventions · first CI result · rework cycles · provider · failure cause.
+time `agent:ready` → draft PR · human interventions · first CI result · rework cycles · provider · failure cause.

@@ -18,8 +18,9 @@ Part of the format specification; index and conventions: [../file-format.md](../
    Original finding: `SCCR1` was declared `"evil": "crimson"` in `manifest.json`, but its metadata
    crimson flag is false and its tiles contain 26 348 corruption tiles (ids 23, 25, 112) and no crimson tiles
    (199, 203, 234). The world is a corruption world; either the manifest entry or the world-generation choice
-   was wrong. `SECR1` (crimson) and the two corruption worlds are consistent. Consequence: M1 has **no
-   classic-mode crimson fixture** and no test that distinguishes `evil` from `mode`. See follow-up.
+   was wrong. `SECR1` (crimson) and the two corruption worlds are consistent. Consequence: M1 had **no
+   classic-mode crimson fixture** and no test that distinguishes `evil` from `mode` (fixed: `SCCR2.wld` and
+   the manifest↔file check in `scripts/check-fixtures.mjs`).
 6. Strict end-of-metadata (`pointer[1]` reached exactly): fine for 326; when a newer format appends fields,
    should the reader keep unread bytes opaquely (TEdit's approach) instead of failing?
 7. Should the metadata pixel bounds (rows 6–9) be required to equal `16 · width` / `16 · height`? True in F,
