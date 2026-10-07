@@ -53,7 +53,7 @@ public class WorldWriterTests
         var written = Write(ReadForSave(source));
 
         Assert.Equal(expected, written);
-        Assert.Equal(Pointers(source).Skip(2).Select(pointer => pointer - 5), Pointers(written).Skip(2));
+        Assert.Equal(Pointers(source).Skip(2).Select(pointer => pointer - 7), Pointers(written).Skip(2));
         Assert.Equal(Pointers(source).Take(2), Pointers(written).Take(2));
     }
 
