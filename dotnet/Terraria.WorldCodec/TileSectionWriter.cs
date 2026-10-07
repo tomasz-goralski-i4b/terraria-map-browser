@@ -123,7 +123,7 @@ internal static class TileSectionWriter
             throw Fail(x, y, "undefined liquid kind");
         }
 
-        if (!hasBlock && (shape != 0 || tile.Inactive || tile.InvisibleBlock || tile.FullBrightBlock || tile.Paint is not null
+        if (!hasBlock && (shape != 0 || tile.Paint is not null
             || tile.FrameX is not null || tile.FrameY is not null))
         {
             throw Fail(x, y, "block flag without a block");
