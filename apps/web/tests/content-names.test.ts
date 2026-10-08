@@ -36,13 +36,13 @@ test("wall names use option zero independently of the block's frame", () => {
     block: { kind: "vanilla", id: 26 }, frameX: 54, frameY: 18,
     wall: { kind: "vanilla", id: 1 }, wires: 0, actuator: false,
   })).toBe("Crimson Altar · Stone Wall");
-  // The current game's only multi-option wall (27) has no label for either option.
+  // The current game's only multi-option wall (27) uses the placement-item fallback.
   expect(terrariaMapNames.walls[27]).toHaveLength(2);
-  expect(contentName({ kind: "vanilla", id: 27 }, "wall")).toBe("vanilla:27");
+  expect(contentName({ kind: "vanilla", id: 27 }, "wall")).toBe("Planked Wall");
   expect(describeTile({
     block: { kind: "vanilla", id: 26 }, frameX: 54, frameY: 18,
     wall: { kind: "vanilla", id: 27 }, wires: 0, actuator: false,
-  })).toBe("Crimson Altar · vanilla:27");
+  })).toBe("Crimson Altar · Planked Wall");
 });
 
 test("describes the hovered block's map option, wall and every liquid with generated names", () => {
