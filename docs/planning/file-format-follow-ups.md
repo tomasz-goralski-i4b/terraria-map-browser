@@ -328,7 +328,7 @@ The viewer lists a world's chests, signs, NPCs and tile entities, and jumps the 
 ```
 
 ```markdown
-**Status:** not filed.
+**Status:** filed (#165).
 
 ## Goal
 The reference .NET codec decodes sections 3–10 read-only, and both codecs agree on shared vectors.
@@ -366,7 +366,7 @@ and the game's own save is the evidence. The two drafts below close the gaps of 
 and open questions 15–17.
 
 ```markdown
-**Status:** not filed. Blocked by: #158, the .NET entity decoder draft above.
+**Status:** filed (#166). Blocked by: #158, #165.
 
 ## Goal
 The test-world generator also stamps an Entities section — every object of docs/file-format/entities.md with
@@ -417,7 +417,7 @@ its section 3–10 record — so the TEdit-only layouts can be checked in game w
 ```
 
 ```markdown
-**Status:** not filed (human). Blocked by: the generator draft above.
+**Status:** filed (#167, human). Blocked by: #166.
 
 ## Goal
 Confirm in Terraria 1.4.5.8 that the entity layouts of docs/file-format/entities.md are what the game reads and
