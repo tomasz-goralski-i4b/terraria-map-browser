@@ -137,7 +137,8 @@ export class CameraAnimator {
       this.direct = false;
     } else {
       const difference = Math.log(this.destination.zoom / this.drawn.zoom);
-      if (difference !== 0) {
+      if (difference === 0) this.drawn = this.destination;
+      else {
         const remaining = difference * Math.exp(-ZOOM_DECAY_PER_MS * dt);
         if (Math.abs(remaining) <= ZOOM_EPSILON) this.drawn = this.destination;
         else {
@@ -160,7 +161,13 @@ export class CameraAnimator {
       const vx = this.drawn.x === before.x ? 0 : this.kinetic.x * decay;
       const vy = this.drawn.y === before.y ? 0 : this.kinetic.y * decay;
       this.kinetic = Math.hypot(vx, vy) <= VELOCITY_EPSILON ? STILL : { x: vx, y: vy };
-      this.destination = this.drawn;
+      // Panning deliberately moves the zoom anchor. Translate it and the target by the drawn tile delta,
+      // so a held arrow key cannot discard an unfinished zoom glide.
+      const offset = { x: this.drawn.x - before.x, y: this.drawn.y - before.y };
+      this.anchorTile = { x: this.anchorTile.x + offset.x, y: this.anchorTile.y + offset.y };
+      this.destination = clampCamera({
+        ...this.destination, x: this.destination.x + offset.x, y: this.destination.y + offset.y,
+      }, this.viewport, this.world);
     } else if (Math.hypot(this.kinetic.x, this.kinetic.y) <= VELOCITY_EPSILON) this.kinetic = STILL;
 
     return {
