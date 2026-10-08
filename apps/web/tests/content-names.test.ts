@@ -43,6 +43,7 @@ test("names paints from item metadata and describes independent block and wall p
   expect(paintName(29)).toBe("Shadow Paint");
   expect(paintName(30)).toBe("Negative Paint");
   expect(paintName(200)).toBe("paint:200");
+  expect(paintName(31)).toBe("paint:31");
   expect(describeTile({
     block: { kind: "vanilla", id: 1 }, paint: 19,
     wall: { kind: "vanilla", id: 1 }, wallPaint: 7, wires: 0, actuator: false,

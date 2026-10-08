@@ -102,6 +102,18 @@ test("hovering previews a tile until one is pinned, and Unpin returns to the pre
   await expect.poll(() => rows()[0]).toEqual(["Position", "0, 1"]);
 });
 
+test("the Inspector names the frame-selected altar and its paint", async () => {
+  const world = createWorld(4, 3);
+  world.setTile(2, 1, {
+    block: { kind: "vanilla", id: 26 }, frameX: 54, frameY: 0, paint: 19,
+    wires: 0, actuator: false,
+  });
+  await render(<InspectorPanel world={inspectorWorld(world)} />);
+  useViewStore.getState().setPinnedTile({ x: 2, y: 1 });
+  await expect.poll(rows).toContainEqual(["Block", "Crimson Altar (vanilla:26)"]);
+  expect(rows()).toContainEqual(["Block paint", "Deep Cyan Paint (19)"]);
+});
+
 // ---------- Clicking the map with the Inspect tool ----------
 
 const MAP = { width: 400, height: 300 };
