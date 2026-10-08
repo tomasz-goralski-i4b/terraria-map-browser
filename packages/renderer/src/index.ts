@@ -3,6 +3,7 @@
 export const RENDERER_PACKAGE = "@studio/renderer";
 export { WIRE_ALPHA, WIRE_COLORS, WIRE_LAYER, renderChunk, wireColor } from "./chunk/render.js";
 export type { ChunkLayers, ChunkPixels, ChunkRenderOptions } from "./chunk/render.js";
+export { FILTER_SUBTILE, MAX_FILTER_TILES, filterTiles, filterTilesPerPixel } from "./chunk/box-filter.js";
 export { backgroundColor, contentColor, liquidColors, mapOption, paintedColor, placeholderColor } from "./palette/map-palette.js";
 export type { MapBackground, MapColor, MapContentNames, MapOptionRule, MapPalette, Rgba, WorldDepth } from "./palette/map-palette.js";
 export { terrariaMapNames, terrariaMapPalette } from "./palette/terraria-map-palette.generated.js";

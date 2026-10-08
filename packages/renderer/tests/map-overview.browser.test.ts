@@ -148,10 +148,13 @@ describe("overview below half a pixel per tile", () => {
     closeTo(pixel(100, 37), expected, 2);
   });
 
-  test("at half a pixel per tile and above the chunk pass draws exact tile colours", () => {
+  test("the chunk pass averages the tiles under a pixel below one pixel per tile and draws exact tiles from one", () => {
     const { renderer, pixel } = setup(512, 256);
     renderer.setWorld(checker);
     renderer.setCamera({ x: 0, y: 0, zoom: 0.5 });
+    renderer.render();
+    closeTo(pixel(100, 37), mean(blockA ?? [], blockB ?? []), 1);
+    renderer.setCamera({ x: 0, y: 0, zoom: 1 });
     renderer.render();
     expect([blockA, blockB]).toContainEqual(pixel(100, 37));
   });
@@ -288,6 +291,67 @@ describe("overview below half a pixel per tile", () => {
     expect(differing).toBe(0);
   });
 
+  test("a layer change sweeps out from the centre of the view: no blank, no chunk ahead of the front, within budget", () => {
+    // 128 uniform chunks in two colours, all visible, in a cache of 16: the rebuild re-uploads evicted chunks.
+    const colorIndex = (chunkX: number, chunkY: number): number => 1 + ((chunkX + chunkY) % 2);
+    const world = blocks(2048, 1024, (x, y) => colorIndex(Math.floor(x / 128), Math.floor(y / 128)));
+    const budget = 4;
+    const cache = 16;
+    const frames = animationFrames();
+    const { renderer, pixel, all } = setup(512, 256, { maxCachedChunks: cache, maxChunkUploadsPerFrame: budget });
+    renderer.setWorld(world);
+    renderer.setCamera(fitted);
+    renderer.render();
+    const visible = visibleChunks(fitted, { width: 512, height: 256 }, world);
+    const centres = visible.map((chunk) => [chunk.x * 32 + 16, chunk.y * 32 + 16] as const);
+    // Distance of each chunk's centre from the centre of the view, in tiles.
+    const distance = visible.map((chunk) => Math.hypot(chunk.x * 128 + 64 - 1024, chunk.y * 128 + 64 - 512));
+    const before = centres.map(([x, y]) => pixel(x, y));
+    // Blocks off: the background (underground, surfaceY 0) shows everywhere.
+    const hidden = { background: true, walls: true, blocks: false, liquids: true };
+    const reference = setup(512, 256);
+    reference.renderer.setWorld(world);
+    reference.renderer.setLayers(hidden);
+    reference.renderer.setCamera(fitted);
+    reference.renderer.render();
+    const after = centres.map(([x, y]) => reference.pixel(x, y));
+
+    renderer.setLayers(hidden);
+    let uploads = renderer.stats().textureUploads;
+    const near = (actual: readonly number[], expected: readonly number[] | undefined): boolean =>
+      expected !== undefined && actual.every((value, channel) => Math.abs(value - (expected[channel] ?? 0)) <= 2);
+    let rebuildFrames = 0;
+    let partialFrames = 0;
+    for (; frames.pending.size > 0 && rebuildFrames < 200; rebuildFrames++) {
+      frames.step();
+      const stats = renderer.stats();
+      expect(stats.textureUploads - uploads).toBeLessThanOrEqual(budget);
+      expect(stats.residentChunks).toBeLessThanOrEqual(cache);
+      uploads = stats.textureUploads;
+      const updated = centres.map(([x, y], index) => {
+        const actual = pixel(x, y);
+        // Never blank: every chunk shows its old or its new colour.
+        expect(near(actual, before[index]) || near(actual, after[index]), `frame ${String(rebuildFrames)}, chunk ${String(index)}: ${String(actual)}`)
+          .toBe(true);
+        return near(actual, after[index]);
+      });
+      // The new view grows as one front from the centre: no chunk (cached or not) is updated ahead of a nearer one.
+      const front = Math.max(...distance.filter((_, index) => updated[index]));
+      const behind = distance.findIndex((d, index) => d < front - 1 && updated[index] !== true);
+      expect(behind, `frame ${String(rebuildFrames)}: chunk ${String(behind)} is behind the front`).toBe(-1);
+      if (updated.includes(true) && updated.includes(false)) partialFrames++;
+    }
+    // The sweep re-uploaded evicted chunks over several frames, visibly in progress, and finished.
+    expect(rebuildFrames).toBeGreaterThan(1);
+    expect(partialFrames).toBeGreaterThan(0);
+    expect(frames.pending.size).toBe(0);
+    const actual = all();
+    const expected = reference.all();
+    let differing = 0;
+    for (let index = 0; index < actual.length; index++) if (actual[index] !== expected[index]) differing++;
+    expect(differing).toBe(0);
+  }, 60_000);
+
   test("tileAt is independent of the overview", () => {
     const { renderer } = setup(512, 256);
     renderer.setWorld(halves);
@@ -295,5 +359,76 @@ describe("overview below half a pixel per tile", () => {
     renderer.render();
     expect(renderer.tileAt(64, 128)).toEqual({ x: 256, y: 512 });
     expect(renderer.tileAt(511, 255)).toEqual({ x: 2044, y: 1020 });
+  });
+});
+
+describe("crossing the overview threshold", () => {
+  const checker = blocks(1024, 512, (x, y) => 1 + ((x + y) % 2));
+  /** Deterministic noise: every tile one of the two blocks, by a hash of its position. */
+  const noisy = blocks(1024, 512, (x, y) => 1 + ((Math.imul(x, 73856093) ^ Math.imul(y, 19349663)) >>> 7) % 2);
+  const below = 0.499;
+  const samples = [[3, 3], [60, 30], [120, 60]] as const;
+
+  /** The value of an integer uniform of the program the last frame used. */
+  const uniform = (gl: WebGL2RenderingContext, name: string): unknown => {
+    const program = gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram;
+    const location = gl.getUniformLocation(program, name);
+    return location === null ? undefined : gl.getUniform(program, location);
+  };
+
+  test("a checkerboard pixel changes by at most 2 per channel between the overview and the chunk pass", () => {
+    const { renderer, pixel } = setup(128, 64);
+    renderer.setWorld(checker);
+    renderer.setCamera({ x: 0, y: 0, zoom: below });
+    renderer.render();
+    const overview = samples.map(([x, y]) => pixel(x, y));
+    renderer.setCamera({ x: 0, y: 0, zoom: 0.5 });
+    renderer.render();
+    samples.forEach(([x, y], index) => { closeTo(pixel(x, y), overview[index] ?? [], 2); });
+  });
+
+  test("a noisy world changes by a mean absolute difference of at most 2 between the overview and the chunk pass", () => {
+    const { renderer, all } = setup(128, 64);
+    renderer.setWorld(noisy);
+    renderer.setCamera({ x: 0, y: 0, zoom: below });
+    renderer.render();
+    const overview = all();
+    renderer.setCamera({ x: 0, y: 0, zoom: 0.5 });
+    renderer.render();
+    const chunkPass = all();
+    let total = 0;
+    for (let index = 0; index < overview.length; index++) total += Math.abs((overview[index] ?? 0) - (chunkPass[index] ?? 0));
+    expect(total / overview.length).toBeLessThanOrEqual(2);
+  });
+
+  test("a sub-tile pan at 0.6 pixels per tile over a checkerboard does not shimmer", () => {
+    const { renderer, all } = setup(128, 64);
+    renderer.setWorld(checker);
+    renderer.setCamera({ x: 10, y: 10, zoom: 0.6 });
+    renderer.render();
+    let previous = all();
+    for (const step of [0.1, 0.25, 0.4, 0.5, 0.75, 1]) {
+      renderer.setCamera({ x: 10 + step, y: 10 + step / 2, zoom: 0.6 });
+      renderer.render();
+      const current = all();
+      let worst = 0;
+      for (let index = 0; index < current.length; index++) {
+        worst = Math.max(worst, Math.abs((current[index] ?? 0) - (previous[index] ?? 0)));
+      }
+      expect(worst, `pan to +${String(step)}`).toBeLessThanOrEqual(2);
+      previous = current;
+    }
+  });
+
+  test("the filtered band keeps one draw call per page and filters only below one pixel per tile", () => {
+    const { renderer, gl } = setup(128, 64);
+    renderer.setWorld(checker);
+    for (const zoom of [0.5, 0.6, 0.99, 1, 2]) {
+      renderer.setCamera({ x: 0, y: 0, zoom });
+      renderer.render();
+      expect(renderer.stats().drawCalls, `zoom ${String(zoom)}`).toBe(1);
+      // The chunk pass reads one tile per pixel at one pixel per tile and above, the box filter only below.
+      expect(uniform(gl, "uFilter"), `zoom ${String(zoom)}`).toBe(zoom < 1 ? 1 : 0);
+    }
   });
 });

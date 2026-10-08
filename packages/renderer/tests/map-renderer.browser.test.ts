@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { WIRE_ALPHA, WIRE_COLORS, WIRE_LAYER, WebGl2UnavailableError, createMapRenderer, renderChunk, visibleChunks } from "../src/index.js";
+import {
+  WIRE_ALPHA, WIRE_COLORS, WIRE_LAYER, WebGl2UnavailableError, createMapRenderer, filterTiles, renderChunk, visibleChunks,
+} from "../src/index.js";
 import type { ChunkLayers, MapPalette, MapRenderer, MapRendererOptions, RenderableWorld } from "../src/index.js";
 import { syntheticMapPalette } from "./map-palette.fixture.js";
 
@@ -211,6 +213,44 @@ describe("GPU output equals renderChunk", { tags: ["perf"] }, () => {
     expect(chunk.width).toBe(44);
     expect(chunk.height).toBe(72);
     expect(readCanvas(canvas)).toEqual(new Uint8Array(chunk.pixels));
+  });
+
+  describe("between half a pixel and one pixel per tile, the box-filtered CPU reference", () => {
+    // The world's edges and the chunk boundaries at x = 128, 256 and y = 128 are on screen at every zoom.
+    const wired = wiredWorld(300, 200);
+    const band = (layers: ChunkLayers, tilesPerPixel: number, camera = { x: -3.5, y: -2.25 }) => {
+      const viewport = { width: 160, height: 112 };
+      const canvas = makeCanvas(viewport.width, viewport.height);
+      const renderer = makeRenderer(canvas, { mapPalette: syntheticMapPalette });
+      renderer.setWorld(wired);
+      renderer.setLayers(layers);
+      const view = { ...camera, zoom: 1 / tilesPerPixel };
+      renderer.setCamera(view);
+      renderer.render();
+      const tiles = { width: wired.width, height: wired.height, pixels: new Uint8ClampedArray(cpuReference(wired, layers, syntheticMapPalette)) };
+      const actual = readCanvas(canvas);
+      const expected = filterTiles(tiles, view, viewport);
+      // Listed rather than compared with toEqual: a diff of two whole canvases is unreadable.
+      const differing: string[] = [];
+      for (let index = 0; index < actual.length; index += 4) {
+        const got = [...actual.subarray(index, index + 4)];
+        const want = [...expected.subarray(index, index + 4)];
+        if (got.some((value, channel) => value !== want[channel])) {
+          differing.push(`(${String((index / 4) % viewport.width)}, ${String(Math.floor(index / 4 / viewport.width))}): ${String(got)} vs ${String(want)}`);
+        }
+      }
+      return differing;
+    };
+
+    test.each(layerCombos)("layers %o with every wire, at 0.5 pixels per tile", (layers) => {
+      const differing = band({ ...layers, wires: WIRE_LAYER.all }, 2);
+      expect(differing.slice(0, 5), `${String(differing.length)} pixels differ`).toEqual([]);
+    });
+
+    test.each([1.75, 1.5, 1.25, 1.0625])("all layers at %f tiles per pixel, from a sub-tile camera", (tilesPerPixel) => {
+      const differing = band({ ...allLayers, wires: WIRE_LAYER.all }, tilesPerPixel, { x: 61.375, y: 70.5 });
+      expect(differing.slice(0, 5), `${String(differing.length)} pixels differ`).toEqual([]);
+    });
   });
 
   test("tileAt maps canvas pixels to integer tiles and null outside the world", () => {

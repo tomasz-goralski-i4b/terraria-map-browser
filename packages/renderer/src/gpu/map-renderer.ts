@@ -5,13 +5,14 @@
 import type { ContentRef } from "@studio/world-model";
 import { CHUNK_SIZE, visibleChunks } from "../camera/camera.js";
 import type { Camera, ChunkCoord, Size } from "../camera/camera.js";
+import { filterTilesPerPixel } from "../chunk/box-filter.js";
 import { WIRE_ALPHA, WIRE_COLORS, WIRE_LAYER, type ChunkLayers } from "../chunk/render.js";
 import {
   backgroundColor, contentColor, liquidColors, mapOption, optionColor, optionColors, optionRule,
 } from "../palette/map-palette.js";
-import type { MapOptionRule, MapPalette, Rgba } from "../palette/map-palette.js";
+import type { MapPalette, Rgba } from "../palette/map-palette.js";
 import {
-  LAYER_ATTRIBUTE, RECT_ATTRIBUTE, chunkFragmentSource, chunkVertexSource, overviewBuildFragmentSource,
+  LAYER_ATTRIBUTE, PAGE_APRON, RECT_ATTRIBUTE, chunkFragmentSource, chunkVertexSource, overviewBuildFragmentSource,
   overviewBuildVertexSource, overviewFragmentSource, overviewVertexSource,
 } from "./shaders.js";
 
@@ -42,10 +43,17 @@ export interface RenderableWorld {
 
 export interface MapRendererOptions {
   /**
-   * Upper bound of uncached visible chunks uploaded per scheduled animation frame. Default 32.
-   * Finite values are floored and clamped to at least 1; non-finite values use the default.
+   * Upper bound of chunks uploaded per scheduled animation frame. Default 256; the time budget below usually ends a
+   * frame's uploads first. Finite values are floored and clamped to at least 1; non-finite values use the default.
    */
   readonly maxChunkUploadsPerFrame?: number;
+  /**
+   * Time a scheduled animation frame may spend on chunk uploads, in milliseconds. Default 8. Once it is spent the
+   * frame uploads no more chunks (it always uploads one), so a fast machine uploads more chunks per frame than a slow
+   * one and input stays responsive on both. Positive values and `Infinity` (no time limit) are accepted; others use the
+   * default.
+   */
+  readonly maxUploadMillisecondsPerFrame?: number;
   /**
    * Baseline chunk texture cache capacity (LRU). Default 512 (about 100 MiB of chunk pages).
    * Grows to fit the largest set drawn chunk by chunk (at half a pixel per tile and above, so bounded by the
@@ -101,9 +109,12 @@ const PALETTE_HEIGHT = PALETTE_ROW;
 const VARIANT_CAPACITY = 0xffff;
 const ABSENT = 0xffff;
 const DEFAULT_MAX_CACHED_CHUNKS = 512;
-const DEFAULT_MAX_CHUNK_UPLOADS_PER_FRAME = 32;
-/** Chunks per page (array texture layers); a page of both textures is 12 MiB. */
+const DEFAULT_MAX_CHUNK_UPLOADS_PER_FRAME = 256;
+const DEFAULT_MAX_UPLOAD_MILLISECONDS_PER_FRAME = 8;
+/** Chunks per page (array texture layers); a page of both textures is about 12.4 MiB. */
 const PAGE_LAYERS = 64;
+/** Texels per side of a page layer: the chunk and its apron of neighbouring tiles on every side. */
+const PAGE_SIZE = CHUNK_SIZE + 2 * PAGE_APRON;
 /** Ints per instance: the chunk rectangle (origin x, origin y, columns, rows) and its page layer. */
 const INSTANCE_INTS = 5;
 /** The smallest overview factor: one overview texel per 2 × 2 tiles, used below half a pixel per tile. */
@@ -121,7 +132,7 @@ const TILE_UNIFORMS = [
   "uWide", "uNarrow", "uPalette", "uBackground", "uVariantColors", "uPaintRow", "uPaintCount", "uPaletteLength",
   "uLayers", "uLiquids", "uWireColors", "uWireBits", "uWireAlpha",
 ] as const;
-const CHUNK_UNIFORMS = [...TILE_UNIFORMS, "uCamera", "uZoom", "uViewport"] as const;
+const CHUNK_UNIFORMS = [...TILE_UNIFORMS, "uCamera", "uZoom", "uViewport", "uFilter", "uStep", "uWorldSize"] as const;
 const BUILD_UNIFORMS = [...TILE_UNIFORMS, "uFactor", "uTarget"] as const;
 const OVERVIEW_UNIFORMS = ["uCamera", "uZoom", "uViewport", "uWorld", "uExtent", "uOverview"] as const;
 
@@ -130,7 +141,7 @@ interface Program<Name extends string> {
   readonly uniforms: Readonly<Record<Name, WebGLUniformLocation>>;
 }
 
-/** One array texture pair holding up to PAGE_LAYERS chunks. */
+/** One array texture pair holding up to PAGE_LAYERS chunks, each with its apron. */
 interface Page {
   /** RGBA16UI: block, wall, variant, reserved. */
   readonly wide: WebGLTexture;
@@ -154,6 +165,19 @@ interface GpuResources {
   readonly variantColors: WebGLTexture;
 }
 
+/**
+ * The frame → map option rule of one palette entry, flattened for the chunk upload loop, which resolves it per tile.
+ */
+interface OptionChoices {
+  /** Whether the rule reads frameX (else frameY). */
+  readonly byX: boolean;
+  /** Inclusive ranges as `from, to, option` triples, in the rule's order (the first match wins, as in `mapOption`). */
+  readonly ranges: Int32Array;
+  readonly colors: readonly Rgba[];
+  /** Variant id by option: 0 for the palette colour's option, -1 until resolved. */
+  readonly ids: Int32Array;
+}
+
 /** The overview of one world: a mipmapped RGBA8 texture, one texel per factor × factor tiles, premultiplied. */
 interface Overview {
   readonly world: RenderableWorld;
@@ -165,6 +189,8 @@ interface Overview {
   readonly built: Uint8Array;
   /** Number of chunks marked in `built`. */
   builtCount: number;
+  /** Whether any texel was ever built: invalidation keeps the old texels until the rebuild overwrites them. */
+  filled: boolean;
 }
 
 function requireValue<T>(value: T | null, what: string): T {
@@ -211,7 +237,7 @@ function integerTexture(gl: WebGL2RenderingContext, format: number, width: numbe
 function pageTexture(gl: WebGL2RenderingContext, format: number): WebGLTexture {
   const texture = requireValue(gl.createTexture(), "a texture");
   gl.bindTexture(gl.TEXTURE_2D_ARRAY, texture);
-  gl.texStorage3D(gl.TEXTURE_2D_ARRAY, 1, format, CHUNK_SIZE, CHUNK_SIZE, PAGE_LAYERS);
+  gl.texStorage3D(gl.TEXTURE_2D_ARRAY, 1, format, PAGE_SIZE, PAGE_SIZE, PAGE_LAYERS);
   gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
   gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
   return texture;
@@ -253,8 +279,9 @@ const wireColorUniform = new Int32Array(WIRE_COLORS.flatMap(([, color]) => [...c
 const wireBitUniform = new Int32Array(WIRE_COLORS.map(([bit]) => bit));
 
 export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRendererOptions): MapRenderer {
-  // Straight (non-premultiplied) alpha: the shader writes the same RGBA that `renderChunk` produces.
-  const context = canvas.getContext("webgl2", { premultipliedAlpha: false });
+  // Straight (non-premultiplied) alpha: the shader writes the same RGBA that `renderChunk` produces. No multisampling:
+  // it would blend a pixel the edge of a chunk quad crosses (the world's edge at a sub-tile camera) by coverage.
+  const context = canvas.getContext("webgl2", { premultipliedAlpha: false, antialias: false });
   if (context === null) throw new WebGl2UnavailableError();
   const gl: WebGL2RenderingContext = context;
   const maxCachedChunks = Math.max(1, options?.maxCachedChunks ?? DEFAULT_MAX_CACHED_CHUNKS);
@@ -262,6 +289,10 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   const maxChunkUploadsPerFrame = Number.isFinite(requestedUploadBudget)
     ? Math.max(1, Math.floor(requestedUploadBudget))
     : DEFAULT_MAX_CHUNK_UPLOADS_PER_FRAME;
+  const requestedUploadTime = options?.maxUploadMillisecondsPerFrame ?? DEFAULT_MAX_UPLOAD_MILLISECONDS_PER_FRAME;
+  const maxUploadMillisecondsPerFrame = requestedUploadTime > 0
+    ? requestedUploadTime
+    : DEFAULT_MAX_UPLOAD_MILLISECONDS_PER_FRAME;
   const mapPalette = options?.mapPalette;
   // The four liquid kinds (CWM kinds 1–4) as the shader's ivec3 array.
   const liquidUniform = new Int32Array(liquidColors(mapPalette).slice(1).flatMap(([red, green, blue]) => [red, green, blue]));
@@ -280,20 +311,25 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   const pages: Page[] = [];
   const freeSlots: number[] = [];
   let nextSlot = 0;
-  // Interleaved planes of one chunk, in the page layout (transposed, CHUNK_SIZE texels per chunk column).
-  const wideStaging = new Uint16Array(CHUNK_SIZE * CHUNK_SIZE * 4);
-  const narrowStaging = new Uint8Array(CHUNK_SIZE * CHUNK_SIZE * 4);
+  // Interleaved planes of one chunk and its apron, in the page layout (transposed, PAGE_SIZE texels per column).
+  const wideStaging = new Uint16Array(PAGE_SIZE * PAGE_SIZE * 4);
+  const narrowStaging = new Uint8Array(PAGE_SIZE * PAGE_SIZE * 4);
   let instanceData = new Int32Array(INSTANCE_INTS * 256);
   const paletteMirror = new Uint8Array(PALETTE_WIDTH * PALETTE_HEIGHT * 4);
   let paletteUploaded = 0;
   // Frame-selected colours, appended as chunks upload: variant ids (1-based) by palette index and option.
   const variantMirror = new Uint8Array(PALETTE_ROW * PALETTE_ROW * 4);
-  const variantIds = new Map<number, number>();
-  const optionsByPalette = new Map<number, { readonly rule: MapOptionRule; readonly colors: readonly Rgba[]; readonly paletteOption: number } | null>();
+  // By palette index: the entry's map-option rule, null when it has none, undefined until resolved.
+  const optionsByPalette: (OptionChoices | null | undefined)[] = [];
   let variantCount = 0;
   // Per-row background colours plus the paint row, for the world they were computed for.
   let background: { readonly texture: WebGLTexture; readonly world: RenderableWorld; readonly paintRow: number } | null = null;
   let overview: Overview | null = null;
+  // The overview build order of the last frame's camera, viewport and world (see overviewFootprint).
+  let sweep: {
+    readonly world: RenderableWorld; readonly camera: Camera; readonly width: number; readonly height: number;
+    readonly order: readonly ChunkCoord[];
+  } | null = null;
   const paintCount = mapPalette === undefined ? 0 : Math.min(PALETTE_ROW, mapPalette.paints.length);
   let textureUploads = 0;
   let evictedChunks = 0;
@@ -303,8 +339,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   let disposed = false;
 
   const resetVariants = (): void => {
-    variantIds.clear();
-    optionsByPalette.clear();
+    optionsByPalette.length = 0;
     variantCount = 0;
   };
 
@@ -322,22 +357,18 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   const releaseOverview = (): void => {
     if (overview !== null && !gl.isContextLost()) gl.deleteTexture(overview.texture);
     overview = null;
+    // The cached sweep order references its world: drop it so the previous world's planes can be collected.
+    sweep = null;
   };
 
-  /** Forgets every overview texel (their chunks draw them again on demand) and clears the texture. */
+  /**
+   * Marks every overview texel stale: their chunks draw them again on demand. The texture is not cleared, so the old
+   * texels stay visible until the rebuild overwrites them and the map never blanks.
+   */
   const invalidateOverview = (): void => {
     if (overview === null) return;
     overview.built.fill(0);
     overview.builtCount = 0;
-    gl.bindFramebuffer(gl.FRAMEBUFFER, resources.framebuffer);
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, overview.texture, 0);
-    gl.viewport(0, 0, overview.width, overview.height);
-    gl.clearColor(0, 0, 0, 0);
-    gl.clear(gl.COLOR_BUFFER_BIT);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    gl.activeTexture(gl.TEXTURE0 + UNIT_OVERVIEW);
-    gl.bindTexture(gl.TEXTURE_2D, overview.texture);
-    gl.generateMipmap(gl.TEXTURE_2D);
   };
 
   const uploadPalette = (palette: readonly ContentRef[]): void => {
@@ -383,27 +414,41 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
    * sunflower's flower): "no variant" therefore means "the option of frame (0, 0)".
    */
   const variantOf = (paletteIndex: number, frameX: number, frameY: number, palette: readonly ContentRef[]): number => {
-    let choices = optionsByPalette.get(paletteIndex);
+    let choices = optionsByPalette[paletteIndex];
     if (choices === undefined) {
       const ref = palette[paletteIndex];
       const rule = ref === undefined ? undefined : optionRule(ref, "block", mapPalette);
       const colors = ref === undefined ? undefined : optionColors(ref, "block", mapPalette);
-      choices = rule === undefined || colors === undefined ? null : { rule, colors, paletteOption: mapOption(rule, 0, 0) };
-      optionsByPalette.set(paletteIndex, choices);
+      if (rule === undefined || colors === undefined) {
+        choices = null;
+      } else {
+        const ids = new Int32Array(Math.max(0, ...rule.ranges.map(([, , option]) => option)) + 1).fill(-1);
+        ids[mapOption(rule, 0, 0)] = 0;
+        choices = { byX: rule.axis === "frameX", ranges: Int32Array.from(rule.ranges.flat()), colors, ids };
+      }
+      optionsByPalette[paletteIndex] = choices;
     }
     if (choices === null) return 0;
-    const option = mapOption(choices.rule, frameX, frameY);
-    if (option === choices.paletteOption) return 0;
-    const key = paletteIndex * 256 + option;
-    let id = variantIds.get(key);
-    if (id === undefined) {
-      const color = optionColor(choices.colors, option);
-      if (color === undefined || variantCount >= VARIANT_CAPACITY) return 0;
-      variantMirror.set(color, variantCount * 4);
-      id = ++variantCount;
-      variantIds.set(key, id);
+    // mapOption, without its per-call iteration: this runs for every framed tile of every uploaded chunk.
+    const frame = choices.byX ? frameX : frameY;
+    const { ranges, ids } = choices;
+    let option = 0;
+    for (let range = 0; range < ranges.length; range += 3) {
+      if (frame >= (ranges[range] ?? 0) && frame <= (ranges[range + 1] ?? -1)) {
+        option = ranges[range + 2] ?? 0;
+        break;
+      }
     }
-    return id;
+    const known = ids[option] ?? -1;
+    if (known >= 0) return known;
+    const color = optionColor(choices.colors, option);
+    if (color === undefined || variantCount >= VARIANT_CAPACITY) {
+      ids[option] = 0;
+      return 0;
+    }
+    variantMirror.set(color, variantCount * 4);
+    ids[option] = ++variantCount;
+    return variantCount;
   };
 
   const allocateSlot = (): number => {
@@ -417,28 +462,35 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   };
 
   /**
-   * Interleaves one chunk's planes into its page layer with two uploads. Each block's frame-selected option is
-   * resolved on the CPU (as `renderChunk` does, so the GPU output is exact); new variant colours are uploaded too.
+   * Interleaves one chunk's planes, with its apron of neighbouring tiles, into its page layer with two uploads. Each
+   * block's frame-selected option is resolved on the CPU (as `renderChunk` does, so the GPU output is exact); new
+   * variant colours are uploaded too.
    */
   const uploadChunk = (source: RenderableWorld, chunk: ChunkCoord, slot: number): void => {
     const originX = chunk.x * CHUNK_SIZE;
     const originY = chunk.y * CHUNK_SIZE;
     const columns = Math.min(CHUNK_SIZE, source.width - originX);
     const rows = Math.min(CHUNK_SIZE, source.height - originY);
+    // The apron, clipped to the world: texels past the world's edges keep stale values the shaders never read.
+    const firstColumn = Math.max(-PAGE_APRON, -originX);
+    const endColumn = Math.min(columns + PAGE_APRON, source.width - originX);
+    const firstRow = Math.max(-PAGE_APRON, -originY);
+    const endRow = Math.min(rows + PAGE_APRON, source.height - originY);
     const { block, wall, liquid, liquidAmount, paint, wallPaint, frameX, frameY, flags } = source.planes;
     const framed = mapPalette?.tileOptions !== undefined && (frameX !== undefined || frameY !== undefined);
     const paletteLength = source.palette.length;
     const firstNewVariant = variantCount;
-    for (let column = 0; column < columns; column++) {
+    for (let column = firstColumn; column < endColumn; column++) {
       const from = (originX + column) * source.height + originY;
-      const to = column * CHUNK_SIZE * 4;
-      for (let row = 0; row < rows; row++) {
+      const to = ((column + PAGE_APRON) * PAGE_SIZE + PAGE_APRON) * 4;
+      for (let row = firstRow; row < endRow; row++) {
         const index = from + row;
         const texel = to + row * 4;
         const blockId = block[index] ?? ABSENT;
         wideStaging[texel] = blockId;
         wideStaging[texel + 1] = wall[index] ?? ABSENT;
-        wideStaging[texel + 2] = framed && blockId < paletteLength
+        // Most content has no map-option rule: skip the frame planes for it once that is known (null).
+        wideStaging[texel + 2] = framed && blockId < paletteLength && optionsByPalette[blockId] !== null
           ? variantOf(blockId, frameX?.[index] ?? 0, frameY?.[index] ?? 0, source.palette)
           : 0;
         wideStaging[texel + 3] = (flags?.[index] ?? 0) & WIRE_LAYER.all;
@@ -449,29 +501,30 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       }
     }
     if (variantCount > firstNewVariant) {
-      const firstRow = Math.floor(firstNewVariant / PALETTE_ROW);
-      const lastRow = Math.floor((variantCount - 1) / PALETTE_ROW);
+      const firstVariantRow = Math.floor(firstNewVariant / PALETTE_ROW);
+      const lastVariantRow = Math.floor((variantCount - 1) / PALETTE_ROW);
       gl.activeTexture(gl.TEXTURE0 + UNIT_VARIANTS);
       gl.bindTexture(gl.TEXTURE_2D, resources.variantColors);
       gl.texSubImage2D(
-        gl.TEXTURE_2D, 0, 0, firstRow, PALETTE_ROW, lastRow - firstRow + 1, gl.RGBA_INTEGER, gl.UNSIGNED_BYTE,
-        variantMirror.subarray(firstRow * PALETTE_ROW * 4),
+        gl.TEXTURE_2D, 0, 0, firstVariantRow, PALETTE_ROW, lastVariantRow - firstVariantRow + 1, gl.RGBA_INTEGER,
+        gl.UNSIGNED_BYTE, variantMirror.subarray(firstVariantRow * PALETTE_ROW * 4),
       );
     }
     const page = pages[Math.floor(slot / PAGE_LAYERS)];
     if (page === undefined) throw new Error(`chunk slot ${String(slot)} has no page`);
     const layer = slot % PAGE_LAYERS;
-    // Texture width is the chunk's rows (y), height its columns (x); rows past the edge keep stale texels the
-    // shaders never read.
+    // Texture width is the chunk's rows (y), height its columns (x), both with the apron; texels past the world's
+    // edges keep stale values the shaders never read.
+    const height = columns + 2 * PAGE_APRON;
     gl.activeTexture(gl.TEXTURE0 + UNIT_WIDE);
     gl.bindTexture(gl.TEXTURE_2D_ARRAY, page.wide);
     gl.texSubImage3D(
-      gl.TEXTURE_2D_ARRAY, 0, 0, 0, layer, CHUNK_SIZE, columns, 1, gl.RGBA_INTEGER, gl.UNSIGNED_SHORT, wideStaging,
+      gl.TEXTURE_2D_ARRAY, 0, 0, 0, layer, PAGE_SIZE, height, 1, gl.RGBA_INTEGER, gl.UNSIGNED_SHORT, wideStaging,
     );
     gl.activeTexture(gl.TEXTURE0 + UNIT_NARROW);
     gl.bindTexture(gl.TEXTURE_2D_ARRAY, page.narrow);
     gl.texSubImage3D(
-      gl.TEXTURE_2D_ARRAY, 0, 0, 0, layer, CHUNK_SIZE, columns, 1, gl.RGBA_INTEGER, gl.UNSIGNED_BYTE, narrowStaging,
+      gl.TEXTURE_2D_ARRAY, 0, 0, 0, layer, PAGE_SIZE, height, 1, gl.RGBA_INTEGER, gl.UNSIGNED_BYTE, narrowStaging,
     );
     textureUploads++;
   };
@@ -524,7 +577,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     const chunksX = Math.ceil(source.width / CHUNK_SIZE);
     const chunksY = Math.ceil(source.height / CHUNK_SIZE);
-    overview = { world: source, texture, factor, width, height, built: new Uint8Array(chunksX * chunksY), builtCount: 0 };
+    overview = { world: source, texture, factor, width, height, built: new Uint8Array(chunksX * chunksY), builtCount: 0, filled: false };
     // Storage starts zeroed but its mip chain is incomplete until generated.
     gl.generateMipmap(gl.TEXTURE_2D);
     return overview;
@@ -610,6 +663,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       if (target.built[key] === 0) target.builtCount++;
       target.built[key] = 1;
     }
+    target.filled = true;
     gl.activeTexture(gl.TEXTURE0 + UNIT_OVERVIEW);
     gl.bindTexture(gl.TEXTURE_2D, target.texture);
     gl.generateMipmap(gl.TEXTURE_2D);
@@ -633,8 +687,14 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     return 1;
   };
 
-  /** The visible chunks followed by those within the overview's filter footprint around the viewport. */
-  const overviewFootprint = (source: RenderableWorld, visible: readonly ChunkCoord[], viewport: Size): ChunkCoord[] => {
+  /**
+   * The order in which overview texels are built: the visible chunks, then the rest of the overview's filter footprint
+   * around the viewport, each by distance from the centre of the view. Building strictly in this order makes a
+   * rebuild sweep out from the centre as one front.
+   */
+  const overviewFootprint = (source: RenderableWorld, visible: readonly ChunkCoord[], viewport: Size): readonly ChunkCoord[] => {
+    if (sweep !== null && sweep.world === source && sweep.camera === camera
+      && sweep.width === viewport.width && sweep.height === viewport.height) return sweep.order;
     const margin = Math.ceil(4 / camera.zoom);
     const around = visibleChunks(
       { x: camera.x - margin, y: camera.y - margin, zoom: camera.zoom },
@@ -643,10 +703,19 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     );
     const chunksX = Math.ceil(source.width / CHUNK_SIZE);
     const inView = new Set(visible.map((chunk) => chunk.y * chunksX + chunk.x));
-    return [...visible, ...around.filter((chunk) => !inView.has(chunk.y * chunksX + chunk.x))];
+    const centreX = camera.x + viewport.width / (2 * camera.zoom);
+    const centreY = camera.y + viewport.height / (2 * camera.zoom);
+    const distance = (chunk: ChunkCoord): number =>
+      Math.hypot((chunk.x + 0.5) * CHUNK_SIZE - centreX, (chunk.y + 0.5) * CHUNK_SIZE - centreY);
+    // Array.prototype.sort is stable: equal distances keep visibleChunks' row-major order.
+    const byDistance = (chunks: ChunkCoord[]): ChunkCoord[] => chunks.sort((first, second) => distance(first) - distance(second));
+    const order = [...byDistance([...visible]), ...byDistance(around.filter((chunk) => !inView.has(chunk.y * chunksX + chunk.x)))];
+    sweep = { world: source, camera, width: viewport.width, height: viewport.height, order };
+    return order;
   };
 
-  const drawFrame = (uploadBudget: number): void => {
+  /** `uploadBudget` chunks at most, and none after `uploadMilliseconds` once one was uploaded. */
+  const drawFrame = (uploadBudget: number, uploadMilliseconds: number): void => {
     if (disposed || gl.isContextLost()) return;
     const viewport = { width: canvas.width, height: canvas.height };
     drawCalls = 0;
@@ -668,8 +737,13 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     const chunksX = Math.ceil(source.width / CHUNK_SIZE);
     const keyOf = (chunk: ChunkCoord): number => chunk.y * chunksX + chunk.x;
     const visible = visibleChunks(camera, viewport, source);
-    // Set by acquire() when a wanted chunk did not fit the upload budget.
+    // Set when a wanted chunk did not fit the upload budget.
     const loading = { pending: false };
+    const deadline = Number.isFinite(uploadMilliseconds) ? performance.now() + uploadMilliseconds : Infinity;
+    let uploads = 0;
+    /** Whether this frame may upload one more chunk: within the count, and within the time once one was uploaded. */
+    const mayUpload = (): boolean =>
+      uploads < uploadBudget && (uploads === 0 || deadline === Infinity || performance.now() < deadline);
     /** Evicts least recently used chunks outside `keep` until `count` uploads fit the cache. */
     const makeRoom = (count: number, keep: ReadonlySet<number>): void => {
       for (const [key, slot] of chunks) {
@@ -680,31 +754,37 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
         evictedChunks++;
       }
     };
-    /** Makes `wanted` resident (uploads within `budget`), appending the resident ones to `out`; returns the budget left. */
-    const acquire = (wanted: readonly ChunkCoord[], budget: number, out: (readonly [ChunkCoord, number])[]): number => {
-      let missing = 0;
-      for (const chunk of wanted) if (!chunks.has(keyOf(chunk))) missing++;
-      // Reserve only for this call's uploads, so reversing a pending pan keeps terrain not yet replaced.
-      makeRoom(Math.min(missing, budget), new Set(wanted.map(keyOf)));
-      let left = budget;
+    /**
+     * Uploads `chunk` into a free slot. When the cache is full it evicts the least recently used chunk outside
+     * `spare` if there is one, else outside `keep`.
+     */
+    const upload = (chunk: ChunkCoord, keep: ReadonlySet<number>, spare: ReadonlySet<number> = keep): number => {
+      makeRoom(1, spare);
+      makeRoom(1, keep);
+      uploads++;
+      const slot = allocateSlot();
+      uploadChunk(source, chunk, slot);
+      return slot;
+    };
+    /** Makes `wanted` resident (uploads within the frame budget), appending the resident ones to `out`. */
+    const acquire = (wanted: readonly ChunkCoord[], out: (readonly [ChunkCoord, number])[]): void => {
+      const keep = new Set(wanted.map(keyOf));
       for (const chunk of wanted) {
         const key = keyOf(chunk);
         let slot = chunks.get(key);
         if (slot === undefined) {
-          if (left <= 0) {
+          if (!mayUpload()) {
             loading.pending = true;
             continue;
           }
-          left--;
-          slot = allocateSlot();
-          uploadChunk(source, chunk, slot);
+          // Evict only for actual uploads, so reversing a pending pan keeps terrain not yet replaced.
+          slot = upload(chunk, keep);
         } else {
           chunks.delete(key);
         }
         chunks.set(key, slot);
         out.push([chunk, slot]);
       }
-      return left;
     };
 
     const ready: (readonly [ChunkCoord, number])[] = [];
@@ -712,32 +792,57 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       // At 1 / factor pixels per tile and above the visible set is bounded by the viewport, so the cache grows to
       // hold it; visible residents survive while the remaining chunks load.
       cacheCapacity = Math.max(cacheCapacity, visible.length);
-      acquire(visible, uploadBudget, ready);
+      acquire(visible, ready);
     } else {
       // A chunk is needed only until its overview texels are built, so the cache does not grow: unbuilt chunks of
-      // the filter footprint (visible ones first) are built in batches that fit it.
+      // the filter footprint are built strictly in sweep order, in batches that fit it. The sweep stops at the first
+      // chunk that does not fit the frame's budget, so no chunk (resident or not) is built ahead of the front.
       const needed = overviewFootprint(source, visible, viewport).filter((chunk) => target.built[keyOf(chunk)] === 0);
-      let budget = uploadBudget;
-      for (let start = 0; start < needed.length; start += cacheCapacity) {
-        const batch: (readonly [ChunkCoord, number])[] = [];
-        budget = acquire(needed.slice(start, start + cacheCapacity), budget, batch);
-        buildOverview(source, target, batch);
+      const neededKeys = new Set(needed.map(keyOf));
+      let batch: (readonly [ChunkCoord, number])[] = [];
+      const batchKeys = new Set<number>();
+      for (const chunk of needed) {
+        const key = keyOf(chunk);
+        let slot = chunks.get(key);
+        if (slot === undefined) {
+          if (!mayUpload()) {
+            loading.pending = true;
+            break;
+          }
+          // Evict chunks the sweep no longer needs first, then any but this batch's.
+          slot = upload(chunk, batchKeys, neededKeys);
+        } else {
+          chunks.delete(key);
+        }
+        chunks.set(key, slot);
+        batch.push([chunk, slot]);
+        batchKeys.add(key);
+        if (batch.length >= cacheCapacity) {
+          buildOverview(source, target, batch);
+          batch = [];
+          batchKeys.clear();
+        }
       }
+      buildOverview(source, target, batch);
     }
 
     gl.viewport(0, 0, viewport.width, viewport.height);
     gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT);
     if (target === null) {
-      // Chunks still loading show the overview (built when the area was seen zoomed out) instead of a hole; drawn
-      // chunks overwrite it completely, so a complete frame stays exact.
-      if (loading.pending && candidate !== null && candidate.builtCount > 0) drawCalls += drawOverview(source, candidate);
+      // Chunks still loading show the overview (built when the area was seen zoomed out, possibly with other layers)
+      // instead of a hole; drawn chunks overwrite it completely, so a complete frame stays exact.
+      if (loading.pending && candidate?.filled === true) drawCalls += drawOverview(source, candidate);
       const { chunk: program } = resources;
       gl.useProgram(program.program);
       setTileUniforms(program.uniforms);
       gl.uniform2f(program.uniforms.uCamera, camera.x, camera.y);
       gl.uniform1f(program.uniforms.uZoom, camera.zoom);
       gl.uniform2f(program.uniforms.uViewport, viewport.width, viewport.height);
+      // Below one pixel per tile a pixel averages the tiles under it (filterTiles) instead of point-sampling one.
+      gl.uniform1i(program.uniforms.uFilter, camera.zoom < 1 ? 1 : 0);
+      gl.uniform1f(program.uniforms.uStep, filterTilesPerPixel(camera.zoom));
+      gl.uniform2i(program.uniforms.uWorldSize, source.width, source.height);
       gl.activeTexture(gl.TEXTURE0 + UNIT_PALETTE);
       gl.bindTexture(gl.TEXTURE_2D, resources.palette);
       gl.activeTexture(gl.TEXTURE0 + UNIT_BACKGROUND);
@@ -758,7 +863,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     if (frame !== 0 || disposed) return;
     frame = requestAnimationFrame(() => {
       frame = 0;
-      drawFrame(maxChunkUploadsPerFrame);
+      drawFrame(maxChunkUploadsPerFrame, maxUploadMillisecondsPerFrame);
     });
   };
 
@@ -816,7 +921,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       const y = Math.floor(camera.y + screenY / camera.zoom);
       return x < 0 || y < 0 || x >= world.width || y >= world.height ? null : { x, y };
     },
-    render: () => { drawFrame(Infinity); },
+    render: () => { drawFrame(Infinity, Infinity); },
     stats: () => ({ textureUploads, drawCalls, visibleChunks: drawn, residentChunks: chunks.size, evictedChunks }),
     dispose: () => {
       if (disposed) return;
