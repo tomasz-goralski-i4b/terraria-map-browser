@@ -19,9 +19,11 @@ profile and normalizes results into CWM. Truly different legacy layouts may have
 The TS prototype admits 269–279, 315–319 and 325–326. Header layout and tile decoding stay shared; metadata
 uses the selected field-presence profile. Entity layout differences are described but not decoded. Unknown
 gaps/future versions remain errors. Evidence is explicit: real generated-world fixtures for 326, independent
-synthetic coverage for additional formats. The reader keeps its existing strict validation.
+synthetic coverage for additional formats. The reader retains structural validation, correcting the former
+rejection of defined residual shapes without active blocks: vanilla's writer can emit them. This correction
+also applies to the format-326 .NET reader/writer; see the [observation](../file-format/tiles.md#residual-shapes-are-vanilla-data).
 
-Read and write capabilities are separate. This prototype does not expand .NET or writer support, downgrade
+Read and write capabilities are separate. This prototype does not expand .NET or writer version support, downgrade
 worlds, interpret mod sidecars or depend on the oversized tModLoader-world PoC. Its additional formats remain
 experimental until independent .NET implementation and generated-world differential evidence are available.
 

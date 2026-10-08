@@ -157,7 +157,9 @@ class TileDecoder {
     if (runWidth === 3) this.fail("reserved run width");
     if (shape > 5) this.fail("undefined block shape");
     if (shimmer && liquid !== 1) this.fail("shimmer without water");
-    if (!hasBlock && ((flag1 & 32) !== 0 || hasBlockPaint || shape !== 0)) this.fail("flag without owner");
+    // Our former vanilla validation incorrectly required a block for shape bits. Vanilla can retain
+    // a slope after active(false), and its format-326 SaveWorldTiles emits it without an active block.
+    if (!hasBlock && ((flag1 & 32) !== 0 || hasBlockPaint)) this.fail("flag without owner");
     if (!hasWall && (hasWallPaint || hasWallHigh)) this.fail("flag without owner");
 
     let blockIndex = NO_CONTENT;

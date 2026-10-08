@@ -135,7 +135,9 @@ from `y = 0` down. The record layout is the one of "Record layout"; these rules 
   not write (paint 0 and liquid amount 0). Paint 31 (illuminant paint) is written as paint 31; it is **not**
   turned into the full-bright coating flags as TEdit does (T17, lines 342-349, 483-490), because that changes
   the CWM `paint` and `flags` planes. Shimmer is liquid kind 1 plus byte-3 bit 7. Shape, wires, actuator,
-  inactive and the four coating flags go into their bits as in "Record layout".
+  inactive and the four coating flags go into their bits as in "Record layout". Defined residual shapes
+  without an active block are preserved as well; the former rejection of these vanilla records was incorrect
+  ([black-box evidence](tiles.md#residual-shapes-are-vanilla-data)).
 - **W-T7 Runs.** A record covers the tile at `y` plus `run` more tiles below it that are **equal** to it
   (definition above). The encoder is greedy: it takes the longest run possible, limited by
   1. the end of the column (a run never continues into the next column; the last record of a column ends at

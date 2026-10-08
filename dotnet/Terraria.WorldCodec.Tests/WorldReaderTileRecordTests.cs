@@ -49,6 +49,12 @@ public class WorldReaderTileRecordTests
         ["all wires"] = ("01 0f 20", new Tile { Wires = TileWires.Red | TileWires.Blue | TileWires.Green | TileWires.Yellow }),
         ["actuator without block"] = ("01 01 02", new Tile { Actuator = true }),
         ["half block"] = ("03 10 01", new Tile { Block = Stone, Shape = BlockShape.Half }),
+        ["residual half block"] = ("01 10", new Tile { Shape = BlockShape.Half }),
+        ["residual slope top-right"] = ("01 20", new Tile { Shape = BlockShape.SlopeTopRight }),
+        ["residual slope top-left"] = ("01 30", new Tile { Shape = BlockShape.SlopeTopLeft }),
+        ["residual slope bottom-right"] = ("01 40", new Tile { Shape = BlockShape.SlopeBottomRight }),
+        ["residual slope bottom-left"] = ("01 50", new Tile { Shape = BlockShape.SlopeBottomLeft }),
+        ["residual slope with lava"] = ("11 30 ff", new Tile { Shape = BlockShape.SlopeTopLeft, Liquid = new TileLiquid(LiquidKind.Lava, 255) }),
         ["slope top-right"] = ("03 20 01", new Tile { Block = Stone, Shape = BlockShape.SlopeTopRight }),
         ["slope top-left"] = ("03 30 01", new Tile { Block = Stone, Shape = BlockShape.SlopeTopLeft }),
         ["slope bottom-right"] = ("03 40 01", new Tile { Block = Stone, Shape = BlockShape.SlopeBottomRight }),
@@ -114,7 +120,7 @@ public class WorldReaderTileRecordTests
     [InlineData("01 01 08", "flag without owner")]
     [InlineData("01 01 10", "flag without owner")]
     [InlineData("01 01 40", "flag without owner")]
-    [InlineData("01 10", "flag without owner")]
+    [InlineData("01 60", "undefined block shape")]
     [InlineData("20", "flag without owner")]
     [InlineData("11 01 80 ff", null)]
     [InlineData("19 01 80 ff", null)]

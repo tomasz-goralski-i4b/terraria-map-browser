@@ -48,6 +48,12 @@ public class TileSectionWriterTests
         { "shimmer 0 kept", "09 01 80 00", "09 01 80 00" },
         { "water 0 kept", "08 00", "08 00" },
         { "paint 31 kept", "03 01 08 01 1f", "03 01 08 01 1f" },
+        { "vanilla residual half block", "01 10", "01 10" },
+        { "vanilla residual slope top-right", "01 20", "01 20" },
+        { "vanilla residual slope top-left", "01 30", "01 30" },
+        { "vanilla residual slope bottom-right", "01 40", "01 40" },
+        { "vanilla residual slope bottom-left", "01 50", "01 50" },
+        { "vanilla residual slope with lava", "11 30 ff", "11 30 ff" },
     };
 
     public static TheoryData<string> Worlds() => new() { "SCCO1.wld", "SCCR2.wld", "SECR1.wld", "SJCO1.wld", "SMCO1.wld" };
@@ -126,7 +132,6 @@ public class TileSectionWriterTests
         { "frames without block", new Tile { FrameX = 0, FrameY = 0 } },
         { "paint without block", new Tile { Paint = 3 } },
         { "wall paint without wall", new Tile { WallPaint = 3 } },
-        { "shape without block", new Tile { Shape = BlockShape.Half } },
         { "shape out of range", new Tile { Block = Stone, Shape = (BlockShape)6 } },
         { "undefined wire bit", new Tile { Wires = (TileWires)16 } },
         { "undefined liquid kind", new Tile { Liquid = new TileLiquid((LiquidKind)9, 1) } },

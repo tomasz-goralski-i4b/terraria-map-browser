@@ -5,8 +5,10 @@ for all admitted profiles. It does not require a separate resolver or codec for 
 is always the same Canonical World Model, so rendering does not dispatch on file version.
 
 This PoC is based directly on `main` and is independent of the oversized tModLoader world PoC. It contains
-no mod-sidecar loading, residual-shape exception or camera changes. The .NET reference codec and writer
-remain at format 326. [ADR 0003](../adr/0003-vanilla-format-profiles-poc.md) describes the proposed direction.
+no mod-sidecar loading or camera changes. It also corrects the former vanilla residual-shape validation in
+both codecs and the .NET writer; their supported version ranges remain unchanged by that correction.
+The .NET reference codec and writer remain at format 326.
+[ADR 0003](../adr/0003-vanilla-format-profiles-poc.md) describes the proposed direction.
 
 ## Admission and evidence
 
@@ -92,8 +94,11 @@ those sections as opaque; a resolved profile does not imply implemented entity d
 | NPC homeless-despawn | Absent | 315 | Boolean per town NPC |
 
 Framing comes from the input's bit array; there is no version-specific copied framing table. Tile decoding
-and strict owner/reserved-bit/RLE checks are shared without relaxing vanilla validation. In particular, a
-shape without an active block is still rejected in every admitted version in this PoC.
+and owner/reserved-bit/RLE checks are shared. Defined shapes without an active block are accepted and
+preserved in every admitted version: our former vanilla validation was incorrect, as confirmed by calling
+the unmodified vanilla format-326 writer on synthetic input. See
+[residual-shape evidence](tiles.md#residual-shapes-are-vanilla-data). This is not a mod-specific bypass;
+undefined shapes and ownerless payload flags remain errors.
 
 Much older worlds need a few genuinely different layout families: fixed header fields appear from 140,
 section count changes at 220, the wall high byte at 222 and the fourth tile flag byte/shimmer at 269.
