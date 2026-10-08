@@ -46,7 +46,7 @@ export interface RenderableWorld {
 export interface MapRendererOptions {
   /**
    * Upper bound of chunks uploaded per scheduled animation frame. Default 256; the time budget below usually ends a
-   * frame's uploads first (a chunk upload is a handful of texSubImage3D calls, about 0.05 ms). Finite values are
+   * frame's uploads first (a chunk upload is one texSubImage3D per plane, about 0.08 ms). Finite values are
    * floored and clamped to at least 1; non-finite values use the default.
    */
   readonly maxChunkUploadsPerFrame?: number;

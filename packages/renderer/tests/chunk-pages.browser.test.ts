@@ -340,7 +340,12 @@ describe("map option rules across the renderer's lifecycle", () => {
     first.renderer.setCamera({ x: 0, y: 0, zoom: 1 });
     first.renderer.render();
     first.renderer.dispose();
-    // The canvas keeps its GL context, and with it any unpack state the first renderer left behind.
+    // The canvas keeps its GL context: dispose leaves it with GL's default unpack state.
+    const { gl } = first;
+    expect([
+      gl.UNPACK_ALIGNMENT, gl.UNPACK_ROW_LENGTH, gl.UNPACK_IMAGE_HEIGHT, gl.UNPACK_SKIP_PIXELS, gl.UNPACK_SKIP_ROWS,
+      gl.UNPACK_SKIP_IMAGES,
+    ].map((name) => gl.getParameter(name) as number)).toEqual([4, 0, 0, 0, 0, 0]);
     const world = offsetViews(fullWorld(300, 200));
     const second = setup(300, 200, { mapPalette: syntheticMapPalette }, first.canvas);
     second.renderer.setWorld(world);
