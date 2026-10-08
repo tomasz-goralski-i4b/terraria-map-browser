@@ -187,6 +187,10 @@ point at its own files (see the "Where" column).
 | `vitest-browser-react` | Renders React components in the real-Chromium Vitest browser project. |
 | `eslint-plugin-react-hooks` 7 | Rules of Hooks; applied only to `apps/web/**` in `eslint.config.js` (also a root devDependency). |
 | `@types/react`, `@types/react-dom` | Types for React 19. |
+| `axe-core` 4.13 (dev only) | Accessibility check of the main screen in `apps/web/tests/editor-shell.browser.test.tsx` (both themes). Pinned to a minor released at least two weeks before it was added. |
+
+UI primitives (virtualised table, splitter, menus, tooltips, icons) are written in-house; there is no UI component
+library. The rules for new UI are in [`docs/ui.md`](ui.md).
 
 `packages/renderer` (`@studio/renderer`) is framework-free: `no-restricted-imports` in `eslint.config.js` and a test in
 `packages/renderer/tests` fail if it imports React.

@@ -64,6 +64,11 @@ function clickCancelWhenShown(): Promise<void> {
   });
 }
 
+/** The World section of the dock, which shows the loaded world's metadata. */
+function worldPanel(): ReturnType<typeof page.getByRole> {
+  return page.getByRole("region", { name: "World", exact: true });
+}
+
 async function worldFile(name: string): Promise<File> {
   return new File([await fixtureBytes(name)], name);
 }
@@ -71,13 +76,13 @@ async function worldFile(name: string): Promise<File> {
 test("opening SCCO1.wld through the file input shows its name and dimensions", async () => {
   await render(<App />);
   chooseFile(await worldFile("SCCO1.wld"));
-  const summary = page.getByRole("region", { name: "World summary" });
+  const summary = worldPanel();
   await expect.element(summary).toMatchTextContent("SCCR1");
   await expect.element(summary).toMatchTextContent("4200 × 1200");
   await expect.element(summary).toMatchTextContent("948580918");
   await expect.element(summary).toMatchTextContent("326");
-  await expect.element(summary).toMatchTextContent("classic");
-  await expect.element(summary).toMatchTextContent("corruption");
+  await expect.element(summary).toMatchTextContent("Classic");
+  await expect.element(summary).toMatchTextContent("Corruption");
 });
 
 test("opening a truncated file shows the codec's code and offset and the app stays usable", async () => {
@@ -91,7 +96,7 @@ test("opening a truncated file shows the codec's code and offset and the app sta
   await expect.element(alert).toMatchTextContent(`offset ${String(expected.offset)}`);
 
   chooseFile(new File([valid], "SCCO1.wld"));
-  await expect.element(page.getByRole("region", { name: "World summary" })).toMatchTextContent("4200 × 1200");
+  await expect.element(worldPanel()).toMatchTextContent("4200 × 1200");
   await expect.element(page.getByRole("alert")).not.toBeInTheDocument();
 });
 
@@ -100,12 +105,12 @@ test("opening a non-.wld file shows the codec's error and keeps the previously l
   const expected = codecError(garbage);
   await render(<App />);
   chooseFile(await worldFile("SCCO1.wld"));
-  await expect.element(page.getByRole("region", { name: "World summary" })).toMatchTextContent("SCCR1");
+  await expect.element(worldPanel()).toMatchTextContent("SCCR1");
 
   chooseFile(new File([garbage], "notes.txt"));
   await expect.element(page.getByRole("alert")).toMatchTextContent(expected.kind);
   await expect.element(page.getByRole("alert")).toMatchTextContent(`offset ${String(expected.offset)}`);
-  await expect.element(page.getByRole("region", { name: "World summary" })).toMatchTextContent("SCCR1");
+  await expect.element(worldPanel()).toMatchTextContent("SCCR1");
 });
 
 /**
@@ -143,7 +148,7 @@ test("the main thread is never blocked while a Small fixture is parsed", async (
   // on the main thread by design and is not parsing; on a loaded CI runner with software GL it alone can exceed the bound.
   let end = Infinity;
   const observer = new MutationObserver(() => {
-    if (document.querySelector('section[aria-label="World summary"]') === null) return;
+    if (document.querySelector(".world-panel") === null) return;
     end = performance.now();
     observer.disconnect();
   });
@@ -152,7 +157,7 @@ test("the main thread is never blocked while a Small fixture is parsed", async (
   await nextTask();
   try {
     chooseFile(new File([bytes], "SCCO1.wld"));
-    await expect.element(page.getByRole("region", { name: "World summary" })).toMatchTextContent("4200 × 1200");
+    await expect.element(worldPanel()).toMatchTextContent("4200 × 1200");
   } finally {
     observer.disconnect();
   }
@@ -174,21 +179,21 @@ test("the main thread is never blocked while a Small fixture is parsed", async (
 test("cancel during loading returns to the previous state", async () => {
   await render(<App />);
   chooseFile(await worldFile("SCCO1.wld"));
-  await expect.element(page.getByRole("region", { name: "World summary" })).toMatchTextContent("SCCR1");
+  await expect.element(worldPanel()).toMatchTextContent("SCCR1");
 
   // A Small parse can finish before a driver click lands, so Cancel is clicked in the same task React renders it.
   const cancelled = clickCancelWhenShown();
   chooseFile(await worldFile("SCCR2.wld"));
   await cancelled;
   await expect.element(page.getByRole("button", { name: "Cancel" })).not.toBeInTheDocument();
-  await expect.element(page.getByRole("region", { name: "World summary" })).toMatchTextContent("SCCR1");
+  await expect.element(worldPanel()).toMatchTextContent("SCCR1");
   await expect.element(page.getByRole("alert")).not.toBeInTheDocument();
 });
 
 test("dropping a file onto the map area behaves like the file input", async () => {
   await render(<App />);
   dropFile(await worldFile("SCCO1.wld"));
-  const summary = page.getByRole("region", { name: "World summary" });
+  const summary = worldPanel();
   await expect.element(summary).toMatchTextContent("SCCR1");
   await expect.element(summary).toMatchTextContent("4200 × 1200");
 

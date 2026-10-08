@@ -60,6 +60,8 @@ describe("world session", () => {
     expect(state.phase).toBe("loaded");
     expect(state.summary).toEqual({
       name: "Alpha",
+      fileName: "a.wld",
+      fileSize: 4,
       width: 4200,
       height: 1200,
       seed: "42",

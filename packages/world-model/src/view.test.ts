@@ -86,6 +86,19 @@ describe("viewWorld", () => {
     expect(planes.block[0]).toBe(before);
   });
 
+  it("viewWorld_indicesChecked_skipsTheIndexScanButKeepsTheOtherChecks", () => {
+    const source = filled();
+    const planes = clonePlanes(source.planes);
+    const view = viewWorld(W, H, planes, [...source.palette], { indicesChecked: true });
+    for (let x = 0; x < W; x++) for (let y = 0; y < H; y++) expect(view.tileAt(x, y)).toEqual(source.tileAt(x, y));
+    // The caller's guarantee replaces only the per-tile index scan.
+    planes.block[0] = source.palette.length + 5;
+    expect(codeOf(() => viewWorld(W, H, planes, [...source.palette], { indicesChecked: true }))).toBe("no error");
+    expect(codeOf(() => viewWorld(W, H, planes, [...source.palette]))).toBe("paletteIndex");
+    const short = { ...clonePlanes(source.planes), wall: new Uint16Array(W * H - 1) };
+    expect(codeOf(() => viewWorld(W, H, short, [...source.palette], { indicesChecked: true }))).toBe("planeLength");
+  });
+
   it("viewWorld_planeWithWrongLength_throwsCwmViewError", () => {
     const bad = { ...clonePlanes(filled().planes), wall: new Uint16Array(W * H - 1) };
     expect(codeOf(() => viewWorld(W, H, bad, []))).toBe("planeLength");

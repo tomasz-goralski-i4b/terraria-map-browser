@@ -11,6 +11,13 @@ pnpm --filter @studio/web preview   # serve the production build
 The workspace packages are consumed through their built `dist/`: run `pnpm build` once from the repository root first
 (`bash scripts/build.sh` does it).
 
+## Layout and style
+
+The viewer is laid out as a world editor: top bar, tool rail, tool options bar, the map, a dock of collapsible panel
+sections and a status bar. Every action is a command in `src/shell/commands.ts` (menus, shortcuts, tooltips, the `?`
+help and the `Ctrl+K` palette read that list). Primitives live in `src/ui/`, panels in `src/panels/`, tokens and all
+styling in `src/styles.css`. Rules and patterns: [`docs/ui.md`](../../docs/ui.md).
+
 ## Rule: world data stays outside React
 
 World data — Canonical World Model planes (typed arrays) and the `ContentRef` palette — never goes into React state

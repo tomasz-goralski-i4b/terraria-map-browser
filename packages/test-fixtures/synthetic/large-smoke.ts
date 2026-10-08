@@ -57,7 +57,7 @@ function checkLarge(world: WorldTilesResult, seed: number, profile: WorkloadProf
   const denseColumns = profile === "sky-stone" ? 0 : profile === "dense" ? width : width / 2;
   assert.deepEqual(liquidCounts, Array.from({ length: 4 }, () => denseColumns * height / 4));
   assert.equal(world.sections.tiles.end, world.sections.pointers[2]);
-  assert.deepEqual(Object.values(world.entities ?? {}).map(({ error }) => error), Array.from({ length: 8 }, () => null));
+  assert.deepEqual(Object.values(world.entities).map(({ error }) => error), Array.from({ length: 8 }, () => null));
   return liquidCounts;
 }
 

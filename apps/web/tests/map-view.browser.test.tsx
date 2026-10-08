@@ -5,6 +5,7 @@ import { render } from "vitest-browser-react";
 import { screenToTile, terrariaMapPalette, visibleChunks } from "@studio/renderer";
 import type { Camera, RenderableWorld } from "@studio/renderer";
 import { MapView } from "../src/components/MapView.js";
+import { StatusBar } from "../src/shell/StatusBar.js";
 import { useAppStore } from "../src/store.js";
 import { getDefaultWorldSession } from "../src/world/world-session.js";
 
@@ -84,6 +85,7 @@ async function mountMap(): Promise<void> {
   await render(
     <div style={{ width: viewport.width, height: viewport.height, position: "relative" }}>
       <MapView renderer="@studio/renderer" world={world} />
+      <StatusBar world={null} />
     </div>,
   );
   await mapStarted();
@@ -128,7 +130,7 @@ async function actualMap(): Promise<void> {
 }
 
 function statusText(): string {
-  return document.querySelector("[role=status]")?.textContent ?? "";
+  return document.querySelector("[data-testid=cursor-tile]")?.textContent ?? "";
 }
 
 function tileText(cam: Camera, x: number, y: number): string {
@@ -253,6 +255,7 @@ test("without WebGL2 the map shows an error message instead of throwing", async 
   await render(
     <div style={{ width: viewport.width, height: viewport.height }}>
       <MapView renderer="@studio/renderer" world={world} />
+      <StatusBar world={null} />
     </div>,
   );
   await expect.element(page.getByRole("alert")).toMatchTextContent("WebGL2");
@@ -339,6 +342,7 @@ test("replacing the world refreshes the status bar for the resting pointer", asy
   const view = await render(
     <div style={{ width: viewport.width, height: viewport.height, position: "relative" }}>
       <MapView renderer="@studio/renderer" world={world} />
+      <StatusBar world={null} />
     </div>,
   );
   await mapStarted();
@@ -349,6 +353,7 @@ test("replacing the world refreshes the status bar for the resting pointer", asy
   await view.rerender(
     <div style={{ width: viewport.width, height: viewport.height, position: "relative" }}>
       <MapView renderer="@studio/renderer" world={replacement} />
+      <StatusBar world={null} />
     </div>,
   );
   await settle();

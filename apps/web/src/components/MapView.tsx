@@ -46,10 +46,11 @@ export function MapView({ renderer, world }: MapViewProps): React.JSX.Element {
       }}
     >
       {phase === "loading" && (
-        <p style={MESSAGE_STYLE}>
+        <p className="map-message" style={MESSAGE_STYLE}>
           Loading {loadingFileName}…{" "}
           <button
             type="button"
+            className="button"
             onClick={() => {
               getDefaultWorldSession().cancel();
             }}
@@ -59,33 +60,16 @@ export function MapView({ renderer, world }: MapViewProps): React.JSX.Element {
         </p>
       )}
       {phase === "failed" && error !== null && (
-        <p role="alert" style={MESSAGE_STYLE}>
+        <p role="alert" className="map-message map-message-error" style={MESSAGE_STYLE}>
           Could not open {error.fileName}: {error.code} at offset {error.offset}. {error.message}
         </p>
       )}
       {drawn !== null && <MapCanvas world={drawn} />}
-      {summary === null ? (
-        phase === "idle" && <p>No world loaded. Open a .wld file or drop it here.</p>
-      ) : (
-        <section aria-label="World summary" className="world-summary">
-          <h2>{summary.name}</h2>
-          <dl>
-            <dt>Size</dt>
-            <dd>
-              {summary.width} × {summary.height}
-            </dd>
-            <dt>Seed</dt>
-            <dd>{summary.seed}</dd>
-            <dt>Game mode</dt>
-            <dd>{summary.mode}</dd>
-            <dt>Evil</dt>
-            <dd>{summary.evil}</dd>
-            <dt>Format version</dt>
-            <dd>{summary.formatVersion}</dd>
-            <dt>Palette size</dt>
-            <dd>{summary.paletteSize}</dd>
-          </dl>
-        </section>
+      {summary === null && phase === "idle" && (
+        <div className="map-empty">
+          <p className="map-empty-title">No world open</p>
+          <p>Open a .wld file or drop it here.</p>
+        </div>
       )}
     </main>
   );

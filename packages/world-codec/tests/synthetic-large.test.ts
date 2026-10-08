@@ -87,7 +87,7 @@ describe("synthetic benchmark worlds", () => {
     expect(pointers).toHaveLength(11);
     expect(pointers[0]).toBe(167);
     for (let i = 1; i < pointers.length; i++) expect(pointers[i]).toBeGreaterThan(pointers[i - 1] ?? 0);
-    expect(Object.values(result.entities ?? {}).map(({ error }) => error)).toEqual(Array.from({ length: 8 }, () => null));
+    expect(Object.values(result.entities).map(({ error }) => error)).toEqual(Array.from({ length: 8 }, () => null));
     const footerAt = pointers[10] ?? 0;
     expect(bytes[footerAt]).toBe(1);
     const nameLength = bytes[footerAt + 1] ?? 0;
