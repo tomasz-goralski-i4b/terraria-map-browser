@@ -22,7 +22,7 @@ public static class EntitySectionReader
             : throw new WorldFormatException(
                 WorldFormatError.UnsupportedVersion,
                 0,
-                string.Create(CultureInfo.InvariantCulture, $"format version {version} has no known entity layout"));
+                string.Create(CultureInfo.InvariantCulture, $"format version {version} is not supported"));
     }
 
     public static IReadOnlyList<WorldEntitySection> ReadAll(Stream stream, WorldSectionTable table, int version = 326)
@@ -52,6 +52,7 @@ public static class EntitySectionReader
     {
         ArgumentNullException.ThrowIfNull(stream);
         ArgumentNullException.ThrowIfNull(boundary);
+        var layout = Layout.For(version);
         if (!stream.CanRead || !stream.CanSeek)
         {
             throw new ArgumentException("Entity decoding requires a readable, seekable stream.", nameof(stream));
@@ -61,8 +62,6 @@ public static class EntitySectionReader
         {
             throw new ArgumentOutOfRangeException(nameof(boundary));
         }
-
-        var layout = Layout.For(version);
 
         var reader = new MetadataSectionReader(stream, boundary, section, WorldFormatError.MalformedSection);
         EntitySectionData data = section switch
@@ -117,7 +116,14 @@ public static class EntitySectionReader
             throw Error("Chests", start, "count", CountReason);
         }
 
-        var slotCount = reader.Count(2, 2, "slotCount");
+        // An empty list still carries the slot count, so only its sign is checked here; the fit check covers both.
+        var slotStart = reader.AbsolutePosition;
+        var slotCount = reader.Int16("slotCount");
+        if (slotCount < 0)
+        {
+            throw Error("Chests", slotStart, "slotCount", CountReason);
+        }
+
         if (count * (9L + (2L * slotCount)) > reader.Remaining)
         {
             throw Error("Chests", start, "count", CountReason);

@@ -109,7 +109,9 @@ class EntityReader {
     // Before format 294 one Int16 slot count follows the chest count and applies to every chest.
     const start = this.pos, count = this.i16("count");
     if (count < 0) this.fail(start, "count", "list count is negative or does not fit in the section");
-    const slotCount = this.count(2, 2, "slotCount");
+    // An empty list still carries the slot count, so only its sign is checked here; the fit check covers both.
+    const slotStart = this.pos, slotCount = this.i16("slotCount");
+    if (slotCount < 0) this.fail(slotStart, "slotCount", "list count is negative or does not fit in the section");
     if (count * (9 + 2 * slotCount) > this.boundary.end - this.pos) this.fail(start, "count", "list count is negative or does not fit in the section");
     const entries: WorldChest[] = [];
     for (let index = 0; index < count; index++) entries.push(this.chest(slotCount));

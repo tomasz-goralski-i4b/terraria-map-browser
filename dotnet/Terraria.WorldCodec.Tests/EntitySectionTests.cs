@@ -55,5 +55,6 @@ public sealed class EntitySectionTests
         using var stream = new MemoryStream([0, 0]);
         var error = Assert.Throws<WorldFormatException>(() => EntitySectionReader.Read(stream, "Signs", new WorldSectionBoundary(0, 2), version));
         Assert.Equal(WorldFormatError.UnsupportedVersion, error.Error);
+        Assert.Equal($"format version {version} is not supported", error.Reason);
     }
 }

@@ -88,11 +88,11 @@ describe("entity layouts of older formats", () => {
     expect(readWorldTiles(worldWithEmptyLists(version)).entities.Signs.data?.entries).toEqual([]);
   });
 
-  it("rejects a format without a known entity layout", () => {
-    const vector = document.vectors.find(({ id }) => id === "E01");
-    if (!vector) throw new Error("E01 missing");
-    const bytes = new Uint8Array(vector.start + vector.hex.length / 2);
-    bytes.set(Buffer.from(vector.hex, "hex"), vector.start);
-    expect(() => readEntitySection(bytes, "Chests", { start: vector.start, end: vector.end }, 300)).toThrow(expect.objectContaining({ kind: "UnsupportedVersion" }));
+  it.each([268, 300, 311, 327])("rejects format %i, which has no known entity layout", (version) => {
+    const bytes = Uint8Array.from([0, 0]);
+    expect(() => readEntitySection(bytes, "Signs", { start: 0, end: 2 }, version)).toThrow(expect.objectContaining({ kind: "UnsupportedVersion" }));
+    const world = worldWithEmptyLists(326);
+    const header = readWorldHeader(world);
+    expect(() => readWorldEntities(world, { ...header, header: { ...header.header, version } })).toThrow(expect.objectContaining({ kind: "UnsupportedVersion" }));
   });
 });

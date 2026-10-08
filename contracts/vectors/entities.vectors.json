@@ -898,6 +898,87 @@
           }
         ]
       }
+    },
+    {
+      "id": "E41",
+      "title": "Format 279 empty chest list still carries the shared slot count",
+      "section": "Chests",
+      "version": 279,
+      "start": 128,
+      "end": 132,
+      "hex": "00002800",
+      "result": {
+        "entries": []
+      }
+    },
+    {
+      "id": "E42",
+      "title": "Format 279 negative chest count",
+      "section": "Chests",
+      "version": 279,
+      "start": 128,
+      "end": 132,
+      "hex": "ffff2800",
+      "error": {
+        "field": "count",
+        "offset": 128,
+        "reason": "list count is negative or does not fit in the section"
+      }
+    },
+    {
+      "id": "E43",
+      "title": "Format 279 chest count does not fit with the shared slot count",
+      "section": "Chests",
+      "version": 279,
+      "start": 128,
+      "end": 152,
+      "hex": "020003000000000000000000000000000000000000000000",
+      "error": {
+        "field": "count",
+        "offset": 128,
+        "reason": "list count is negative or does not fit in the section"
+      }
+    },
+    {
+      "id": "E44",
+      "title": "Format 279 shared slot count applies to every chest",
+      "section": "Chests",
+      "version": 279,
+      "start": 128,
+      "end": 169,
+      "hex": "0200020001000000020000000000000100050000000003000000040000000142020006000000010000",
+      "result": {
+        "entries": [
+          {
+            "x": 1,
+            "y": 2,
+            "name": "",
+            "slotCount": 2,
+            "items": [
+              {
+                "slot": 1,
+                "itemId": 5,
+                "stack": 1,
+                "prefix": 0
+              }
+            ]
+          },
+          {
+            "x": 3,
+            "y": 4,
+            "name": "B",
+            "slotCount": 2,
+            "items": [
+              {
+                "slot": 0,
+                "itemId": 6,
+                "stack": 2,
+                "prefix": 1
+              }
+            ]
+          }
+        ]
+      }
     }
   ]
 }

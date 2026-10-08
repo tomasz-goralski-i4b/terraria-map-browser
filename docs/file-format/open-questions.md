@@ -58,4 +58,6 @@ Part of the format specification; index and conventions: [../file-format.md](../
 18. Entity layouts below 326: the gates 294, 307, 308 and 315 come from TEdit (T29/T32/T34) and are tested on
     synthetic vectors only. The decoders accept tile-entity kinds 0–10 and the same creative-power ids in every
     readable format, although kinds 8–10 belong to tiles above the 1.4.4 tile range (698, 723, 724 > 692). A
-    1.4.4 world (format 279) with chests, a display doll and town NPCs would confirm the older layout.
+    1.4.4 world (format 279) with chests, a display doll and town NPCs would confirm the older layout. No
+    readable format lies between 279 and 315, so the vectors only distinguish "all four gates off" (279) from
+    "all on" (315+); they are no evidence for the individual thresholds 294, 307 and 308.

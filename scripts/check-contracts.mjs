@@ -43,7 +43,7 @@ const expectedIds = [
   ...Array.from({ length: 18 }, (_, i) => `T${i + 1}`),
   ...Array.from({ length: 10 }, (_, i) => `R${i + 1}`),
   ...Array.from({ length: 5 }, (_, i) => `M${i + 1}`),
-  ...Array.from({ length: 40 }, (_, i) => `E${String(i + 1).padStart(2, "0")}`),
+  ...Array.from({ length: 44 }, (_, i) => `E${String(i + 1).padStart(2, "0")}`),
 ];
 const manifest = existsSync(join(worldDir, "manifest.json")) ? read(join(worldDir, "manifest.json")) : { worlds: [] };
 for (const f of files) {

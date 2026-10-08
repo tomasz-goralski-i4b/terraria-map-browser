@@ -103,9 +103,10 @@ Version selection cannot hide unread bytes or turn a malformed section into a su
 ## Other sections and older families
 
 Both entity decoders apply these changes for every readable format (TS: `profile.entities`; .NET:
-`EntitySectionReader.SupportedVersions`), so formats 269–326 expose the same read-only entity model. Formats
-315–326 share the format-326 layout; 269–279 differ in all four rows. Vectors E34–E40 pin each gate. The
-evidence for formats below 326 is TEdit plus synthetic input only (open question 18).
+`EntitySectionReader.SupportedVersions`), so the readable formats (269–279, 315–319, 325–326) expose the same
+read-only entity model. The .NET world reader itself still admits only 326; only its entity section decoder takes
+the older layouts. Formats 315–326 share the format-326 layout; 269–279 differ in all four rows. Vectors E34–E44
+cover both layouts. The evidence for formats below 326 is TEdit plus synthetic input only (open question 18).
 
 | Element | Before the change | Change threshold | After the change |
 |---|---|---|---|
