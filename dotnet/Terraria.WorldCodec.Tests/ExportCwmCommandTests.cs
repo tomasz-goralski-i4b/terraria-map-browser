@@ -183,6 +183,26 @@ public sealed class ExportCwmCommandTests
     }
 
     [Fact]
+    public async Task ExportCwm_ValidInputAndExistingDestination_ReturnsTwoAndPreservesBothFiles()
+    {
+        using var directory = new TemporaryDirectory();
+        var bytes = SummaryWorld.Build(2, 4);
+        var input = directory.Write("Forest Observatory.wld", bytes);
+        var previous = CanonicalWorldBinaryTests.ExpectedBytes();
+        var target = directory.Write("Forest.cwm", previous);
+        var entries = Directory.GetFileSystemEntries(directory.Path).Order(StringComparer.Ordinal).ToArray();
+
+        var result = await InspectorProcess.RunAsync(directory.Path, "export-cwm", input, target);
+
+        Assert.Equal(2, result.ExitCode);
+        Assert.Empty(result.Output);
+        Assert.NotEmpty(result.Error);
+        Assert.Equal(bytes, File.ReadAllBytes(input));
+        Assert.Equal(previous, File.ReadAllBytes(target));
+        Assert.Equal(entries, Directory.GetFileSystemEntries(directory.Path).Order(StringComparer.Ordinal).ToArray());
+    }
+
+    [Fact]
     public async Task ExportCwm_TruncatedInputAndExistingDestination_PreservesBothFiles()
     {
         using var directory = new TemporaryDirectory();
