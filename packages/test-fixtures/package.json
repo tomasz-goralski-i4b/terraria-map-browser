@@ -1,0 +1,14 @@
+{
+  "name": "@studio/test-fixtures",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -b synthetic",
+    "synthetic:generate": "node dist/synthetic/cli.js generate",
+    "synthetic:smoke": "node dist/synthetic/cli.js smoke"
+  },
+  "devDependencies": {
+    "@studio/world-codec": "workspace:*"
+  }
+}

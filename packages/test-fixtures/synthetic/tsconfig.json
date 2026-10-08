@@ -2,10 +2,9 @@
   "extends": "../../../tsconfig.base.json",
   "compilerOptions": {
     "rootDir": ".",
-    "noEmit": true,
-    "lib": ["ES2024", "DOM"],
+    "outDir": "../dist/synthetic",
     "types": ["node"]
   },
   "include": ["*.ts"],
-  "references": [{ "path": ".." }, { "path": "../../test-fixtures/synthetic" }]
+  "references": [{ "path": "../../world-codec" }]
 }
