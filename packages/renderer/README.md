@@ -21,11 +21,38 @@ none.
 pixels `renderChunk` produces for the same `mapPalette`; from the overview threshold up to one pixel per tile it draws
 exactly the pixels `filterTiles` (below) makes of them. The browser tests assert both for every layer combination.
 
-- **Chunk pages.** Chunks are cached in pages of 64 array-texture layers: an `RGBA16UI` texture (block, wall,
-  frame-selected variant, wire and actuator bits of `flags`) and an `RGBA8UI` one (liquid kind, liquid amount, block
-  paint, wall paint). A layer holds its chunk plus an apron of one tile of each neighbouring chunk (130 × 130 texels),
-  so the box filter below can cross chunk edges. The wire bits travel with the chunk upload, so switching the overlay is a uniform change.
-  A chunk upload is two `texSubImage3D` calls, and a frame issues one instanced draw call per page, not per chunk.
+- **Chunk pages.** Chunks are cached in pages of 32. A page is two array textures, one per plane format, with one
+  layer per plane and chunk: layer `slot × planes + plane`, where `slot` is the chunk's place in the page.
+  - `R16UI`, 5 planes: block, wall, flags, frameX, frameY (`PLANES_16` in `src/gpu/shaders.ts`). The shader masks the
+    wire and actuator bits of `flags` and sign-extends the frames from their 16-bit pattern.
+  - `R8UI`, 4 planes: liquid kind, liquid amount, block paint, wall paint (`PLANES_8`).
+
+  32 chunks × 5 planes = 160 layers, within the 256 that WebGL2 guarantees (`MAX_ARRAY_TEXTURE_LAYERS`), with room
+  for three more 16-bit planes. A page is about 7.6 MiB. A layer holds its chunk plus an apron of one tile of each
+  neighbouring chunk (130 × 130 texels), stored transposed (texel (s, t) = tile (y, x)), so the box filter below can
+  cross chunk edges. Absent optional planes (`flags`, `frameX`, `frameY`) are never uploaded: a uniform (`uPresent`)
+  tells the shader to read them as 0. Switching the wire overlay is a uniform change.
+- **Uploads straight from the planes.** A chunk upload reads no tile in JavaScript. CWM planes are column-major
+  (`x × height + y`), so a chunk with its apron is a rectangle of a plane, and a transposed layer row is a world
+  column. One `texSubImage3D` per present plane reads that rectangle in place: `UNPACK_ROW_LENGTH` = world height,
+  `UNPACK_IMAGE_HEIGHT` = world width, `UNPACK_SKIP_ROWS` = the first column, `UNPACK_SKIP_PIXELS` = the first row,
+  `UNPACK_ALIGNMENT` = 1. At the world's edges the apron is cut and the clipped rectangle is uploaded; texels outside
+  the world are never read. The frame planes (`Int16Array`) are uploaded through `Uint16Array` views of the same
+  memory. A frame issues one instanced draw call per page, not per chunk.
+- **Map options on the GPU.** The frame → option rules of the map palette (`tileOptions`) are an `RGBA32I` texture:
+  one header per palette index (first range, range count, axis, colour of option 0) and one texel per range (from,
+  to, colour of its option). The shader applies `mapOption`'s rule per tile, the first range holding the frame
+  winning, and option 0 otherwise. Content without a rule uses its palette colour. The headers are written with the
+  palette colours, so building the tables is the only CPU work, once per palette entry.
+- **Texture units.** The chunk pass binds the two page textures, the palette, the background and paint colours, the
+  rules and the overview: 6 of the 16 that WebGL2 guarantees. The map keeps to at most 10, so sprite mode (#91) has
+  room for its atlas pages and lookup. Creating the renderer fails with a clear error if the GPU offers fewer
+  units or array layers than needed.
+- **Adding a plane** (for example a computed sprite cell, 16-bit): add it to `PLANES_16` (or `PLANES_8`) in
+  `src/gpu/shaders.ts`, add its source to `planesOf` in `src/gpu/map-renderer.ts` (with a `PRESENT` bit if it is
+  optional), and read it in the shader with `plane16(texel, PLANES_16.<name>)`. It costs one more layer per chunk and
+  one more `texSubImage3D` per chunk upload, not a new texture or texture unit. Check that `CHUNKS_PER_PAGE` × planes
+  stays within 256.
 - **Overview.** Below `1 / factor` pixels per tile (factor 2, larger only when the world exceeds
   `MAX_TEXTURE_SIZE`) the map is drawn from an overview: a mipmapped `RGBA8` texture with one texel per
   factor × factor tiles, built on the GPU from the chunk pages as the mean of those tiles (premultiplied, so
@@ -34,7 +61,10 @@ exactly the pixels `filterTiles` (below) makes of them. The browser tests assert
   stay clear. Its texels are built over the filter footprint around the viewport, not only the visible chunks.
 - **Upload budget.** A scheduled frame uploads chunks until it has spent `maxUploadMillisecondsPerFrame` (default
   8 ms; it always uploads one) or reached `maxChunkUploadsPerFrame` (default 256), so a fast machine uploads more
-  chunks per frame than a slow one and input stays responsive on both. `render()` ignores both limits.
+  chunks per frame than a slow one and input stays responsive on both. `render()` ignores both limits. A chunk
+  upload costs about 0.07–0.09 ms, nearly all of it in the `texSubImage3D` calls (about 6–9 µs each on an Intel
+  Arc GPU, mostly per-call overhead, not bytes), so a frame uploads about 90 chunks: the time budget, not the count
+  cap, still ends a frame's uploads, and the cap stays at 256.
 - **Overview rebuild.** Layer changes and palette appends mark every texel stale without clearing it: old texels stay
   drawn until the rebuild overwrites them, so the map never blanks. The rebuild is a sweep in one fixed order: the
   visible chunks by distance from the centre of the view, then the rest of the filter footprint the same way. A frame
@@ -43,8 +73,9 @@ exactly the pixels `filterTiles` (below) makes of them. The browser tests assert
   regenerated after every batch. The cost of a layer toggle:
   - no upload at half a pixel per tile and above, or whenever the footprint's chunks are resident;
   - at overview zoom, for worlds larger than the chunk cache (Medium, Large and larger custom sizes), the sweep
-    re-uploads evicted chunks within the upload budget. Preparing a chunk takes about 0.15–0.3 ms of CPU, so a
-    16000 × 4000 world (4,000 chunks) takes roughly two seconds;
+    re-uploads evicted chunks within the upload budget. Measured on an Intel Arc GPU: a synthetic 16000 × 4000 world
+    takes about 40 frames (100 when chunks were interleaved on the CPU), and a 16400 × 4800 modded world full of
+    frame-selected content about 60 frames, 1 s (211 frames, 3.5 s before);
   - never a re-parse.
 
   A lost context loses the texture with everything else, so after a restore the overview is built from scratch.

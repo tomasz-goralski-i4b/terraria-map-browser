@@ -5,6 +5,27 @@ import { FILTER_SUBTILE } from "../chunk/box-filter.js";
 /** Tiles of neighbouring chunks stored around each chunk's page layer, so the box filter can cross chunk edges. */
 export const PAGE_APRON = 1;
 
+/**
+ * Planes of a chunk page, one array layer each per chunk: layer `slot * planes + plane`, where slot is the chunk's
+ * place in its page. Each layer is stored transposed (planes are column-major): texel (s, t) = (y, x) of the chunk,
+ * offset by the apron. A new plane is one more entry here (and in the renderer's upload table), not a new texture.
+ */
+export const PLANES_16 = { block: 0, wall: 1, flags: 2, frameX: 3, frameY: 4 } as const;
+export const PLANES_8 = { liquid: 0, liquidAmount: 1, paint: 2, wallPaint: 3 } as const;
+export const PLANE_COUNT_16: number = Object.keys(PLANES_16).length;
+export const PLANE_COUNT_8: number = Object.keys(PLANES_8).length;
+
+/** Bits of `uPresent`: optional planes the world has. An absent plane reads as 0 and is never uploaded. */
+export const PRESENT = { flags: 1, frameX: 2, frameY: 4 } as const;
+
+/**
+ * Rules texture: 256 texels per row. Rows 0–255 hold one header per palette index (index % 256, index / 256):
+ * (first range, range count, axis 0 frameX / 1 frameY, colour of option 0 as 0xRRGGBB); a count of 0 means no rule.
+ * Ranges follow from row RULE_HEADER_ROWS, one texel each: (from, to, colour of its option).
+ */
+export const RULE_ROW = 256;
+export const RULE_HEADER_ROWS = 256;
+
 /** Vertex attribute locations of the per-chunk instance data, bound before linking. */
 export const RECT_ATTRIBUTE = 0;
 export const LAYER_ATTRIBUTE = 1;
@@ -14,7 +35,7 @@ precision highp float;
 precision highp int;
 `;
 
-// Per instance: the chunk's tile rectangle (origin x, origin y, columns, rows) and its layer in the page.
+// Per instance: the chunk's tile rectangle (origin x, origin y, columns, rows) and its slot in the page.
 const instanceInputs = `
 layout(location = ${String(RECT_ATTRIBUTE)}) in ivec4 aRect;
 layout(location = ${String(LAYER_ATTRIBUTE)}) in int aLayer;
@@ -22,23 +43,25 @@ flat out ivec4 vRect;
 flat out int vLayer;
 `;
 
-/** Shared by both chunk passes: the colour of one world tile, resolved from its chunk's page layer. */
+/** Shared by both chunk passes: the colour of one world tile, resolved from its chunk's page layers. */
 const tileColorSource = `
-precision highp usampler2D;
 precision highp usampler2DArray;
-// Chunk pages: one layer per chunk with an apron of PAGE_APRON tiles of its neighbours, stored transposed (planes are
-// column-major): texel (s, t) = (y in chunk + PAGE_APRON, x in chunk + PAGE_APRON).
-// uWide holds block, wall, variant (0 for the palette colour, else 1 + its index in uVariantColors) and the wire and
-// actuator bits of CWM flags (bits 0–4); uNarrow holds liquid kind, liquid amount, block paint, wall paint.
-uniform usampler2DArray uWide;
-uniform usampler2DArray uNarrow;
+precision highp usampler2D;
+precision highp isampler2D;
+// Chunk pages, uploaded straight from the world's planes: uPlanes16 holds the 16-bit planes (block, wall, flags,
+// frameX, frameY as their 16-bit pattern), uPlanes8 the 8-bit ones (liquid kind, liquid amount, block paint, wall
+// paint). A chunk's plane p is layer vLayer * planes + p, holding the chunk and an apron of PAGE_APRON tiles of its
+// neighbours, transposed: texel (s, t) = (y in chunk + PAGE_APRON, x in chunk + PAGE_APRON).
+uniform usampler2DArray uPlanes16;
+uniform usampler2DArray uPlanes8;
+uniform int uPresent; // optional planes the world has: bit 0 flags, 1 frameX, 2 frameY
 // Row r holds palette entries 256r…256r+255: block colours in x 0…255, wall colours in x 256…511.
 uniform usampler2D uPalette;
 // Background colour of world row y at texel (y % 256, y / 256), resolved on the CPU by backgroundColor();
 // row uPaintRow holds the paint colours by paint ID.
 uniform usampler2D uBackground;
-// Colours of frame-selected map options (256 per row), resolved on the CPU by the same mapOption() as renderChunk.
-uniform usampler2D uVariantColors;
+// Frame → map option rules by palette index, as mapOption() applies them (see RULE_ROW in shaders.ts).
+uniform isampler2D uRules;
 uniform int uPaintRow;
 uniform int uPaintCount; // 0 without a map palette: paint is ignored
 uniform int uPaletteLength;
@@ -52,6 +75,41 @@ flat in ivec4 vRect;
 flat in int vLayer;
 
 const uint ABSENT = 65535u;
+
+uint plane16(ivec2 texel, int plane) {
+  return texelFetch(uPlanes16, ivec3(texel, vLayer * ${String(PLANE_COUNT_16)} + plane), 0).r;
+}
+
+uint plane8(ivec2 texel, int plane) {
+  return texelFetch(uPlanes8, ivec3(texel, vLayer * ${String(PLANE_COUNT_8)} + plane), 0).r;
+}
+
+// A frame plane's value, sign-extended from its 16-bit pattern; 0 when the world has no such plane.
+int frame(ivec2 texel, int plane, int present) {
+  if ((uPresent & present) == 0) return 0;
+  int value = int(plane16(texel, plane));
+  return value >= 32768 ? value - 65536 : value;
+}
+
+ivec3 unpackColor(int color) {
+  return ivec3(color >> 16, (color >> 8) & 255, color & 255);
+}
+
+// The block colour of palette entry index: the option its frame selects under the entry's rule, the first range
+// holding the frame winning (mapOption), else option 0; entries without a rule keep their palette colour.
+ivec3 blockColor(uint index, ivec3 base, ivec2 texel) {
+  ivec4 rule = texelFetch(uRules, ivec2(int(index) % ${String(RULE_ROW)}, int(index) / ${String(RULE_ROW)}), 0);
+  if (rule.y == 0) return base;
+  int value = rule.z == 0
+    ? frame(texel, ${String(PLANES_16.frameX)}, ${String(PRESENT.frameX)})
+    : frame(texel, ${String(PLANES_16.frameY)}, ${String(PRESENT.frameY)});
+  for (int i = 0; i < rule.y; i++) {
+    int at = rule.x + i;
+    ivec4 range = texelFetch(uRules, ivec2(at % ${String(RULE_ROW)}, ${String(RULE_HEADER_ROWS)} + at / ${String(RULE_ROW)}), 0);
+    if (value >= range.x && value <= range.y) return unpackColor(range.z);
+  }
+  return unpackColor(rule.w);
+}
 
 // Mirrors paintedColor() in ../palette/map-palette.ts.
 ivec3 painted(ivec3 base, int paint, bool wall) {
@@ -69,35 +127,40 @@ bool paletteColor(uint index, int xOffset, out ivec3 color) {
 }
 
 // Straight-alpha RGBA (0–255) of a tile relative to the instance's chunk origin, apron included (-1 to the chunk size).
+// Only the planes the enabled layers need are read.
 ivec4 localColor(ivec2 local) {
-  ivec3 texel = ivec3(local.y + ${String(PAGE_APRON)}, local.x + ${String(PAGE_APRON)}, vLayer);
-  uvec4 wide = texelFetch(uWide, texel, 0);
-  uvec4 narrow = texelFetch(uNarrow, texel, 0);
+  ivec2 texel = ivec2(local.y + ${String(PAGE_APRON)}, local.x + ${String(PAGE_APRON)});
   int tileY = vRect.y + local.y;
 
   ivec4 color = ivec4(0);
   if ((uLayers & 1) != 0) color = ivec4(texelFetch(uBackground, ivec2(tileY % 256, tileY / 256), 0));
   ivec3 content;
-  if ((uLayers & 4) != 0 && paletteColor(wide.r, 0, content)) {
-    int variant = int(wide.b);
-    if (variant != 0) content = ivec3(texelFetch(uVariantColors, ivec2((variant - 1) % 256, (variant - 1) / 256), 0).rgb);
-    color = ivec4(painted(content, int(narrow.b), false), 255);
-  } else if ((uLayers & 2) != 0 && paletteColor(wide.g, 256, content)) {
-    color = ivec4(painted(content, int(narrow.a), true), 255);
+  uint block = (uLayers & 4) != 0 ? plane16(texel, ${String(PLANES_16.block)}) : ABSENT;
+  uint wall = (uLayers & 2) != 0 ? plane16(texel, ${String(PLANES_16.wall)}) : ABSENT;
+  if (paletteColor(block, 0, content)) {
+    content = blockColor(block, content, texel);
+    color = ivec4(painted(content, int(plane8(texel, ${String(PLANES_8.paint)})), false), 255);
+  } else if (paletteColor(wall, 256, content)) {
+    color = ivec4(painted(content, int(plane8(texel, ${String(PLANES_8.wallPaint)})), true), 255);
   }
 
-  uint liquid = narrow.r;
-  int amount = int(narrow.g);
-  if ((uLayers & 8) != 0 && liquid >= 1u && liquid <= 4u && amount != 0) {
-    ivec3 tint = uLiquids[liquid - 1u];
-    if (color.a == 255) {
-      color.rgb = (2 * (tint * amount + color.rgb * (255 - amount)) + 255) / 510;
-    } else {
-      color = ivec4(tint, amount);
+  if ((uLayers & 8) != 0) {
+    uint liquid = plane8(texel, ${String(PLANES_8.liquid)});
+    int amount = int(plane8(texel, ${String(PLANES_8.liquidAmount)}));
+    if (liquid >= 1u && liquid <= 4u && amount != 0) {
+      ivec3 tint = uLiquids[liquid - 1u];
+      if (color.a == 255) {
+        color.rgb = (2 * (tint * amount + color.rgb * (255 - amount)) + 255) / 510;
+      } else {
+        color = ivec4(tint, amount);
+      }
     }
   }
 
-  int wires = int(wide.a) & (uLayers >> 4) & 31;
+  int shown = (uLayers >> 4) & 31;
+  int wires = shown != 0 && (uPresent & ${String(PRESENT.flags)}) != 0
+    ? int(plane16(texel, ${String(PLANES_16.flags)})) & shown
+    : 0;
   if (wires != 0) {
     ivec3 wire = ivec3(0);
     for (int i = 4; i >= 0; i--) {
