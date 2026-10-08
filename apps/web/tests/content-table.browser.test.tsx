@@ -28,14 +28,14 @@ afterEach(() => {
   hydrateLayout(memoryStorage());
 });
 
-/** 4 × 3 world: blocks vanilla 1 ×4 and vanilla 2 ×4, walls vanilla 1 ×2 and unknown 9 ×3, every liquid kind. */
+/** 4 × 3 world: stone and dirt ×4 each, stone wall ×2 and unknown wall ×3, every liquid kind. */
 const world: ContentWorld = {
   planes: {
     block: Uint16Array.from([0, 0, NONE, 1, NONE, 0, 1, 1, 1, NONE, NONE, 0]),
     wall: Uint16Array.from([0, NONE, 2, 2, NONE, NONE, 0, NONE, NONE, NONE, 2, NONE]),
     liquid: Uint8Array.from([0, 1, 1, 0, 2, 0, 0, 3, 4, 4, 4, 0]),
   },
-  palette: [{ kind: "vanilla", id: 1 }, { kind: "vanilla", id: 2 }, { kind: "unknown", runtimeId: 9 }],
+  palette: [{ kind: "vanilla", id: 1 }, { kind: "vanilla", id: 0 }, { kind: "unknown", runtimeId: 9 }],
 };
 
 function bodyRows(): string[][] {
@@ -58,11 +58,11 @@ test("lists every palette entry and liquid with its exact tile count, most tiles
   await expect.poll(headers).toEqual(["Content", "Kind", "ID", "Tiles", "Share"]);
   const rows = bodyRows().map(([name, kind, id, count]) => [name, kind, id, count]);
   expect(rows).toEqual([
-    ["Block 1", "Block", "vanilla:1", "4"],
-    ["Block 2", "Block", "vanilla:2", "4"],
-    ["Unknown wall 9", "Wall", "unknown:9", "3"],
+    ["Stone Block", "Block", "vanilla:1", "4"],
+    ["Dirt Block", "Block", "vanilla:0", "4"],
+    ["unknown:9", "Wall", "unknown:9", "3"],
     ["Shimmer", "Liquid", "liquid:4", "3"],
-    ["Wall 1", "Wall", "vanilla:1", "2"],
+    ["Stone Wall", "Wall", "vanilla:1", "2"],
     ["Water", "Liquid", "liquid:1", "2"],
     ["Lava", "Liquid", "liquid:2", "1"],
     ["Honey", "Liquid", "liquid:3", "1"],
@@ -74,20 +74,25 @@ test("sorting by a header cycles ascending, descending and unsorted", async () =
   const header = page.getByRole("columnheader").filter({ hasText: "Content" });
   await page.getByRole("button", { name: "Content", exact: true }).click();
   await expect.element(header).toHaveAttribute("aria-sort", "ascending");
-  expect(bodyRows().map((row) => row[0])).toEqual(["Block 1", "Block 2", "Honey", "Lava", "Shimmer", "Unknown wall 9", "Wall 1", "Water"]);
+  expect(bodyRows().map((row) => row[0])).toEqual(["Dirt Block", "Honey", "Lava", "Shimmer", "Stone Block", "Stone Wall", "unknown:9", "Water"]);
   await page.getByRole("button", { name: "Content", exact: true }).click();
   await expect.element(header).toHaveAttribute("aria-sort", "descending");
   expect(bodyRows()[0]?.[0]).toBe("Water");
   await page.getByRole("button", { name: "Content", exact: true }).click();
   await expect.element(header).toHaveAttribute("aria-sort", "none");
   // Unsorted: palette order (blocks and walls per entry), then liquids.
-  expect(bodyRows().map((row) => row[0])).toEqual(["Block 1", "Wall 1", "Block 2", "Unknown wall 9", "Water", "Lava", "Honey", "Shimmer"]);
+  expect(bodyRows().map((row) => row[0])).toEqual(["Stone Block", "Stone Wall", "Dirt Block", "unknown:9", "Water", "Lava", "Honey", "Shimmer"]);
 });
 
 test("filtering by text and by kind", async () => {
   await render(<ContentPanel world={world} />);
   await page.getByRole("searchbox", { name: "Filter Content" }).fill("wall");
-  await expect.poll(() => bodyRows().map((row) => row[0])).toEqual(["Unknown wall 9", "Wall 1"]);
+  await expect.poll(() => bodyRows().map((row) => row[0])).toEqual(["Stone Wall"]);
+  await page.getByRole("searchbox", { name: "Filter Content" }).fill("Dirt");
+  await expect.poll(() => bodyRows().map((row) => row[0])).toEqual(["Dirt Block"]);
+  await page.getByRole("searchbox", { name: "Filter Content" }).fill("vanilla:0");
+  await expect.poll(() => bodyRows().map((row) => row[0])).toEqual(["Dirt Block"]);
+  expect(headers()).not.toContain("ID");
   await page.getByRole("searchbox", { name: "Filter Content" }).fill("");
   await page.getByRole("combobox", { name: "Kind" }).selectOptions("liquid");
   await expect.poll(() => bodyRows().map((row) => row[1])).toEqual(["Liquid", "Liquid", "Liquid", "Liquid"]);
@@ -131,7 +136,7 @@ test("5,000 content rows render through a virtualised body with a bounded DOM", 
   const scroller = grid.element() as HTMLElement;
   scroller.scrollTop = scroller.scrollHeight;
   scroller.dispatchEvent(new Event("scroll"));
-  await expect.poll(() => bodyRows().at(-1)?.[0]).toBe("Unknown block 9999");
+  await expect.poll(() => bodyRows().at(-1)?.[0]).toBe("unknown:9999");
   expect(document.querySelectorAll(".table-body [role=row]").length).toBeLessThan(60);
 });
 
@@ -146,20 +151,20 @@ test("the keyboard moves a controlled selection row by row, keeps it in view and
   const grid = page.getByRole("grid", { name: "Content" });
   (grid.element() as HTMLElement).focus();
   await userEvent.keyboard("{ArrowDown}");
-  await expect.poll(selectedRow).toBe("Block 0");
+  await expect.poll(selectedRow).toBe("Dirt Block");
   await userEvent.keyboard("{ArrowDown}{ArrowDown}{ArrowDown}");
-  await expect.poll(selectedRow).toBe("Block 3");
+  await expect.poll(selectedRow).toBe("vanilla:3");
   await userEvent.keyboard("{ArrowUp}");
-  await expect.poll(selectedRow).toBe("Block 2");
+  await expect.poll(selectedRow).toBe("vanilla:2");
   expect(grid.element().getAttribute("aria-activedescendant")).toBe(document.querySelector(".table-body [aria-selected=true]")?.id);
   await userEvent.keyboard("{Enter}");
   expect(activated).toEqual(["block:2"]);
   await userEvent.keyboard("{End}");
-  await expect.poll(selectedRow).toBe("Unknown block 5499");
+  await expect.poll(selectedRow).toBe("unknown:5499");
   await userEvent.keyboard("{PageUp}");
-  await expect.poll(selectedRow).not.toBe("Unknown block 5499");
+  await expect.poll(selectedRow).not.toBe("unknown:5499");
   await userEvent.keyboard("{Home}");
-  await expect.poll(selectedRow).toBe("Block 0");
+  await expect.poll(selectedRow).toBe("Dirt Block");
 });
 
 test("sortable headers work from the keyboard", async () => {
@@ -213,9 +218,9 @@ test("switching worlds shows each world's own counts, cached on return", async (
     palette: [{ kind: "vanilla", id: 7 }],
   };
   const view = await render(<ContentPanel world={world} />);
-  await expect.poll(() => bodyRows()[0]?.[0]).toBe("Block 1");
+  await expect.poll(() => bodyRows()[0]?.[0]).toBe("Stone Block");
   await view.rerender(<ContentPanel world={other} />);
-  await expect.poll(() => bodyRows().map(([name, , count]) => [name, count])).toEqual([["Block 7", "3"]]);
+  await expect.poll(() => bodyRows().map(([name, , count]) => [name, count])).toEqual([["Copper", "3"]]);
   await view.rerender(<ContentPanel world={world} />);
   // Cached: the rows are there in the same render, with no counting progress shown.
   expect(document.querySelector("progress")).toBeNull();

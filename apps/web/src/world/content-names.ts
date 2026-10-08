@@ -3,7 +3,7 @@ import type { ContentRef, Tile } from "@studio/world-model";
 export type ContentLayer = "block" | "wall";
 
 /** A palette entry as the UI names it until vanilla names ship: its layer and id (mod content by its key). */
-export function contentName(ref: ContentRef, layer: ContentLayer): string {
+export function contentName(ref: ContentRef, layer: ContentLayer, _frame?: Pick<Tile, "frameX" | "frameY">): string {
   const noun = layer === "block" ? "Block" : "Wall";
   if (ref.kind === "vanilla") return `${noun} ${String(ref.id)}`;
   if (ref.kind === "unknown") return `Unknown ${layer} ${String(ref.runtimeId)}`;
