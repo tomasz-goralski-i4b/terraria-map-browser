@@ -54,6 +54,139 @@ public static class MapObserver {
         return string.Format("\"{0:x2}{1:x2}{2:x2}\"", channel("R"), channel("G"), channel("B"));
     }
 
+    // --- Map options chosen by frame ---------------------------------------------------------------------------
+    // Frames sampled along each axis: the multiples of 18 (the usual 16 + 2 spacing) and of 22 (trees), up to 2000.
+    static readonly int[] Frames = BuildFrames(2000);
+    static int[] BuildFrames(int limit) {
+        var set = new SortedSet<int>();
+        for (int frame = 0; frame <= limit; frame += 18) set.Add(frame);
+        for (int frame = 0; frame <= limit; frame += 22) set.Add(frame);
+        return new List<int>(set).ToArray();
+    }
+
+    static Array world;
+    static Type tileClass;
+    static MethodInfo setActive;
+    static MethodInfo createTile;
+    static FieldInfo mapTileType;
+
+    static void SetMember(object target, string name, object value) {
+        const BindingFlags instance = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+        FieldInfo field = target.GetType().GetField(name, instance);
+        if (field != null) { field.SetValue(target, Convert.ChangeType(value, field.FieldType)); return; }
+        PropertyInfo property = target.GetType().GetProperty(name, instance);
+        if (property == null) throw new InvalidOperationException("Unsupported map observation contract: Tile." + name + ".");
+        property.SetValue(target, Convert.ChangeType(value, property.PropertyType), null);
+    }
+
+    static object NewTile(bool wall, int id, int frameX, int frameY) {
+        object tile = Activator.CreateInstance(tileClass);
+        if (wall) { SetMember(tile, "wall", id); }
+        else { SetMember(tile, "type", id); setActive.Invoke(tile, new object[] { true }); }
+        SetMember(tile, "frameX", frameX);
+        SetMember(tile, "frameY", frameY);
+        return tile;
+    }
+
+    // The map option the game picks for one tile: its map colour index minus the content's first option.
+    static int OptionAt(bool wall, int id, int start, int frameX, int frameY, int x, int y, bool neighbours) {
+        int[][] around = { new[] { -1, 0 }, new[] { 1, 0 }, new[] { 0, -1 }, new[] { 0, 1 } };
+        if (neighbours) foreach (int[] d in around) world.SetValue(NewTile(wall, id, 0, 0), x + d[0], y + d[1]);
+        world.SetValue(NewTile(wall, id, frameX, frameY), x, y);
+        object mapTile = createTile.Invoke(null, new object[] { x, y, (byte)255, 0 });
+        int option = Convert.ToInt32(mapTileType.GetValue(mapTile)) - start;
+        foreach (int[] d in around) world.SetValue(Activator.CreateInstance(tileClass), x + d[0], y + d[1]);
+        world.SetValue(Activator.CreateInstance(tileClass), x, y);
+        return option;
+    }
+
+    // One multi-option content: the option for every frame pair, whether it depends on anything but the frame,
+    // and, when it does not, a compact rule from the frame on one axis to the option.
+    static void ObserveFrames(StringBuilder json, Array colors, bool wall, int id, int start, int count) {
+        int[] xs = Frames, ys = Array.FindAll(Frames, frame => frame <= 800);
+        int[,] option = new int[xs.Length, ys.Length];
+        bool more = false;
+        // What the option depends on besides one frame coordinate, for content that is listed instead of ruled.
+        string reason = null;
+        for (int i = 0; i < xs.Length; i++) for (int j = 0; j < ys.Length; j++) {
+            option[i, j] = OptionAt(wall, id, start, xs[i], ys[j], 100, 150, false);
+            if (option[i, j] < 0 || option[i, j] >= count) { more = true; reason = "colour outside its own options"; }
+        }
+        // Position and neighbours: re-sample the axes and a coarse grid elsewhere and next to same-kind tiles.
+        for (int i = 0; i < xs.Length && !more; i++) for (int j = 0; j < ys.Length && !more; j++) {
+            if (xs[i] != 0 && ys[j] != 0 && (xs[i] > 360 || ys[j] > 360 || xs[i] % 18 != 0 || ys[j] % 18 != 0)) continue;
+            if (OptionAt(wall, id, start, xs[i], ys[j], 101, 151, false) != option[i, j]) { more = true; reason = "position"; }
+            else if (OptionAt(wall, id, start, xs[i], ys[j], 57, 90, true) != option[i, j]) { more = true; reason = "neighbours"; }
+        }
+        string axis = null;
+        int[] byFrame = null;
+        if (!more) {
+            // The option must be one function of a single frame coordinate over the whole grid.
+            int[] byX = new int[xs.Length], byY = new int[ys.Length];
+            bool xOnly = true, yOnly = true;
+            for (int i = 0; i < xs.Length; i++) { byX[i] = option[i, 0]; for (int j = 0; j < ys.Length; j++) if (option[i, j] != byX[i]) xOnly = false; }
+            for (int j = 0; j < ys.Length; j++) { byY[j] = option[0, j]; for (int i = 0; i < xs.Length; i++) if (option[i, j] != byY[j]) yOnly = false; }
+            if (xOnly) { axis = "frameX"; byFrame = byX; }
+            else if (yOnly) { axis = "frameY"; byFrame = byY; }
+            else { more = true; reason = "both frame coordinates"; }
+        }
+        json.AppendFormat("{{\"layer\":\"{0}\",\"id\":{1},\"dependsOnMore\":{2},\"dependsOn\":{3},\"rule\":",
+            wall ? "wall" : "block", id, more ? "true" : "false", reason == null ? "null" : "\"" + reason + "\"");
+        if (more) json.Append("null");
+        else {
+            int[] frames = axis == "frameX" ? xs : ys;
+            json.Append("{\"axis\":\"").Append(axis).Append("\",\"ranges\":[");
+            bool first = true;
+            for (int k = 0; k < frames.Length; ) {
+                int end = k;
+                while (end + 1 < frames.Length && byFrame[end + 1] == byFrame[k]) end++;
+                if (byFrame[k] != 0) {
+                    int to = end + 1 < frames.Length ? frames[end + 1] - 1 : frames[end];
+                    json.Append(first ? "" : ",").AppendFormat("[{0},{1},{2}]", frames[k], to, byFrame[k]);
+                    first = false;
+                }
+                k = end + 1;
+            }
+            json.Append("]}");
+        }
+        json.Append(",\"samples\":[");
+        bool firstSample = true;
+        for (int i = 0; i < xs.Length; i++) for (int j = 0; j < ys.Length; j++) {
+            // The axes and a coarse grid are enough to compare with the renderer.
+            if (!(xs[i] == 0 || ys[j] == 0 || (xs[i] <= 180 && ys[j] <= 180 && xs[i] % 18 == 0 && ys[j] % 18 == 0))) continue;
+            int sampled = option[i, j];
+            if (sampled < 0 || sampled >= count) continue;
+            json.Append(firstSample ? "" : ",").AppendFormat("{{\"frameX\":{0},\"frameY\":{1},\"color\":{2}}}", xs[i], ys[j], Hex(colors.GetValue(start + sampled)));
+            firstSample = false;
+        }
+        json.Append("]}");
+    }
+
+    static void ObserveAllFrames(StringBuilder json, Type main, Type map, Array colors) {
+        const int width = 200, height = 300;
+        Set(main, "maxTilesX", width);
+        Set(main, "maxTilesY", height);
+        Set(main, "worldSurface", 100.0);
+        Set(main, "rockLayer", 200.0);
+        world = Array.CreateInstance(tileClass, width, height);
+        for (int x = 0; x < width; x++) for (int y = 0; y < height; y++) world.SetValue(Activator.CreateInstance(tileClass), x, y);
+        Set(main, "tile", world);
+        FieldInfo worldMap = main.GetField("Map", Static);
+        worldMap.SetValue(null, Activator.CreateInstance(worldMap.FieldType, width, height));
+        bool firstContent = true;
+        foreach (bool wall in new[] { false, true }) {
+            Array lookup = (Array)Field(map, wall ? "wallLookup" : "tileLookup");
+            Array counts = (Array)Field(map, wall ? "wallOptionCounts" : "tileOptionCounts");
+            for (int id = 0; id < lookup.Length; id++) {
+                int count = Convert.ToInt32(counts.GetValue(id));
+                if (count < 2) continue;
+                json.Append(firstContent ? "" : ",");
+                firstContent = false;
+                ObserveFrames(json, colors, wall, id, Convert.ToInt32(lookup.GetValue(id)), count);
+            }
+        }
+    }
+
     public static string Observe(string path) {
         directory = Path.GetDirectoryName(path);
         AppDomain.CurrentDomain.AssemblyResolve += Resolve;
@@ -112,6 +245,13 @@ public static class MapObserver {
             }
             json.Append("]}");
         }
+        tileClass = tileType;
+        setActive = tileType.GetMethod("active", new Type[] { typeof(bool) });
+        if (setActive == null) throw new InvalidOperationException("Unsupported map observation contract: Tile.active(bool).");
+        createTile = createMapTile;
+        mapTileType = typeField;
+        json.Append("],\"frames\":[");
+        ObserveAllFrames(json, main, map, colors);
         return json.Append("]}").ToString();
     }
 }

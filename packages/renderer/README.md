@@ -31,8 +31,19 @@ installation and committed ([ADR 0002](../../docs/adr/0002-shipped-map-palette.m
 
 and commit the regenerated module. With a map palette:
 
-- **Content** (`contentColor`): the first map option of vanilla content; IDs without a map colour, mod and unknown
-  content keep their placeholder. Frame-dependent options are not applied yet.
+- **Content** (`contentColor`): the map option a block's frame selects. Content with several options (pots, herbs, gems,
+  chests, trees, ...) has a rule in `tileOptions`/`wallOptions`: the first inclusive range of `frameX` or `frameY`
+  (`mapOption`) holding the frame gives the option, a frame outside every range option 0. The rules are observed from
+  the game by `scripts/map-palette/observe.ps1` and shipped as data by `export.ps1`. Content whose option depends on
+  more than one frame coordinate is not ruled and keeps option 0; the exporter lists those IDs, with what they depend
+  on, in a comment of the generated module. As observed in Terraria 1.4.5.8:
+  - position in the world: tiles 149, 160, 627, 628, 692; wall 27;
+  - both frame coordinates together: tiles 185, 187, 240, 648, 649;
+  - a map colour outside the content's own options (the game draws them as other content): tiles 184, 227, 518, 519,
+    572, 591.
+
+  Walls have no frames, so they use their rule at frame 0. IDs without a map colour, mod and unknown content keep
+  their placeholder.
 - **Background** (`backgroundColor`): above `surfaceY` the sky gradient entry `floor(y / surfaceY × 255)`; below it
   the dirt colour, from `rockY` the rock colour, and in the bottom 200 rows the underworld colour. Terraria draws
   the dirt and rock layers in one colour each; only the sky is a gradient.

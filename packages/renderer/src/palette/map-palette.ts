@@ -94,9 +94,29 @@ export function placeholderColor(ref: ContentRef, layer: "block" | "wall"): Rgba
 
 /** The map option a frame selects under `rule`: the first matching range's option, otherwise 0. */
 export function mapOption(rule: MapOptionRule | undefined, frameX: number, frameY: number): number {
-  // eslint-disable-next-line @typescript-eslint/no-meaningless-void-operator -- red-phase stub, parameters are used by the implementation
-  void [rule, frameX, frameY];
-  throw new Error("not implemented");
+  if (rule === undefined) return 0;
+  const frame = rule.axis === "frameX" ? frameX : frameY;
+  for (const [from, to, option] of rule.ranges) {
+    if (frame >= from && frame <= to) return option;
+  }
+  return 0;
+}
+
+/** The frame → option rule of vanilla content, if `mapPalette` has one. */
+export function optionRule(ref: ContentRef, layer: "block" | "wall", mapPalette?: MapPalette): MapOptionRule | undefined {
+  if (ref.kind !== "vanilla" || mapPalette === undefined) return undefined;
+  return (layer === "block" ? mapPalette.tileOptions : mapPalette.wallOptions)?.[ref.id];
+}
+
+/** Every map option colour of vanilla content that has a frame rule, indexed by option; otherwise undefined. */
+export function optionColors(ref: ContentRef, layer: "block" | "wall", mapPalette?: MapPalette): readonly Rgba[] | undefined {
+  if (ref.kind !== "vanilla" || mapPalette === undefined || optionRule(ref, layer, mapPalette) === undefined) return undefined;
+  return (layer === "block" ? mapPalette.tiles : mapPalette.walls)[ref.id]?.map(rgba);
+}
+
+/** The colour of `option` among `colors`; an option the content lacks selects option 0. */
+export function optionColor(colors: readonly Rgba[], option: number): Rgba | undefined {
+  return colors[option] ?? colors[0];
 }
 
 /**
@@ -106,10 +126,10 @@ export function mapOption(rule: MapOptionRule | undefined, frameX: number, frame
 export function contentColor(
   ref: ContentRef, layer: "block" | "wall", mapPalette?: MapPalette, frameX = 0, frameY = 0,
 ): Rgba {
-  // eslint-disable-next-line @typescript-eslint/no-meaningless-void-operator -- red-phase stub, parameters are used by the implementation
-  void [frameX, frameY];
   if (ref.kind === "vanilla" && mapPalette !== undefined) {
-    const color = (layer === "block" ? mapPalette.tiles : mapPalette.walls)[ref.id]?.[0];
+    const colors = (layer === "block" ? mapPalette.tiles : mapPalette.walls)[ref.id];
+    const option = mapOption(optionRule(ref, layer, mapPalette), frameX, frameY);
+    const color = colors?.[option] ?? colors?.[0];
     if (color !== undefined) return rgba(color);
   }
   return placeholderColor(ref, layer);
