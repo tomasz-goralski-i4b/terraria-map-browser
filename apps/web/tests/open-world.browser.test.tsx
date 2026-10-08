@@ -108,41 +108,67 @@ test("opening a non-.wld file shows the codec's error and keeps the previously l
   await expect.element(page.getByRole("region", { name: "World summary" })).toMatchTextContent("SCCR1");
 });
 
-test("the main thread keeps ticking while a Small fixture is parsed", async () => {
+/**
+ * Continues in a new task. A long task is reported with the time its whole task started, so work measured from a
+ * timestamp must start in a later task than the one that took it.
+ */
+function nextTask(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+/** Records main-thread long tasks (50 ms or more, Long Tasks API) from now on. */
+function watchLongTasks(): { readonly longest: (from: number, to: number) => Promise<number> } {
+  const tasks: PerformanceEntry[] = [];
+  const observer = new PerformanceObserver((list) => { tasks.push(...list.getEntries()); });
+  observer.observe({ type: "longtask" });
+  return {
+    /** Duration of the longest task that started in [from, to), or 0 when none was long. */
+    longest: async (from, to) => {
+      // A task is reported once it has ended.
+      await nextTask();
+      tasks.push(...observer.takeRecords());
+      return Math.max(0, ...tasks.filter((task) => task.startTime >= from && task.startTime < to).map((task) => task.duration));
+    },
+  };
+}
+
+test("the main thread is never blocked while a Small fixture is parsed", async () => {
+  // Long tasks are measured rather than the delivery of a timer: on a CI runner shared with SwiftShader pages, timers
+  // and frames can be starved for hundreds of milliseconds while this page's main thread is idle.
+  expect(PerformanceObserver.supportedEntryTypes).toContain("longtask");
   await render(<App />);
-  const file = await worldFile("SCCO1.wld");
-  let last = performance.now();
-  let maxGap = 0;
-  let ticks = 0;
-  const timer = window.setInterval(() => {
-    const now = performance.now();
-    maxGap = Math.max(maxGap, now - last);
-    last = now;
-    ticks++;
-  }, 10);
+  const bytes = await fixtureBytes("SCCO1.wld");
+  const longTasks = watchLongTasks();
   // The window ends when the summary is committed: the map's first frame (shader compile, chunk uploads) follows it
   // on the main thread by design and is not parsing; on a loaded CI runner with software GL it alone can exceed the bound.
-  let stopped = false;
-  const stop = (): void => {
-    if (stopped) return;
-    stopped = true;
-    window.clearInterval(timer);
-    maxGap = Math.max(maxGap, performance.now() - last);
-    observer.disconnect();
-  };
+  let end = Infinity;
   const observer = new MutationObserver(() => {
-    if (document.querySelector('section[aria-label="World summary"]') !== null) stop();
+    if (document.querySelector('section[aria-label="World summary"]') === null) return;
+    end = performance.now();
+    observer.disconnect();
   });
   observer.observe(document.body, { childList: true, subtree: true });
+  const start = performance.now();
+  await nextTask();
   try {
-    last = performance.now();
-    chooseFile(file);
+    chooseFile(new File([bytes], "SCCO1.wld"));
     await expect.element(page.getByRole("region", { name: "World summary" })).toMatchTextContent("4200 × 1200");
   } finally {
-    stop();
+    observer.disconnect();
   }
-  expect(ticks).toBeGreaterThan(3);
-  expect(maxGap).toBeLessThan(250);
+  expect(end).toBeLessThan(Infinity);
+  const blocked = await longTasks.longest(start, end);
+  expect(blocked).toBeLessThan(250);
+
+  // Parsing the same file on the main thread, on this machine and under the same load, blocks it for more than twice
+  // as long as any task of the open did: the parse ran in the Worker. (Parsed on the main thread, the open's longest
+  // task is the parse itself, as long as this one or longer.)
+  const parseStart = performance.now();
+  await nextTask();
+  readWorldTiles(bytes);
+  const mainThreadParse = await longTasks.longest(parseStart, Infinity);
+  expect(mainThreadParse).toBeGreaterThan(0);
+  expect(blocked).toBeLessThan(mainThreadParse / 2);
 });
 
 test("cancel during loading returns to the previous state", async () => {
