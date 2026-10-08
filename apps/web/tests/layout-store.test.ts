@@ -42,6 +42,7 @@ test("a fresh browser starts with the default layout", () => {
   expect(state.dockHidden).toBe(DEFAULT_LAYOUT.dockHidden);
   expect(state.dockWidth).toBe(DEFAULT_LAYOUT.dockWidth);
   expect(state.sections).toEqual(DEFAULT_LAYOUT.sections);
+  expect(state.chestView).toBe("grid");
 });
 
 test("section, dock and column changes survive a reload", () => {
@@ -52,6 +53,7 @@ test("section, dock and column changes survive a reload", () => {
   actions.setDockHidden(true);
   actions.setColumn("content", "share", { hidden: true, width: 90 });
   actions.setInspectorShowAll(true);
+  actions.setChestView("list");
 
   hydrateLayout(storage);
   const state = useLayoutStore.getState();
@@ -61,6 +63,7 @@ test("section, dock and column changes survive a reload", () => {
   expect(state.dockHidden).toBe(true);
   expect(state.columns["content"]?.["share"]).toEqual({ hidden: true, width: 90 });
   expect(state.inspectorShowAll).toBe(true);
+  expect(state.chestView).toBe("list");
 });
 
 test("several groups open or close at once", () => {

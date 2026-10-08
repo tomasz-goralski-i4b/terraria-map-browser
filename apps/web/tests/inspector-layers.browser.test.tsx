@@ -10,7 +10,7 @@ import { MapView } from "../src/components/MapView.js";
 import { InspectorPanel, type InspectorWorld } from "../src/panels/InspectorPanel.js";
 import { LayersPanel } from "../src/panels/LayersPanel.js";
 import { useCommands, useGlobalShortcuts } from "../src/shell/commands.js";
-import { hydrateLayout } from "../src/shell/layout-store.js";
+import { hydrateLayout, useLayoutStore } from "../src/shell/layout-store.js";
 import { DEFAULT_MAP_LAYERS, getMapController, rendererLayers, useViewStore } from "../src/shell/view-store.js";
 import { toCanonicalWorld } from "../src/world/canonical-world.js";
 import { getDefaultWorldSession } from "../src/world/world-session.js";
@@ -115,19 +115,41 @@ test("the Inspector names the frame-selected altar and its paint", async () => {
   expect(rows()).toContainEqual(["Block paint", "Deep Cyan Paint"]);
 });
 
-test("a tile of a chest also shows the chest and its filled slots; a tile beside it does not", async () => {
+test("a tile of a chest also shows the chest, whose slots open over the map as a grid or a list", async () => {
   const world = createWorld(4, 3);
-  for (const [x, y] of [[1, 0], [2, 0], [1, 1], [2, 1]] as const) world.setTile(x, y, { block: { kind: "vanilla", id: 21 }, frameX: 0, frameY: 0, wires: 0, actuator: false });
-  const chest = { x: 1, y: 0, name: "Ores", slotCount: 40, items: [{ slot: 2, itemId: 12, stack: 30, prefix: 0 }] };
+  for (const [x, y] of [[1, 0], [2, 0], [1, 1], [2, 1]] as const) world.setTile(x, y, { block: { kind: "vanilla", id: 21 }, frameX: 36, frameY: 0, wires: 0, actuator: false });
+  const chest = { x: 1, y: 0, name: "Ores", slotCount: 40, items: [{ slot: 2, itemId: 12, stack: 30, prefix: 0 }, { slot: 11, itemId: 46, stack: 1, prefix: 7 }] };
   await render(<InspectorPanel world={{ ...inspectorWorld(world), chestAt: (x, y) => (x >= 1 && x <= 2 && y <= 1 ? chest : null) }} />);
   useViewStore.getState().setPinnedTile({ x: 2, y: 1 });
   await expect.element(page.getByRole("heading", { name: "Chest" })).toBeVisible();
   const chestRows = (): [string, string][] => [...document.querySelectorAll('dl[aria-label="Chest"] .property-row')].map((row) => [
     row.querySelector("dt")?.textContent ?? "", row.querySelector("dd")?.textContent ?? "",
   ]);
-  expect(chestRows()).toEqual([
-    ["Name", "Ores"], ["Chest position", "1, 0"], ["Kind", "Chest"], ["Filled slots", "1 of 40"], ["Slot 3", "Item 12 × 30"],
-  ]);
+  expect(chestRows()).toEqual([["Name", "Ores"], ["Chest position", "1, 0"], ["Style", "1"], ["Filled slots", "2 of 40Open"]]);
+
+  // The grid shows every slot, empty ones too, labelled for assistive technology.
+  await page.getByRole("button", { name: "Open chest slots" }).click();
+  const dialog = page.getByRole("dialog", { name: "Ores" });
+  await expect.element(dialog).toBeVisible();
+  await expect.element(page.getByRole("button", { name: "Grid view" })).toHaveAttribute("aria-pressed", "true");
+  const cells = (): string[] => [...document.querySelectorAll(".chest-grid [role=listitem]")].map((cell) => cell.getAttribute("aria-label") ?? "");
+  expect(cells()).toHaveLength(40);
+  expect(cells()[0]).toBe("Slot 1: Empty");
+  expect(cells()[2]).toBe("Slot 3: Item 12 × 30");
+  expect(cells()[11]).toBe("Slot 12: Item 46 × 1, Prefix 7");
+
+  // The list shows the filled slots only, and the choice is remembered.
+  await page.getByRole("button", { name: "List view" }).click();
+  await expect.element(page.getByRole("button", { name: "List view" })).toHaveAttribute("aria-pressed", "true");
+  const listRows = [...document.querySelectorAll(".chest-list tbody tr")].map((row) => [...row.querySelectorAll("td")].map((cell) => cell.textContent));
+  expect(listRows).toEqual([["3", "Item 12", "30", ""], ["12", "Item 46", "1", "Prefix 7"]]);
+  expect(useLayoutStore.getState().chestView).toBe("list");
+
+  // Escape closes the slots and keeps the tile pinned.
+  await userEvent.keyboard("{Escape}");
+  await expect.element(dialog).not.toBeInTheDocument();
+  expect(useViewStore.getState().pinnedTile).toEqual({ x: 2, y: 1 });
+
   useViewStore.getState().setPinnedTile({ x: 3, y: 1 });
   await expect.element(page.getByRole("heading", { name: "Chest" })).not.toBeInTheDocument();
 });

@@ -1121,6 +1121,121 @@ kbd {
   color: var(--text-3);
 }
 
+.chest-filled {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding-left: var(--space-2);
+}
+
+.chest-open {
+  height: 22px;
+  padding: 0 var(--space-2);
+  font-size: var(--text-small);
+}
+
+.chest-dialog {
+  --slot: 44px;
+  --slot-gap: 4px;
+  max-width: 92vw;
+}
+
+/* Ten slots per row, as in the game; the box is sized by the grid in both views. */
+.chest-body {
+  box-sizing: content-box;
+  width: calc(10 * var(--slot) + 9 * var(--slot-gap));
+  max-width: calc(92vw - 2 * var(--space-4));
+  height: calc(var(--rows) * var(--slot) + (var(--rows) - 1) * var(--slot-gap));
+  padding: var(--space-4);
+  overflow: auto;
+}
+
+.chest-dialog-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: var(--space-4);
+}
+
+.chest-dialog-position {
+  margin-right: var(--space-2);
+  font-size: var(--text-small);
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.chest-grid {
+  display: grid;
+  grid-template-columns: repeat(10, var(--slot));
+  gap: var(--slot-gap);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chest-slot {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: var(--slot);
+  height: var(--slot);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.chest-slot[data-empty="true"] {
+  background: transparent;
+  border-color: var(--border);
+}
+
+.chest-slot:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.chest-slot-item {
+  font-size: var(--text-small);
+  color: var(--text-1);
+}
+
+.chest-slot-stack {
+  position: absolute;
+  right: 3px;
+  bottom: 1px;
+  font-size: 10px;
+  color: var(--text-2);
+}
+
+.chest-slot-prefix {
+  position: absolute;
+  top: 1px;
+  left: 3px;
+  font-size: 9px;
+  color: var(--accent-text);
+}
+
+.chest-list {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.chest-list th,
+.chest-list td {
+  padding: 0 var(--space-3);
+  height: var(--row);
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+
+.chest-list th {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
 .palette-dialog {
   width: min(560px, 92vw);
   margin-top: 12vh;

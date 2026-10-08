@@ -1,16 +1,17 @@
-import { useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import type { WorldChest } from "@studio/world-codec";
 import type { Tile } from "@studio/world-model";
 import { useLayoutStore } from "../shell/layout-store.js";
 import { useViewStore, type TilePoint } from "../shell/view-store.js";
 import { useAppStore } from "../store.js";
 import { IconButton } from "../ui/IconButton.js";
-import { chestProperties } from "./chest-fields.js";
 import { PropertyGrid, type Property } from "../ui/PropertyGrid.js";
 import { canonicalWorldOf } from "../world/canonical-world.js";
 import { chestLookupOf } from "../world/chests.js";
 import { contentName, paintName } from "../world/content-names.js";
 import { getDefaultWorldSession } from "../world/world-session.js";
+import { ChestDialog } from "./ChestDialog.js";
+import { chestProperties, chestTitle } from "./chest-fields.js";
 
 /** What the Inspector reads of a world: its size, the `tileAt` view (docs/cwm.md) and the chest standing on a tile. */
 export interface InspectorWorld {
@@ -82,6 +83,10 @@ export function InspectorPanel({ world }: { readonly world?: InspectorWorld | nu
   const shown = world === undefined ? sessionWorld : world;
   const point = pinned ?? hover;
   const chest = point === null ? null : shown?.chestAt?.(point.x, point.y) ?? null;
+  const [openChest, setOpenChest] = useState<WorldChest | null>(null);
+  const closeChest = useCallback(() => {
+    setOpenChest(null);
+  }, []);
 
   if (shown === null) return <p className="panel-empty">Open a world to inspect its tiles.</p>;
   if (point === null || point.x < 0 || point.y < 0 || point.x >= shown.width || point.y >= shown.height) {
@@ -106,10 +111,13 @@ export function InspectorPanel({ world }: { readonly world?: InspectorWorld | nu
       <PropertyGrid label="Tile" properties={tileProperties(point, shown.tileAt(point.x, point.y), showAll)} />
       {chest !== null && (
         <>
-          <h3 className="inspector-subheading">Chest</h3>
-          <PropertyGrid label="Chest" properties={chestProperties(chest, shown.tileAt(chest.x, chest.y))} />
+          <h3 className="inspector-subheading">{chestTitle(shown.tileAt(chest.x, chest.y))}</h3>
+          <PropertyGrid label="Chest" properties={chestProperties(chest, shown.tileAt(chest.x, chest.y), showAll, () => {
+            setOpenChest(chest);
+          })} />
         </>
       )}
+      {openChest !== null && <ChestDialog chest={openChest} title={chestTitle(shown.tileAt(openChest.x, openChest.y))} onClose={closeChest} />}
     </div>
   );
 }

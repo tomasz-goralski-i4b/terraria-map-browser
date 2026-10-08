@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 import type { WorldChest } from "@studio/world-codec";
 import { createWorld } from "@studio/world-model";
-import { chestProperties } from "../src/panels/chest-fields.js";
+import { chestProperties, chestTitle, slotLabel } from "../src/panels/chest-fields.js";
 import { createChestLookup } from "../src/world/chests.js";
 import { itemLabel } from "../src/world/items.js";
 
@@ -37,20 +37,34 @@ test("item ids show as placeholders until item names exist", () => {
   expect(itemLabel(22)).toBe("Item 22");
 });
 
-test("a chest lists its name, position, kind, filled slots and every filled slot's item", () => {
+test("a chest lists its name, position, style and filled slots; an unnamed chest hides its name unless every field is shown", () => {
   const tiles = world();
-  expect(chestProperties(chest, tiles.tileAt(1, 1))).toEqual([
-    { kind: "text", label: "Name", value: "Unnamed" },
+  // Frame X 432 on tile 21: 12 chest styles of 36 px (2 tiles × 18 px) to its left, so style 12.
+  tiles.setTile(1, 1, { block: { kind: "vanilla", id: 21 }, frameX: 432, frameY: 0, wires: 0, actuator: false });
+  expect(chestProperties(chest, tiles.tileAt(1, 1), false)).toEqual([
     { kind: "text", label: "Chest position", value: "1, 1" },
-    { kind: "text", label: "Kind", value: "Chest" },
+    { kind: "text", label: "Style", value: "12" },
     { kind: "text", label: "Filled slots", value: "2 of 40" },
-    { kind: "text", label: "Slot 1", value: "Item 22 × 12" },
-    { kind: "text", label: "Slot 40", value: "Item 3507 × 1, Prefix 81" },
   ]);
-  expect(chestProperties(dresser, tiles.tileAt(5, 1))).toEqual([
+  expect(chestProperties(chest, tiles.tileAt(1, 1), true)[0]).toEqual({ kind: "text", label: "Name", value: "None" });
+  // A dresser's styles are 54 px (3 tiles) wide.
+  tiles.setTile(5, 1, { block: { kind: "vanilla", id: 88 }, frameX: 108, frameY: 0, wires: 0, actuator: false });
+  expect(chestProperties(dresser, tiles.tileAt(5, 1), false)).toEqual([
     { kind: "text", label: "Name", value: "Loot" },
     { kind: "text", label: "Chest position", value: "5, 1" },
-    { kind: "text", label: "Kind", value: "Dresser" },
+    { kind: "text", label: "Style", value: "2" },
     { kind: "text", label: "Filled slots", value: "0 of 40" },
   ]);
+});
+
+test("the section is titled by the object at the chest's position", () => {
+  const tiles = world();
+  expect(chestTitle(tiles.tileAt(1, 1))).toBe("Chest");
+  expect(chestTitle(tiles.tileAt(5, 1))).toBe("Dresser");
+  expect(chestTitle(tiles.tileAt(0, 0))).toBe("Chest");
+});
+
+test("a slot reads as item, stack and prefix", () => {
+  expect(slotLabel({ slot: 0, itemId: 22, stack: 12, prefix: 0 })).toBe("Item 22 × 12");
+  expect(slotLabel({ slot: 39, itemId: 3507, stack: 1, prefix: 81 })).toBe("Item 3507 × 1, Prefix 81");
 });

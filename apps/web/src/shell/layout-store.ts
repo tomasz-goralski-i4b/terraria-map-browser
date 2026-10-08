@@ -5,6 +5,7 @@ export const SECTION_IDS = ["world", "layers", "inspector", "content", "entities
 export type SectionId = (typeof SECTION_IDS)[number];
 
 export type ThemeChoice = "system" | "dark" | "light";
+export type ChestView = "grid" | "list";
 
 export interface ColumnLayout {
   readonly hidden?: boolean;
@@ -23,6 +24,8 @@ export interface Layout {
   readonly theme: ThemeChoice;
   /** The Inspector lists every field ("None" for absent ones) instead of only what the tile has. */
   readonly inspectorShowAll: boolean;
+  /** How a chest's slots open: the game's grid or a list of the filled slots. */
+  readonly chestView: ChestView;
 }
 
 export const DEFAULT_LAYOUT = {
@@ -33,6 +36,7 @@ export const DEFAULT_LAYOUT = {
   columns: {},
   theme: "system",
   inspectorShowAll: false,
+  chestView: "grid",
   minDockWidth: 240,
   maxDockWidth: 640,
 } as const satisfies Layout & { minDockWidth: number; maxDockWidth: number };
@@ -56,6 +60,7 @@ export interface LayoutState extends Layout {
   readonly setColumn: (table: string, column: string, layout: ColumnLayout) => void;
   readonly setTheme: (theme: ThemeChoice) => void;
   readonly setInspectorShowAll: (showAll: boolean) => void;
+  readonly setChestView: (view: ChestView) => void;
 }
 
 function clampDockWidth(width: number): number {
@@ -103,7 +108,7 @@ function parseLayout(text: string | null): Layout {
   const sections = Object.fromEntries(
     SECTION_IDS.map((id) => [id, storedSections[id] ?? DEFAULT_LAYOUT.sections[id]]),
   ) as Record<SectionId, boolean>;
-  const { dockWidth, dockHidden, theme, inspectorShowAll } = value;
+  const { dockWidth, dockHidden, theme, inspectorShowAll, chestView } = value;
   return {
     sections,
     groups: booleans(value["groups"]),
@@ -112,6 +117,7 @@ function parseLayout(text: string | null): Layout {
     columns: columnLayouts(value["columns"]),
     theme: theme === "dark" || theme === "light" || theme === "system" ? theme : DEFAULT_LAYOUT.theme,
     inspectorShowAll: typeof inspectorShowAll === "boolean" ? inspectorShowAll : DEFAULT_LAYOUT.inspectorShowAll,
+    chestView: chestView === "grid" || chestView === "list" ? chestView : DEFAULT_LAYOUT.chestView,
   };
 }
 
@@ -130,9 +136,9 @@ function browserStorage(): LayoutStorage | null {
 let storage: LayoutStorage | null = null;
 
 function save(layout: Layout): void {
-  const { sections, groups, dockWidth, dockHidden, columns, theme, inspectorShowAll } = layout;
+  const { sections, groups, dockWidth, dockHidden, columns, theme, inspectorShowAll, chestView } = layout;
   try {
-    storage?.setItem(LAYOUT_STORAGE_KEY, JSON.stringify({ sections, groups, dockWidth, dockHidden, columns, theme, inspectorShowAll }));
+    storage?.setItem(LAYOUT_STORAGE_KEY, JSON.stringify({ sections, groups, dockWidth, dockHidden, columns, theme, inspectorShowAll, chestView }));
   } catch {
     // Private mode, quota or blocked storage: the layout still works for this visit.
   }
@@ -169,6 +175,9 @@ export const useLayoutStore = create<LayoutState>()((set, get) => {
     },
     setInspectorShowAll: (showAll) => {
       update({ inspectorShowAll: showAll });
+    },
+    setChestView: (view) => {
+      update({ chestView: view });
     },
   };
 });
