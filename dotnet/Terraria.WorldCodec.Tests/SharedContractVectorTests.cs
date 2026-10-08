@@ -93,7 +93,7 @@ public sealed class SharedContractVectorTests
         Assert.Equal(3, documents.Count);
         var actualIds = documents.SelectMany(document => document.GetProperty("vectors").EnumerateArray())
             .Select(vector => vector.GetProperty("id").GetString()!).Order(StringComparer.Ordinal).ToArray();
-        var expectedIds = Enumerable.Range(1, 17).Select(number => "T" + number.ToString(CultureInfo.InvariantCulture))
+        var expectedIds = Enumerable.Range(1, 18).Select(number => "T" + number.ToString(CultureInfo.InvariantCulture))
             .Concat(Enumerable.Range(1, 10).Select(number => "R" + number.ToString(CultureInfo.InvariantCulture)))
             .Concat(Enumerable.Range(1, 5).Select(number => "M" + number.ToString(CultureInfo.InvariantCulture)))
             .Order(StringComparer.Ordinal).ToArray();

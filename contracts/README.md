@@ -9,7 +9,7 @@ C#↔TS call (ADR 0001).
 | `schemas/chunks.v1.schema.json` | — | a golden `*.chunks.json` (`packages/test-fixtures/snapshots/m1`): the `chunks` object of the summary, stored alone |
 | `schemas/vector.v1.schema.json` | — | the vector files below |
 | `vectors/metadata.vectors.json` | `vector.v1` | M1–M5 |
-| `vectors/tiles.vectors.json` | `vector.v1` | T1–T17 |
+| `vectors/tiles.vectors.json` | `vector.v1` | T1–T18 |
 | `vectors/runs.vectors.json` | `vector.v1` | R1–R10 |
 | `vectors/malformed/mutations.json` | — | malformed examples: each mutation is rejected by its declared schema or semantic validation layer |
 
@@ -58,7 +58,7 @@ instance fields ([validation specification](https://json-schema.org/draft/2020-1
    tile count. It assumes its vector has already passed the schema. `validateChunkSemantics` checks the 128-grid
    count, column-major ordering and edge sizes against the associated `meta.json` dimensions.
 
-`check-contracts.mjs` runs both layers for the real files. It also checks the 32 IDs, schema compatibility with
+`check-contracts.mjs` runs both layers for the real files. It also checks the 33 IDs, schema compatibility with
 the existing summary, R3/R10's relationship, and M3's bytes, manifest provenance and real fixture section pointers.
 M3 is an intentional prefix; do not replace its `sectionEnd` with its shorter `inputEnd`. R10's first leftover-byte
 offset remains 107. Moving an input and its absolute offsets consistently is structurally and semantically valid;

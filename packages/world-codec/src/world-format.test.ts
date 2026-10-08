@@ -36,6 +36,12 @@ describe("vanilla format resolution", () => {
     });
   });
 
+  it.each([
+    [269, 692, 346], [279, 692, 346], [315, 752, 366], [319, 752, 366], [325, 753, 366], [326, 753, 366],
+  ] as const)("states the highest vanilla block and wall ids of format %i", (version, maxTileId, maxWallId) => {
+    expect(resolveWorldFormat(version)).toMatchObject({ maxTileId, maxWallId });
+  });
+
   it.each([325, 326])("resolves lightning fields and distinguishes fixture evidence for %i", (version) => {
     const profile = resolveWorldFormat(version);
     expect(Object.values(profile?.metadata ?? {})).toEqual(Array<boolean>(11).fill(true));

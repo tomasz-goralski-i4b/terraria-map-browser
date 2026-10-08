@@ -121,8 +121,9 @@ no player world was modified. T17 independently describes shape emission outside
 The TS reader accepts defined residual shapes in every admitted modern format; the .NET reader and writer
 preserve them in format 326. CWM retains the shape value even though an absent block has no foreground to
 render. This is a correction to vanilla validation, not a tModLoader-specific exception. Undefined shapes
-6–7 and the other malformed-record rules remain errors. This experiment proves the vanilla state and writer
-can produce such records; it does not establish which operation produced them in any particular world.
+6–7 and the other malformed-record rules remain errors; contract vector T18 ([vectors.md](vectors.md)) pins
+both cases for the .NET and TS codecs. This experiment proves the vanilla state and writer can produce such
+records; it does not establish which operation produced them in any particular world.
 The records do occur in practice: a local tModLoader 1.4.4.9 world (format 279, not in the repository)
 contains 11,280 of them, for example flags `11 30` (lava, no block, shape 3).
 

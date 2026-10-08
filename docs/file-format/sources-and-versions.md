@@ -60,6 +60,7 @@ TEdit locations used below (all at commit `182031b`):
 | T38 | `src/TEdit.Terraria/World.FileV2.cs:1916-1926`, `677-691` | reading and writing the town manager rooms |
 | T39 | `src/TEdit.Terraria/Bestiary.cs:60-83`, `35-58` | reading and writing the bestiary |
 | T40 | `src/TEdit.Terraria/CreativePowers.cs:7-24`, `187-224`, `146-184` | creative power ids, reading (no value read for an unknown id) and writing |
+| T41 | `src/TEdit.Terraria/Data/versions.json:753-962` | per-save-version highest tile and wall ids for formats 269–326 (`maxTileId`, `maxWallId`); summarised per released range in [compatibility.md](compatibility.md#vanilla-id-ranges) |
 
 Line numbers count physical lines of the file at the pinned commit (CRLF endings, blank lines included), which is
 also what GitHub's `#L` anchors use, e.g.

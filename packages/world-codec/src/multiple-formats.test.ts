@@ -7,10 +7,14 @@ import { WorldFormatError } from "./world-format-error.js";
 // Released-version examples, independent of the production registry (sources-and-versions.md, T1).
 const releasedFormats = [269, 270, 271, 272, 273, 274, 275, 276, 277, 278, 279, 315, 316, 317, 318, 319, 325, 326];
 
-function worldBytes(version: number, tiles = Uint8Array.from([0x42, 2, 3, 0x48, 255, 3])): Uint8Array {
+function worldBytes(
+  version: number,
+  tiles = Uint8Array.from([0x42, 2, 3, 0x48, 255, 3]),
+  tileCount = version < 315 ? 693 : version < 325 ? 753 : 754,
+): Uint8Array {
   const layout = version < 315 ? "1.4.4" : version < 325 ? "1.4.5" : "1.4.5-lightning";
   const metadata = buildMetadata({ layout, width: 2, height: 4, name: "SCCR1", seed: "948580918" });
-  const bytes = wrapMetadata(metadata.bytes, tiles.length, version, version < 315 ? 693 : version < 325 ? 753 : 754);
+  const bytes = wrapMetadata(metadata.bytes, tiles.length, version, tileCount);
   const metadataStart = new DataView(bytes.buffer).getInt32(26, true);
   bytes.set(tiles, metadataStart + metadata.bytes.length);
   return bytes;
@@ -53,6 +57,28 @@ describe("one vanilla reader across released format families", () => {
 
   it.each([269, 279, 315, 319, 325, 326])("keeps strict vanilla owner checks in format %i", (version) => {
     expect(() => readWorldTiles(worldBytes(version, Uint8Array.from([0x01, 0x01, 0x08])))).toThrow("flag without owner");
+  });
+
+  // Highest vanilla block/wall per released family (sources-and-versions.md, T41), stated independently here.
+  it.each([
+    [269, 692, 346], [279, 692, 346], [315, 752, 366], [319, 752, 366], [325, 753, 366], [326, 753, 366],
+  ] as const)("labels only format %i blocks ≤ %i and walls ≤ %i as vanilla", (version, block, wall) => {
+    // Column 0: one block + wall record (16-bit block id, wall high byte) repeated 3 times; column 1: empty.
+    const column = (blockId: number, wallId: number): number[] => [
+      0x67, 0x01, 0x40, blockId & 0xff, blockId >> 8, wallId & 0xff, wallId >> 8, 3, 0x40, 3,
+    ];
+    expect(readWorldTiles(worldBytes(version, Uint8Array.from(column(block, wall)))).palette).toEqual([
+      { kind: "vanilla", id: block }, { kind: "vanilla", id: wall },
+    ]);
+    // A file declaring more tile types than vanilla (as a modded save does) may hold the next block id.
+    expect(readWorldTiles(worldBytes(version, Uint8Array.from(column(block + 1, wall + 1)), block + 2)).palette).toEqual([
+      { kind: "unknown", runtimeId: block + 1 }, { kind: "unknown", runtimeId: wall + 1 },
+    ]);
+  });
+
+  it("does not label a format-279 wall 350 as vanilla", () => {
+    const world = readWorldTiles(worldBytes(279, Uint8Array.from([0x45, 0x01, 0x40, 0x5e, 0x01, 3, 0x40, 3])));
+    expect(world.palette).toEqual([{ kind: "unknown", runtimeId: 350 }]);
   });
 
   it.each(releasedFormats)("preserves vanilla residual slopes and lava in format %i", (version) => {
