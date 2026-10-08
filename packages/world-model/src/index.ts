@@ -112,6 +112,28 @@ function validateTile(tile: Tile): void {
   }
 }
 
+export type CwmViewErrorCode = "dimensions" | "planeType" | "planeLength" | "paletteIndex" | "palette";
+
+/** Thrown when planes and palette cannot be viewed as a CanonicalWorld; nothing is wrapped. */
+export class CwmViewError extends Error {
+  readonly code: CwmViewErrorCode;
+  constructor(code: CwmViewErrorCode, message: string) {
+    super(message);
+    this.name = "CwmViewError";
+    this.code = code;
+  }
+}
+
+/** Wraps existing planes and a palette as a CanonicalWorld by reference; validates once, copies no plane. */
+export function viewWorld(
+  _width: number,
+  _height: number,
+  _planes: WorldPlanes,
+  _palette: readonly ContentRef[],
+): CanonicalWorld {
+  throw new Error("not implemented");
+}
+
 export function createWorld(
   width: number,
   height: number,

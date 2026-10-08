@@ -10,5 +10,5 @@
     "types": ["vite/client", "node"]
   },
   "include": ["src", "tests"],
-  "references": [{ "path": "../../packages/renderer" }, { "path": "../../packages/world-codec" }]
+  "references": [{ "path": "../../packages/renderer" }, { "path": "../../packages/world-codec" }, { "path": "../../packages/world-model" }]
 }
