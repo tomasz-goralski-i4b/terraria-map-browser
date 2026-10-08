@@ -179,7 +179,7 @@ public sealed partial class VanillaCorpusTests
     }
 
     /// <summary>Splits the summary into everything but <c>chunks</c> and the <c>chunks</c> object (size, planes, digests).</summary>
-    private static (byte[] Meta, byte[] Chunks) Split(byte[] summary)
+    internal static (byte[] Meta, byte[] Chunks) Split(byte[] summary)
     {
         using var document = JsonDocument.Parse(summary);
         var meta = Serialize(writer =>
@@ -243,9 +243,9 @@ public sealed partial class VanillaCorpusTests
         return manifest;
     }
 
-    private static string WorldPath(string file) => Path.Combine(FixturesDirectory(), "worlds", file);
+    internal static string WorldPath(string file) => Path.Combine(FixturesDirectory(), "worlds", file);
 
-    private static string GoldenDirectory() => Path.Combine(FixturesDirectory(), "snapshots", "m1");
+    internal static string GoldenDirectory() => Path.Combine(FixturesDirectory(), "snapshots", "m1");
 
     private static string FixturesDirectory()
     {
