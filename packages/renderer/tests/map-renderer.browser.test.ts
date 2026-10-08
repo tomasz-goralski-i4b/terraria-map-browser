@@ -330,6 +330,23 @@ describe("GPU output equals renderChunk for multi-option content", () => {
     expect(readCanvas(canvas)).toEqual(cpuReference(framed, layers, syntheticMapPalette));
   });
 
+  test("content whose frame (0, 0) selects a non-zero option still draws option 0 where its frames select it", () => {
+    // Like a sunflower: frame (0, 0) is the flower (option 2), while the stem's frames select option 0. The palette
+    // colour is the option of frame (0, 0), so "no variant" must mean that option, not option 0.
+    const flowerPalette: MapPalette = {
+      ...syntheticMapPalette,
+      tileOptions: { ...syntheticMapPalette.tileOptions, 3: { axis: "frameY", ranges: [[0, 17, 2], [36, 71, 1]] } },
+    };
+    const framed = framedWorld(300, 400);
+    const canvas = makeCanvas(300, 400);
+    const renderer = makeRenderer(canvas, { mapPalette: flowerPalette });
+    renderer.setWorld(framed);
+    renderer.setLayers(allLayers);
+    renderer.setCamera({ x: 0, y: 0, zoom: 1 });
+    renderer.render();
+    expect(readCanvas(canvas)).toEqual(cpuReference(framed, allLayers, flowerPalette));
+  });
+
   test("the frames change the pixels: different options of one ID are drawn differently", () => {
     const framed = framedWorld(300, 400);
     const unframed: RenderableWorld = { ...framed, planes: { ...framed.planes, frameX: new Int16Array(300 * 400), frameY: new Int16Array(300 * 400) } };
@@ -416,6 +433,28 @@ describe("uploads, cache and draw calls", () => {
     expect(renderer.stats().textureUploads).toBeGreaterThan(uploadsBefore);
     expect(renderer.stats().residentChunks).toBeLessThanOrEqual(4);
     expect(readCanvas(canvas)).toEqual(first);
+  });
+
+  test("a reused cache slot draws the wires of its new chunk, not of the evicted one", () => {
+    // Every chunk column gets its own wire colour, so stale flags in a reused slot would show the wrong colour.
+    const wired = wiredWorld(1152, 128);
+    const flags = wired.planes.flags ?? new Uint16Array(0);
+    for (let x = 0; x < wired.width; x++) flags.fill(1 << (Math.floor(x / 128) % 5), x * wired.height, (x + 1) * wired.height);
+    const layers = { ...allLayers, wires: WIRE_LAYER.all };
+    const canvas = makeCanvas(256, 128);
+    const renderer = makeRenderer(canvas, { maxCachedChunks: 2 });
+    renderer.setWorld(wired);
+    renderer.setLayers(layers);
+    for (let x = 0; x <= 896; x += 128) {
+      renderer.setCamera({ x, y: 0, zoom: 1 });
+      renderer.render();
+      expect(renderer.stats().residentChunks).toBeLessThanOrEqual(2);
+      const reference = cpuReference(wired, layers);
+      const expected = new Uint8Array(256 * 128 * 4);
+      for (let y = 0; y < 128; y++) expected.set(reference.subarray((y * wired.width + x) * 4, (y * wired.width + x + 256) * 4), y * 256 * 4);
+      expect(readCanvas(canvas)).toEqual(expected);
+    }
+    expect(renderer.stats().evictedChunks).toBeGreaterThan(0);
   });
 
   test("a lost and restored WebGL context re-creates textures and renders the same pixels", async () => {

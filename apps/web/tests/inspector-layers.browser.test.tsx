@@ -1,15 +1,20 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { page, userEvent } from "vitest/browser";
+import { commands, page, userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
-import { WIRE_LAYER, type RenderableWorld } from "@studio/renderer";
+import { WIRE_LAYER, renderChunk, terrariaMapPalette, type ChunkLayers, type RenderableWorld } from "@studio/renderer";
+import { WorldWorkerClient } from "@studio/world-codec";
 import { createWorld, type CanonicalWorld, type Tile } from "@studio/world-model";
+import { App } from "../src/App.js";
 import { MapView } from "../src/components/MapView.js";
 import { InspectorPanel, type InspectorWorld } from "../src/panels/InspectorPanel.js";
 import { LayersPanel } from "../src/panels/LayersPanel.js";
 import { useCommands, useGlobalShortcuts } from "../src/shell/commands.js";
 import { hydrateLayout } from "../src/shell/layout-store.js";
-import { DEFAULT_MAP_LAYERS, getMapController, useViewStore } from "../src/shell/view-store.js";
+import { DEFAULT_MAP_LAYERS, getMapController, rendererLayers, useViewStore } from "../src/shell/view-store.js";
+import { toCanonicalWorld } from "../src/world/canonical-world.js";
+import { getDefaultWorldSession } from "../src/world/world-session.js";
 import "../src/styles.css";
+import "./support/commands.js";
 
 beforeEach(async () => {
   hydrateLayout(null);
@@ -123,10 +128,10 @@ function canvas(): HTMLCanvasElement {
   return element;
 }
 
-function pointer(type: string, x: number, y: number, buttons: number): void {
+function pointer(type: string, x: number, y: number, buttons: number, button = 0): void {
   const rect = canvas().getBoundingClientRect();
   canvas().dispatchEvent(new PointerEvent(type, {
-    bubbles: true, cancelable: true, pointerId: 1, pointerType: "mouse", button: 0, buttons, clientX: rect.left + x, clientY: rect.top + y,
+    bubbles: true, cancelable: true, pointerId: 1, pointerType: "mouse", isPrimary: true, button, buttons, clientX: rect.left + x, clientY: rect.top + y,
   }));
 }
 
@@ -172,11 +177,65 @@ test("with the Inspect tool a click pins the tile under it, a drag does not, and
   await expect.poll(() => useViewStore.getState().pinnedTile).toEqual(tileUnder(60, 120));
 });
 
+test("an out-and-back drag, a secondary click and a cancelled press pin nothing", async () => {
+  await mountMap(renderable(600, 300));
+  useViewStore.getState().setTool("inspect");
+  await expect.poll(() => canvas().dataset["tool"]).toBe("inspect");
+
+  // Out and back: the release lands where the press started, but the pointer left the click slop on the way.
+  pointer("pointerdown", 150, 150, 1);
+  pointer("pointermove", 250, 150, 1);
+  pointer("pointermove", 150, 150, 1);
+  pointer("pointerup", 150, 150, 0);
+  expect(useViewStore.getState().pinnedTile).toBeNull();
+
+  // Secondary (right) button.
+  pointer("pointerdown", 150, 150, 2, 2);
+  pointer("pointerup", 150, 150, 0, 2);
+  expect(useViewStore.getState().pinnedTile).toBeNull();
+
+  // A press the browser cancels (e.g. a touch turned into a scroll).
+  pointer("pointerdown", 150, 150, 1);
+  pointer("pointercancel", 150, 150, 0);
+  expect(useViewStore.getState().pinnedTile).toBeNull();
+
+  // A plain click still pins.
+  pointer("pointerdown", 150, 150, 1);
+  pointer("pointerup", 150, 150, 0);
+  await expect.poll(() => useViewStore.getState().pinnedTile).toEqual(tileUnder(150, 150));
+});
+
 test("with the Pan tool a click pins nothing", async () => {
   await mountMap(renderable(600, 300));
   pointer("pointerdown", 150, 150, 1);
   pointer("pointerup", 150, 150, 0);
   expect(useViewStore.getState().pinnedTile).toBeNull();
+});
+
+test("a pin is cleared when another world replaces the shown one", async () => {
+  const first = renderable(600, 300);
+  const view = await render(
+    <div style={{ position: "relative", width: MAP.width, height: MAP.height }}>
+      <MapView renderer="@studio/renderer" world={first} />
+    </div>,
+  );
+  await vi.waitFor(() => {
+    expect(getMapController()).not.toBeNull();
+  });
+  useViewStore.getState().setPinnedTile({ x: 42, y: 150 });
+  // Re-rendering the same world keeps the pin.
+  await view.rerender(
+    <div style={{ position: "relative", width: MAP.width, height: MAP.height }}>
+      <MapView renderer="@studio/renderer" world={first} />
+    </div>,
+  );
+  expect(useViewStore.getState().pinnedTile).toEqual({ x: 42, y: 150 });
+  await view.rerender(
+    <div style={{ position: "relative", width: MAP.width, height: MAP.height }}>
+      <MapView renderer="@studio/renderer" world={renderable(300, 200)} />
+    </div>,
+  );
+  await expect.poll(() => useViewStore.getState().pinnedTile).toBeNull();
 });
 
 // ---------- Layer toggles ----------
@@ -213,31 +272,21 @@ function shownLayers(): Record<string, unknown> {
   return JSON.parse(canvas().dataset["layers"] ?? "{}") as Record<string, unknown>;
 }
 
-test("every layer row and wire colour toggles the renderer's layers without any texture upload", async () => {
+test("hiding and showing the wires group restores the wire colours chosen inside it", async () => {
   await render(<LayersHarness world={renderable(600, 300)} />);
   await vi.waitFor(() => {
     expect(getMapController()).not.toBeNull();
   });
-  await expect.poll(() => getMapController()?.stats().visibleChunks.length ?? 0).toBeGreaterThan(0);
-  const uploads = await settledUploads();
-
-  for (const [label, key] of [["Background", "background"], ["Walls", "walls"], ["Blocks", "blocks"], ["Liquids", "liquids"]] as const) {
-    await page.getByRole("button", { name: `Show ${label}`, exact: true }).click();
-    await expect.poll(() => shownLayers()[key]).toBe(false);
-    await expect.element(page.getByRole("button", { name: `Show ${label}`, exact: true })).toHaveAttribute("aria-pressed", "false");
-    await page.getByRole("button", { name: `Show ${label}`, exact: true }).click();
-    await expect.poll(() => shownLayers()[key]).toBe(true);
-  }
   await page.getByRole("button", { name: "Show Blue wire" }).click();
   await expect.poll(() => shownLayers()["wires"]).toBe(WIRE_LAYER.all & ~WIRE_LAYER.blue);
   await page.getByRole("button", { name: "Show Wires and actuators" }).click();
   await expect.poll(() => shownLayers()["wires"]).toBe(0);
+  // The child eyes keep their state while the group is hidden.
+  await expect.element(page.getByRole("button", { name: "Show Blue wire" })).toHaveAttribute("aria-pressed", "false");
+  await expect.element(page.getByRole("button", { name: "Show Red wire" })).toHaveAttribute("aria-pressed", "true");
   await page.getByRole("button", { name: "Show Wires and actuators" }).click();
-  await expect.poll(() => shownLayers()["wires"]).toBe(WIRE_LAYER.all);
-
-  expect(await settledUploads()).toBe(uploads);
-  // A dozen clicks with renders between them: slow under the full suite on software GL.
-}, 30_000);
+  await expect.poll(() => shownLayers()["wires"]).toBe(WIRE_LAYER.all & ~WIRE_LAYER.blue);
+});
 
 test("Alt+1 … Alt+5 toggle the layers", async () => {
   await render(<LayersHarness world={renderable(600, 300)} />);
@@ -251,3 +300,104 @@ test("Alt+1 … Alt+5 toggle the layers", async () => {
   await userEvent.keyboard("{Alt>}5{/Alt}");
   await expect.poll(() => shownLayers()["wires"]).toBe(0);
 });
+
+// ---------- The real session: every row, pixels against the CPU reference ----------
+
+async function openFixture(file: string): Promise<void> {
+  const binary = atob(await commands.readWorldFixture(file));
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  const input = document.querySelector<HTMLInputElement>('input[type="file"]');
+  if (input === null) throw new Error("no file input in the app");
+  const transfer = new DataTransfer();
+  transfer.items.add(new File([bytes], file));
+  input.files = transfer.files;
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+/** The canvas as renderChunk lays out pixels: top-down rows of straight RGBA. */
+function readCanvas(): Uint8Array {
+  const element = canvas();
+  const gl = element.getContext("webgl2");
+  if (gl === null) throw new Error("no webgl2 context");
+  const out = new Uint8Array(element.width * element.height * 4);
+  gl.readPixels(0, 0, element.width, element.height, gl.RGBA, gl.UNSIGNED_BYTE, out);
+  const flipped = new Uint8Array(out.length);
+  const row = element.width * 4;
+  for (let y = 0; y < element.height; y++) flipped.set(out.subarray((element.height - 1 - y) * row, (element.height - y) * row), y * row);
+  return flipped;
+}
+
+/** The CPU reference of the canvas at 1 pixel per tile with the camera's top-left tile at (left, top). */
+function cpuView(world: CanonicalWorld, depth: { surfaceY: number; rockY: number }, left: number, top: number, width: number, height: number, layers: ChunkLayers): Uint8Array {
+  const out = new Uint8Array(width * height * 4);
+  for (let cy = Math.floor(top / 128); cy <= Math.floor((top + height - 1) / 128); cy++) {
+    for (let cx = Math.floor(left / 128); cx <= Math.floor((left + width - 1) / 128); cx++) {
+      const chunk = renderChunk(world, cx, cy, { ...depth, layers, mapPalette: terrariaMapPalette });
+      for (let y = 0; y < chunk.height; y++) {
+        const worldY = cy * 128 + y;
+        if (worldY < top || worldY >= top + height) continue;
+        for (let x = 0; x < chunk.width; x++) {
+          const worldX = cx * 128 + x;
+          if (worldX < left || worldX >= left + width) continue;
+          out.set(chunk.pixels.subarray((y * chunk.width + x) * 4, (y * chunk.width + x) * 4 + 4), ((worldY - top) * width + worldX - left) * 4);
+        }
+      }
+    }
+  }
+  return out;
+}
+
+test("in a loaded world every layer and wire row removes and restores exactly its pixels, uploading and parsing nothing", async () => {
+  await render(<App layoutStorage={null} />);
+  const parse = vi.spyOn(WorldWorkerClient.prototype, "parse");
+  await openFixture("SCCO1.wld");
+  // Generous waits: the parse and the renderer's first frames are slow on software GL under the full suite.
+  const slow = { timeout: 20_000 };
+  await vi.waitFor(() => {
+    expect(getMapController()).not.toBeNull();
+  }, slow);
+  await expect.poll(() => parse.mock.calls.length, slow).toBe(1);
+  const loaded = getDefaultWorldSession().getLoadedWorld();
+  if (loaded === null) throw new Error("no world loaded");
+  const world = toCanonicalWorld(loaded);
+  const depth = { surfaceY: loaded.metadata.surfaceLevel, rockY: loaded.metadata.rockLevel };
+  // A view across the surface of the Small fixture, at 1 pixel per tile.
+  const target = { x: 1900, y: Math.floor(loaded.metadata.surfaceLevel) - 100, zoom: 1 };
+  // The map fits the new world once it has a viewport; jump after that, so the fit does not replace the jump.
+  await vi.waitFor(() => {
+    getMapController()?.jumpTo(target);
+    expect(JSON.parse(canvas().dataset["camera"] ?? "null")).toEqual(target);
+  }, slow);
+  const uploads = await settledUploads();
+  // The camera as applied (clamped to the world); integral, so pixels map to whole tiles.
+  const camera = JSON.parse(canvas().dataset["camera"] ?? "null") as { x: number; y: number; zoom: number };
+  expect(camera).toEqual(target);
+  const { width, height } = canvas();
+
+  const expectLayers = async (): Promise<void> => {
+    const layers = rendererLayers(useViewStore.getState().layers);
+    await expect.poll(() => shownLayers()).toEqual(layers);
+    getMapController()?.renderNow();
+    const gpu = readCanvas();
+    const cpu = cpuView(world, depth, camera.x, camera.y, width, height, layers);
+    expect(gpu.length).toBe(cpu.length);
+    const first = gpu.findIndex((value, index) => value !== cpu[index]);
+    expect(first === -1 ? "equal" : `pixel ${String(Math.floor(first / 4))} (x ${String(Math.floor(first / 4) % width)}, y ${String(Math.floor(first / 4 / width))}): gpu ${String([...gpu.subarray(first - (first % 4), first - (first % 4) + 4)])} cpu ${String([...cpu.subarray(first - (first % 4), first - (first % 4) + 4)])}`).toBe("equal");
+  };
+
+  await expectLayers();
+  const rows = ["Background", "Walls", "Blocks", "Liquids", "Wires and actuators", "Red wire", "Blue wire", "Green wire", "Yellow wire", "Actuators"];
+  for (const row of rows) {
+    const eye = page.getByRole("button", { name: `Show ${row}`, exact: true });
+    await eye.click();
+    await expect.element(eye).toHaveAttribute("aria-pressed", "false");
+    await expectLayers();
+    await eye.click();
+    await expect.element(eye).toHaveAttribute("aria-pressed", "true");
+    await expectLayers();
+  }
+  expect(await settledUploads()).toBe(uploads);
+  expect(parse).toHaveBeenCalledTimes(1);
+  expect(getDefaultWorldSession().getLoadedWorld()).toBe(loaded);
+}, 120_000);

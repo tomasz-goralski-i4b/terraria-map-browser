@@ -31,14 +31,14 @@ export function LayersPanel({ commands }: { readonly commands: readonly Command[
           <div key={layer}>
             <VisibilityRow label={label} visible={layerShown(layers, layer)} shortcut={shortcut} onChange={command.run} />
             {layer === "wires" && (
-              <div className="visibility-children" role="group" aria-label="Wire colours">
+              <div className="visibility-children" role="group" aria-label="Wire colours" data-parent-visible={layers.wires}>
                 {WIRE_ROWS.map(({ bit, label: wireLabel }) => (
                   <VisibilityRow
                     key={bit}
                     label={wireLabel}
-                    visible={(layers.wires & bit) !== 0}
+                    visible={(layers.wireMask & bit) !== 0}
                     onChange={(visible) => {
-                      setLayers({ wires: visible ? layers.wires | bit : layers.wires & ~bit });
+                      setLayers({ wireMask: visible ? layers.wireMask | bit : layers.wireMask & ~bit });
                     }}
                   >
                     <span className="swatch" style={swatch(bit)} aria-hidden="true" />

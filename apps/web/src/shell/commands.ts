@@ -2,7 +2,6 @@ import { useEffect } from "react";
 import type { IconName } from "../ui/Icon.js";
 import { useAppStore } from "../store.js";
 import { chooseWorldFile } from "../world/open-world.js";
-import { WIRE_LAYER } from "@studio/renderer";
 import { WORLD_GROUP_IDS } from "../panels/world-fields.js";
 import { resetLayout, useLayoutStore, type ThemeChoice } from "./layout-store.js";
 import { getMapController, useViewStore, type MapLayers, type ToolId } from "./view-store.js";
@@ -69,7 +68,7 @@ export function toolCommands(tool: ToolId, setTool: (tool: ToolId) => void): Com
 }
 
 /** Layer toggles, in the order of the Layers panel, with their shortcuts. */
-export const LAYER_TOGGLES: readonly { readonly layer: Exclude<keyof MapLayers, "wires"> | "wires"; readonly label: string; readonly shortcut: string }[] = [
+export const LAYER_TOGGLES: readonly { readonly layer: Exclude<keyof MapLayers, "wireMask">; readonly label: string; readonly shortcut: string }[] = [
   { layer: "background", label: "Background", shortcut: "Alt+1" },
   { layer: "walls", label: "Walls", shortcut: "Alt+2" },
   { layer: "blocks", label: "Blocks", shortcut: "Alt+3" },
@@ -77,9 +76,9 @@ export const LAYER_TOGGLES: readonly { readonly layer: Exclude<keyof MapLayers, 
   { layer: "wires", label: "Wires and actuators", shortcut: "Alt+5" },
 ];
 
-/** Whether a layer is shown: wires count as shown while any wire colour or actuators are. */
+/** Whether a layer row's eye is open (for wires: the group switch, whatever colours are chosen inside it). */
 export function layerShown(layers: MapLayers, layer: (typeof LAYER_TOGGLES)[number]["layer"]): boolean {
-  return layer === "wires" ? layers.wires !== 0 : layers[layer];
+  return layers[layer];
 }
 
 const WORLD_GROUP_KEYS = WORLD_GROUP_IDS.map((id) => `world/${id}`);
@@ -157,8 +156,7 @@ export function useCommands(): Command[] {
       id: `layer.${layer}`, group: "Layers", label: `Show ${label.toLowerCase()}`, shortcut, enabled: true,
       checked: layerShown(layers, layer),
       run: () => {
-        if (layer === "wires") setLayers({ wires: layers.wires === 0 ? WIRE_LAYER.all : 0 });
-        else setLayers({ [layer]: !layers[layer] });
+        setLayers({ [layer]: !layers[layer] });
       },
     })),
     ...toolCommands(tool, setTool),

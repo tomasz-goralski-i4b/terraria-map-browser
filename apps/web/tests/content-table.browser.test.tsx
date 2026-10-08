@@ -2,9 +2,11 @@ import { useState } from "react";
 import { afterEach, beforeEach, expect, test } from "vitest";
 import { page, userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
-import { ContentPanel, type ContentWorld } from "../src/panels/ContentPanel.js";
+import type { ContentRef } from "@studio/world-model";
+import { CONTENT_COLUMNS, ContentPanel, contentRows, type ContentRow, type ContentWorld } from "../src/panels/ContentPanel.js";
+import { countContent } from "../src/world/content-counts.js";
 import { hydrateLayout, type LayoutStorage } from "../src/shell/layout-store.js";
-import { Table, type Column } from "../src/ui/Table.js";
+import { Table } from "../src/ui/Table.js";
 import "../src/styles.css";
 
 const NONE = 0xffff;
@@ -109,24 +111,27 @@ test("hiding a column from the column menu removes it and is remembered", async 
   await expect.poll(headers).not.toContain("Share");
 });
 
-interface NumberRow {
-  readonly id: number;
+/**
+ * A world with `entries` palette entries, one block tile each (vanilla ids, every tenth entry an unknown id as a modded
+ * or newer world has), so the Content table has one row per entry: what a large modded world looks like.
+ */
+function contentRowsOf(entries: number): ContentRow[] {
+  const palette = Array.from({ length: entries }, (_, index): ContentRef =>
+    (index % 10 === 9 ? { kind: "unknown", runtimeId: 5000 + index } : { kind: "vanilla", id: index }));
+  const planes = { block: Uint16Array.from({ length: entries }, (_, index) => index), wall: new Uint16Array(entries).fill(NONE), liquid: new Uint8Array(entries) };
+  return contentRows({ planes, palette }, countContent(planes, entries));
 }
 
-const NUMBER_COLUMNS: readonly Column<NumberRow>[] = [
-  { id: "id", title: "Row", width: 80, sortValue: (row) => row.id, render: (row) => String(row.id) },
-];
-
-test("5,000 rows render through a virtualised body with a bounded DOM", async () => {
-  const rows = Array.from({ length: 5000 }, (_, id) => ({ id }));
-  await render(<Table id="numbers" label="Numbers" columns={NUMBER_COLUMNS} rows={rows} rowKey={(row) => String(row.id)} />);
-  const grid = page.getByRole("grid", { name: "Numbers" });
+test("5,000 content rows render through a virtualised body with a bounded DOM", async () => {
+  const rows = contentRowsOf(5000);
+  await render(<Table id="content" label="Content" columns={CONTENT_COLUMNS} rows={rows} rowKey={(row) => row.key} />);
+  const grid = page.getByRole("grid", { name: "Content" });
   await expect.element(grid).toHaveAttribute("aria-rowcount", "5001");
   expect(document.querySelectorAll(".table-body [role=row]").length).toBeLessThan(60);
   const scroller = grid.element() as HTMLElement;
   scroller.scrollTop = scroller.scrollHeight;
   scroller.dispatchEvent(new Event("scroll"));
-  await expect.poll(() => bodyRows().at(-1)?.[0]).toBe("4999");
+  await expect.poll(() => bodyRows().at(-1)?.[0]).toBe("Unknown block 9999");
   expect(document.querySelectorAll(".table-body [role=row]").length).toBeLessThan(60);
 });
 
@@ -135,26 +140,26 @@ function selectedRow(): string | undefined {
 }
 
 test("the keyboard moves a controlled selection row by row, keeps it in view and activates it", async () => {
-  const rows = Array.from({ length: 500 }, (_, id) => ({ id }));
+  const rows = contentRowsOf(500);
   const activated: string[] = [];
   await render(<SelectableTable rows={rows} onActivate={(key) => { activated.push(key); }} />);
-  const grid = page.getByRole("grid", { name: "Numbers" });
+  const grid = page.getByRole("grid", { name: "Content" });
   (grid.element() as HTMLElement).focus();
   await userEvent.keyboard("{ArrowDown}");
-  await expect.poll(selectedRow).toBe("0");
+  await expect.poll(selectedRow).toBe("Block 0");
   await userEvent.keyboard("{ArrowDown}{ArrowDown}{ArrowDown}");
-  await expect.poll(selectedRow).toBe("3");
+  await expect.poll(selectedRow).toBe("Block 3");
   await userEvent.keyboard("{ArrowUp}");
-  await expect.poll(selectedRow).toBe("2");
+  await expect.poll(selectedRow).toBe("Block 2");
   expect(grid.element().getAttribute("aria-activedescendant")).toBe(document.querySelector(".table-body [aria-selected=true]")?.id);
   await userEvent.keyboard("{Enter}");
-  expect(activated).toEqual(["2"]);
+  expect(activated).toEqual(["block:2"]);
   await userEvent.keyboard("{End}");
-  await expect.poll(selectedRow).toBe("499");
+  await expect.poll(selectedRow).toBe("Unknown block 5499");
   await userEvent.keyboard("{PageUp}");
-  await expect.poll(() => Number(selectedRow())).toBeLessThan(499);
+  await expect.poll(selectedRow).not.toBe("Unknown block 5499");
   await userEvent.keyboard("{Home}");
-  await expect.poll(selectedRow).toBe("0");
+  await expect.poll(selectedRow).toBe("Block 0");
 });
 
 test("sortable headers work from the keyboard", async () => {
@@ -190,14 +195,29 @@ test("resizing the flexible first column starts from its displayed width and app
   await expect.poll(() => Math.round(header().getBoundingClientRect().width)).toBeLessThan(displayed);
 });
 
-function SelectableTable({ rows, onActivate }: { readonly rows: readonly NumberRow[]; readonly onActivate: (key: string) => void }): React.JSX.Element {
+function SelectableTable({ rows, onActivate }: { readonly rows: readonly ContentRow[]; readonly onActivate: (key: string) => void }): React.JSX.Element {
   const [selected, setSelected] = useState<string | null>(null);
   return (
     <Table
-      id="numbers" label="Numbers" columns={NUMBER_COLUMNS} rows={rows} rowKey={(row) => String(row.id)}
+      id="content" label="Content" columns={CONTENT_COLUMNS} rows={rows} rowKey={(row) => row.key}
       selectedKey={selected}
-      onSelect={(row) => { setSelected(String(row.id)); }}
-      onActivate={(row) => { onActivate(String(row.id)); }}
+      onSelect={(row) => { setSelected(row.key); }}
+      onActivate={(row) => { onActivate(row.key); }}
     />
   );
 }
+
+test("switching worlds shows each world's own counts, cached on return", async () => {
+  const other: ContentWorld = {
+    planes: { block: Uint16Array.from([0, 0, 0]), wall: Uint16Array.from([NONE, NONE, NONE]), liquid: new Uint8Array(3) },
+    palette: [{ kind: "vanilla", id: 7 }],
+  };
+  const view = await render(<ContentPanel world={world} />);
+  await expect.poll(() => bodyRows()[0]?.[0]).toBe("Block 1");
+  await view.rerender(<ContentPanel world={other} />);
+  await expect.poll(() => bodyRows().map(([name, , count]) => [name, count])).toEqual([["Block 7", "3"]]);
+  await view.rerender(<ContentPanel world={world} />);
+  // Cached: the rows are there in the same render, with no counting progress shown.
+  expect(document.querySelector("progress")).toBeNull();
+  await expect.poll(() => bodyRows().length).toBe(8);
+});

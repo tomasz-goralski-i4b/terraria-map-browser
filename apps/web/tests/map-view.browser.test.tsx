@@ -28,6 +28,14 @@ function syntheticWorld(): RenderableWorld {
 
 const world = syntheticWorld();
 
+/**
+ * `vi.waitFor` with room for the camera glide (#139) to settle: under the full suite on software GL, frames are slow
+ * and the default second can end mid-glide.
+ */
+function waitFor<T>(callback: () => T | Promise<T>): Promise<T> {
+  return vi.waitFor(callback, { timeout: 5_000 });
+}
+
 function canvas(): HTMLCanvasElement {
   const element = document.querySelector("canvas");
   if (element === null) throw new Error("MapView rendered no canvas");
@@ -49,7 +57,7 @@ async function mountMap(): Promise<void> {
       <StatusBar world={null} />
     </div>,
   );
-  await vi.waitFor(() => {
+  await waitFor(() => {
     expect(canvas().dataset["camera"]).toBeDefined();
   });
 }
@@ -79,7 +87,7 @@ function releaseKey(name: string): void {
 
 async function actualMap(): Promise<void> {
   await page.getByRole("button", { name: /^1:1$/ }).click();
-  await vi.waitFor(() => { expect(camera().zoom).toBe(1); });
+  await waitFor(() => { expect(camera().zoom).toBe(1); });
 }
 
 // Captured before any test overrides it; deleting an override would remove the property altogether.
@@ -102,7 +110,7 @@ test("the visible-chunk set follows the camera and equals the pure visibleChunks
   await actualMap();
   const cam = camera();
   expect(cam.zoom).toBe(1);
-  await vi.waitFor(() => {
+  await waitFor(() => {
     expect(chunks()).toEqual(visibleChunks(cam, viewport, { width, height }).map((chunk: { x: number; y: number }) => [chunk.x, chunk.y]));
   });
 });
@@ -118,7 +126,7 @@ test("dragging pans the map: content follows the pointer", async () => {
   const before = camera();
   pointer("pointerdown", 200, 150, 1);
   pointer("pointermove", 150, 120, 1);
-  await vi.waitFor(() => {
+  await waitFor(() => {
     const after = camera();
     expect(after.x).toBeCloseTo(before.x + 50, 6);
     expect(after.y).toBeCloseTo(before.y + 30, 6);
@@ -132,23 +140,23 @@ test("arrow keys pan and +/- zoom around the viewport", async () => {
   await actualMap();
   const start = camera();
   key("ArrowRight");
-  await vi.waitFor(() => {
+  await waitFor(() => {
     expect(camera().x).toBeGreaterThan(start.x);
   });
   releaseKey("ArrowRight");
   key("ArrowDown");
-  await vi.waitFor(() => {
+  await waitFor(() => {
     expect(camera().y).toBeGreaterThan(start.y);
   });
   releaseKey("ArrowDown");
   const zoom = camera().zoom;
   key("+");
-  await vi.waitFor(() => {
+  await waitFor(() => {
     expect(camera().zoom).toBeGreaterThan(zoom);
   });
   key("-");
   key("-");
-  await vi.waitFor(() => {
+  await waitFor(() => {
     expect(camera().zoom).toBeLessThan(zoom);
   });
 });
@@ -159,7 +167,7 @@ test("the wheel zooms around the pointer, keeping the tile under it fixed", asyn
   const before = camera();
   const tile = screenToTile(before, 120, 90);
   wheel(120, 90, -100);
-  await vi.waitFor(() => {
+  await waitFor(() => {
     expect(camera().zoom).toBeGreaterThan(1);
   });
   const after = camera();
@@ -171,11 +179,11 @@ test("the wheel zooms around the pointer, keeping the tile under it fixed", asyn
 test("zoom stays within 1/8 and 16 pixels per tile", async () => {
   await mountMap();
   for (let i = 0; i < 60; i++) wheel(200, 150, -100);
-  await vi.waitFor(() => {
+  await waitFor(() => {
     expect(camera().zoom).toBe(16);
   });
   for (let i = 0; i < 120; i++) wheel(200, 150, 100);
-  await vi.waitFor(() => {
+  await waitFor(() => {
     expect(camera().zoom).toBe(0.125);
   });
 });
@@ -219,12 +227,12 @@ test("the status bar follows the tile under a resting pointer after keyboard pan
   await mountMap();
   await actualMap();
   pointer("pointermove", 120, 90, 0);
-  await vi.waitFor(() => {
+  await waitFor(() => {
     expect(statusText()).toBe(tileText(camera(), 120, 90));
   });
   const before = statusText();
   key("ArrowRight");
-  await vi.waitFor(() => {
+  await waitFor(() => {
     expect(statusText()).not.toBe(before);
     expect(statusText()).toBe(tileText(camera(), 120, 90));
   });
@@ -234,13 +242,13 @@ test("the status bar follows the tile under a resting pointer after a wheel zoom
   await mountMap();
   await actualMap();
   pointer("pointermove", 120, 90, 0);
-  await vi.waitFor(() => {
+  await waitFor(() => {
     expect(statusText()).toBe(tileText(camera(), 120, 90));
   });
   // The wheel event carries its own position, but the resting pointer is the one the status bar reports.
   const before = statusText();
   wheel(300, 200, -300);
-  await vi.waitFor(() => {
+  await waitFor(() => {
     expect(camera().zoom).toBeGreaterThan(1);
     expect(statusText()).not.toBe(before);
     expect(statusText()).toBe(tileText(camera(), 120, 90));
@@ -253,7 +261,7 @@ test("the status bar updates while dragging", async () => {
   // No earlier hover: the drag move itself must report the tile under the pointer.
   pointer("pointerdown", 200, 150, 1);
   pointer("pointermove", 150, 120, 1);
-  await vi.waitFor(() => {
+  await waitFor(() => {
     expect(statusText()).toBe(tileText(camera(), 150, 120));
   });
   pointer("pointerup", 150, 120, 0);
@@ -262,11 +270,11 @@ test("the status bar updates while dragging", async () => {
 test("the status bar is cleared when the pointer leaves the canvas", async () => {
   await mountMap();
   pointer("pointermove", 120, 90, 0);
-  await vi.waitFor(() => {
+  await waitFor(() => {
     expect(statusText()).not.toBe("—");
   });
   pointer("pointerout", 120, 90, 0);
-  await vi.waitFor(() => {
+  await waitFor(() => {
     expect(statusText()).toBe("—");
   });
   key("ArrowRight");
@@ -281,7 +289,7 @@ test.each(["+", "-"])("the %s key zooms around the last pointer position", async
   const before = camera();
   const tile = screenToTile(before, 100, 70);
   key(name);
-  await vi.waitFor(() => {
+  await waitFor(() => {
     expect(camera().zoom).not.toBe(before.zoom);
   });
   const same = screenToTile(camera(), 100, 70);
@@ -305,11 +313,11 @@ test("replacing the world refreshes the status bar for the resting pointer", asy
       <StatusBar world={null} />
     </div>,
   );
-  await vi.waitFor(() => {
+  await waitFor(() => {
     expect(canvas().dataset["camera"]).toBeDefined();
   });
   pointer("pointermove", 200, 150, 0);
-  await vi.waitFor(() => {
+  await waitFor(() => {
     expect(statusText()).toBe(tileText(camera(), 200, 150));
   });
   const old = statusText();
@@ -319,7 +327,7 @@ test("replacing the world refreshes the status bar for the resting pointer", asy
       <StatusBar world={null} />
     </div>,
   );
-  await vi.waitFor(() => {
+  await waitFor(() => {
     expect(statusText()).not.toBe(old);
     expect(statusText()).toBe(tileText(camera(), 200, 150));
   });
@@ -334,7 +342,7 @@ test("a devicePixelRatio change at fixed CSS size resizes the backing store", as
     Object.defineProperty(window, "devicePixelRatio", { configurable: true, value: ratio * 2 });
     // Browsers report a ratio change (zoom, moving between monitors) as a window resize.
     window.dispatchEvent(new Event("resize"));
-    await vi.waitFor(() => {
+    await waitFor(() => {
       expect(canvas().width).toBe(Math.round(css * ratio * 2));
       expect(canvas().clientWidth).toBe(css);
     });
@@ -353,7 +361,7 @@ async function doubleDevicePixelRatio(): Promise<void> {
   const ratio = window.devicePixelRatio;
   Object.defineProperty(window, "devicePixelRatio", { configurable: true, value: ratio * 2 });
   window.dispatchEvent(new Event("resize"));
-  await vi.waitFor(() => {
+  await waitFor(() => {
     expect(canvas().width).toBe(Math.round(css * ratio * 2));
   });
 }
@@ -362,13 +370,13 @@ test("after a devicePixelRatio change the status bar reports the tile under the 
   await mountMap();
   await actualMap();
   pointer("pointermove", 120, 90, 0);
-  await vi.waitFor(() => {
+  await waitFor(() => {
     expect(statusText()).toBe(tileText(camera(), 120 * backingScale(), 90 * backingScale()));
   });
   try {
     await doubleDevicePixelRatio();
     // The pointer has not moved: it still rests at CSS (120, 90), which is now twice as many backing pixels.
-    await vi.waitFor(() => {
+    await waitFor(() => {
       expect(statusText()).toBe(tileText(camera(), 120 * backingScale(), 90 * backingScale()));
     });
   } finally {
@@ -386,7 +394,7 @@ test("after a devicePixelRatio change keyboard zoom keeps the tile under the res
     const before = camera();
     const tile = screenToTile(before, 100 * scale, 70 * scale);
     key("+");
-    await vi.waitFor(() => {
+    await waitFor(() => {
       expect(camera().zoom).not.toBe(before.zoom);
     });
     const same = screenToTile(camera(), 100 * scale, 70 * scale);

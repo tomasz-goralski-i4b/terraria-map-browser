@@ -28,6 +28,19 @@ export interface ContentRow {
 /** Counts are computed once per loaded world and kept while it is loaded, so reopening the panel is instant. */
 const countCache = new WeakMap<CountablePlanes, ContentCounts>();
 
+/** A small number per world, so React state can name a world's count without holding its planes. */
+const generations = new WeakMap<CountablePlanes, number>();
+let lastGeneration = 0;
+
+function generationOf(planes: CountablePlanes): number {
+  let generation = generations.get(planes);
+  if (generation === undefined) {
+    generation = ++lastGeneration;
+    generations.set(planes, generation);
+  }
+  return generation;
+}
+
 export function contentRows(world: ContentWorld, counts: ContentCounts): ContentRow[] {
   const total = world.planes.block.length || 1;
   const rows: ContentRow[] = [];
@@ -53,7 +66,7 @@ function swatch(color: Rgba): React.CSSProperties {
 
 const KIND_LABELS: Readonly<Record<ContentKind, string>> = { block: "Block", wall: "Wall", liquid: "Liquid" };
 
-const COLUMNS: readonly Column<ContentRow>[] = [
+export const CONTENT_COLUMNS: readonly Column<ContentRow>[] = [
   {
     id: "name", title: "Content", width: 96, hideable: false, sortValue: (row) => row.name,
     render: (row) => (
@@ -84,7 +97,9 @@ export function ContentPanel({ world }: { readonly world?: ContentWorld | null }
   const shown = world === undefined ? sessionWorld : world;
   // Only a signal that a count finished: the counts live in `countCache`, keyed by the planes, outside React.
   const [, setCompleted] = useState(0);
-  const [progress, setProgress] = useState<{ readonly planes: CountablePlanes; readonly done: number } | null>(null);
+  // Scalar progress tagged with the world's count generation; the planes themselves never enter React state.
+  const [progress, setProgress] = useState<{ readonly generation: number; readonly done: number } | null>(null);
+  const generation = shown === null ? 0 : generationOf(shown.planes);
   const [kind, setKind] = useState<ContentKind | "all">("all");
   const [selected, setSelected] = useState<string | null>(null);
 
@@ -96,7 +111,7 @@ export function ContentPanel({ world }: { readonly world?: ContentWorld | null }
     countContentInSlices(shown.planes, shown.palette.length, {
       signal: controller.signal,
       onProgress: (done, total) => {
-        setProgress({ planes: shown.planes, done: done / total });
+        setProgress({ generation: generationOf(shown.planes), done: done / total });
       },
     }).then((result) => {
       countCache.set(shown.planes, result);
@@ -117,7 +132,7 @@ export function ContentPanel({ world }: { readonly world?: ContentWorld | null }
     return (
       <div className="panel-progress">
         <span>Counting tiles…</span>
-        <progress aria-label="Counting tiles" max={1} value={progress?.planes === shown.planes ? progress.done : 0} />
+        <progress aria-label="Counting tiles" max={1} value={progress?.generation === generation ? progress.done : 0} />
       </div>
     );
   }
@@ -125,7 +140,7 @@ export function ContentPanel({ world }: { readonly world?: ContentWorld | null }
     <Table
       id="content"
       label="Content"
-      columns={COLUMNS}
+      columns={CONTENT_COLUMNS}
       rows={filtered}
       rowKey={(row) => row.key}
       filterText={(row) => `${row.name} ${row.id}`}

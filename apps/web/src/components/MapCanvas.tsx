@@ -3,7 +3,7 @@ import {
   CameraAnimator, clampCamera, createMapRenderer, fitWorld, terrariaMapPalette, visibleChunks, wheelPixels,
 } from "@studio/renderer";
 import type { Camera, MapRenderer, RenderableWorld, Size } from "@studio/renderer";
-import { registerMapController, useViewStore, type ToolId } from "../shell/view-store.js";
+import { registerMapController, rendererLayers, useViewStore, type ToolId } from "../shell/view-store.js";
 
 const KEY_PAN_PIXELS_PER_MS = 0.384;
 const KEY_ZOOM_FACTOR = 1.25;
@@ -59,8 +59,11 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
   const [error, setError] = useState<string | null>(null);
   const tool = useViewStore((state) => state.tool);
   const layers = useViewStore((state) => state.layers);
-  /** Where the pointer went down, to tell a click (pin a tile) from a drag (pan). */
-  const pressRef = useRef<Point | null>(null);
+  /**
+   * The primary press that may become a click (pin a tile): where it went down, and whether it ever left the click
+   * slop on its way (an out-and-back drag is still a drag).
+   */
+  const pressRef = useRef<{ readonly at: Point; moved: boolean } | null>(null);
 
   /** Canvas backing-store pixels of a point in CSS pixels relative to the canvas, at the current canvas geometry. */
   const toBacking = useCallback((point: Point): Point => {
@@ -145,7 +148,7 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
     };
     sessionRef.current = session;
     renderer.setWorld(session.world);
-    renderer.setLayers(useViewStore.getState().layers);
+    renderer.setLayers(rendererLayers(useViewStore.getState().layers));
 
     const motionPreference = window.matchMedia("(prefers-reduced-motion: reduce)");
     const updateMotionPreference = (): void => {
@@ -209,6 +212,15 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
       actualSize: () => {
         zoomBy(1 / session.animator.target.zoom);
       },
+      jumpTo: (camera) => {
+        if (session.viewport.width === 0) return;
+        session.keys.clear();
+        session.animator.reset(clampCamera(camera, session.viewport, session.world), session.viewport, session.world);
+        applyCamera(session, session.animator.current);
+      },
+      renderNow: () => {
+        renderer.render();
+      },
       stats: () => renderer.stats(),
     });
 
@@ -252,6 +264,8 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
     if (session === null || session.world === world) return;
     session.world = world;
     session.renderer.setWorld(world);
+    // A pin names a tile of the world it was picked in.
+    useViewStore.getState().setPinnedTile(null);
     session.keys.clear();
     session.pointers.clear();
     session.animator.reset(session.viewport.width === 0 ? session.camera : fitWorld(session.viewport, world), session.viewport, world);
@@ -261,9 +275,10 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
 
   useEffect(() => {
     // Layers are a uniform in the renderer: switching them uploads nothing.
-    sessionRef.current?.renderer.setLayers(layers);
+    const shown = rendererLayers(layers);
+    sessionRef.current?.renderer.setLayers(shown);
     const canvas = canvasRef.current;
-    if (canvas !== null) canvas.dataset["layers"] = JSON.stringify(layers);
+    if (canvas !== null) canvas.dataset["layers"] = JSON.stringify(shown);
   }, [layers]);
 
   /** Pins the tile under a backing-store point in the Inspector (Inspect tool). */
@@ -282,7 +297,10 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
       session.keys.clear();
       session.animator.beginDrag();
       session.pointers.set(event.pointerId, localPoint(event.clientX, event.clientY));
-      pressRef.current = session.pointers.size === 1 ? localPoint(event.clientX, event.clientY) : null;
+      // Only a lone primary-button press can pin; a second finger, or another button, makes it a gesture.
+      pressRef.current = session.pointers.size === 1 && event.isPrimary && event.button === 0
+        ? { at: localPoint(event.clientX, event.clientY), moved: false }
+        : null;
       try {
         event.currentTarget.setPointerCapture(event.pointerId);
       } catch {
@@ -295,6 +313,8 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
     withSession((session) => {
       const local = localPoint(event.clientX, event.clientY);
       const last = session.pointers.get(event.pointerId);
+      const press = pressRef.current;
+      if (press !== null && Math.hypot(local.x - press.at.x, local.y - press.at.y) >= CLICK_SLOP) press.moved = true;
       session.hover = local;
       if (last === undefined) {
         session.requestFrame();
@@ -325,10 +345,10 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
       if (!session.pointers.delete(event.pointerId)) return;
       const press = pressRef.current;
       pressRef.current = null;
-      if (event.type === "pointerup" && press !== null && useViewStore.getState().tool === "inspect") {
+      if (event.type === "pointerup" && event.button === 0 && press !== null && useViewStore.getState().tool === "inspect") {
         const release = localPoint(event.clientX, event.clientY);
-        // A click, not a drag: the pointer stayed within a few CSS pixels.
-        if (Math.hypot(release.x - press.x, release.y - press.y) < CLICK_SLOP) pinAt(session, toBacking(release));
+        // A click, not a drag: the pointer never left a few CSS pixels around the press.
+        if (!press.moved && Math.hypot(release.x - press.at.x, release.y - press.at.y) < CLICK_SLOP) pinAt(session, toBacking(release));
       }
       if (session.pointers.size === 0) session.animator.endDrag(event.type !== "pointerup");
       else session.animator.beginDrag();

@@ -775,6 +775,11 @@ kbd {
   height: 24px;
 }
 
+/* Colours chosen inside a hidden group keep their eyes but read as inactive. */
+.visibility-children[data-parent-visible="false"] {
+  opacity: 0.55;
+}
+
 .visibility-children .visibility-row {
   padding-left: calc(var(--space-2) + var(--space-4));
 }

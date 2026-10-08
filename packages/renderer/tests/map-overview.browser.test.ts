@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { contentColor, createMapRenderer, fitWorld, visibleChunks } from "../src/index.js";
+import { WIRE_ALPHA, WIRE_COLORS, WIRE_LAYER, contentColor, createMapRenderer, fitWorld, visibleChunks } from "../src/index.js";
 import type { Camera, MapRenderer, MapRendererOptions, RenderableWorld } from "../src/index.js";
 
 const renderers: MapRenderer[] = [];
@@ -166,6 +166,28 @@ describe("overview below half a pixel per tile", () => {
     renderer.render();
     expect(pixel(64, 128)).toEqual([0, 0, 0, 0]);
     renderer.setLayers({ background: true, walls: true, blocks: true, liquids: true });
+    renderer.render();
+    expect(pixel(64, 128)).toEqual(blockA);
+    expect(renderer.stats().textureUploads).toBe(uploads);
+  });
+
+  test("the overview draws the wire overlay and drops it when wires are hidden, from resident chunks", () => {
+    // Every tile of the left half carries a red wire; the right half none.
+    const flags = new Uint16Array(halves.width * halves.height);
+    flags.fill(WIRE_LAYER.red, 0, (halves.width / 2) * halves.height);
+    const wired: RenderableWorld = { ...halves, planes: { ...halves.planes, flags } };
+    const { renderer, pixel } = setup(512, 256);
+    renderer.setWorld(wired);
+    renderer.setLayers({ background: true, walls: true, blocks: true, liquids: true, wires: WIRE_LAYER.all });
+    renderer.setCamera(fitted);
+    renderer.render();
+    const uploads = renderer.stats().textureUploads;
+    const red = WIRE_COLORS.find(([bit]) => bit === WIRE_LAYER.red)?.[1] ?? [0, 0, 0];
+    // A uniform region's overview texel is the tile colour itself: block A with the red overlay blended in.
+    const blended = [0, 1, 2].map((c) => Math.floor((2 * ((red[c] ?? 0) * WIRE_ALPHA + (blockA?.[c] ?? 0) * (255 - WIRE_ALPHA)) + 255) / 510));
+    closeTo(pixel(64, 128), [...blended, 255], 1);
+    expect(pixel(448, 128)).toEqual(blockB);
+    renderer.setLayers({ background: true, walls: true, blocks: true, liquids: true, wires: WIRE_LAYER.blue });
     renderer.render();
     expect(pixel(64, 128)).toEqual(blockA);
     expect(renderer.stats().textureUploads).toBe(uploads);

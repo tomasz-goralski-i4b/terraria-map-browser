@@ -171,12 +171,22 @@ const planeTypes: { [K in keyof WorldPlanes]: new (length: number) => WorldPlane
   shape: Uint8Array, flags: Uint16Array,
 };
 
+export interface ViewWorldOptions {
+  /**
+   * The caller guarantees that every block and wall value is absent (0xFFFF) or a valid palette index, as planes
+   * decoded by the codec are by construction. Skips the one check that reads every tile; dimensions, plane types and
+   * lengths and the palette are still validated.
+   */
+  readonly indicesChecked?: boolean;
+}
+
 /** Wraps existing planes and a palette as a CanonicalWorld by reference; validates once, copies no plane. */
 export function viewWorld(
   width: number,
   height: number,
   planes: WorldPlanes,
   palette: readonly ContentRef[],
+  options: ViewWorldOptions = {},
 ): CanonicalWorld {
   if (!Number.isSafeInteger(width) || width <= 0 || !Number.isSafeInteger(height) || height <= 0) {
     throw new CwmViewError("dimensions", `Invalid world dimensions: ${String(width)} x ${String(height)}`);
@@ -199,10 +209,12 @@ export function viewWorld(
     if (paletteIndices.has(key)) throw new CwmViewError("palette", `Palette entry ${String(index)} duplicates an earlier entry`);
     paletteIndices.set(key, index);
   });
-  for (const name of ["block", "wall"] as const) {
-    for (const value of planes[name]) {
-      if (value !== absentContent && value >= palette.length) {
-        throw new CwmViewError("paletteIndex", `Plane ${name} references palette index ${String(value)} outside ${String(palette.length)} entries`);
+  if (options.indicesChecked !== true) {
+    for (const name of ["block", "wall"] as const) {
+      for (const value of planes[name]) {
+        if (value !== absentContent && value >= palette.length) {
+          throw new CwmViewError("paletteIndex", `Plane ${name} references palette index ${String(value)} outside ${String(palette.length)} entries`);
+        }
       }
     }
   }

@@ -289,7 +289,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   // Frame-selected colours, appended as chunks upload: variant ids (1-based) by palette index and option.
   const variantMirror = new Uint8Array(PALETTE_ROW * PALETTE_ROW * 4);
   const variantIds = new Map<number, number>();
-  const optionsByPalette = new Map<number, { readonly rule: MapOptionRule; readonly colors: readonly Rgba[] } | null>();
+  const optionsByPalette = new Map<number, { readonly rule: MapOptionRule; readonly colors: readonly Rgba[]; readonly paletteOption: number } | null>();
   let variantCount = 0;
   // Per-row background colours plus the paint row, for the world they were computed for.
   let background: { readonly texture: WebGLTexture; readonly world: RenderableWorld; readonly paintRow: number } | null = null;
@@ -377,19 +377,23 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     paletteUploaded = total;
   };
 
-  /** The variant id of a block: its frame-selected option colour, or 0 when the palette colour (option 0) applies. */
+  /**
+   * The variant id of a block: its frame-selected option colour, or 0 when the palette colour applies. The palette
+   * colour is `contentColor` at frame (0, 0), which is not option 0 when the rule maps frame (0, 0) elsewhere (a
+   * sunflower's flower): "no variant" therefore means "the option of frame (0, 0)".
+   */
   const variantOf = (paletteIndex: number, frameX: number, frameY: number, palette: readonly ContentRef[]): number => {
     let choices = optionsByPalette.get(paletteIndex);
     if (choices === undefined) {
       const ref = palette[paletteIndex];
       const rule = ref === undefined ? undefined : optionRule(ref, "block", mapPalette);
       const colors = ref === undefined ? undefined : optionColors(ref, "block", mapPalette);
-      choices = rule === undefined || colors === undefined ? null : { rule, colors };
+      choices = rule === undefined || colors === undefined ? null : { rule, colors, paletteOption: mapOption(rule, 0, 0) };
       optionsByPalette.set(paletteIndex, choices);
     }
     if (choices === null) return 0;
     const option = mapOption(choices.rule, frameX, frameY);
-    if (option === 0) return 0;
+    if (option === choices.paletteOption) return 0;
     const key = paletteIndex * 256 + option;
     let id = variantIds.get(key);
     if (id === undefined) {

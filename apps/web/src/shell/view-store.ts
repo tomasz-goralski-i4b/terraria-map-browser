@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { WIRE_LAYER, type ChunkLayers, type MapRendererStats } from "@studio/renderer";
+import { WIRE_LAYER, type Camera, type ChunkLayers, type MapRendererStats } from "@studio/renderer";
 
 /** Tools of the left rail. Only the navigation tools work today; the rest mark where editing will go (docs/ui.md). */
 export type ToolId = "pan" | "inspect" | "brush" | "erase" | "fill" | "select" | "picker" | "object";
@@ -9,10 +9,29 @@ export interface TilePoint {
   readonly y: number;
 }
 
-/** Map layers the user can hide; `wires` is a mask of `WIRE_LAYER` bits (wire colours and actuators). */
-export type MapLayers = Required<ChunkLayers>;
+/**
+ * Map layers the user can hide. The wire overlay has a group switch (`wires`) and, apart from it, the colours and
+ * actuators chosen inside the group (`wireMask`, `WIRE_LAYER` bits), so hiding and showing the group restores the
+ * colours that were chosen.
+ */
+export interface MapLayers {
+  readonly background: boolean;
+  readonly walls: boolean;
+  readonly blocks: boolean;
+  readonly liquids: boolean;
+  readonly wires: boolean;
+  readonly wireMask: number;
+}
 
-export const DEFAULT_MAP_LAYERS: MapLayers = { background: true, walls: true, blocks: true, liquids: true, wires: WIRE_LAYER.all };
+export const DEFAULT_MAP_LAYERS: MapLayers = {
+  background: true, walls: true, blocks: true, liquids: true, wires: true, wireMask: WIRE_LAYER.all,
+};
+
+/** The layers as the renderer takes them: the wire mask applies only while the group is shown. */
+export function rendererLayers(layers: MapLayers): ChunkLayers {
+  const { background, walls, blocks, liquids, wires, wireMask } = layers;
+  return { background, walls, blocks, liquids, wires: wires ? wireMask : 0 };
+}
 
 /** Transient view state: small values the chrome shows, never world data. Not persisted. */
 export interface ViewState {
@@ -79,6 +98,10 @@ export interface MapController {
   readonly centerOn: (x: number, y: number) => void;
   readonly fitWorld: () => void;
   readonly actualSize: () => void;
+  /** Moves the camera at once (no glide), clamped to the world; the editor's "go to" and tests use it. */
+  readonly jumpTo: (camera: Camera) => void;
+  /** Draws a complete frame now (all visible chunks), so the canvas can be read back in the same task. */
+  readonly renderNow: () => void;
   readonly stats: () => MapRendererStats;
 }
 
