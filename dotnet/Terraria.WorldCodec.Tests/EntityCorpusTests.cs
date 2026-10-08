@@ -44,10 +44,40 @@ public sealed class EntityCorpusTests
         using var output = new StringWriter(CultureInfo.InvariantCulture);
         using var errors = new StringWriter(CultureInfo.InvariantCulture);
         Assert.Equal(0, InspectorCommand.Run(["inspect", file], output, errors, _ => world));
-        foreach (var section in world.Entities)
-        {
-            Assert.Contains($"{section.Section}:", output.ToString(), StringComparison.Ordinal);
-        }
+        string[] expected =
+        [
+            $"Chests: {chests} / {chestBytes} B",
+            "Signs: 0 / 2 B",
+            $"NpcsAndMobs: 2+0 / {npcBytes} B",
+            "TileEntities: 0 / 4 B",
+            "WeightedPressurePlates: 0 / 4 B",
+            "TownManager: 0 / 4 B",
+            "Bestiary: 0,0,0 / 12 B",
+            "CreativePowers: 6 / 31 B",
+        ];
+        var lines = output.ToString().Split(Environment.NewLine);
+        Assert.All(expected, line => Assert.Single(lines, candidate => candidate == line));
+    }
+
+    [Fact]
+    public void Inspect_MalformedEntitySection_PrintsUnreadableWithSize()
+    {
+        var bytes = File.ReadAllBytes(VanillaCorpusTests.WorldPath("SCCO1.wld"));
+        using var source = new MemoryStream(bytes);
+        var table = WorldReader.ReadForSave(source).Table;
+        bytes[(int)table.CreativePowers.Start] = 2;
+        using var stream = new MemoryStream(bytes);
+        var world = WorldReader.Read(stream);
+
+        using var output = new StringWriter(CultureInfo.InvariantCulture);
+        using var errors = new StringWriter(CultureInfo.InvariantCulture);
+        Assert.Equal(0, InspectorCommand.Run(["inspect", "SCCO1.wld"], output, errors, _ => world));
+
+        var lines = output.ToString().Split(Environment.NewLine);
+        var line = Assert.Single(lines, candidate => candidate.StartsWith("CreativePowers: ", StringComparison.Ordinal));
+        Assert.StartsWith("CreativePowers: unreadable (", line, StringComparison.Ordinal);
+        Assert.EndsWith(") / 31 B", line, StringComparison.Ordinal);
+        Assert.Contains("Chests: 190 / 23732 B", lines);
     }
 
     [Fact]

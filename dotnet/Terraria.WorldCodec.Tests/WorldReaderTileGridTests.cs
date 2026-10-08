@@ -248,6 +248,24 @@ public class WorldReaderTileGridTests
 
     [Theory]
     [MemberData(nameof(WindowCrossings))]
+    public void ReadTiles_FieldAcrossReadWindowBoundary_NeverReadsPastTilePointer(CrossingField field, bool shortReads)
+    {
+        var section = WindowBoundaryTileSection.Build(field);
+        var (file, tileStart) = SyntheticTileWorld.Build(section.Width, WindowBoundaryTileSection.Height, section.Bytes);
+        var tiles = new WorldSectionBoundary(tileStart, tileStart + section.Bytes.Length);
+        var frameImportant = Enumerable.Range(0, SyntheticTileWorld.DefaultFrameCount)
+            .Select(id => SyntheticTileWorld.DefaultFrameImportant.Contains(id))
+            .ToArray();
+        using var stream = new ShortReadStream(file, shortReads);
+
+        var grid = new TileSectionReader(stream, tiles, frameImportant).Read(section.Width, WindowBoundaryTileSection.Height);
+
+        Assert.Equal(section.Columns[^1], grid[section.Width - 1, WindowBoundaryTileSection.Height - 1]);
+        Assert.InRange(stream.HighestReadEnd, tileStart + 1, tiles.End);
+    }
+
+    [Theory]
+    [MemberData(nameof(WindowCrossings))]
     public void Read_CrossingFieldCutAtSectionEnd_ThrowsTruncatedRecordWithoutReadingChests(CrossingField field, bool shortReads)
     {
         // pointer[2] falls between the two bytes of the crossing field; its second byte and the rest of the tiles

@@ -50,7 +50,8 @@ Part of the format specification; index and conventions: [../file-format.md](../
     progress would confirm them, show whether sign and entity positions are top-left tiles, which tile id a
     weighted pressure plate has, what adds a town-manager room, and the bestiary key format.
 16. NPC extra-bits byte (section 5): F only has `01`. Is any other bit ever set by the game, and what follows
-    it? Proposed: reject until a source or fixture shows one.
-17. Creative powers (section 10): an id outside 0, 5, 8–14 has no known value size. Proposed: the section fails
-    as unreadable rather than guessing. Do non-Journey worlds ever store anything but the six default entries
+    it? *Decided for the decoders (#165):* any bit other than bit 0 is an error (vector E24) until a source or
+    fixture shows one; whether the game ever sets one is still open.
+17. Creative powers (section 10): an id outside 0, 5, 8–14 has no known value size. *Decided for the decoders
+    (#165):* the section fails as unreadable rather than guessing (vector E22). Do non-Journey worlds ever store anything but the six default entries
     seen in F?
