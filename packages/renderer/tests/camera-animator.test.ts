@@ -166,3 +166,26 @@ test("reset cancels animation and uses the replacement world bounds", () => {
   animator.pan(-1000, 0);
   expect(advance(16).camera.x).toBe(400);
 });
+
+test.each([1, 4])("a drag followed by a no-op zoom factor %s keeps the pending pan", (factor) => {
+  const { animator, advance } = motion({ ...initial, zoom: 16 });
+  animator.beginDrag();
+  animator.drag(-32, 16);
+  animator.zoom(factor, 400, 300);
+  expect(advance(16)).toEqual({ camera: { x: initial.x + 2, y: initial.y - 1, zoom: 16 }, settled: true });
+  expect(animator.current).toEqual(animator.target);
+});
+
+test("held-key pan during eased zoom preserves the zoom target until settled", () => {
+  const { animator, advance } = motion();
+  animator.zoom(2, 400, 300);
+  advance(40);
+  animator.keyPan(-0.384, 0);
+  advance(100);
+  expect(animator.target.zoom).toBe(2);
+  expect(animator.current.zoom).toBeGreaterThan(1);
+  expect(animator.current.zoom).toBeLessThan(2);
+  animator.keyPan(0, 0);
+  expect(advance(2000)).toEqual({ camera: animator.target, settled: true });
+  expect(animator.current.zoom).toBe(2);
+});
