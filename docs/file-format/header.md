@@ -6,6 +6,10 @@ Part of the format specification; index and conventions: [../file-format.md](../
 
 All multi-byte integers are **little-endian**. Offsets are for format version 326.
 
+The original M1 acceptance rules below remain the .NET contract. The TS viewer's independent
+[compatibility PoC](compatibility.md) uses the same header layout for admitted released formats from 269
+onward; its resolver replaces the `version == 326` check while preserving all other header checks.
+
 | Offset | Size | Type | Field | Rule |
 |---|---|---|---|---|
 | 0 | 4 | Int32 | format version | must be 326 in M1 |

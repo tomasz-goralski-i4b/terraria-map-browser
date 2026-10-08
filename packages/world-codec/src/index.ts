@@ -1,6 +1,10 @@
 // The independent codec API; importing it requires no host globals.
 export { ByteReader } from "./byte-reader.js";
 export {
+  resolveWorldFormat, SUPPORTED_VANILLA_FORMATS,
+  type WorldFormatProfile, type WorldMetadataFeature, type WorldMetadataFeatures,
+} from "./world-format.js";
+export {
   isFrameImportant,
   readWorldHeader,
   type SectionBoundary,

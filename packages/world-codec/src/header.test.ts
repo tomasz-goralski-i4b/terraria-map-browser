@@ -211,7 +211,7 @@ describe("readWorldHeader — truncation (vector B)", () => {
 });
 
 describe("readWorldHeader — version, signature, type, section count", () => {
-  it.each([279, 327, 325, 0, -1, 2147483647])("readWorldHeader_UnsupportedVersion_RejectedAtOffset0 (%i)", (version) => {
+  it.each([268, 280, 320, 324, 327, 0, -1, 2147483647])("readWorldHeader_UnsupportedVersion_RejectedAtOffset0 (%i)", (version) => {
     expectFormatError(
       buildHeader({ version }),
       "UnsupportedVersion",
@@ -220,11 +220,11 @@ describe("readWorldHeader — version, signature, type, section count", () => {
     );
   });
 
-  it("readWorldHeader_DocumentedVectorE_UnsupportedVersion279BeforeAnythingElse", () => {
-    expectFormatError(fromHex(HEX_A.replace("46010000", "17010000")).slice(0, 24), "UnsupportedVersion", 0);
+  it("readWorldHeader_DocumentedVectorE_Admitted279RequiresCompleteHeader", () => {
+    expectFormatError(fromHex(HEX_A.replace("46010000", "17010000")).slice(0, 24), "Truncated", 24);
   });
 
-  it.each([279, 327])("readWorldHeader_UnsupportedVersionOnly4Bytes_UnsupportedNotTruncated (%i)", (version) => {
+  it.each([268, 327])("readWorldHeader_UnsupportedVersionOnly4Bytes_UnsupportedNotTruncated (%i)", (version) => {
     expectFormatError(buildHeader({ version, length: 4 }), "UnsupportedVersion", 0);
   });
 
