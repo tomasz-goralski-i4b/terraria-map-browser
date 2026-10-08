@@ -3,6 +3,7 @@ import {
   CameraAnimator, clampCamera, createMapRenderer, fitWorld, terrariaMapPalette, visibleChunks, wheelPixels,
 } from "@studio/renderer";
 import type { Camera, MapRenderer, RenderableWorld, Size } from "@studio/renderer";
+import { registerMapController, useViewStore, type ToolId } from "../shell/view-store.js";
 
 const KEY_PAN_PIXELS_PER_MS = 0.384;
 const KEY_ZOOM_FACTOR = 1.25;
@@ -13,10 +14,10 @@ const PINCH_ZOOM_PER_PIXEL = 0.01;
 const CANVAS_STYLE: React.CSSProperties = {
   position: "absolute", inset: 0, width: "100%", height: "100%", touchAction: "none", cursor: "grab",
 };
+const TOOL_CURSORS: Partial<Record<ToolId, string>> = { inspect: "crosshair" };
 
 // Overlays are positioned inline for the same reason: they must stay above the canvas and clickable.
-const CONTROLS_STYLE: React.CSSProperties = { position: "absolute", top: 8, left: 8, zIndex: 1, display: "flex", gap: 8 };
-const STATUS_STYLE: React.CSSProperties = { position: "absolute", bottom: 0, left: 0, zIndex: 1, margin: 0 };
+const CONTROLS_STYLE: React.CSSProperties = { position: "absolute", top: 8, right: 8, zIndex: 1, display: "flex", gap: 4 };
 
 interface Point {
   readonly x: number;
@@ -44,13 +45,17 @@ interface MapSession {
   hover: Point | null;
 }
 
-/** The canvas that owns the renderer and turns input into camera moves; it draws nothing itself. */
+/**
+ * The canvas that owns the renderer and turns input into camera moves; it draws nothing itself. The tile under the
+ * pointer and the zoom go to the view store for the status bar; the chrome reaches the camera through the registered
+ * map controller.
+ */
 export function MapCanvas({ world }: { readonly world: RenderableWorld }): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sessionRef = useRef<MapSession | null>(null);
   const worldRef = useRef(world);
   const [error, setError] = useState<string | null>(null);
-  const [hoverTile, setHoverTile] = useState<Point | null>(null);
+  const tool = useViewStore((state) => state.tool);
 
   /** Canvas backing-store pixels of a point in CSS pixels relative to the canvas, at the current canvas geometry. */
   const toBacking = useCallback((point: Point): Point => {
@@ -66,12 +71,13 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
     const previous = session.hoverTile;
     if (previous?.x === tile?.x && previous?.y === tile?.y) return;
     session.hoverTile = tile;
-    setHoverTile(tile);
+    useViewStore.getState().setHoverTile(tile);
   }, [toBacking]);
 
   const applyCamera = useCallback((session: MapSession, camera: Camera): void => {
     session.camera = camera;
     session.renderer.setCamera(camera);
+    useViewStore.getState().setZoom(camera.zoom);
     refreshHover(session);
     const canvas = canvasRef.current;
     if (canvas === null) return;
@@ -175,7 +181,35 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
     // observer stays silent; browsers report it as a window resize.
     window.addEventListener("resize", resize);
 
+    const zoomBy = (factor: number): void => {
+      if (session.viewport.width === 0) return;
+      session.keys.clear();
+      session.animator.zoom(factor, session.viewport.width / 2, session.viewport.height / 2);
+      queueCamera(session);
+    };
+    registerMapController({
+      centerOn: (x, y) => {
+        if (session.viewport.width === 0) return;
+        session.keys.clear();
+        session.animator.pan(0, 0); // settles which camera the next pan starts from
+        const { target } = session.animator;
+        session.animator.pan(session.viewport.width / 2 - (x + 0.5 - target.x) * target.zoom,
+          session.viewport.height / 2 - (y + 0.5 - target.y) * target.zoom);
+        queueCamera(session);
+      },
+      fitWorld: () => {
+        zoomBy(fitWorld(session.viewport, session.world).zoom / session.animator.target.zoom);
+      },
+      actualSize: () => {
+        zoomBy(1 / session.animator.target.zoom);
+      },
+      stats: () => renderer.stats(),
+    });
+
     return () => {
+      registerMapController(null);
+      useViewStore.getState().setHoverTile(null);
+      useViewStore.getState().setZoom(null);
       observer.disconnect();
       window.removeEventListener("resize", resize);
       canvas.removeEventListener("wheel", onWheel);
@@ -312,7 +346,8 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
     <>
       <canvas
         ref={canvasRef}
-        style={CANVAS_STYLE}
+        style={{ ...CANVAS_STYLE, cursor: TOOL_CURSORS[tool] ?? CANVAS_STYLE.cursor }}
+        data-tool={tool}
         tabIndex={0}
         aria-label="World map"
         data-map-palette={terrariaMapPalette.gameVersion}
@@ -343,6 +378,8 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
       <div className="map-controls" style={CONTROLS_STYLE}>
         <button
           type="button"
+          className="button button-overlay"
+          aria-keyshortcuts="F"
           onClick={() => {
             withSession((session) => {
               session.keys.clear();
@@ -356,6 +393,8 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
         </button>
         <button
           type="button"
+          className="button button-overlay"
+          aria-keyshortcuts="1"
           onClick={() => {
             withSession((session) => {
               session.keys.clear();
@@ -367,9 +406,6 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
           1:1
         </button>
       </div>
-      <p role="status" className="map-status" style={STATUS_STYLE}>
-        {hoverTile === null ? "—" : `${String(hoverTile.x)}, ${String(hoverTile.y)}`}
-      </p>
     </>
   );
 }

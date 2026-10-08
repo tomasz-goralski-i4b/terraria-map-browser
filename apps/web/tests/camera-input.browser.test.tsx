@@ -4,6 +4,7 @@ import { render } from "vitest-browser-react";
 import { createMapRenderer, screenToTile } from "@studio/renderer";
 import type { Camera, MapRenderer, RenderableWorld } from "@studio/renderer";
 import { MapCanvas } from "../src/components/MapCanvas.js";
+import { StatusBar } from "../src/shell/StatusBar.js";
 
 vi.mock("@studio/renderer", async (original) => {
   const module = await original<typeof import("@studio/renderer")>();
@@ -79,6 +80,7 @@ async function mount(reduce = false) {
   const view = await render(
     <Profiler id="world-map" onRender={() => { commits++; }}>
       <div style={{ position: "relative", width: 400, height: 300 }}><MapCanvas world={world} /></div>
+      <StatusBar world={null} />
     </Profiler>,
   );
   await vi.waitFor(() => { expect(createMapRenderer).toHaveBeenCalled(); });

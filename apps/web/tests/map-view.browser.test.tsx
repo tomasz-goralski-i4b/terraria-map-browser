@@ -4,6 +4,7 @@ import { render } from "vitest-browser-react";
 import { screenToTile, terrariaMapPalette, visibleChunks } from "@studio/renderer";
 import type { Camera, RenderableWorld } from "@studio/renderer";
 import { MapView } from "../src/components/MapView.js";
+import { StatusBar } from "../src/shell/StatusBar.js";
 import { useAppStore } from "../src/store.js";
 import { getDefaultWorldSession } from "../src/world/world-session.js";
 
@@ -45,6 +46,7 @@ async function mountMap(): Promise<void> {
   await render(
     <div style={{ width: viewport.width, height: viewport.height, position: "relative" }}>
       <MapView renderer="@studio/renderer" world={world} />
+      <StatusBar world={null} />
     </div>,
   );
   await vi.waitFor(() => {
@@ -185,13 +187,13 @@ test("Fit world shows the whole world; the status bar shows the tile under the p
   expect(fitted.zoom).toBeCloseTo(Math.max(0.125, Math.min(viewport.width / width, viewport.height / height)), 9);
   pointer("pointermove", 100, 80, 0);
   const tile = screenToTile(fitted, 100, 80);
-  await expect.element(page.getByRole("status")).toMatchTextContent(`${String(Math.floor(tile.x))}, ${String(Math.floor(tile.y))}`);
+  await expect.element(page.getByTestId("cursor-tile")).toMatchTextContent(`${String(Math.floor(tile.x))}, ${String(Math.floor(tile.y))}`);
 
   await actualMap();
   pointer("pointermove", 10, 20, 0);
   const actual = camera();
   const under = screenToTile(actual, 10, 20);
-  await expect.element(page.getByRole("status")).toMatchTextContent(`${String(Math.floor(under.x))}, ${String(Math.floor(under.y))}`);
+  await expect.element(page.getByTestId("cursor-tile")).toMatchTextContent(`${String(Math.floor(under.x))}, ${String(Math.floor(under.y))}`);
 });
 
 test("without WebGL2 the map shows an error message instead of throwing", async () => {
@@ -205,7 +207,7 @@ test("without WebGL2 the map shows an error message instead of throwing", async 
 });
 
 function statusText(): string {
-  return document.querySelector("[role=status]")?.textContent ?? "";
+  return document.querySelector("[data-testid=cursor-tile]")?.textContent ?? "";
 }
 
 function tileText(cam: Camera, x: number, y: number): string {
@@ -300,6 +302,7 @@ test("replacing the world refreshes the status bar for the resting pointer", asy
   const view = await render(
     <div style={{ width: viewport.width, height: viewport.height, position: "relative" }}>
       <MapView renderer="@studio/renderer" world={world} />
+      <StatusBar world={null} />
     </div>,
   );
   await vi.waitFor(() => {
@@ -313,6 +316,7 @@ test("replacing the world refreshes the status bar for the resting pointer", asy
   await view.rerender(
     <div style={{ width: viewport.width, height: viewport.height, position: "relative" }}>
       <MapView renderer="@studio/renderer" world={replacement} />
+      <StatusBar world={null} />
     </div>,
   );
   await vi.waitFor(() => {

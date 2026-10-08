@@ -4,6 +4,9 @@ import { useAppStore, type LoadError } from "../store.js";
 /** Small display facts about the loaded world; the planes and palette themselves stay outside React and the store. */
 export interface WorldSummary {
   readonly name: string;
+  readonly fileName: string;
+  /** Size of the opened file in bytes. */
+  readonly fileSize: number;
   readonly width: number;
   readonly height: number;
   readonly seed: string;
@@ -29,10 +32,12 @@ export interface WorldSession {
   readonly getLoadedWorld: () => WorldTilesResult | null;
 }
 
-function summarize(world: WorldTilesResult): WorldSummary {
+function summarize(world: WorldTilesResult, file: File): WorldSummary {
   const { metadata } = world;
   return {
     name: metadata.name,
+    fileName: file.name,
+    fileSize: file.size,
     width: metadata.width,
     height: metadata.height,
     seed: metadata.seed,
@@ -66,7 +71,7 @@ export function createWorldSession(parser: WorldParser): WorldSession {
       const world = await parser.parse(file, { signal: controller.signal });
       if (current !== controller) return;
       loaded = world;
-      useAppStore.getState().setLoaded(summarize(world));
+      useAppStore.getState().setLoaded(summarize(world, file));
     } catch (error) {
       // A superseded request is settled by the newer open; only the latest one reports.
       if (current !== controller) return;

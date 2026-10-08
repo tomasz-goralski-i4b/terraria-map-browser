@@ -50,7 +50,7 @@ test("the app shell loads offline after the first visit", async () => {
     // Second visit (offline): navigation and assets are answered by the service worker's precache.
     const second = await openApp();
     await waitForOpenButton(second);
-    const connect = second.contentDocument?.querySelector("button[disabled]");
+    const connect = second.contentDocument?.querySelector('.top-actions button[aria-disabled="true"]');
     expect(connect?.textContent).toBe("Connect Terraria assets");
   } finally {
     await commands.setAppOffline(false);
