@@ -994,6 +994,18 @@ touches the network; the Worker reports the number of `fetch` calls it saw (alwa
   with an unchanged fingerprint decodes no `.xnb`; any changed, added or removed sheet rebuilds.
 - **Progress and cancellation:** `scan`, `decode` (one event per sheet), `pack` and `store` events; aborting (also during the cache
   write) rejects with an `AbortError` and removes the uncommitted entry, so no partial cache entry exists.
+- **Connecting the folder (`apps/web/src/assets/asset-session.ts`):** *Connect Terraria assets* opens
+  `showDirectoryPicker` (read). The handle is kept in IndexedDB; on the next visit the atlas is rebuilt (normally a
+  cache hit) without a prompt while permission is still granted, a *reconnect* button is offered when the browser wants
+  to ask again, and a refused or revoked permission silently forgets the folder. `<input webkitdirectory>` (*Select
+  folder*) is the fallback where there is no directory picker, and is also offered next to it: Chrome's picker refuses
+  folders it counts as system folders ("contains system files"), which includes everything under `Program Files`,
+  Steam's default install location. `filesToContentDirectory` reads the files directly inside the picked folder's
+  `Images` folder (or the picked folder itself). That input gives no handle, so only the atlas fingerprint is
+  remembered; the next visit loads the atlas from the cache by fingerprint (Worker `load` request) and forgets it
+  silently when it is no longer cached. A folder with no
+  `Tiles_<id>`/`Wall_<id>` sheet is reported as the wrong folder and forgotten. The Worker transfers the atlas pages
+  to the main thread (on one 1.4.5.8 install: 754 tile and 366 wall sheets on 6 pages of 4096², ~7 s cold).
 - **Missing sheets:** an undecodable file or unreadable file is listed in `missing` (name and reason) and the rest is built. The report is stored with the cache
   entry (`missing.json`) and restored on a cache hit. A scan that could not read every matched file is never cached.
 

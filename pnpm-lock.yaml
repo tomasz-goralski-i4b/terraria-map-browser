@@ -107,6 +107,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@studio/assets':
+        specifier: workspace:*
+        version: link:../../packages/assets
       '@studio/renderer':
         specifier: workspace:*
         version: link:../../packages/renderer

@@ -41,7 +41,8 @@ export interface VisibilityRowProps {
 /** The eye-icon row of layer lists: the eye is a toggle button named after the layer, the label stays readable. */
 export function VisibilityRow({ label, visible, onChange, disabled = false, shortcut, children }: VisibilityRowProps): React.JSX.Element {
   return (
-    <div className="visibility-row" data-visible={visible} aria-disabled={disabled || undefined}>
+    // Only the eye is disabled: trailing controls (e.g. a row menu) stay usable, so the row itself is not aria-disabled.
+    <div className="visibility-row" data-visible={visible} data-disabled={disabled || undefined}>
       <button
         type="button"
         className="icon-button"

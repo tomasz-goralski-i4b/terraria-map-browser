@@ -1,6 +1,8 @@
 import { useMemo } from "react";
 import type { RenderableWorld } from "@studio/renderer";
+import { dismissAssetNotice, useAssetStore } from "../assets/asset-session.js";
 import { useAppStore } from "../store.js";
+import { Icon } from "../ui/Icon.js";
 import { toRenderableWorld } from "../world/renderable-world.js";
 import { getDefaultWorldSession } from "../world/world-session.js";
 import { MapCanvas } from "./MapCanvas.js";
@@ -27,6 +29,7 @@ export function MapView({ renderer, world }: MapViewProps): React.JSX.Element {
   const loadingFileName = useAppStore((state) => state.loadingFileName);
   const summary = useAppStore((state) => state.summary);
   const error = useAppStore((state) => state.error);
+  const assetNotice = useAssetStore((state) => state.notice);
   // A new summary means a newly loaded world; the session is not reactive, the store is.
   const sessionWorld = useMemo(() => (summary === null ? null : loadedRenderableWorld()), [summary]);
   const drawn = world === undefined ? sessionWorld : world;
@@ -62,6 +65,13 @@ export function MapView({ renderer, world }: MapViewProps): React.JSX.Element {
       {phase === "failed" && error !== null && (
         <p role="alert" className="map-message map-message-error" style={MESSAGE_STYLE}>
           Could not open {error.fileName}: {error.code} at offset {error.offset}. {error.message}
+        </p>
+      )}
+      {assetNotice !== null && (
+        <p role="alert" className="map-message map-message-error" style={MESSAGE_STYLE}>
+          <Icon name="warning" />
+          <span>{assetNotice}</span>
+          <button type="button" className="icon-button" aria-label="Dismiss" onClick={dismissAssetNotice}><Icon name="close" /></button>
         </p>
       )}
       {drawn !== null && <MapCanvas world={drawn} />}

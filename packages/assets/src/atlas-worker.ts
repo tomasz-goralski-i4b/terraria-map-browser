@@ -1,6 +1,7 @@
 // Module Worker entry: runs buildSpriteAtlas off the main thread (protocol in atlas-worker-protocol.ts).
 import { buildSpriteAtlas } from "./atlas-build.js";
-import type { CacheDirectory } from "./atlas-cache.js";
+import { loadCachedAtlas, loadCachedMissing, type CacheDirectory } from "./atlas-cache.js";
+import { filesToContentDirectory } from "./content-files.js";
 import type { AtlasWorkerRequest, AtlasWorkerResponse } from "./atlas-worker-protocol.js";
 
 interface WorkerScope {
@@ -20,20 +21,44 @@ scope.fetch = (...args: Parameters<typeof fetch>): ReturnType<typeof fetch> => {
   return realFetch(...args);
 };
 
+async function cacheRoot(cacheName: string): Promise<CacheDirectory> {
+  return (await (await navigator.storage.getDirectory()).getDirectoryHandle(cacheName, { create: true })) as unknown as CacheDirectory;
+}
+
+async function load(request: Extract<AtlasWorkerRequest, { type: "load" }>): Promise<void> {
+  try {
+    const cache = await cacheRoot(request.cacheName);
+    const atlas = await loadCachedAtlas(cache, request.fingerprint);
+    if (atlas === undefined) {
+      scope.postMessage({ type: "notCached" });
+      return;
+    }
+    const missing = await loadCachedMissing(cache, request.fingerprint);
+    const result = { atlas, missing, fromCache: true, fingerprint: request.fingerprint };
+    scope.postMessage({ type: "done", result, networkRequests }, atlas.pages.map((page) => page.buffer));
+  } catch (error) {
+    scope.postMessage({ type: "error", message: error instanceof Error ? error.message : String(error) });
+  }
+}
+
 async function build(request: Extract<AtlasWorkerRequest, { type: "build" }>): Promise<void> {
   const current = new AbortController();
   controller = current;
   networkRequests = 0;
   try {
-    const root = await (await navigator.storage.getDirectory()).getDirectoryHandle(request.cacheName, { create: true });
-    const result = await buildSpriteAtlas(request.contentDir, {
-      cache: root as unknown as CacheDirectory,
+    const root = await cacheRoot(request.cacheName);
+    const contentDir = Array.isArray(request.contentDir)
+      ? filesToContentDirectory(request.contentDir as readonly File[])
+      : (request.contentDir as FileSystemDirectoryHandle);
+    const result = await buildSpriteAtlas(contentDir, {
+      cache: root,
       signal: current.signal,
       onProgress: (progress) => {
         scope.postMessage({ type: "progress", progress });
       },
     });
-    scope.postMessage({ type: "done", result, networkRequests });
+    // Every page owns its buffer (packSheets and the cache allocate one per page), so all of them can be transferred.
+    scope.postMessage({ type: "done", result, networkRequests }, result.atlas.pages.map((page) => page.buffer));
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
       scope.postMessage({ type: "cancelled" });
@@ -47,5 +72,6 @@ async function build(request: Extract<AtlasWorkerRequest, { type: "build" }>): P
 
 scope.onmessage = (event) => {
   if (event.data.type === "cancel") controller?.abort();
+  else if (event.data.type === "load") void load(event.data);
   else void build(event.data);
 };

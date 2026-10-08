@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { RENDERER_PACKAGE } from "@studio/renderer";
+import { getDefaultAssetSession, useAssetStore } from "./assets/asset-session.js";
+import { SpritePreviewDialog } from "./panels/SpritePreviewDialog.js";
 import { MapView } from "./components/MapView.js";
 import { useCommands, useGlobalShortcuts } from "./shell/commands.js";
 import { CommandPalette, HelpOverlay } from "./shell/dialogs.js";
@@ -9,7 +11,18 @@ import { StatusBar } from "./shell/StatusBar.js";
 import { ToolOptions } from "./shell/ToolOptions.js";
 import { ToolRail } from "./shell/ToolRail.js";
 import { TopBar } from "./shell/TopBar.js";
+import { useViewStore } from "./shell/view-store.js";
 import { resetDefaultWorldSession } from "./world/world-session.js";
+
+/** The sprite-sheet preview, while it is open and an atlas is loaded. */
+function SpritePreview(): React.JSX.Element | null {
+  const open = useViewStore((state) => state.spritePreviewOpen);
+  const setOpen = useViewStore((state) => state.setSpritePreviewOpen);
+  const ready = useAssetStore((state) => state.status.kind === "ready");
+  const atlas = ready ? getDefaultAssetSession().getAtlas() : null;
+  if (!open || atlas === null) return null;
+  return <SpritePreviewDialog atlas={atlas} onClose={() => { setOpen(false); }} />;
+}
 
 /** The theme choice applies to the document root, so tokens resolve the same in dialogs and the page. */
 function useTheme(): void {
@@ -37,6 +50,10 @@ export function App({ layoutStorage }: AppProps = {}): React.JSX.Element {
   useEffect(() => {
     resetDefaultWorldSession();
   }, []);
+  // The Content folder of an earlier visit is reconnected without a prompt where the browser still allows it.
+  useEffect(() => {
+    void getDefaultAssetSession().restore();
+  }, []);
   useTheme();
   const commands = useCommands();
   useGlobalShortcuts(commands);
@@ -53,6 +70,7 @@ export function App({ layoutStorage }: AppProps = {}): React.JSX.Element {
       <StatusBar />
       <HelpOverlay commands={commands} />
       <CommandPalette commands={commands} />
+      <SpritePreview />
     </div>
   );
 }

@@ -12,6 +12,7 @@
     "test:browser": "pnpm --dir ../.. exec vitest run --project @studio/web/browser"
   },
   "dependencies": {
+    "@studio/assets": "workspace:*",
     "@studio/renderer": "workspace:*",
     "@studio/world-codec": "workspace:*",
     "@studio/world-model": "workspace:*",
