@@ -9,6 +9,35 @@ namespace Terraria.WorldCodec.Tests;
 public sealed partial class FramingWorldGeneratorTests
 {
     [Fact]
+    public void Layout_DefaultCatalogue_UsesCompactSeparatedRows()
+    {
+        var plan = FramingWorldGenerator.Plan(4200, 1200, FramingCatalogue.Load());
+        Assert.InRange(plan.ClearedStrip.Width, 1, 400);
+        Assert.InRange(plan.ClearedStrip.Height, 1, 30);
+        Assert.True(plan.Cases.Where(entry => entry.Section == "Map options").Select(entry => entry.Y).Distinct().Count() > 1);
+        Assert.True(plan.Cases.Where(entry => entry.Section == "Blocks").Select(entry => entry.Y).Distinct().Count() > 1);
+        AssertClearance(plan);
+    }
+
+    [Fact]
+    public void Catalogue_AdditionalObservations_CoverCoralstoneCornerPriorityAndShapedNeighbours()
+    {
+        var catalogue = FramingCatalogue.Load();
+        Assert.Contains(catalogue.Cases, entry => entry.Id == "Coralstone-dirt-pocket" && entry.Legend['#'].Block == new VanillaContentRef(315));
+        Assert.Contains(catalogue.Cases, entry => entry.Id == "Corner-stone-four-holes");
+        Assert.Contains(catalogue.Cases, entry => entry.Id == "Moss-three-stone-sides");
+        for (var shape = 1; shape <= 5; shape++)
+        {
+            foreach (var side in new[] { "north", "east", "south", "west" })
+            {
+                var entry = Assert.Single(catalogue.Cases, entry => entry.Id == $"Neighbour-shape{shape}-{side}");
+                Assert.Equal((BlockShape)shape, entry.Legend['s'].Shape);
+                Assert.Equal(BlockShape.Full, entry.Legend['#'].Shape);
+            }
+        }
+    }
+
+    [Fact]
     public void Catalogue_CoversTheDocumentedFramingObservations()
     {
         var catalogue = FramingCatalogue.Load();
