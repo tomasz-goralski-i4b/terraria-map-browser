@@ -52,8 +52,8 @@ function rows(): [string, string][] {
 
 test.each([
   [0, 0, [
-    ["Position", "0, 0"], ["Block", "Block 1 (vanilla:1)"], ["Wall", "Wall 2 (vanilla:2)"], ["Frame X", "18"], ["Frame Y", "36"],
-    ["Shape", "Half block"], ["Block paint", "3"], ["Wall paint", "4"], ["Liquid", "None"], ["Liquid amount", "None"],
+    ["Position", "0, 0"], ["Block", "Stone Block (vanilla:1)"], ["Wall", "Natural Dirt Wall (vanilla:2)"], ["Frame X", "18"], ["Frame Y", "36"],
+    ["Shape", "Half block"], ["Block paint", "Yellow Paint (3)"], ["Wall paint", "Lime Paint (4)"], ["Liquid", "None"], ["Liquid amount", "None"],
     ["Wires", "Red, Green"], ["Actuator", "Yes"], ["Inactive", "Yes"], ["Invisible block", "No"], ["Invisible wall", "No"],
     ["Full-bright block", "No"], ["Full-bright wall", "No"],
   ]],
@@ -64,13 +64,13 @@ test.each([
     ["Full-bright wall", "No"],
   ]],
   [1, 0, [
-    ["Position", "1, 0"], ["Block", "None"], ["Wall", "Unknown wall 900 (unknown:900)"], ["Frame X", "None"], ["Frame Y", "None"],
+    ["Position", "1, 0"], ["Block", "None"], ["Wall", "unknown:900 (unknown:900)"], ["Frame X", "None"], ["Frame Y", "None"],
     ["Shape", "None"], ["Block paint", "None"], ["Wall paint", "None"], ["Liquid", "Lava"], ["Liquid amount", "255"],
     ["Wires", "Yellow"], ["Actuator", "No"], ["Inactive", "No"], ["Invisible block", "No"], ["Invisible wall", "Yes"],
     ["Full-bright block", "No"], ["Full-bright wall", "Yes"],
   ]],
   [2, 2, [
-    ["Position", "2, 2"], ["Block", "Block 5 (vanilla:5)"], ["Wall", "None"], ["Frame X", "None"], ["Frame Y", "None"],
+    ["Position", "2, 2"], ["Block", "Tree (vanilla:5)"], ["Wall", "None"], ["Frame X", "None"], ["Frame Y", "None"],
     ["Shape", "Slope, bottom left"], ["Block paint", "None"], ["Wall paint", "None"], ["Liquid", "None"], ["Liquid amount", "None"],
     ["Wires", "None"], ["Actuator", "No"], ["Inactive", "No"], ["Invisible block", "Yes"], ["Invisible wall", "No"],
     ["Full-bright block", "Yes"], ["Full-bright wall", "No"],
@@ -101,6 +101,18 @@ test("hovering previews a tile until one is pinned, and Unpin returns to the pre
   await expect.poll(() => rows()[0]).toEqual(["Position", "2, 2"]);
   await page.getByRole("button", { name: "Unpin tile" }).click();
   await expect.poll(() => rows()[0]).toEqual(["Position", "0, 1"]);
+});
+
+test("the Inspector names the frame-selected altar and its paint", async () => {
+  const world = createWorld(4, 3);
+  world.setTile(2, 1, {
+    block: { kind: "vanilla", id: 26 }, frameX: 54, frameY: 0, paint: 19,
+    wires: 0, actuator: false,
+  });
+  await render(<InspectorPanel world={inspectorWorld(world)} />);
+  useViewStore.getState().setPinnedTile({ x: 2, y: 1 });
+  await expect.poll(rows).toContainEqual(["Block", "Crimson Altar (vanilla:26)"]);
+  expect(rows()).toContainEqual(["Block paint", "Deep Cyan Paint (19)"]);
 });
 
 // ---------- Clicking the map with the Inspect tool ----------

@@ -5,6 +5,18 @@ export type Rgba = readonly [number, number, number, number];
 /** A map colour as 0xRRGGBB. */
 export type MapColor = number;
 
+/** English legend names, with unambiguous placement-item names for unnamed content (ADR 0002). */
+export interface MapContentNames {
+  readonly gameVersion: string;
+  /** Indexed like MapPalette tiles/walls: content ID, then map option; empty strings mean unnamed. */
+  readonly tiles: readonly (readonly string[])[];
+  readonly walls: readonly (readonly string[])[];
+  /** Water, lava, honey, shimmer, resolved from the game's English localization. */
+  readonly liquids: readonly [string, string, string, string];
+  /** Indexed by paint ID like MapPalette.paints; zero and obsolete/unnamed paint IDs have empty strings. */
+  readonly paints: readonly string[];
+}
+
 /** Colours of empty space by depth. */
 export interface MapBackground {
   /** Gradient from the top of the world (entry 0) down to the surface (entry 255). */

@@ -6,7 +6,7 @@ import { useAppStore } from "../store.js";
 import { IconButton } from "../ui/IconButton.js";
 import { PropertyGrid, type Property } from "../ui/PropertyGrid.js";
 import { canonicalWorldOf } from "../world/canonical-world.js";
-import { contentKey, contentName } from "../world/content-names.js";
+import { contentKey, contentName, paintName } from "../world/content-names.js";
 import { getDefaultWorldSession } from "../world/world-session.js";
 
 /** What the Inspector reads of a world: its size and the `tileAt` view (docs/cwm.md). */
@@ -31,6 +31,7 @@ const SHAPE_NAMES: Readonly<Record<NonNullable<Tile["shape"]>, string>> = {
 };
 
 const optionalNumber = (value: number | undefined): string => (value === undefined ? NONE : String(value));
+const optionalPaint = (value: number | undefined): string => (value === undefined ? NONE : `${paintName(value)} (${String(value)})`);
 
 /**
  * The fields of the tile's `tileAt` view. With `showAll`, every field in fixed rows (absent parts read "None", false
@@ -42,13 +43,13 @@ export function tileProperties(point: TilePoint, tile: Tile, showAll = true): Pr
   const flag = (label: string, value: boolean | undefined): Property => ({ kind: "flag", label, value: value ?? false });
   const all: Property[] = [
     { kind: "text", label: "Position", value: `${String(point.x)}, ${String(point.y)}` },
-    { kind: "text", label: "Block", value: tile.block === undefined ? NONE : `${contentName(tile.block, "block")} (${contentKey(tile.block)})` },
+    { kind: "text", label: "Block", value: tile.block === undefined ? NONE : `${contentName(tile.block, "block", tile)} (${contentKey(tile.block)})` },
     { kind: "text", label: "Wall", value: tile.wall === undefined ? NONE : `${contentName(tile.wall, "wall")} (${contentKey(tile.wall)})` },
     { kind: "text", label: "Frame X", value: optionalNumber(tile.frameX) },
     { kind: "text", label: "Frame Y", value: optionalNumber(tile.frameY) },
     { kind: "text", label: "Shape", value: tile.shape === undefined ? NONE : SHAPE_NAMES[tile.shape] },
-    { kind: "text", label: "Block paint", value: optionalNumber(tile.paint) },
-    { kind: "text", label: "Wall paint", value: optionalNumber(tile.wallPaint) },
+    { kind: "text", label: "Block paint", value: optionalPaint(tile.paint) },
+    { kind: "text", label: "Wall paint", value: optionalPaint(tile.wallPaint) },
     { kind: "text", label: "Liquid", value: tile.liquid === undefined ? NONE : tile.liquid.kind.charAt(0).toUpperCase() + tile.liquid.kind.slice(1) },
     { kind: "text", label: "Liquid amount", value: tile.liquid === undefined ? NONE : String(tile.liquid.amount) },
     { kind: "text", label: "Wires", value: wires.length === 0 ? NONE : wires.join(", ") },
