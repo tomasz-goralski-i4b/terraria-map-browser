@@ -47,6 +47,8 @@ describe("world Worker", () => {
     expect(actual.details.generation.lastPlayed === undefined).toBe(version === 279);
     expect(actual.details.generation.specialSeeds.moreLightning === undefined).toBe(version !== 326);
     expect(structuredClone(actual.details)).toEqual(expected);
+    expect(actual.entities).toEqual(readWorldTiles(bytes).entities);
+    expect(actual.entities.Chests.boundary).toBeDefined();
   });
 
   it.each([279, 315, 325])("parse_File_ResolvesVanillaFormat%iInsideTheWorker", async (version) => {
@@ -145,6 +147,8 @@ describe("world Worker", () => {
     const { planes: expectedPlanes, palette: expectedPalette, ...expectedRest } = expected;
     const { planes: actualPlanes, palette: actualPalette, ...actualRest } = actual;
     expect(actualRest).toEqual(expectedRest);
+    expect(expected.entities.Chests.data?.entries).toHaveLength(190);
+    expect(actual.entities.Chests.data?.entries).toHaveLength(190);
     expect(actualPalette).toEqual(expectedPalette);
     const names = Object.keys(expectedPlanes) as (keyof typeof expectedPlanes)[];
     expect(names).toHaveLength(10);

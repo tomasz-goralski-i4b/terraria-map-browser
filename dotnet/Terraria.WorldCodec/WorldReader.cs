@@ -33,7 +33,7 @@ public static class WorldReader
     /// <summary>Implementation safety limit for width · height.</summary>
     public const long MaxWorldTileCount = 1L << 28;
 
-    /// <summary>Reads the header, metadata and tile section (docs/file-format.md); later sections are skipped.</summary>
+    /// <summary>Reads the header, metadata, tiles and independent read-only entity sections (docs/file-format.md).</summary>
     /// <remarks>Requires a readable, seekable stream.</remarks>
     /// <exception cref="ArgumentException">The stream is not readable or seekable.</exception>
     /// <exception cref="WorldFormatException">The file violates the format contract.</exception>
@@ -61,7 +61,9 @@ public static class WorldReader
             new(nameof(WorldSectionTable.CreativePowers), table.CreativePowers),
             new(nameof(WorldSectionTable.Footer), table.Footer),
         ];
-        return (new World(header, metadata, tiles, skipped), table);
+        var entities = EntitySectionReader.ReadAll(stream, table, header.Version);
+        stream.Position = table.Tiles.End;
+        return (new World(header, metadata, tiles, skipped) { Entities = entities }, table);
     }
 
     /// <summary>Reads a world for saving: <see cref="Read"/> plus every unmodelled source byte (docs/file-format/writer.md).</summary>

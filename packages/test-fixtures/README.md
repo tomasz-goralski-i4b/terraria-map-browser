@@ -2,6 +2,60 @@
 
 Explicitly generated worlds used by the codec tests (.NET and TS).
 
+## Synthetic Large benchmark workloads (#54)
+
+`synthetic/generator.ts` independently emits format **326** from the local header, metadata and tile
+specifications. It does not import a production writer, game assets, player worlds or third-party tables.
+These are parser workloads, **not a claim of in-game compatibility or Terraria generation fidelity**.
+The synthetic frame-important bitmap only marks ids 4 and 300; all other entries are clear.
+Metadata has fixed dates (2026-01-01 UTC), classic/corruption settings, deterministic identity, empty
+lists and a `{}` manifest. Sections 3–10 contain correctly structured empty counts/terminators and
+the footer matches the metadata name and id. No corpus file or manifest entry is changed.
+
+From the repository root after `bash scripts/build.sh`:
+
+```bash
+# Unit loop: all planes/palette at 130 by 129, both 128-cell chunk edges, seed/hash and RLE boundaries.
+pnpm vitest run packages/world-codec/tests/synthetic-large.test.ts
+
+# Opt-in full Large smoke; excluded from regular Vitest/CI unit loops.
+node packages/test-fixtures/dist/synthetic/cli.js smoke mixed 20261008
+
+# Keep a generated Large world in the OS temporary directory for an external benchmark.
+node packages/test-fixtures/dist/synthetic/cli.js generate mixed 20261008
+# Optional downscaled output: generate dense 20261008 130 129
+```
+
+`smoke` generates two **8400 by 2400** worlds, compares their SHA-256 hashes, parses one with the independent
+TS reader, verifies all ten planes at every one of **20,160,000 coordinates**, checks liquid counts and
+empty entity sections, and removes both temporary files in `finally`. Its JSON reports binary bytes,
+SHA-256, plane bytes and generation/parse timings. Timings are measurements of that run, not thresholds.
+`generate` prints the retained temporary path and hash; the benchmark caller removes it when finished.
+No Large `.wld` or CWM output belongs in Git. The streaming file API uses exclusive creation and a
+reused **64 KiB buffer**, never a per-tile object grid. The small in-memory API retains binary chunks
+and joins them; prefer streaming for Large workloads. Only smoke decoding allocates a full CWM.
+
+The documented seed **20261008** is an integer in `0…4294967295` (UInt32), not a random default.
+Width/height default to 8400/2400; positive integer dimensions must meet the codec safety limits and
+the generated file must fit signed Int32 pointers. Profiles (default `mixed`):
+
+| Profile | Coordinate rules |
+|---|---|
+| `sky-stone` | Every column has empty sky of `min(height, floor(height/3) + seed%3)` cells, then stone (id 1). Both ranges use RLE, split at 32768 cells per record, and restart per column. |
+| `dense` | Every cell is a distinct framed record using the equations below; no RLE. |
+| `mixed` | Even x columns use sky/stone RLE; odd x columns use dense records. |
+
+For a dense coordinate define `p = (seed + 17*x + 31*y) modulo 2^32`. The block id is 4 for even p,
+300 for odd p; the wall id is 300 (both block and wall share a ContentRef palette entry for id 300).
+Frame x/y are `18*(x%32)` / `18*(y%16)`. Block paint is `1+p%30`, wall paint `1+(p>>>5)%30`;
+shape is `p%6`. Liquid kind is `1+p%4` (water, lava, honey, shimmer), amount `1+p%255`.
+The low four p bits encode red/blue/green/yellow wires, bits 4/5 actuator/inactive.
+Coating mask `1+p%15` encodes invisible block/wall and full-bright block/wall in that order.
+Thus expected CWM flags are `(p&63) | ((1+p%15)<<6)`. IDs, paints and flags are workload choices
+derived from these equations, not imported game lookup tables. Repeating the seed/profile/dimensions
+repeats bytes; changing the seed changes tile payloads. The unit oracle calculates planes directly
+from these equations without calling generator helpers or deriving expectations from codec output.
+
 ## Rules
 - Only worlds generated specifically for tests — never player worlds, game assets or files from commercial mods.
 - Every `worlds/*.wld` has an entry in `worlds/manifest.json`, and every entry has a file.

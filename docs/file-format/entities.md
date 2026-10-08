@@ -25,8 +25,14 @@ whose layout is unknown makes the rest of its section unreadable.
 | 9 | `pointer[9]` | bestiary | 210 | 3 × Int32 | 12 |
 | 10 | `pointer[10]` | creative (Journey) powers | 220 | Bool-terminated list | 1 |
 
-Every gate in this part is below 326, so for format 326 **every field described below is present**. Gates are
-listed so that a later widening of the supported range (open question 1) knows where the layouts differ.
+Every gate in this part is below 326, so for format 326 **every field described below is present**. The
+decoders also read the older formats whose tiles they read (269–279, 315–319, 325); the four gates inside that
+range — 294, 307, 308 and 315 — are listed in [compatibility.md](compatibility.md) ("Other sections and older
+families") and covered by vectors E34–E44. Before 294 the chest count is followed by one Int16 slot count for
+all chests, so the minimum chest record is `9 + 2 × slots` bytes. An empty list still carries the slot count
+(`00 00 28 00` = no chests, 40 slots); a negative slot count is an error, and `count × (9 + 2 × slots)` must fit
+before the end pointer (error at the chest count). Format 311 (display-doll item slot 8 after
+the misc slot) is not a readable format and is rejected.
 
 ## Corpus evidence
 
@@ -87,12 +93,14 @@ These apply to every section in this part and mirror the metadata rules, so that
 .NET's lenient behaviour:
 - A Bool byte other than `00`/`01` is an error.
 - Strings are the length-prefixed UTF-8 strings of "Primitive types"; invalid UTF-8 or a length that does not
-  fit before the section's end pointer is an error. Proposed cap: 1048576 UTF-8 bytes per string (as for
-  metadata strings other than name and seed), checked before allocating.
+  fit before the section's end pointer is an error. Decided (#165): a cap of 1048576 UTF-8 bytes per string (as
+  for metadata strings other than name and seed), checked before allocating; both codecs enforce it, but no
+  shared vector covers it because it needs a section larger than 1 MiB.
 - A count is checked before allocating: negative is an error, and `count × minimum record size` must fit in
   the bytes left before the section's end pointer (minimum record sizes are given per section).
 - Reading past the section's end pointer, or stopping before it, is an error for that section.
-- A failure is reported as `MalformedSection { section, field, offset, reason }` (proposed name). Because the
+- A failure is reported as `MalformedSection { section, field, offset, reason }` (decided in #165; both codecs
+  and the shared vectors in `contracts/vectors/entities.vectors.json` use this name). Because the
   sections are independent and addressed by pointers, a failure in one section **does not** affect the tiles,
   the metadata or the other sections; the Entities panel shows that section as unreadable.
 
@@ -121,7 +129,7 @@ Limits and relations:
 - Before format 216 TEdit's writer caps the count at 1000 (T30). The format itself only limits it to Int16.
 - Chest tiles per TEdit: 21, 88, 441, 467, 468 (T36). TEdit keeps a chest whose tile is not a chest (its filter
   is commented out, T28); the decoder keeps it too (see "Proposed read-only model").
-- A negative stack is not produced by the game in F; TEdit treats it as an empty slot. Proposed: error.
+- A negative stack is not produced by the game in F; TEdit treats it as an empty slot. Decided (#165): error at the stack field (vector E29).
 
 ## Section 4 — Signs
 
@@ -168,7 +176,8 @@ saved once) the Guide stands about ten tiles from it, and positions are no longe
 
 Relations: the home is a tile coordinate; the position is free-floating and only approximately on a tile.
 TEdit's writer always sets bit 0 and writes the variation index (T32). An extra-bits byte with a bit other than
-bit 0 set is not covered by any source; proposed: error (open question 16).
+bit 0 set is not covered by any source; decided (#165): error at the extra-bits field (vector E24, open
+question 16).
 
 ## Section 6 — Tile entities
 
@@ -267,7 +276,7 @@ Corpus facts (F): **all five worlds, including the non-Journey ones**, store the
 10, 12, 13 with values false, 0.0, false, false, 0.0, false (31 bytes). The section is not Journey-only.
 
 An id outside the table has no known value size and cannot be skipped (TEdit reads no value for it and loses
-its position, T40). Proposed: error for the section (open question 17).
+its position, T40). Decided (#165): error for the section at the power-id field (vector E22, open question 17).
 
 ## Proposed read-only model
 

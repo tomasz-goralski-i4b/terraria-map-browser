@@ -50,7 +50,14 @@ Part of the format specification; index and conventions: [../file-format.md](../
     progress would confirm them, show whether sign and entity positions are top-left tiles, which tile id a
     weighted pressure plate has, what adds a town-manager room, and the bestiary key format.
 16. NPC extra-bits byte (section 5): F only has `01`. Is any other bit ever set by the game, and what follows
-    it? Proposed: reject until a source or fixture shows one.
-17. Creative powers (section 10): an id outside 0, 5, 8–14 has no known value size. Proposed: the section fails
-    as unreadable rather than guessing. Do non-Journey worlds ever store anything but the six default entries
-    seen in F?
+    it? *Decided for the decoders (#165):* any bit other than bit 0 is an error (vector E24) until a source or
+    fixture shows one; whether the game ever sets one is still open.
+17. Creative powers (section 10): an id outside 0, 5, 8–14 has no known value size. *Decided for the decoders
+    (#165):* the section fails as unreadable rather than guessing (vector E22). Do non-Journey worlds ever
+    store anything but the six default entries seen in F?
+18. Entity layouts below 326: the gates 294, 307, 308 and 315 come from TEdit (T29/T32/T34) and are tested on
+    synthetic vectors only. The decoders accept tile-entity kinds 0–10 and the same creative-power ids in every
+    readable format, although kinds 8–10 belong to tiles above the 1.4.4 tile range (698, 723, 724 > 692). A
+    1.4.4 world (format 279) with chests, a display doll and town NPCs would confirm the older layout. No
+    readable format lies between 279 and 315, so the vectors only distinguish "all four gates off" (279) from
+    "all on" (315+); they are no evidence for the individual thresholds 294, 307 and 308.

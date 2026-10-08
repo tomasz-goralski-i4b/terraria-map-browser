@@ -245,24 +245,29 @@ Every view of a tile agrees with the writer about "no paint", so round-trip comp
 
 ## From the entity sections spike (#153)
 
-The drafts below follow [../file-format/entities.md](../file-format/entities.md). Suggested order: the TS decoder
-first (it unblocks the panel), the .NET reference decoder in parallel (separate area), then the entity test world
-(generator, then the human check in game).
+The drafts below follow [../file-format/entities.md](../file-format/entities.md). The .NET decoder (#165) and
+the previously unfiled TS decoder are implemented together under #165, with independent parsers and shared
+entity vectors. The TS implementation follows the .NET implementation in a separate commit. Next come the
+Entities panel and the entity test world (#166), followed by the human check in game (#167).
 
 ```markdown
-**Status:** not filed.
+**Status:** implemented with #165; pending review and merge. No separate TS issue was filed.
 
 ## Goal
 The TS codec decodes sections 3–10 of a 1.4.5.8 world read-only, so the viewer can list chests, signs, NPCs and
 other entities.
 
 ## Scope
-- `readWorldEntities` (name open) in packages/world-codec: from the section table, decode sections 3–10 exactly as
+- `readWorldEntities` in packages/world-codec: from the section table, decode sections 3–10 exactly as
   in docs/file-format/entities.md ("Decoding rules", sections 3–10) and return the fields of "Proposed read-only
   model"; consumed-only fields are parsed and dropped.
 - Each section succeeds or fails on its own: a failure is `MalformedSection { section, field, offset, reason }`
   and does not affect tiles, metadata or the other sections.
 - Run it in the world Worker after the tiles; the result is plain data (no per-tile objects).
+- `readWorldTiles` returns `entities` for every readable format (269–279, 315–319, 325–326) in that format's
+  layout, so the existing Worker protocol transfers the same section results to the viewer.
+- Shared `entities.vectors.json` inputs run directly against the independent .NET and TS parsers; their
+  schema is `entities-vector.v1.schema.json`. Every result or error field is compared, including absolute offsets.
 
 ## Out of scope
 - Editing or writing these sections; item/NPC/tile display names; versions other than 326; mods.
@@ -297,6 +302,8 @@ other entities.
 The viewer lists a world's chests, signs, NPCs and tile entities, and jumps the map to the one the user picks.
 
 ## Scope
+- Consume the format-326 `WorldTilesResult.entities` section results supplied by the Worker (#165). For
+  older formats without `entities`, show that entity decoding is unavailable rather than inventing empty lists.
 - An Entities panel in apps/web with one group per section (chests, signs, town NPCs, mobs, tile entities,
   pressure plates, rooms), showing ids (no display names), position and the main fields of
   docs/file-format/entities.md ("Proposed read-only model"); bestiary counts and creative powers as a summary.
@@ -328,7 +335,7 @@ The viewer lists a world's chests, signs, NPCs and tile entities, and jumps the 
 ```
 
 ```markdown
-**Status:** filed (#165).
+**Status:** implemented (#165), including the previously unfiled TS decoder above; pending review and merge.
 
 ## Goal
 The reference .NET codec decodes sections 3–10 read-only, and both codecs agree on shared vectors.

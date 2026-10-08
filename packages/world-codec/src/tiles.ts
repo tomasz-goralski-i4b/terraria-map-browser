@@ -2,6 +2,7 @@ import { isFrameImportant, type WorldSectionTable } from "./header.js";
 import { readWorldMetadata, type WorldMetadataResult } from "./metadata.js";
 import { WorldFormatError } from "./world-format-error.js";
 import { requireWorldFormat, type WorldFormatProfile } from "./world-format.js";
+import { readWorldEntities, type WorldEntities } from "./entities.js";
 
 /** A stable reference to world content as stored in the CWM palette (vanilla or unknown ids in this section). */
 export type TileContentRef =
@@ -24,6 +25,8 @@ export interface TilePlanes {
 
 /** Header, metadata and the decoded tile section as CWM planes plus the first-appearance palette. */
 export interface WorldTilesResult extends WorldMetadataResult {
+  /** Read-only sections 3–10 in the layout of the world's format; individual failures remain local. */
+  readonly entities: WorldEntities;
   readonly planes: TilePlanes;
   readonly palette: readonly TileContentRef[];
 }
@@ -248,5 +251,5 @@ export function readWorldTiles(bytes: Uint8Array): WorldTilesResult {
   const profile = requireWorldFormat(world.header.version);
   const decoder = new TileDecoder(bytes, world.sections, width, height, profile);
   decoder.decode();
-  return { ...world, planes: decoder.planes, palette: decoder.palette.entries };
+  return { ...world, planes: decoder.planes, palette: decoder.palette.entries, entities: readWorldEntities(bytes, world) };
 }

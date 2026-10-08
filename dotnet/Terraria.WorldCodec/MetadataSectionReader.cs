@@ -10,7 +10,8 @@ namespace Terraria.WorldCodec;
 /// requested field, so a string payload is never consumed before its length prefix has been validated, and memory
 /// and I/O follow the fields actually consumed, not the declared section length.
 /// </summary>
-internal sealed class MetadataSectionReader(Stream stream, WorldSectionBoundary section)
+internal sealed class MetadataSectionReader(Stream stream, WorldSectionBoundary section,
+    string sectionName = "Metadata", WorldFormatError errorKind = WorldFormatError.MalformedMetadata)
 {
     /// <summary>Safety cap for the world name and seed strings (docs/file-format/metadata.md).</summary>
     public const int MaxNameOrSeedBytes = 4096;
@@ -37,6 +38,9 @@ internal sealed class MetadataSectionReader(Stream stream, WorldSectionBoundary 
     public static WorldFormatException Error(long offset, string reason, string? field = null) =>
         new(WorldFormatError.MalformedMetadata, offset, reason, SectionName, field);
 
+    private WorldFormatException Fail(long offset, string reason, string? field = null) =>
+        new(errorKind, offset, reason, sectionName, field);
+
     public void Skip(int length, string? field = null)
     {
         EnsureAvailable(length, field);
@@ -51,6 +55,8 @@ internal sealed class MetadataSectionReader(Stream stream, WorldSectionBoundary 
 
     public int Int32(string? field = null) => BinaryPrimitives.ReadInt32LittleEndian(Take(sizeof(int), field));
 
+    public float Single(string? field = null) => BinaryPrimitives.ReadSingleLittleEndian(Take(sizeof(float), field));
+
     public ReadOnlySpan<byte> Bytes(int length, string? field = null) => Take(length, field);
 
     /// <summary>Strict Bool: only <c>00</c> and <c>01</c> are accepted.</summary>
@@ -61,7 +67,7 @@ internal sealed class MetadataSectionReader(Stream stream, WorldSectionBoundary 
         {
             0 => false,
             1 => true,
-            _ => throw Error(start, "invalid boolean", field),
+            _ => throw Fail(start, "invalid boolean", field),
         };
     }
 
@@ -85,18 +91,18 @@ internal sealed class MetadataSectionReader(Stream stream, WorldSectionBoundary 
         {
             if (index == MaxLengthPrefixBytes)
             {
-                throw Error(start, "string length prefix longer than 5 bytes", field);
+                throw Fail(start, "string length prefix longer than 5 bytes", field);
             }
 
             if (Remaining == 0)
             {
-                throw Error(start, "overruns section", field);
+                throw Fail(start, "overruns section", field);
             }
 
             var current = UInt8(field);
             if (index == MaxLengthPrefixBytes - 1 && (current & 0x80) == 0 && current > 0x0F)
             {
-                throw Error(start, "string length prefix exceeds 32 bits", field);
+                throw Fail(start, "string length prefix exceeds 32 bits", field);
             }
 
             length |= (uint)(current & 0x7F) << (7 * index);
@@ -108,12 +114,12 @@ internal sealed class MetadataSectionReader(Stream stream, WorldSectionBoundary 
 
         if (length > int.MaxValue || length > Remaining)
         {
-            throw Error(start, "string length overruns section", field);
+            throw Fail(start, "string length overruns section", field);
         }
 
         if (length > maxBytes)
         {
-            throw Error(start, "string length exceeds safety limit", field);
+            throw Fail(start, "string length exceeds safety limit", field);
         }
 
         try
@@ -122,7 +128,7 @@ internal sealed class MetadataSectionReader(Stream stream, WorldSectionBoundary 
         }
         catch (DecoderFallbackException)
         {
-            throw Error(start, "invalid UTF-8", field);
+            throw Fail(start, "invalid UTF-8", field);
         }
     }
 
@@ -141,7 +147,7 @@ internal sealed class MetadataSectionReader(Stream stream, WorldSectionBoundary 
         };
         if (count < 0 || count * minElementSize > Remaining)
         {
-            throw Error(countStart, "list count is negative or does not fit in the section", field);
+            throw Fail(countStart, "list count is negative or does not fit in the section", field);
         }
 
         return (int)count;
@@ -178,7 +184,7 @@ internal sealed class MetadataSectionReader(Stream stream, WorldSectionBoundary 
     {
         if (length > Remaining)
         {
-            throw Error(AbsolutePosition, "overruns section", field);
+            throw Fail(AbsolutePosition, "overruns section", field);
         }
     }
 }
