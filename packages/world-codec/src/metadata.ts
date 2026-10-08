@@ -37,7 +37,7 @@ export interface WorldMetadataResult extends WorldHeader {
 }
 
 /** A cursor bounded by the metadata section, never by the whole file. */
-class MetadataReader {
+export class MetadataReader {
   private readonly reader: ByteReader;
   private readonly bytes: Uint8Array;
   private readonly end: number;
@@ -67,6 +67,23 @@ class MetadataReader {
     return this.reader.readInt32(start);
   }
 
+  long(): bigint {
+    const start = this.offset;
+    this.skip(8);
+    return this.reader.readUint64(start);
+  }
+
+  float(size: 4 | 8 = 8): number {
+    const start = this.offset;
+    this.skip(size);
+    const view = new DataView(this.bytes.buffer, this.bytes.byteOffset + start, size);
+    return size === 4 ? view.getFloat32(0, true) : view.getFloat64(0, true);
+  }
+
+  ints(count: number, size = 4): number[] {
+    return Array.from({ length: count }, () => this.int(size));
+  }
+
   /** A Double that must be finite: layer levels are used as coordinates. */
   level(field: string): number {
     const start = this.offset;
@@ -81,10 +98,6 @@ class MetadataReader {
     const value = this.int(1);
     if (value > 1) this.fail(start, "invalid boolean");
     return value === 1;
-  }
-
-  bools(count: number): void {
-    for (let index = 0; index < count; index++) this.bool();
   }
 
   string(field: string, cap = 1048576): string {
@@ -148,18 +161,25 @@ class MetadataReader {
     return Array.from(this.bytes.subarray(start, this.offset), (byte) => byte.toString(16).padStart(2, "0")).join("");
   }
 
-  list(field: string, countSize: number, elementSize: number, strings = false): void {
+  private count(field: string, countSize: number, elementSize: number): number {
     const start = this.offset;
     const count = this.int(countSize);
     // For strings, even an empty value requires one prefix byte.
     if (count < 0 || count > Math.floor((this.end - this.offset) / elementSize)) {
       this.fail(start, `${field}: list does not fit in section`, field);
     }
-    if (strings) {
-      for (let index = 0; index < count; index++) this.string(field);
-    } else {
-      this.skip(count * elementSize);
-    }
+    return count;
+  }
+
+  list(field: string, countSize: number, elementSize: number): number {
+    const count = this.count(field, countSize, elementSize);
+    this.skip(count * elementSize);
+    return count;
+  }
+
+  array<T>(field: string, countSize: number, elementSize: number, read: () => T): T[] {
+    const count = this.count(field, countSize, elementSize);
+    return Array.from({ length: count }, read);
   }
 
   dimension(field: string): number {
@@ -183,8 +203,7 @@ export function readWorldMetadata(bytes: Uint8Array): WorldMetadataResult {
   const reader = new MetadataReader(bytes, world.sections.metadata.start, world.sections.metadata.end);
   const name = reader.string("name", 4096);
   const seed = reader.string("seed", 4096);
-  // Consume UInt64/Int64 as eight raw bytes, never through a lossy JS number.
-  reader.skip(8); // world-gen version (row 3)
+  const worldGenVersion = reader.long().toString(); // row 3: exact UInt64, never a lossy JS number
   const guid = reader.guid();
   const worldId = reader.int();
   const bounds: WorldBounds = { left: reader.int(), right: reader.int(), top: reader.int(), bottom: reader.int() };
@@ -199,41 +218,7 @@ export function readWorldMetadata(bytes: Uint8Array): WorldMetadataResult {
   const rawMode = reader.int();
   const modes = ["classic", "expert", "master", "journey"] as const;
   const mode: WorldMode = modes[rawMode] ?? { mode: "unknown", raw: rawMode };
-  reader.bools(features.skyblockSeed ? 9 : 8); // special seeds (row 13)
-  reader.skip(8); // creation time (row 14)
-  if (features.lastPlayed) reader.skip(8); // row 15
-  reader.skip(1 + 17 * 4 + 2 * 4); // moon, backgrounds, spawn (16–18)
-  const surfaceLevel = reader.level("surfaceLevel");
-  const rockLevel = reader.level("rockLevel");
-  reader.skip(8); // time (19)
-  reader.bool(); reader.skip(4); reader.bools(2); // day, phase, blood moon, eclipse (20)
-  reader.skip(8); // dungeon coordinates (21)
-  const evil = reader.bool() ? "crimson" : "corruption";
-  reader.bools(18); // bosses, NPCs and invasions (23–25)
-  reader.bools(2); reader.skip(1 + 4); reader.bools(2); // orb, meteor, altar, hardmode, doom (26–27)
-  reader.skip(3 * 4 + 2 * 8 + 1); // invasion, slime rain and sundial (28–30)
-  reader.bool(); reader.skip(4 + 4 + 3 * 4 + 8 + 4 + 2 + 4); // rain, ores, backgrounds, clouds/wind (31)
-  reader.list("anglerFinishers", 4, 1, true); // 32
-  reader.bool(); reader.skip(4); reader.bools(3); reader.skip(8); // NPCs, quest, invasion/cultist (33)
-  reader.list("killCounts", 2, 4); // 34
-  if (features.claimableBanners) reader.list("claimableBanners", 2, 2); // 35
-  reader.bools(19); // fast-forward, bosses, pillars/apocalypse (36–38)
-  reader.bools(2); reader.skip(4); reader.list("partyingNpcs", 4, 4); // party (39)
-  reader.bool(); reader.skip(12); // sandstorm (40)
-  reader.bools(4); reader.skip(5); reader.bool(); // bartender/army, backgrounds, combat book (41–43)
-  reader.skip(4); reader.bools(3); // lantern night (44)
-  reader.list("treeTopVariations", 4, 4); // 45
-  reader.bools(2); reader.skip(16); reader.bools(3); // holidays, ores, pets (46–48)
-  reader.bools(12); reader.bools(9); // bosses, NPC unlocks, book II, satchel, slimes (49–50)
-  reader.bool(); reader.skip(1); // dusk and moondial (51)
-  if (features.permanentHolidays) reader.bools(2); // 52
-  if (features.vampireSeed) reader.bool(); // 53
-  if (features.infectedSeed) reader.bool(); // 53
-  if (features.eventCounts) reader.skip(8); // 54
-  if (features.teamSpawns) { reader.bool(); reader.list("teamSpawns", 1, 4); } // 55
-  if (features.dualDungeonsSeed) reader.bool(); // 56
-  if (features.lightningSeeds) reader.bools(2); // 57; deprecated row 58 absent in admitted versions
-  if (features.worldGenManifest) reader.string("worldGenManifest"); // 59
+  const { details, surfaceLevel, rockLevel, evil } = readWorldDetails(reader, features, worldGenVersion);
   reader.finish();
-  return { ...world, details: readWorldDetails(), metadata: { name, seed, guid, worldId, bounds, width, height, mode, evil, surfaceLevel, rockLevel } };
+  return { ...world, details, metadata: { name, seed, guid, worldId, bounds, width, height, mode, evil, surfaceLevel, rockLevel } };
 }
