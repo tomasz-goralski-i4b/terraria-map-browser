@@ -1,3 +1,4 @@
+// @module-tag perf -- UI flows starve on shared CI runners; skipped in CI (docs/tooling.md).
 import axe from "axe-core";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { commands, page, userEvent } from "vitest/browser";

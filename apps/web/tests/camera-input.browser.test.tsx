@@ -1,3 +1,4 @@
+// @module-tag perf -- UI flows starve on shared CI runners; skipped in CI (docs/tooling.md).
 import { Profiler, act } from "react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { render } from "vitest-browser-react";

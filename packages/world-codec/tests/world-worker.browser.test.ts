@@ -120,7 +120,7 @@ describe("world Worker", () => {
     await expect(client.parse(bytes.buffer.slice(0))).rejects.toBeInstanceOf(Error);
   });
 
-  it("parse_SmallWorld_KeepsMainThreadHeartbeatRunning", async () => {
+  it("parse_SmallWorld_KeepsMainThreadHeartbeatRunning", { tags: ["perf"] }, async () => {
     const bytes = await loadWorld("SCCO1.wld");
     let ticks = 0;
     let longest = 0;
