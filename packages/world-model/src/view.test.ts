@@ -57,14 +57,21 @@ describe("viewWorld", () => {
   it("setTile_throughView_changesTheOriginalArraysInPlace", () => {
     const source = filled();
     const planes = clonePlanes(source.planes);
-    const buffers = Object.values(planes).map((plane) => plane.buffer);
+    const names = Object.keys(planes) as (keyof WorldPlanes)[];
+    const arrays = names.map((name) => planes[name]);
+    const buffers = arrays.map((array) => array.buffer);
     const view = viewWorld(W, H, planes, [...source.palette]);
+    const identical = (): void => {
+      names.forEach((name, i) => {
+        expect(view.planes[name], `${name} array`).toBe(arrays[i]);
+        expect(view.planes[name].buffer, `${name} buffer`).toBe(buffers[i]);
+      });
+    };
+    identical();
 
     view.setTile(1, 2, { block: { kind: "vanilla", id: 4 }, paint: 3, wires: 5, actuator: true });
 
-    expect(view.planes.block).toBe(planes.block);
-    expect(Object.values(view.planes).map((plane) => plane.buffer)).toEqual(buffers);
-    expect(Object.values(planes).map((plane) => plane.buffer)).toEqual(buffers);
+    identical();
     expect(planes.paint[1 * H + 2]).toBe(3);
     expect(view.tileAt(1, 2)).toMatchObject({ block: { kind: "vanilla", id: 4 }, paint: 3, wires: 5, actuator: true });
   });
@@ -74,7 +81,7 @@ describe("viewWorld", () => {
     const planes = clonePlanes(source.planes);
     const view = viewWorld(W, H, planes, [...source.palette]);
     const before = view.palette.length;
-    view.setTile(0, 0, { block: { kind: "mod", mod: "M", internalName: "N" }, wires: 0, actuator: false });
+    view.setTile(0, 0, { block: { kind: "mod", mod: "CalamityMod", internalName: "AstralOre" }, wires: 0, actuator: false });
     expect(view.palette).toHaveLength(before + 1);
     expect(planes.block[0]).toBe(before);
   });
