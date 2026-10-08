@@ -152,7 +152,8 @@ World-gen version is exact decimal text, decoded with bigint before formatting, 
 consumers do not lose UInt64 precision. DateTime binary values are decoded from the low 62 tick bits.
 UTC and local kinds produce ISO strings in UTC (`Z`); local binary values already store UTC ticks.
 Unspecified kinds produce ISO wall-clock strings without a timezone suffix. Display precision is
-milliseconds (sub-millisecond ticks are truncated); the original bytes retain full precision.
+milliseconds (the instant is floored to the start of its millisecond, including negative UTC ticks
+wrapped by local dates near year 1); the original bytes retain full precision.
 Invalid tick ranges display as `undefined`, without adding a file rejection for previously opaque dates.
 
 Styles, boundaries, ores and flags expose their stored values, without reconciling legacy style rows
@@ -171,7 +172,21 @@ at revision `182031b83ce825719f857a6db4ecb6967118abd3`, lines 2059–2107, 2150�
 2204–2209 and 2319–2365. The implementation uses our own group/property names and no imported tables.
 All manifest worlds have selected detail expectations independently cross-checked with .NET
 `BinaryReader` using the same rows consumed by our reference `MetadataSection.cs`;
-`packages/world-codec/tests/fixtures/world-details.json` records those expectations.
+`packages/world-codec/tests/fixtures/world-details.json` records those expectations. Reproduce them
+from the repository root with:
+
+```powershell
+powershell -NoProfile -File packages/world-codec/tests/fixtures/world-details-oracle.ps1
+powershell -NoProfile -File packages/world-codec/tests/fixtures/world-details-oracle.ps1 -Progressed
+```
+
+The second command applies a synthetic progression overlay to the generated `SCCO1` fixture in
+memory only: hardmode and selected bosses are defeated while other bosses remain undefeated.
+`world-details-progressed.json` records the independently decoded values and absolute Bool offsets.
+The TypeScript integration test applies the same overlay in memory and compares the groups and every
+boss flag to those .NET expectations. Neither command changes a fixture on disk or adds a player world.
+Browser tests explicitly compare `details` after a worker-client round-trip against direct decoding
+for all three admitted layouts, including optional fields and an exact maximum UInt64 string.
 
 TypeScript `WorldMetadata.bounds` exposes the four signed Int32 pixel bounds from rows 6–9 as
 `{ left, right, top, bottom }`. The values are decoded from the file, not derived from tile dimensions,

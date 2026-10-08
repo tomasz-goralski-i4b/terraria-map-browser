@@ -103,7 +103,9 @@ function dateTime(binary: bigint): string | undefined {
   // DateTime.ToBinary wraps negative UTC ticks for local dates near year 1.
   if (kind >= 2n && ticks > (1n << 62n) - 864000000000n) ticks -= 1n << 62n;
   if (ticks < -864000000000n || ticks > 3155378975999999999n + (kind >= 2n ? 864000000000n : 0n)) return undefined;
-  const milliseconds = Number(ticks / 10000n) - 62135596800000;
+  // bigint division truncates toward zero; negative UTC ticks need the preceding millisecond.
+  const wholeMilliseconds = (ticks < 0n ? ticks - 9999n : ticks) / 10000n;
+  const milliseconds = Number(wholeMilliseconds) - 62135596800000;
   const iso = new Date(milliseconds).toISOString();
   return kind === 0n ? iso.slice(0, -1) : iso;
 }
