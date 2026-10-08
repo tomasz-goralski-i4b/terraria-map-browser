@@ -38,7 +38,7 @@ export interface MapRendererOptions {
   readonly maxChunkUploadsPerFrame?: number;
   /**
    * Baseline chunk texture cache capacity (LRU). Default 1536, enough for a whole Large world.
-   * Each frame grows the capacity to fit its visible chunks and releases excess offscreen chunks when it shrinks.
+   * Grows to fit the largest visible set for the current world; resets when the world changes.
    */
   readonly maxCachedChunks?: number;
   /** Map colours (content, paint, background by depth), as in `renderChunk`; without one, placeholders are drawn. */
@@ -169,6 +169,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   const loseContext = gl.getExtension("WEBGL_lose_context");
   let resources = createResources(gl);
   let world: RenderableWorld | null = null;
+  let cacheCapacity = maxCachedChunks;
   let camera: Camera = { x: 0, y: 0, zoom: 1 };
   let layers = 15;
   // LRU: Map iteration order is insertion order, and a hit re-inserts its key at the end.
@@ -344,13 +345,13 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     const chunksX = Math.ceil(world.width / CHUNK_SIZE);
     const visible = visibleChunks(camera, viewport, world);
     const visibleKeys = new Set(visible.map((chunk) => chunk.y * chunksX + chunk.x));
-    const capacity = Math.max(maxCachedChunks, visible.length);
+    cacheCapacity = Math.max(cacheCapacity, visible.length);
     let missing = 0;
     for (const key of visibleKeys) if (!chunks.has(key)) missing++;
     // Reserve room for the entire view before uploading. Evict only offscreen LRU entries so panning cannot
     // discard visible chunks that later frames need, even when the view fills the adaptive capacity.
     for (const [key, textures] of chunks) {
-      if (chunks.size + missing <= capacity) break;
+      if (chunks.size + missing <= cacheCapacity) break;
       if (visibleKeys.has(key)) continue;
       deleteChunk(textures);
       chunks.delete(key);
@@ -415,6 +416,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     setWorld: (next) => {
       if (next !== world) {
         clearChunks();
+        cacheCapacity = maxCachedChunks;
         releaseBackground();
         paletteUploaded = 0;
         world = next;
