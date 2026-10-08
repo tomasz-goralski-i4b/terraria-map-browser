@@ -50,7 +50,7 @@ public static class WorldSummaryJson
             writer.WriteStartObject();
             writer.WriteNumber("schemaVersion", 1);
             writer.WriteNumber("formatVersion", world.Header.Version);
-            WriteMetadata(writer, world.Metadata);
+            CanonicalWorldJson.WriteMetadata(writer, world.Metadata);
 
             writer.WriteStartObject("dimensions");
             writer.WriteNumber("width", model.Width);
@@ -72,7 +72,7 @@ public static class WorldSummaryJson
             writer.WriteStartArray("palette");
             foreach (var content in model.Palette)
             {
-                WriteContent(writer, content);
+                CanonicalWorldJson.WriteContent(writer, content);
             }
 
             writer.WriteEndArray();
@@ -115,61 +115,6 @@ public static class WorldSummaryJson
                 nameof(region),
                 string.Create(CultureInfo.InvariantCulture, $"The region must lie inside the {worldWidth} × {worldHeight} world."));
         }
-    }
-
-    private static void WriteMetadata(Utf8JsonWriter writer, WorldMetadata metadata)
-    {
-        writer.WriteStartObject("metadata");
-        writer.WriteString("name", metadata.Name);
-        writer.WriteString("seed", metadata.Seed);
-        writer.WriteString("guid", metadata.GuidHex);
-        writer.WriteNumber("worldId", metadata.WorldId);
-        if (metadata.GameMode is { } mode)
-        {
-            writer.WriteNumber("gameMode", (int)mode);
-        }
-        else
-        {
-            writer.WriteNull("gameMode");
-        }
-
-        writer.WriteString("evil", metadata.Evil == WorldEvil.Crimson ? "crimson" : "corruption");
-        writer.WriteEndObject();
-    }
-
-    internal static void WriteContent(Utf8JsonWriter writer, ContentRef content)
-    {
-        writer.WriteStartObject();
-        switch (content)
-        {
-            case VanillaContentRef vanilla:
-                writer.WriteString("kind", "vanilla");
-                writer.WriteNumber("id", vanilla.Id);
-                break;
-            case ModContentRef mod:
-                writer.WriteString("kind", "mod");
-                writer.WriteString("mod", mod.Mod);
-                writer.WriteString("internalName", mod.InternalName);
-                if (mod.RuntimeId is { } runtimeId)
-                {
-                    writer.WriteNumber("runtimeId", runtimeId);
-                }
-
-                if (mod.ModVersion is { } modVersion)
-                {
-                    writer.WriteString("modVersion", modVersion);
-                }
-
-                break;
-            case UnknownContentRef unknown:
-                writer.WriteString("kind", "unknown");
-                writer.WriteNumber("runtimeId", unknown.RuntimeId);
-                break;
-            default:
-                throw new NotSupportedException($"Unsupported content reference {content.GetType().Name}.");
-        }
-
-        writer.WriteEndObject();
     }
 
     private static void WriteChunks(Utf8JsonWriter writer, CanonicalWorldModel model)
@@ -253,7 +198,7 @@ public static class WorldSummaryJson
         if (tile.Block is { } block)
         {
             writer.WritePropertyName("block");
-            WriteContent(writer, block);
+            CanonicalWorldJson.WriteContent(writer, block);
         }
 
         if (tile.FrameX is { } frameX)
@@ -274,7 +219,7 @@ public static class WorldSummaryJson
         if (tile.Wall is { } wall)
         {
             writer.WritePropertyName("wall");
-            WriteContent(writer, wall);
+            CanonicalWorldJson.WriteContent(writer, wall);
         }
 
         if (tile.WallPaint is { } wallPaint)

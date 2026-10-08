@@ -44,6 +44,11 @@ internal static class InspectorCommand
 
     private static int RunCore(string[] arguments, TextWriter output, TextWriter error, Func<string, World> readWorld)
     {
+        if (arguments.Length > 0 && arguments[0] == "export-cwm")
+        {
+            return ExportCwmCommand.Run(arguments, output, error, readWorld);
+        }
+
         if (arguments.Length > 0 && arguments[0] == "diff")
         {
             return DiffCommand.Run(arguments, output, error, readWorld);
@@ -55,6 +60,7 @@ internal static class InspectorCommand
         }
 
         const string Usage = "Usage: Terraria.WorldInspector inspect <file.wld>\n"
+            + "       Terraria.WorldInspector export-cwm <input.wld> <output.cwm>\n"
             + "       Terraria.WorldInspector export-json <file.wld> [--region x,y,w,h]\n"
             + "       Terraria.WorldInspector diff <left.wld> <right.wld> [--max n]\n"
             + "       Terraria.WorldInspector roundtrip <input.wld> <output.wld>";
