@@ -70,6 +70,10 @@ resolves each block's option on the CPU at chunk upload, so GPU output stays equ
 
 ## Addendum: English content names (2026-10-08, #184)
 
+**User approval:** APPROVED by @tomasz-goralski-i4b on 2026-10-08, explicitly in the task conversation.
+This approval covers the hard-rule/data-only exception for generated English content and paint names and their
+runtime reflection/localization provenance. It does not constitute permission from Re-Logic or approval to merge.
+
 The Content table becomes the editor's material picker. Palette keys such as `vanilla:1` cannot tell a user what
 material they are choosing; the status bar and Inspector also need readable names. The generated module therefore
 exports `terrariaMapNames`, typed as `MapContentNames`: English strings indexed by tile/wall ID and map option,
@@ -94,6 +98,14 @@ candidates. Names retain their exact game wording: Dirt Block (tile 0), Stone Bl
 Natural Dirt Wall (wall 2), and Dirt Wall (wall 16). This is a material-name fallback, not a claim that the map
 legend displays those names or that an item placement style is the same as a map option.
 
+Further runtime investigation on 2026-10-08 found `TileID.Grass = 2` and `TileID.Plants = 3`, but these are
+symbolic identifiers, not localized material labels. The loaded English dictionary contains exact "Grass" and
+"Plants" values only under `RandomWorldName_Noun`, not corresponding `MapObject`, `TileName` or `WallName` keys.
+World-name nouns do not establish a tile-label mapping. Grass placement candidates include Grass Seeds, Staff of
+Regrowth and Axe of Regrowth; plants have several flower and grass seed names. Both therefore deliberately retain
+`vanilla:2`/`vanilla:3`. A future symbolic-ID fallback would need a separate naming policy and casing rules;
+this exporter does not infer material labels from unrelated localization keys.
+
 Liquid labels are resolved through the game's localization keys `LegacyInterface.53`, `LegacyInterface.56`,
 `LegacyInterface.58` and `SlimeNames_Rainbow.Shimmer`. Runtime observation confirmed Water, Lava, Honey and Shimmer;
 the last key is a shared English label rather than a map-legend entry. Missing or unresolved keys abort export.
@@ -108,7 +120,7 @@ show both name and ID. Unknown paint IDs keep a `paint:N` key. This addition fol
 The UI selects a block option only when the observed rule's frame axis is known. Otherwise it uses option zero.
 An unnamed option falls back to the option-zero name, then the palette key. Wall names use option zero because
 the CWM does not store wall frames. Unknown/mod references keep their keys. Content rows show option-zero names,
-filter on both names and keys, and retain keys in the ID column, hidden by default.
+filter on names, keys and kind labels (including unknown/mod walls), and retain keys in the ID column, hidden by default.
 
 The generated name section is about 36 KB (9 KB gzipped) for 1.4.5.8, with names for 660 tile IDs, 282 wall IDs and
 30 paint IDs. The fixture exporter covers single and multiple options in both layers, initialization order,

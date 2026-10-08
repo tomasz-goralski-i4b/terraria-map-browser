@@ -143,7 +143,7 @@ export function ContentPanel({ world }: { readonly world?: ContentWorld | null }
       columns={CONTENT_COLUMNS}
       rows={filtered}
       rowKey={(row) => row.key}
-      filterText={(row) => `${row.name} ${row.id}`}
+      filterText={(row) => `${row.name} ${row.id} ${KIND_LABELS[row.kind]}`}
       initialSort={{ column: "count", direction: "descending" }}
       selectedKey={selected}
       onSelect={(row) => {
