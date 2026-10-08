@@ -28,7 +28,7 @@ String rules:
 
 ## World metadata (section 1)
 
-The TS [compatibility PoC](compatibility.md) selects a feature profile before walking this section. The
+The TS [format resolver](compatibility.md) selects a feature profile before walking this section. The
 version gates in this table drive the common parser; the original M1 exposition below is for format 326.
 
 Starts at `pointer[0]` (end of the file header) and must end **exactly** at `pointer[1]`. Read strictly in

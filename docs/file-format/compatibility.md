@@ -1,14 +1,13 @@
-# Vanilla format compatibility — independent PoC
+# Vanilla format compatibility
 
 The TS viewer resolves a file's format number to a feature profile and uses one header/metadata/tile parser
 for all admitted profiles. It does not require a separate resolver or codec for each game patch. The result
 is always the same Canonical World Model, so rendering does not dispatch on file version.
 
-This PoC is based directly on `main` and is independent of the oversized tModLoader world PoC. It contains
-no mod-sidecar loading or camera changes. It also corrects the former vanilla residual-shape validation in
-both codecs and the .NET writer; their supported version ranges remain unchanged by that correction.
-The .NET reference codec and writer remain at format 326.
-[ADR 0003](../adr/0003-vanilla-format-profiles-poc.md) describes the proposed direction.
+The resolver corrects the former vanilla residual-shape validation in both codecs and the .NET writer (see
+[residual shapes](tiles.md#residual-shapes-are-vanilla-data)); it contains no mod-sidecar loading. The .NET
+reference codec and writer remain at format 326. [ADR 0003](../adr/0003-vanilla-format-profiles.md) records
+the decision.
 
 ## Admission and evidence
 
@@ -17,11 +16,11 @@ Knowing that a field appeared in 284 does not imply that every number from 284 o
 
 | Format numbers | Desktop game family | TS viewer read | Evidence in this implementation |
 |---|---|---|---|
-| 269–279 | 1.4.4 through 1.4.4.9 | Experimental | Independent generated metadata/tile vectors for every number |
+| 269–279 | 1.4.4 through 1.4.4.9 | Experimental | Independent generated metadata/tile vectors for every number; 279 also passes the [local world check](#local-world-check) |
 | 315–319 | 1.4.5.0 through 1.4.5.6 | Experimental | Independent generated metadata/tile vectors for every number |
 | 325 | 1.4.5.7 | Experimental | Independent generated metadata/tile vectors |
 | 326 | 1.4.5.8 | Existing supported read | Five generated-world fixtures plus shared vectors |
-| ≤ 268 | Earlier layouts | Rejected | Additional field/section/tile layouts are not implemented by this PoC |
+| ≤ 268 | Earlier layouts | Rejected | Additional field/section/tile layouts are not implemented |
 | 280–314, 320–324 | No admitted release in this scope | Rejected | Feature thresholds alone are not evidence of a compatible released file |
 | ≥ 327 | Unknown/future | Rejected | Never silently interpreted using the last known layout |
 
@@ -39,7 +38,7 @@ The package exports `resolveWorldFormat`, `SUPPORTED_VANILLA_FORMATS` and profil
 import { resolveWorldFormat, readWorldTiles } from "@studio/world-codec";
 
 const profile = resolveWorldFormat(279);
-// family: "terraria-1.4.4", evidence: "synthetic-poc"
+// family: "terraria-1.4.4", evidence: "synthetic"
 // metadata.lastPlayed: false; entities.chestSlotCounts: "shared-int16"
 
 const world = readWorldTiles(bytes); // Automatically resolves the version in the file header.
@@ -108,7 +107,7 @@ not assigning a separate parser to every patch. No unsupported legacy family is 
 
 ## Reading versus writing
 
-This PoC adds TS viewer reads only. It does not convert the input to 326 or modify any source world.
+The TS viewer only reads additional formats. It does not convert the input to 326 or modify any source world.
 The .NET writer still rejects non-326 worlds. Older-format saving will need target-profile field emission,
 content representability checks and preservation of opaque sections; a successful read is not permission
 to serialize using a different layout. Unsupported downgrade fields/content must not be silently dropped.
@@ -132,6 +131,22 @@ The fixture generator deliberately uses three independently named released layou
 the production resolver. Tests exercise all 18 admitted versions, unknown gaps, strict section boundaries,
 vanilla owner checks, and representative File parsing through a real browser Worker. The existing 326
 corpus and differential/shared-vector tests remain in the verification suite.
+
+## Local world check
+
+Real worlds are never committed (AGENTS.md, hard rules), so CI only sees synthetic vectors for formats other
+than 326. `packages/world-codec/tests/local-worlds.test.ts` is an opt-in check against worlds on the
+developer's machine: set `STUDIO_LOCAL_WORLDS` to a directory of `.wld` files and run
+
+    pnpm vitest run packages/world-codec/tests/local-worlds.test.ts
+
+Each file must decode completely (header, exact metadata and tile section ends, every record), resolve to an
+admitted profile, and yield planes whose block/wall references stay inside the palette. Nothing derived from the
+worlds is written. Unset, the suite is reported as skipped.
+
+Recorded runs (2026-10-08): two tModLoader 1.4.4.9 worlds (format 279, 13,400 × 3,800 and a second
+custom-size world, about 50 MB each) decode in about three seconds in total. Formats 315–319 and 325 have not
+yet been checked against a real world.
 
 ## Sources and provenance
 

@@ -16,7 +16,7 @@ describe("vanilla format resolution", () => {
   it.each([269, 279])("resolves the shared 1.4.4 metadata and entity layout for %i", (version) => {
     const profile = resolveWorldFormat(version);
     expect(profile).toMatchObject({
-      version, family: "terraria-1.4.4", evidence: "synthetic-poc", sectionCount: 11,
+      version, family: "terraria-1.4.4", evidence: "synthetic", sectionCount: 11,
       tileEncoding: "four-header-byte-rle",
       entities: { chestSlotCounts: "shared-int16", npcHomelessDespawn: false, displayDollPose: false, displayDollExtraSlots: false },
     });
@@ -26,7 +26,7 @@ describe("vanilla format resolution", () => {
   it.each([315, 319])("resolves new fields without lightning for %i", (version) => {
     const profile = resolveWorldFormat(version);
     expect(profile).toMatchObject({
-      family: "terraria-1.4.5", evidence: "synthetic-poc",
+      family: "terraria-1.4.5", evidence: "synthetic",
       entities: { chestSlotCounts: "per-chest-int32", npcHomelessDespawn: true, displayDollPose: true, displayDollExtraSlots: true },
     });
     expect(profile?.metadata).toEqual({
@@ -39,6 +39,6 @@ describe("vanilla format resolution", () => {
   it.each([325, 326])("resolves lightning fields and distinguishes fixture evidence for %i", (version) => {
     const profile = resolveWorldFormat(version);
     expect(Object.values(profile?.metadata ?? {})).toEqual(Array<boolean>(11).fill(true));
-    expect(profile?.evidence).toBe(version === 326 ? "generated-world-fixtures" : "synthetic-poc");
+    expect(profile?.evidence).toBe(version === 326 ? "generated-world-fixtures" : "synthetic");
   });
 });

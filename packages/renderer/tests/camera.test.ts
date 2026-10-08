@@ -50,7 +50,7 @@ describe("zoom", () => {
   test("zoomAt clamps the requested zoom", () => {
     const camera: Camera = { x: 3000, y: 1000, zoom: 1 };
     expect(zoomAt(camera, 1000, 400, 300, viewport, world).zoom).toBe(MAX_ZOOM);
-    expect(zoomAt(camera, 0.0001, 400, 300, viewport, world).zoom).toBe(MIN_ZOOM);
+    expect(zoomAt(camera, 0.0001, 400, 300, viewport, world).zoom).toBe(viewport.width / world.width);
   });
 });
 
@@ -85,8 +85,25 @@ describe("fit world and 1:1", () => {
     expect(camera.y).toBeCloseTo(0, 9);
   });
 
-  test("fitWorld never goes below the minimum zoom", () => {
-    expect(fitWorld(viewport, world).zoom).toBe(MIN_ZOOM);
+  test("fitWorld can go below the usual minimum to show a large world in a small viewport", () => {
+    expect(fitWorld(viewport, world).zoom).toBe(viewport.width / world.width);
+  });
+
+  test("the wheel-zoom floor stays MIN_ZOOM when the world already fits at that scale", () => {
+    const small = { width: 4200, height: 1200 };
+    const roomy = { width: 1920, height: 1080 };
+    expect(fitWorld(roomy, small).zoom).toBeCloseTo(1920 / 4200, 9);
+    expect(zoomAt({ x: 0, y: 0, zoom: 1 }, 0.0001, 960, 540, roomy, small).zoom).toBe(MIN_ZOOM);
+  });
+
+  test("fits every chunk of the custom CMCO1 world and keeps wheel zoom continuous at that scale", () => {
+    const customWorld = { width: 13400, height: 3800 };
+    const mapViewport = { width: 1280, height: 636 };
+    const fitted = fitWorld(mapViewport, customWorld);
+    expect(fitted.zoom).toBeCloseTo(1280 / 13400, 9);
+    expect(visibleChunks(fitted, mapViewport, customWorld)).toHaveLength(105 * 30);
+    expect(zoomAt(fitted, fitted.zoom, 640, 318, mapViewport, customWorld)).toEqual(fitted);
+    expect(zoomAt(fitted, fitted.zoom * 1.1, 640, 318, mapViewport, customWorld).zoom).toBeCloseTo(fitted.zoom * 1.1, 9);
   });
 
   test("actualSize is one pixel per tile around the viewport centre", () => {

@@ -21,8 +21,13 @@ export const MIN_ZOOM: number = 1 / 8;
 export const MAX_ZOOM = 16;
 export const CHUNK_SIZE = 128;
 
-export function clampZoom(zoom: number): number {
-  return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom));
+export function clampZoom(zoom: number, minimum: number = MIN_ZOOM): number {
+  return Math.min(MAX_ZOOM, Math.max(minimum, zoom));
+}
+
+/** Large/custom worlds can require a smaller scale than the usual wheel-zoom floor. */
+function minimumZoom(viewport: Size, world: Size): number {
+  return Math.min(MIN_ZOOM, viewport.width / world.width, viewport.height / world.height);
 }
 
 /** Fractional tile coordinates under a screen pixel. */
@@ -57,16 +62,16 @@ export function panBy(camera: Camera, deltaX: number, deltaY: number, viewport: 
   return clampCamera({ ...camera, x: camera.x - deltaX / camera.zoom, y: camera.y - deltaY / camera.zoom }, viewport, world);
 }
 
-/** Sets the zoom (clamped to MIN_ZOOM…MAX_ZOOM) keeping the tile under the screen point fixed, then clamps. */
+/** Sets zoom within the world-fit floor and MAX_ZOOM, keeping the tile under the screen point fixed, then clamps. */
 export function zoomAt(camera: Camera, zoom: number, screenX: number, screenY: number, viewport: Size, world: Size): Camera {
-  const next = clampZoom(zoom);
+  const next = clampZoom(zoom, minimumZoom(viewport, world));
   const tile = screenToTile(camera, screenX, screenY);
   return clampCamera({ x: tile.x - screenX / next, y: tile.y - screenY / next, zoom: next }, viewport, world);
 }
 
-/** Whole world visible and centred, at the largest zoom that fits (never below MIN_ZOOM). */
+/** Whole world visible and centred, at the largest zoom that fits, including custom world sizes. */
 export function fitWorld(viewport: Size, world: Size): Camera {
-  const zoom = clampZoom(Math.min(viewport.width / world.width, viewport.height / world.height));
+  const zoom = clampZoom(Math.min(viewport.width / world.width, viewport.height / world.height), minimumZoom(viewport, world));
   return clampCamera({ x: 0, y: 0, zoom }, viewport, world);
 }
 

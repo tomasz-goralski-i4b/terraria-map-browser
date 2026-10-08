@@ -123,6 +123,8 @@ preserve them in format 326. CWM retains the shape value even though an absent b
 render. This is a correction to vanilla validation, not a tModLoader-specific exception. Undefined shapes
 6–7 and the other malformed-record rules remain errors. This experiment proves the vanilla state and writer
 can produce such records; it does not establish which operation produced them in any particular world.
+The records do occur in practice: a local tModLoader 1.4.4.9 world (format 279, not in the repository)
+contains 11,280 of them, for example flags `11 30` (lava, no block, shape 3).
 
 ## Model mapping
 

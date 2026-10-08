@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { buildMetadata, wrapMetadata } from "./metadata-fixture.js";
+import { buildMetadata, METADATA_START, wrapMetadata } from "./metadata-fixture.js";
 import { readWorldTiles } from "./tiles.js";
 import { readWorldMetadata } from "./metadata.js";
+import { WorldFormatError } from "./world-format-error.js";
 
 // Released-version examples, independent of the production registry (sources-and-versions.md, T1).
 const releasedFormats = [269, 270, 271, 272, 273, 274, 275, 276, 277, 278, 279, 315, 316, 317, 318, 319, 325, 326];
@@ -35,6 +36,19 @@ describe("one vanilla reader across released format families", () => {
     const view = new DataView(bytes.buffer);
     view.setInt32(30, view.getInt32(30, true) + 1, true);
     expect(() => readWorldMetadata(bytes)).toThrow("unread bytes");
+  });
+
+  // A mislabelled file must fail at the metadata boundary instead of loading with shifted fields: the
+  // profile selected from the header is the one the walk actually follows.
+  it.each([
+    [279, "1.4.5-lightning"], [279, "1.4.5"], [315, "1.4.4"], [315, "1.4.5-lightning"],
+    [319, "1.4.4"], [325, "1.4.5"], [326, "1.4.4"], [326, "1.4.5"],
+  ] as const)("rejects format %i whose metadata has the %s layout", (version, layout) => {
+    const metadata = buildMetadata({ layout, width: 2, height: 4 });
+    const tiles = Uint8Array.from([0x42, 2, 3, 0x48, 255, 3]);
+    const bytes = wrapMetadata(metadata.bytes, tiles.length, version);
+    bytes.set(tiles, METADATA_START + metadata.bytes.length);
+    expect(() => readWorldMetadata(bytes)).toThrow(WorldFormatError);
   });
 
   it.each([269, 279, 315, 319, 325, 326])("keeps strict vanilla owner checks in format %i", (version) => {

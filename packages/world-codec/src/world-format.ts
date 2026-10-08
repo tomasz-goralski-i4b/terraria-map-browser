@@ -34,7 +34,7 @@ export interface WorldFormatProfile {
   readonly version: number;
   readonly family: "terraria-1.4.4" | "terraria-1.4.5";
   /** Evidence for this implementation, not a promise about every world produced by that game. */
-  readonly evidence: "generated-world-fixtures" | "synthetic-poc";
+  readonly evidence: "generated-world-fixtures" | "synthetic";
   readonly sectionCount: 11;
   readonly tileEncoding: "four-header-byte-rle";
   readonly metadata: WorldMetadataFeatures;
@@ -59,7 +59,7 @@ export function resolveWorldFormat(version: number): WorldFormatProfile | null {
   return Object.freeze({
     version,
     family: range.family,
-    evidence: version === 326 ? "generated-world-fixtures" : "synthetic-poc",
+    evidence: version === 326 ? "generated-world-fixtures" : "synthetic",
     sectionCount: 11,
     tileEncoding: "four-header-byte-rle",
     metadata: Object.freeze(metadata),
