@@ -1,8 +1,10 @@
-# Proposed follow-up issues from the tile-framing spike (#95)
+# Proposed follow-up issues from the tile-framing spikes (#95, #144)
 
-Issue drafts written by the spike that produced the "Tile framing" section of [docs/assets.md](../assets.md).
-Check the backlog before filing. The first two are the implementation; the third collects the in-game checks, the
-remaining sheet measurements and the deferred grass rules. The in-game part (H1–H6 on a generated test world) is filed as #120.
+Issue drafts written by the spikes that produced the "Tile framing" section of [docs/assets.md](../assets.md).
+Check the backlog before filing. The first two are the block implementation (from #95, updated by #144). #95's third
+draft was split: the in-game part (H1–H6) is filed as #120, and #144 did the sheet measurements and the grass
+write-up. #144 adds three drafts: an amendment for #120 (H7–H10), a measured grass cell catalogue, and framing
+grass, moss and large-frame blocks once those two are done.
 
 ```markdown
 ## Goal
@@ -23,12 +25,15 @@ docs/assets.md ("Tile framing") specifies.
   frames partner types (dirt, ash) with the edge-check bits taken from the pass-1 cells.
 - Per-id framing properties (stone family, merge partner) as a small typed table restated in docs/assets.md
   ("Tile framing", new sub-section "Framing properties") by this issue, each id cited (A12 line) and, for the
-  partner flag, cross-checked against the sheet art (a sheet with rim cells has a partner). No JSON copied from TEdit.
+  partner flag, cross-checked against the sheet art (a sheet with rim cells has a partner; the layout agreement of
+  "Measuring the sheet" lists which sheets share stone's layout). No JSON copied from TEdit. Coralstone (315) is
+  framed like stone (O6); hellstone takes ash as partner; moss is framed like stone over rows 0–14 until O8 is
+  answered; large-frame ids use the default variant until O4 is answered.
 - Shapes are ignored for the cell choice (M4 rule).
 
 ## Out of scope
-- Drawing, slopes/half-block drawing, grass rules, gemspark 8-way, large-frame patterns, rows 15–21 of the taller
-  sheets, walls.
+- Drawing, slopes/half-block drawing, grass rules, gemspark 8-way, large-frame patterns, rows 15–21 of the grass
+  and moss sheets, walls.
 
 ## Ownership
 - packages/renderer/src/framing/ (new), docs/assets.md ("Tile framing" → "Framing properties" only)
@@ -64,7 +69,8 @@ half blocks and slopes.
   5 × 5 area around each changed tile (partner tiles depend on their relatives' cells).
 - Draw the cell from the sprite atlas; half blocks and slopes per the shape table of docs/assets.md ("Slopes and
   half blocks"): eight 2-pixel columns, shifted per shape.
-- Tiles of the deferred families (grass, gemspark, cactus/vines/beams) keep the current placeholder.
+- Tiles of the deferred families (grass, gemspark, cactus/vines/beams) keep the current placeholder; moss and
+  large-frame blocks are drawn as the framing function returns them (stone rules, default variant).
 
 ## Out of scope
 - Grass rules, gemspark 8-way, large-frame patterns, walls framing changes, paint, lighting, animation.
@@ -93,38 +99,110 @@ half blocks and slopes.
 
 ```markdown
 ## Goal
-Confirm the tile-framing rules in the game itself, finish the sheet measurements and document the grass rules, so
-the open questions O1–O7 of docs/assets.md ("Tile framing") are closed.
+The in-game check of the tile-framing rules also covers grass, moss, large-frame blocks and jungle grass on mud, so
+the cited grass rules and the open questions O4, O8 and O10 of docs/assets.md ("Tile framing") get an observation.
 
 ## Scope
-- Human steps H1–H6 of docs/assets.md ("Tile framing"): results recorded as "observed in game" (G) next to each
-  rule, screenshots kept in `local-renders/` only. H4 decides rule 5 (ore ↔ ore) and the ore ↔ dirt rim.
-- Measure the remaining sheets (O6) by improving `packages/assets/tools/sheet-measure.ts`: the 42 dirt-partner
-  sheets it could not prove, hellstone/ash, and rows 15–21 of the 288 × 396 sheets.
-- Grass: restate the grass rule set (A10 150–249, relaxed corner matching 454–505) in our own words with worked
-  examples, and explain the taller grass sheets (`Tiles_2` 110 rows, `Tiles_60` 22 rows).
-- Large-frame variant patterns (24 ids): describe them from in-game observation.
+- Amend #120 (or file next to it): add human steps H7–H10 of docs/assets.md ("Tile framing" → "Human steps") to the
+  generated test world: grass examples G1–G9 (G9 also with stone), green moss on stone in four shapes, a 6 × 8 area
+  of stone slab (273) and of luminite brick (409), corrupt and crimson jungle grass on mud next to dirt.
+- Record each drawn cell (grass, moss) or each interior cell's position in the six-cell set (large-frame) and the
+  partner seen under jungle grass, as G or as a discrepancy, in docs/assets.md.
 
 ## Out of scope
-- Production code (only the measuring tool changes); gemspark 8-way; walls; mods.
+- Implementing any of it; gemspark 8-way; walls; mods; the white mask blocks of `Tiles_2` (O9).
 
 ## Ownership
-- docs/assets.md ("Tile framing"), docs/planning/tile-framing-follow-ups.md, packages/assets/tools/,
-  packages/assets/tests/sheet-measure.test.ts
+- docs/assets.md ("Tile framing"), docs/planning/tile-framing-follow-ups.md; the stamping helper of #120.
 
 ## Spec
-- docs/assets.md ("Tile framing")
+- docs/assets.md ("Tile framing" → "Grass and moss sheets", "Variant", "Human steps", "Open questions")
+
+## Compatibility impact
+- Vanilla: None (documentation and a test-world helper only)
+- Modded worlds: None
+
+## Acceptance criteria
+- G1–G9 are each marked G or corrected, with the drawn cell stated.
+- O4 is answered with the large-frame patterns written by world `x`/`y`, restated from the observation (not from
+  TEdit), or restated with the reason it stays open.
+- O8 and O10 are answered or restated with the reason they stay open.
+- No screenshot, `.wld` file or extracted sprite is committed.
+
+## Proof
+- Test command: `bash scripts/verify.sh`
+- Manual test: H7–H10 in the generated test world, with the world file hash and game build noted in the PR.
+```
+
+```markdown
+## Goal
+The grass sheets get a measured cell catalogue, so grass can be framed by "draw the cell whose look matches the
+neighbourhood" like blocks, instead of from a cited rule list.
+
+## Scope
+- Improve `packages/assets/tools/sheet-measure.ts` for grass art: a side holds a grass strip where a face meets air
+  and partner art elsewhere, so read each side in two halves (or along the strip) and record grass, partner and
+  closed per half; corners likewise. Covered by synthetic-sheet tests.
+- Measure `Tiles_2` (22 rows) and restate the catalogue in docs/assets.md ("Grass and moss sheets"): every look,
+  its cells v0–v2 and the selection order where several looks fit.
+- Cross-check (X) against the cited rules of docs/assets.md: for all 6 561 neighbourhoods, report how often the
+  catalogue's choice equals the cited choice and list the differences; use G1–G9 (and #120's H7 results if present).
+
+## Out of scope
+- Production code; moss (O8); the white mask blocks (O9); gemspark 8-way; walls.
+
+## Ownership
+- packages/assets/tools/, packages/assets/tests/sheet-measure.test.ts, docs/assets.md ("Tile framing" →
+  "Grass and moss sheets"), docs/planning/tile-framing-follow-ups.md
+
+## Spec
+- docs/assets.md ("Tile framing" → "Measuring the sheet", "Grass and moss sheets")
 
 ## Compatibility impact
 - Vanilla: None (documentation and a dev tool only)
 - Modded worlds: None
 
 ## Acceptance criteria
-- Each of O1–O7 is answered (with the in-game observation or measurement) or restated with a reason why it stays
-  open.
-- The grass rules let an implementer map any 3 × 3 grass neighbourhood to one cell, with at least six worked examples.
+- The three variants of every grass look measure the same, or the doc states why a look's variants differ.
+- Every worked example G1–G9 is reproduced by the catalogue, or the difference is listed with its reason.
+- The measuring tool's new cases are covered by synthetic-sheet tests; no game file is committed.
 
 ## Proof
 - Test command: `bash scripts/verify.sh`
-- Manual test: H1–H6 in a small test world.
+```
+
+```markdown
+Blocked by: the in-game amendment (H7–H10) and the grass catalogue issue above.
+
+## Goal
+The viewer draws grass, moss and large-frame blocks with their real sprite frames, from the measured grass
+catalogue and the in-game observations.
+
+## Scope
+- Extend the framing function of the block implementation: grass ids select from the measured grass catalogue
+  (docs/assets.md, "Grass and moss sheets"); moss follows the rule set that H8 observed; large-frame ids take the
+  variant pattern that H9 observed (`(x mod 3, y mod 4)` or `(x mod 2, y mod 2)` over the six interior cells).
+- Corrupt and crimson jungle grass (661, 662) use the partner that H10 observed.
+
+## Out of scope
+- Gemspark 8-way, the white mask blocks of `Tiles_2`, walls, paint, lighting.
+
+## Ownership
+- packages/renderer/src/framing/
+
+## Spec
+- docs/assets.md ("Tile framing" → "Grass and moss sheets", "Variant")
+
+## Compatibility impact
+- Vanilla: Render
+- Modded worlds: None
+
+## Acceptance criteria
+- G1–G9 return their documented cells (variant 0).
+- A large-frame block returns the observed pattern for a 6 × 8 area, and the function stays deterministic.
+- A moss tile in each of H8's four shapes returns the observed cell.
+
+## Proof
+- Test command: `bash scripts/verify.sh`
+- Manual test: open a local world with grass, moss and stone slabs in the viewer and compare with the game.
 ```

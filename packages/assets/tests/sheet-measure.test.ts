@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
+  coloursOutside,
   compareLooks,
   formatSheetMap,
   groupLooks,
+  layoutAgreement,
   measureSheet,
   missingRimCodes,
+  nearColours,
   sheetColours,
+  type CellLook,
   type SheetPixels,
 } from "../tools/sheet-measure.ts";
 
@@ -104,11 +108,25 @@ describe("measureSheet", () => {
   it("measureSheet_HighlightCorner_ReadsNotchOnlyWhenNamed", () => {
     const sheet = blankSheet(1, 1);
     paintCell(sheet, 0, 0, { highlight: ["NE"] });
-    paint(sheet, 8, 8, HIGHLIGHT); // a highlight colour also occurs inside the body, so it is not an outline colour
+    // The highlight colour also shades the body (2 middle pixels against 4 in the ring), so it is not an outline colour.
+    paint(sheet, 8, 8, HIGHLIGHT);
+    paint(sheet, 9, 8, HIGHLIGHT);
 
     expect(measureSheet(sheet, { rows: 1, columns: 1 }).cells[0]?.corners).toBe("oooo");
     const notchColours = new Set([HIGHLIGHT.join(",")]);
     expect(measureSheet(sheet, { rows: 1, columns: 1, notchColours }).cells[0]?.corners).toBe("oxoo");
+  });
+
+  it("measureSheet_OutlineColourAlsoShadingTheBody_IsStillOutline", () => {
+    const sheet = blankSheet(2, 1);
+    paintCell(sheet, 0, 0, { outline: "NESW" });
+    paintCell(sheet, 1, 0);
+    paint(sheet, 18 + 8, 8, OUTLINE); // one body pixel of the outline colour: ring 60 × outline, middle 1 ×
+
+    const result = measureSheet(sheet, { rows: 1, columns: 2 });
+
+    expect(result.outlineColours).toEqual([OUTLINE.join(",")]);
+    expect(result.cells[0]?.sides).toBe("xxxx");
   });
 
   it("measureSheet_EmptyCellsAndCellsOutsideTheSheet_AreSkipped", () => {
@@ -161,5 +179,75 @@ describe("look helpers", () => {
     paintCell(sheet, 0, 0, { outline: "N", cut: ["SW"] });
 
     expect([...sheetColours(sheet)].sort()).toEqual([BODY.join(","), OUTLINE.join(",")].sort());
+  });
+});
+
+describe("partner colours", () => {
+  it("coloursOutside_ColourUsedOnlyOutsideTheRegion_IsListed", () => {
+    const sheet = blankSheet(2, 2);
+    paintCell(sheet, 0, 0, { outline: "N" });
+    paintCell(sheet, 1, 1, { partner: "N", outline: "S" });
+
+    expect([...coloursOutside(sheet, { columns: 1, rows: 1 })]).toEqual([PARTNER.join(",")]);
+  });
+
+  it("nearColours_LightingVariantWithinTolerance_IsMatched", () => {
+    const sheet = blankSheet(1, 1);
+    paintCell(sheet, 0, 0);
+    paint(sheet, 0, 0, [151, 101, 69]);
+    const reference = new Set([PARTNER.join(",")]);
+
+    expect([...nearColours(sheet, reference, 2)]).toEqual(["151,101,69"]);
+    expect([...nearColours(sheet, reference, 0)]).toEqual([]);
+  });
+});
+
+describe("layoutAgreement", () => {
+  // Six looks, three variants each, one look per row; variants differ by one body pixel so they are not identical.
+  const LOOKS: readonly CellArt[] = [
+    { outline: "NESW" },
+    {},
+    { outline: "NS" },
+    { outline: "EW" },
+    { partner: "N", outline: "S" },
+    { partner: "EW" },
+  ];
+
+  function layoutSheet(looks: readonly CellArt[]): SheetPixels {
+    const sheet = blankSheet(3, looks.length);
+    looks.forEach((art, row) => {
+      for (let column = 0; column < 3; column++) {
+        paintCell(sheet, column, row, art);
+        paint(sheet, column * 18 + 8, row * 18 + 8, [100 + column, 100, 100]);
+      }
+    });
+    return sheet;
+  }
+
+  const options = { rows: LOOKS.length, columns: 3, partnerColours };
+  const reference: readonly CellLook[] = measureSheet(layoutSheet(LOOKS), options).cells;
+
+  it("layoutAgreement_SheetWithTheReferenceLayout_PredictsEverySide", () => {
+    const result = layoutAgreement(layoutSheet(LOOKS), reference);
+
+    expect(result).toEqual({ agreeing: 72, total: 72, disagreements: [] });
+  });
+
+  it("layoutAgreement_ReferenceWithoutRims_NeverPredictsARim", () => {
+    const withoutRims = LOOKS.slice(0, 4);
+    const rimless = measureSheet(layoutSheet(withoutRims), { ...options, rows: withoutRims.length }).cells;
+
+    expect(layoutAgreement(layoutSheet(withoutRims), rimless)).toEqual({ agreeing: 48, total: 48, disagreements: [] });
+  });
+
+  it("layoutAgreement_SheetWithAnotherLayout_DisagreesOnTheMovedSides", () => {
+    // The same art turned by a quarter: every side letter moves to the next side (N → E → S → W → N).
+    const turn = (sides = ""): string => sides.replace(/[NESW]/g, (side) => "ESWN"["NESW".indexOf(side)] ?? "");
+    const moved = LOOKS.map((art) => ({ outline: turn(art.outline), partner: turn(art.partner) }));
+
+    const result = layoutAgreement(layoutSheet(moved), reference);
+
+    expect(result.agreeing).toBeLessThan(result.total / 2);
+    expect(result.disagreements).toContain("(0,2)E:o→x"); // the outlined N/S look now has its outline on E/W
   });
 });
