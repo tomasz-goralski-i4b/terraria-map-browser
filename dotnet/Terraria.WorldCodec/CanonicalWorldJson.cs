@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 
 namespace Terraria.WorldCodec;
@@ -5,12 +6,12 @@ namespace Terraria.WorldCodec;
 /// <summary>Shared metadata and content JSON contract for CWM exports.</summary>
 internal static class CanonicalWorldJson
 {
-    internal static void WriteMetadata(Utf8JsonWriter writer, WorldMetadata metadata)
+    internal static void WriteMetadata(Utf8JsonWriter writer, WorldMetadata metadata, bool binaryStrings = false)
     {
         writer.WriteStartObject("metadata");
-        writer.WriteString("name", metadata.Name);
-        writer.WriteString("seed", metadata.Seed);
-        writer.WriteString("guid", metadata.GuidHex);
+        WriteString(writer, "name", metadata.Name, binaryStrings);
+        WriteString(writer, "seed", metadata.Seed, binaryStrings);
+        WriteString(writer, "guid", metadata.GuidHex, binaryStrings);
         writer.WriteNumber("worldId", metadata.WorldId);
         if (metadata.GameMode is { } mode)
         {
@@ -21,23 +22,23 @@ internal static class CanonicalWorldJson
             writer.WriteNull("gameMode");
         }
 
-        writer.WriteString("evil", metadata.Evil == WorldEvil.Crimson ? "crimson" : "corruption");
+        WriteString(writer, "evil", metadata.Evil == WorldEvil.Crimson ? "crimson" : "corruption", binaryStrings);
         writer.WriteEndObject();
     }
 
-    internal static void WriteContent(Utf8JsonWriter writer, ContentRef content)
+    internal static void WriteContent(Utf8JsonWriter writer, ContentRef content, bool binaryStrings = false)
     {
         writer.WriteStartObject();
         switch (content)
         {
             case VanillaContentRef vanilla:
-                writer.WriteString("kind", "vanilla");
+                WriteString(writer, "kind", "vanilla", binaryStrings);
                 writer.WriteNumber("id", vanilla.Id);
                 break;
             case ModContentRef mod:
-                writer.WriteString("kind", "mod");
-                writer.WriteString("mod", mod.Mod);
-                writer.WriteString("internalName", mod.InternalName);
+                WriteString(writer, "kind", "mod", binaryStrings);
+                WriteString(writer, "mod", mod.Mod, binaryStrings);
+                WriteString(writer, "internalName", mod.InternalName, binaryStrings);
                 if (mod.RuntimeId is { } runtimeId)
                 {
                     writer.WriteNumber("runtimeId", runtimeId);
@@ -45,12 +46,12 @@ internal static class CanonicalWorldJson
 
                 if (mod.ModVersion is { } modVersion)
                 {
-                    writer.WriteString("modVersion", modVersion);
+                    WriteString(writer, "modVersion", modVersion, binaryStrings);
                 }
 
                 break;
             case UnknownContentRef unknown:
-                writer.WriteString("kind", "unknown");
+                WriteString(writer, "kind", "unknown", binaryStrings);
                 writer.WriteNumber("runtimeId", unknown.RuntimeId);
                 break;
             default:
@@ -58,5 +59,50 @@ internal static class CanonicalWorldJson
         }
 
         writer.WriteEndObject();
+    }
+
+    private static void WriteString(Utf8JsonWriter writer, string property, string? value, bool binaryStrings)
+    {
+        if (!binaryStrings || value is null)
+        {
+            writer.WriteString(property, value);
+            return;
+        }
+
+        var escaped = new StringBuilder(value.Length + 2);
+        escaped.Append('"');
+        // EnumerateRunes replaces each unpaired UTF-16 surrogate with U+FFFD.
+        foreach (var rune in value.EnumerateRunes())
+        {
+            var escape = rune.Value switch
+            {
+                '"' => "\\\"",
+                '\\' => "\\\\",
+                '\b' => "\\b",
+                '\t' => "\\t",
+                '\n' => "\\n",
+                '\f' => "\\f",
+                '\r' => "\\r",
+                _ => null,
+            };
+            if (escape is not null)
+            {
+                escaped.Append(escape);
+            }
+            else if (rune.Value < 0x20)
+            {
+                const string Hex = "0123456789abcdef";
+                escaped.Append("\\u00").Append(Hex[rune.Value >> 4]).Append(Hex[rune.Value & 0xf]);
+            }
+            else
+            {
+                escaped.Append(rune.ToString());
+            }
+        }
+
+        escaped.Append('"');
+        writer.WritePropertyName(property);
+        // This complete JSON string follows CWM's escaping contract independently of runtime encoder allow-lists.
+        writer.WriteRawValue(Encoding.UTF8.GetBytes(escaped.ToString()), skipInputValidation: true);
     }
 }

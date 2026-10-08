@@ -72,7 +72,7 @@ public static class WorldSummaryJson
             writer.WriteStartArray("palette");
             foreach (var content in model.Palette)
             {
-                WriteContent(writer, content);
+                CanonicalWorldJson.WriteContent(writer, content);
             }
 
             writer.WriteEndArray();
@@ -116,9 +116,6 @@ public static class WorldSummaryJson
                 string.Create(CultureInfo.InvariantCulture, $"The region must lie inside the {worldWidth} × {worldHeight} world."));
         }
     }
-
-    internal static void WriteContent(Utf8JsonWriter writer, ContentRef content) =>
-        CanonicalWorldJson.WriteContent(writer, content);
 
     private static void WriteChunks(Utf8JsonWriter writer, CanonicalWorldModel model)
     {
@@ -201,7 +198,7 @@ public static class WorldSummaryJson
         if (tile.Block is { } block)
         {
             writer.WritePropertyName("block");
-            WriteContent(writer, block);
+            CanonicalWorldJson.WriteContent(writer, block);
         }
 
         if (tile.FrameX is { } frameX)
@@ -222,7 +219,7 @@ public static class WorldSummaryJson
         if (tile.Wall is { } wall)
         {
             writer.WritePropertyName("wall");
-            WriteContent(writer, wall);
+            CanonicalWorldJson.WriteContent(writer, wall);
         }
 
         if (tile.WallPaint is { } wallPaint)

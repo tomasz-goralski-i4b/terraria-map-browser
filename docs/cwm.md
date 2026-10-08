@@ -78,6 +78,7 @@ Success returns 0. Argument errors return 2 (including an output alias of the in
 failures return 1, with diagnostics on stderr. A destination is published only after serialization
 succeeds; a failed export leaves no completed partial output and preserves any pre-existing destination.
 The output must be a new file; an existing file or symbolic link is an argument error.
+An existing directory is an I/O error, detected before creating a staging file.
 Generated files belong only in temporary or artifact directories and must never be committed.
 
 ## TypeScript model API

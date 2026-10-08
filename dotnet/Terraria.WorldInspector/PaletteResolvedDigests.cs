@@ -52,7 +52,7 @@ public sealed class PaletteResolvedDigests
         using var buffer = new MemoryStream();
         using (var writer = new Utf8JsonWriter(buffer))
         {
-            WorldSummaryJson.WriteContent(writer, content);
+            CanonicalWorldJson.WriteContent(writer, content);
         }
 
         return Encoding.UTF8.GetString(buffer.ToArray());

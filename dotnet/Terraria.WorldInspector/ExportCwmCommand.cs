@@ -43,6 +43,12 @@ internal static class ExportCwmCommand
                 return 1;
             }
 
+            if (Directory.Exists(target))
+            {
+                error.WriteLine("The CWM output path is an existing directory; choose a new file.");
+                return 1;
+            }
+
             if (File.Exists(target) || new FileInfo(target).LinkTarget is not null)
             {
                 error.WriteLine("The CWM output path already exists (or aliases the input); choose a new file.");

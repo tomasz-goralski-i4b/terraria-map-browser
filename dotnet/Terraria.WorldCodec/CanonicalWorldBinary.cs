@@ -1,5 +1,4 @@
 using System.Buffers.Binary;
-using System.Text.Encodings.Web;
 using System.Text.Json;
 
 namespace Terraria.WorldCodec;
@@ -19,16 +18,12 @@ public static class CanonicalWorldBinary
 
         var model = CanonicalWorldModel.FromTileGrid(world.Tiles);
         using var header = new MemoryStream();
-        using (var writer = new Utf8JsonWriter(header, new JsonWriterOptions
-        {
-            // Machine JSON, never embedded in HTML: retain non-ASCII text as UTF-8.
-            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-        }))
+        using (var writer = new Utf8JsonWriter(header))
         {
             writer.WriteStartObject();
             writer.WriteNumber("schemaVersion", schemaVersion);
             writer.WriteNumber("formatVersion", world.Header.Version);
-            CanonicalWorldJson.WriteMetadata(writer, world.Metadata);
+            CanonicalWorldJson.WriteMetadata(writer, world.Metadata, binaryStrings: true);
             writer.WriteStartObject("dimensions");
             writer.WriteNumber("width", model.Width);
             writer.WriteNumber("height", model.Height);
@@ -36,7 +31,7 @@ public static class CanonicalWorldBinary
             writer.WriteStartArray("palette");
             foreach (var content in model.Palette)
             {
-                CanonicalWorldJson.WriteContent(writer, content);
+                CanonicalWorldJson.WriteContent(writer, content, binaryStrings: true);
             }
 
             writer.WriteEndArray();
