@@ -49,4 +49,8 @@ public sealed record World(
     WorldFileHeader Header,
     WorldMetadata Metadata,
     TileGrid Tiles,
-    IReadOnlyList<SkippedSection> SkippedSections);
+    IReadOnlyList<SkippedSection> SkippedSections)
+{
+    /// <summary>Independent read-only entity results; legacy summary section boundaries remain unchanged.</summary>
+    public IReadOnlyList<WorldEntitySection> Entities { get; init; } = [];
+}
