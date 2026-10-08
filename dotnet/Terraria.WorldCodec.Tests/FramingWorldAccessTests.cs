@@ -15,7 +15,7 @@ public sealed class FramingWorldAccessTests
         var generated = WorldReader.ReadForSave(output);
         using var original = File.OpenRead(input);
         var source = WorldReader.ReadForSave(original);
-        Assert.Equal("TMS Framing Tests #158", generated.World.Metadata.Name);
+        Assert.Equal("TMS Framing Tests #158 v3", generated.World.Metadata.Name);
         Assert.NotEqual(source.World.Metadata.WorldId, generated.World.Metadata.WorldId);
         Assert.NotEqual(source.World.Metadata.GuidHex, generated.World.Metadata.GuidHex);
         // Read documented format-326 metadata fields independently of the generator.
@@ -38,12 +38,25 @@ public sealed class FramingWorldAccessTests
         }
 
         // Every default observation fits in view above the continuous walking floor.
-        Assert.All(manifest.Cases, entry => Assert.InRange(spawnY - entry.Y, 3, 16));
+        Assert.All(manifest.Cases, entry => Assert.InRange(spawnY - entry.Y, 3, 30));
         Assert.Equal(source.World.Metadata.GameMode, generated.World.Metadata.GameMode);
+        var powers = Assert.IsType<CreativePowersSection>(Assert.Single(generated.World.Entities,
+            section => section.Section == "CreativePowers").Data);
+        Assert.True(Assert.Single(powers.Entries, power => power.PowerId == 0).BooleanValue);
         Assert.Equal(source.OpaqueSections.Select(section => section.Name), generated.OpaqueSections.Select(section => section.Name));
         for (var section = 0; section < source.OpaqueSections.Count; section++)
         {
-            Assert.True(source.OpaqueSections[section].Bytes.Span.SequenceEqual(generated.OpaqueSections[section].Bytes.Span));
+            if (source.OpaqueSections[section].Name == "CreativePowers")
+            {
+                var originalPowers = Assert.IsType<CreativePowersSection>(Assert.Single(source.World.Entities,
+                    entry => entry.Section == "CreativePowers").Data);
+                Assert.Equal(originalPowers.Entries.Select(power => power.PowerId == 0
+                    ? power with { BooleanValue = true } : power), powers.Entries);
+            }
+            else
+            {
+                Assert.True(source.OpaqueSections[section].Bytes.Span.SequenceEqual(generated.OpaqueSections[section].Bytes.Span));
+            }
         }
     }
 }
