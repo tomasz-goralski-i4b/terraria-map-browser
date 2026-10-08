@@ -87,7 +87,7 @@ test("sorting by a header cycles ascending, descending and unsorted", async () =
 test("filtering by text and by kind", async () => {
   await render(<ContentPanel world={world} />);
   await page.getByRole("searchbox", { name: "Filter Content" }).fill("wall");
-  await expect.poll(() => bodyRows().map((row) => row[0])).toEqual(["Stone Wall"]);
+  await expect.poll(() => bodyRows().map((row) => row[0])).toEqual(["unknown:9", "Stone Wall"]);
   await page.getByRole("searchbox", { name: "Filter Content" }).fill("Dirt");
   await expect.poll(() => bodyRows().map((row) => row[0])).toEqual(["Dirt Block"]);
   await page.getByRole("searchbox", { name: "Filter Content" }).fill("vanilla:0");
@@ -96,6 +96,25 @@ test("filtering by text and by kind", async () => {
   await page.getByRole("searchbox", { name: "Filter Content" }).fill("");
   await page.getByRole("combobox", { name: "Kind" }).selectOptions("liquid");
   await expect.poll(() => bodyRows().map((row) => row[1])).toEqual(["Liquid", "Liquid", "Liquid", "Liquid"]);
+});
+
+test("kind text finds modded walls even when their internal name has no wall suffix", async () => {
+  const moddedWorld: ContentWorld = {
+    planes: {
+      block: Uint16Array.from([0, NONE]),
+      wall: Uint16Array.from([NONE, 1]),
+      liquid: new Uint8Array(2),
+    },
+    palette: [
+      { kind: "vanilla", id: 1 },
+      { kind: "mod", mod: "CalamityMod", internalName: "AstralStone" },
+    ],
+  };
+  await render(<ContentPanel world={moddedWorld} />);
+  await page.getByRole("searchbox", { name: "Filter Content" }).fill("WALL");
+  await expect.poll(() => bodyRows().map((row) => row[0])).toEqual(["CalamityMod:AstralStone"]);
+  await page.getByRole("searchbox", { name: "Filter Content" }).fill("block");
+  await expect.poll(() => bodyRows().map((row) => row[0])).toEqual(["Stone Block"]);
 });
 
 test("the default columns fit the default dock width", async () => {

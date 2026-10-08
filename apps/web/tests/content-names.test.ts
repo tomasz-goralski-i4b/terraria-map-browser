@@ -1,4 +1,5 @@
 import { expect, test } from "vitest";
+import { terrariaMapNames } from "@studio/renderer";
 import { contentName, describeTile, LIQUID_NAMES, paintName } from "../src/world/content-names.js";
 
 test("names ordinary materials from the game's placement items and names map objects from its legend", () => {
@@ -21,9 +22,27 @@ test("uses the known frame axis for a map option and option zero without that ax
 });
 
 test("keeps palette keys for unknown, modded and unnamed vanilla content", () => {
+  // Grass and plants have several differently named placement items, not one material label.
+  expect(contentName({ kind: "vanilla", id: 2 }, "block")).toBe("vanilla:2");
+  expect(contentName({ kind: "vanilla", id: 3 }, "block")).toBe("vanilla:3");
   expect(contentName({ kind: "unknown", runtimeId: 900 }, "wall")).toBe("unknown:900");
   expect(contentName({ kind: "mod", mod: "CalamityMod", internalName: "AstralStone" }, "block")).toBe("CalamityMod:AstralStone");
   expect(contentName({ kind: "vanilla", id: 5000 }, "block")).toBe("vanilla:5000");
+});
+
+test("wall names use option zero independently of the block's frame", () => {
+  expect(contentName({ kind: "vanilla", id: 1 }, "wall")).toBe("Stone Wall");
+  expect(describeTile({
+    block: { kind: "vanilla", id: 26 }, frameX: 54, frameY: 18,
+    wall: { kind: "vanilla", id: 1 }, wires: 0, actuator: false,
+  })).toBe("Crimson Altar · Stone Wall");
+  // The current game's only multi-option wall (27) has no label for either option.
+  expect(terrariaMapNames.walls[27]).toHaveLength(2);
+  expect(contentName({ kind: "vanilla", id: 27 }, "wall")).toBe("vanilla:27");
+  expect(describeTile({
+    block: { kind: "vanilla", id: 26 }, frameX: 54, frameY: 18,
+    wall: { kind: "vanilla", id: 27 }, wires: 0, actuator: false,
+  })).toBe("Crimson Altar · vanilla:27");
 });
 
 test("describes the hovered block's map option, wall and every liquid with generated names", () => {
