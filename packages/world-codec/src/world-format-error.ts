@@ -5,11 +5,12 @@ export type WorldFormatErrorKind =
   | "NotAWorld"
   | "MalformedSectionTable"
   | "MalformedMetadata"
-  | "MalformedTiles";
+  | "MalformedTiles"
+  | "MalformedSection";
 
 type WorldFormatDiagnostic =
   | { readonly x: number; readonly y: number; readonly field?: string }
-  | { readonly field: string; readonly x?: never; readonly y?: never };
+  | { readonly field: string; readonly section?: string; readonly x?: never; readonly y?: never };
 
 /** A world file violates the format contract. */
 export class WorldFormatError extends Error {
@@ -21,6 +22,8 @@ export class WorldFormatError extends Error {
   readonly reason: string;
   /** Metadata field associated with the rejection, when known. */
   readonly field?: string;
+  /** Entity section associated with the rejection, when known. */
+  readonly section?: string;
   /** Tile column of the offending record, for `MalformedTiles`. */
   readonly x?: number;
   /** Tile row of the offending record, for `MalformedTiles`. */
@@ -33,6 +36,7 @@ export class WorldFormatError extends Error {
     this.offset = offset;
     this.reason = reason;
     if (diagnostic?.field !== undefined) this.field = diagnostic.field;
+    if (diagnostic && "section" in diagnostic) this.section = diagnostic.section;
     if (diagnostic?.x !== undefined) this.x = diagnostic.x;
     if (diagnostic?.y !== undefined) this.y = diagnostic.y;
   }

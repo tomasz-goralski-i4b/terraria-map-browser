@@ -1,0 +1,716 @@
+{
+  "schemaVersion": 1,
+  "group": "entities",
+  "vectors": [
+    {
+      "id": "E01",
+      "title": "Named chest with sparse slots",
+      "section": "Chests",
+      "start": 128,
+      "end": 175,
+      "hex": "010040010000b40000001044756e67656f6e20737570706c696573030000000c001c00000000000001009b00000012",
+      "result": {
+        "entries": [
+          {
+            "x": 320,
+            "y": 180,
+            "name": "Dungeon supplies",
+            "slotCount": 3,
+            "items": [
+              {
+                "slot": 0,
+                "itemId": 28,
+                "stack": 12,
+                "prefix": 0
+              },
+              {
+                "slot": 2,
+                "itemId": 155,
+                "stack": 1,
+                "prefix": 18
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "E02",
+      "title": "Unicode sign with newline",
+      "section": "Signs",
+      "start": 128,
+      "end": 157,
+      "hex": "0100125a61c5bcc3b3c582c4870a44756e67656f6e40010000b4000000",
+      "result": {
+        "entries": [
+          {
+            "x": 320,
+            "y": 180,
+            "text": "Zażółć\nDungeon"
+          }
+        ]
+      }
+    },
+    {
+      "id": "E03",
+      "title": "Shimmered guide and travelling mob",
+      "section": "NpcsAndMobs",
+      "start": 128,
+      "end": 187,
+      "hex": "01000000160000000116000000074d617877656c6c0004a045000434450140010000b40000000100000000000001010000000080a0450000344500",
+      "result": {
+        "townNpcs": [
+          {
+            "npcId": 22,
+            "displayName": "Maxwell",
+            "x": 5120.5,
+            "y": 2880.25,
+            "homeless": true,
+            "homeX": 320,
+            "homeY": 180
+          }
+        ],
+        "mobs": [
+          {
+            "npcId": 1,
+            "x": 5136,
+            "y": 2880
+          }
+        ]
+      }
+    },
+    {
+      "id": "E04",
+      "title": "Tile entity kind 0",
+      "section": "TileEntities",
+      "start": 128,
+      "end": 143,
+      "hex": "01000000002a0000004001b4000300",
+      "result": {
+        "entries": [
+          {
+            "kind": 0,
+            "entityId": 42,
+            "x": 320,
+            "y": 180,
+            "items": [],
+            "dyes": [],
+            "misc": [],
+            "anchorItemId": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "E05",
+      "title": "Tile entity kind 1",
+      "section": "TileEntities",
+      "start": 128,
+      "end": 146,
+      "hex": "01000000012b0000004001b400f502000100",
+      "result": {
+        "entries": [
+          {
+            "kind": 1,
+            "entityId": 43,
+            "x": 320,
+            "y": 180,
+            "items": [
+              {
+                "slot": 0,
+                "itemId": 757,
+                "stack": 1,
+                "prefix": 0
+              }
+            ],
+            "dyes": [],
+            "misc": [],
+            "anchorItemId": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "E06",
+      "title": "Tile entity kind 2",
+      "section": "TileEntities",
+      "start": 128,
+      "end": 143,
+      "hex": "01000000022c0000004001b4000301",
+      "result": {
+        "entries": [
+          {
+            "kind": 2,
+            "entityId": 44,
+            "x": 320,
+            "y": 180,
+            "items": [],
+            "dyes": [],
+            "misc": [],
+            "anchorItemId": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "E07",
+      "title": "Tile entity kind 3",
+      "section": "TileEntities",
+      "start": 128,
+      "end": 175,
+      "hex": "01000000032d0000004001b400810102079b00120100f502000100aa02000100ef03000100f0030001005c13000100",
+      "result": {
+        "entries": [
+          {
+            "kind": 3,
+            "entityId": 45,
+            "x": 320,
+            "y": 180,
+            "items": [
+              {
+                "slot": 0,
+                "itemId": 155,
+                "stack": 1,
+                "prefix": 18
+              },
+              {
+                "slot": 7,
+                "itemId": 757,
+                "stack": 1,
+                "prefix": 0
+              },
+              {
+                "slot": 8,
+                "itemId": 682,
+                "stack": 1,
+                "prefix": 0
+              }
+            ],
+            "dyes": [
+              {
+                "slot": 0,
+                "itemId": 1007,
+                "stack": 1,
+                "prefix": 0
+              },
+              {
+                "slot": 8,
+                "itemId": 1008,
+                "stack": 1,
+                "prefix": 0
+              }
+            ],
+            "misc": [
+              {
+                "slot": 0,
+                "itemId": 4956,
+                "stack": 1,
+                "prefix": 0
+              }
+            ],
+            "anchorItemId": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "E08",
+      "title": "Tile entity kind 4",
+      "section": "TileEntities",
+      "start": 128,
+      "end": 146,
+      "hex": "01000000042e0000004001b400f502000100",
+      "result": {
+        "entries": [
+          {
+            "kind": 4,
+            "entityId": 46,
+            "x": 320,
+            "y": 180,
+            "items": [
+              {
+                "slot": 0,
+                "itemId": 757,
+                "stack": 1,
+                "prefix": 0
+              }
+            ],
+            "dyes": [],
+            "misc": [],
+            "anchorItemId": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "E09",
+      "title": "Tile entity kind 5",
+      "section": "TileEntities",
+      "start": 128,
+      "end": 162,
+      "hex": "01000000052f0000004001b4000fee00000100ef00000100ef03000100f003000100",
+      "result": {
+        "entries": [
+          {
+            "kind": 5,
+            "entityId": 47,
+            "x": 320,
+            "y": 180,
+            "items": [
+              {
+                "slot": 0,
+                "itemId": 238,
+                "stack": 1,
+                "prefix": 0
+              },
+              {
+                "slot": 1,
+                "itemId": 239,
+                "stack": 1,
+                "prefix": 0
+              }
+            ],
+            "dyes": [
+              {
+                "slot": 0,
+                "itemId": 1007,
+                "stack": 1,
+                "prefix": 0
+              },
+              {
+                "slot": 1,
+                "itemId": 1008,
+                "stack": 1,
+                "prefix": 0
+              }
+            ],
+            "misc": [],
+            "anchorItemId": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "E10",
+      "title": "Tile entity kind 6",
+      "section": "TileEntities",
+      "start": 128,
+      "end": 146,
+      "hex": "0100000006300000004001b400f502000100",
+      "result": {
+        "entries": [
+          {
+            "kind": 6,
+            "entityId": 48,
+            "x": 320,
+            "y": 180,
+            "items": [
+              {
+                "slot": 0,
+                "itemId": 757,
+                "stack": 1,
+                "prefix": 0
+              }
+            ],
+            "dyes": [],
+            "misc": [],
+            "anchorItemId": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "E11",
+      "title": "Tile entity kind 7",
+      "section": "TileEntities",
+      "start": 128,
+      "end": 141,
+      "hex": "0100000007310000004001b400",
+      "result": {
+        "entries": [
+          {
+            "kind": 7,
+            "entityId": 49,
+            "x": 320,
+            "y": 180,
+            "items": [],
+            "dyes": [],
+            "misc": [],
+            "anchorItemId": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "E12",
+      "title": "Tile entity kind 8",
+      "section": "TileEntities",
+      "start": 128,
+      "end": 146,
+      "hex": "0100000008320000004001b400f502000100",
+      "result": {
+        "entries": [
+          {
+            "kind": 8,
+            "entityId": 50,
+            "x": 320,
+            "y": 180,
+            "items": [
+              {
+                "slot": 0,
+                "itemId": 757,
+                "stack": 1,
+                "prefix": 0
+              }
+            ],
+            "dyes": [],
+            "misc": [],
+            "anchorItemId": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "E13",
+      "title": "Tile entity kind 9",
+      "section": "TileEntities",
+      "start": 128,
+      "end": 143,
+      "hex": "0100000009330000004001b400c707",
+      "result": {
+        "entries": [
+          {
+            "kind": 9,
+            "entityId": 51,
+            "x": 320,
+            "y": 180,
+            "items": [],
+            "dyes": [],
+            "misc": [],
+            "anchorItemId": 1991
+          }
+        ]
+      }
+    },
+    {
+      "id": "E14",
+      "title": "Tile entity kind 10",
+      "section": "TileEntities",
+      "start": 128,
+      "end": 143,
+      "hex": "010000000a340000004001b400c707",
+      "result": {
+        "entries": [
+          {
+            "kind": 10,
+            "entityId": 52,
+            "x": 320,
+            "y": 180,
+            "items": [],
+            "dyes": [],
+            "misc": [],
+            "anchorItemId": 1991
+          }
+        ]
+      }
+    },
+    {
+      "id": "E15",
+      "title": "Weighted pressure plate",
+      "section": "WeightedPressurePlates",
+      "start": 128,
+      "end": 140,
+      "hex": "0100000040010000b4000000",
+      "result": {
+        "entries": [
+          {
+            "x": 320,
+            "y": 180
+          }
+        ]
+      }
+    },
+    {
+      "id": "E16",
+      "title": "Guide room assignment",
+      "section": "TownManager",
+      "start": 128,
+      "end": 144,
+      "hex": "010000001600000040010000b4000000",
+      "result": {
+        "entries": [
+          {
+            "npcId": 22,
+            "x": 320,
+            "y": 180
+          }
+        ]
+      }
+    },
+    {
+      "id": "E17",
+      "title": "Kills seen and chatted entries",
+      "section": "Bestiary",
+      "start": 128,
+      "end": 194,
+      "hex": "010000001254657272617269612f426c7565536c696d650c000000010000000f54657272617269612f5a6f6d626965010000000e54657272617269612f4775696465",
+      "result": {
+        "killCount": 1,
+        "seenCount": 1,
+        "chattedCount": 1
+      }
+    },
+    {
+      "id": "E18",
+      "title": "Every known creative power",
+      "section": "CreativePowers",
+      "start": 128,
+      "end": 174,
+      "hex": "01000001010500010108000000204001090001010a0001010b0001010c000000403f010d0001010e000000403f00",
+      "result": {
+        "entries": [
+          {
+            "powerId": 0,
+            "booleanValue": true,
+            "sliderValue": null
+          },
+          {
+            "powerId": 5,
+            "booleanValue": true,
+            "sliderValue": null
+          },
+          {
+            "powerId": 8,
+            "booleanValue": null,
+            "sliderValue": 2.5
+          },
+          {
+            "powerId": 9,
+            "booleanValue": true,
+            "sliderValue": null
+          },
+          {
+            "powerId": 10,
+            "booleanValue": true,
+            "sliderValue": null
+          },
+          {
+            "powerId": 11,
+            "booleanValue": true,
+            "sliderValue": null
+          },
+          {
+            "powerId": 12,
+            "booleanValue": null,
+            "sliderValue": 0.75
+          },
+          {
+            "powerId": 13,
+            "booleanValue": true,
+            "sliderValue": null
+          },
+          {
+            "powerId": 14,
+            "booleanValue": null,
+            "sliderValue": 0.75
+          }
+        ]
+      }
+    },
+    {
+      "id": "E19",
+      "title": "Stops before end pointer",
+      "section": "Signs",
+      "start": 128,
+      "end": 131,
+      "hex": "000000",
+      "error": {
+        "field": "end",
+        "offset": 130,
+        "reason": "section does not end at its pointer"
+      }
+    },
+    {
+      "id": "E20",
+      "title": "Record overruns pointer",
+      "section": "WeightedPressurePlates",
+      "start": 128,
+      "end": 139,
+      "hex": "0100000040010000b4000000",
+      "error": {
+        "field": "count",
+        "offset": 128,
+        "reason": "list count is negative or does not fit in the section"
+      }
+    },
+    {
+      "id": "E21",
+      "title": "Unknown entity kind",
+      "section": "TileEntities",
+      "start": 128,
+      "end": 141,
+      "hex": "010000000b2a0000004001b400",
+      "error": {
+        "field": "kind",
+        "offset": 132,
+        "reason": "unknown tile entity kind"
+      }
+    },
+    {
+      "id": "E22",
+      "title": "Unknown creative power",
+      "section": "CreativePowers",
+      "start": 128,
+      "end": 132,
+      "hex": "01070000",
+      "error": {
+        "field": "powerId",
+        "offset": 129,
+        "reason": "unknown creative power"
+      }
+    },
+    {
+      "id": "E23",
+      "title": "Invalid Bool value",
+      "section": "CreativePowers",
+      "start": 128,
+      "end": 133,
+      "hex": "0100000200",
+      "error": {
+        "field": "value",
+        "offset": 131,
+        "reason": "invalid boolean"
+      }
+    },
+    {
+      "id": "E24",
+      "title": "Unsupported NPC extra bits",
+      "section": "NpcsAndMobs",
+      "start": 128,
+      "end": 170,
+      "hex": "000000000116000000074d617877656c6c0004a045000434450140010000b40000000200000000000000",
+      "error": {
+        "field": "extraBits",
+        "offset": 162,
+        "reason": "unknown NPC extra bits"
+      }
+    },
+    {
+      "id": "E25",
+      "title": "Negative count",
+      "section": "Signs",
+      "start": 128,
+      "end": 130,
+      "hex": "ffff",
+      "error": {
+        "field": "count",
+        "offset": 128,
+        "reason": "list count is negative or does not fit in the section"
+      }
+    },
+    {
+      "id": "E26",
+      "title": "Huge count",
+      "section": "TileEntities",
+      "start": 128,
+      "end": 132,
+      "hex": "ffffff7f",
+      "error": {
+        "field": "count",
+        "offset": 128,
+        "reason": "list count is negative or does not fit in the section"
+      }
+    },
+    {
+      "id": "E27",
+      "title": "Invalid UTF-8",
+      "section": "Signs",
+      "start": 128,
+      "end": 140,
+      "hex": "010001ff40010000b4000000",
+      "error": {
+        "field": "text",
+        "offset": 130,
+        "reason": "invalid UTF-8"
+      }
+    },
+    {
+      "id": "E28",
+      "title": "String length beyond section",
+      "section": "Signs",
+      "start": 128,
+      "end": 139,
+      "hex": "01007f40010000b4000000",
+      "error": {
+        "field": "text",
+        "offset": 130,
+        "reason": "string length overruns section"
+      }
+    },
+    {
+      "id": "E29",
+      "title": "Negative stack",
+      "section": "Chests",
+      "start": 128,
+      "end": 145,
+      "hex": "010040010000b40000000001000000ffff",
+      "error": {
+        "field": "stack",
+        "offset": 143,
+        "reason": "negative stack"
+      }
+    },
+    {
+      "id": "E30",
+      "title": "Invalid sensor Bool",
+      "section": "TileEntities",
+      "start": 128,
+      "end": 143,
+      "hex": "01000000022a0000004001b4000302",
+      "error": {
+        "field": "on",
+        "offset": 142,
+        "reason": "invalid boolean"
+      }
+    },
+    {
+      "id": "E31",
+      "title": "Empty lists missing mob terminator",
+      "section": "NpcsAndMobs",
+      "start": 128,
+      "end": 133,
+      "hex": "0000000000",
+      "error": {
+        "field": "more",
+        "offset": 133,
+        "reason": "overruns section"
+      }
+    },
+    {
+      "id": "E32",
+      "title": "Missing terminator",
+      "section": "CreativePowers",
+      "start": 128,
+      "end": 128,
+      "hex": "",
+      "error": {
+        "field": "more",
+        "offset": 128,
+        "reason": "overruns section"
+      }
+    },
+    {
+      "id": "E33",
+      "title": "Negative seen count",
+      "section": "Bestiary",
+      "start": 128,
+      "end": 140,
+      "hex": "00000000ffffffff00000000",
+      "error": {
+        "field": "seenCount",
+        "offset": 132,
+        "reason": "list count is negative or does not fit in the section"
+      }
+    }
+  ]
+}

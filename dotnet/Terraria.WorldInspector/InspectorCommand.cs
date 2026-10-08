@@ -153,6 +153,23 @@ internal static class InspectorCommand
         output.WriteLine(string.Create(CultureInfo.InvariantCulture, $"Blocks: {blocks}"));
         output.WriteLine(string.Create(CultureInfo.InvariantCulture, $"Walls: {walls}"));
         output.WriteLine(string.Create(CultureInfo.InvariantCulture, $"Liquids: {liquids}"));
+        foreach (var section in world.Entities)
+        {
+            var counts = section.Data switch
+            {
+                ChestsSection data => data.Entries.Count.ToString(CultureInfo.InvariantCulture),
+                SignsSection data => data.Entries.Count.ToString(CultureInfo.InvariantCulture),
+                NpcsSection data => string.Create(CultureInfo.InvariantCulture, $"{data.TownNpcs.Count}+{data.Mobs.Count}"),
+                TileEntitiesSection data => data.Entries.Count.ToString(CultureInfo.InvariantCulture),
+                PressurePlatesSection data => data.Entries.Count.ToString(CultureInfo.InvariantCulture),
+                RoomsSection data => data.Entries.Count.ToString(CultureInfo.InvariantCulture),
+                BestiarySection data => string.Create(CultureInfo.InvariantCulture, $"{data.KillCount},{data.SeenCount},{data.ChattedCount}"),
+                CreativePowersSection data => data.Entries.Count.ToString(CultureInfo.InvariantCulture),
+                _ => $"unreadable ({section.Error?.Message})",
+            };
+            output.WriteLine(string.Create(CultureInfo.InvariantCulture, $"{section.Section}: {counts} / {section.Boundary.End - section.Boundary.Start} B"));
+        }
+
         output.WriteLine($"Skipped sections: {string.Join(", ", world.SkippedSections.Select(section => section.Name))}");
     }
 

@@ -8,9 +8,11 @@ C#↔TS call (ADR 0001).
 | `schemas/world-summary.v1.schema.json` | — | `export-json` output (owned by #10) |
 | `schemas/chunks.v1.schema.json` | — | a golden `*.chunks.json` (`packages/test-fixtures/snapshots/m1`): the `chunks` object of the summary, stored alone |
 | `schemas/vector.v1.schema.json` | — | the vector files below |
+| `schemas/entities-vector.v1.schema.json` | — | read-only sections 3–10 vectors |
 | `vectors/metadata.vectors.json` | `vector.v1` | M1–M5 |
 | `vectors/tiles.vectors.json` | `vector.v1` | T1–T18 |
 | `vectors/runs.vectors.json` | `vector.v1` | R1–R10 |
+| `vectors/entities.vectors.json` | `entities-vector.v1` | E01–E33: complete sections, every entity kind and failure diagnostics |
 | `vectors/malformed/mutations.json` | — | malformed examples: each mutation is rejected by its declared schema or semantic validation layer |
 
 ## Schema versions
@@ -90,3 +92,14 @@ It consumes exactly one record for REC, except the documented four-record R6 col
 bytes after those records. `SharedContractVectorTests` owns the T1–T13 successful examples; the hand-written tile
 tests retain additional boundaries, optional-field absence and malformed full-world diagnostics. Run/grid tests
 and metadata tests retain their full-section/full-world checks beyond the shared REC and META fragments.
+## Read-only entity vectors
+
+`vectors/entities.vectors.json` uses `schemas/entities-vector.v1.schema.json`. Each vector names a section,
+the absolute `start`/exclusive `end` boundary and the supplied hex bytes, with exactly one complete `result`
+or `error` (`field`, absolute `offset`, `reason`). The parsers must consume the section exactly. The vectors
+include every tile-entity kind (0–10), all creative-power layouts, sparse chest slots, NPCs/mobs, signs,
+plates, rooms and bestiary records, plus malformed inputs. The bestiary keys are synthetic examples, not
+claims about keys observed in game. xUnit and Vitest read the same committed inputs independently.
+
+Decoded entities are read-only. The .NET save envelope continues to preserve all section 3–10 bytes verbatim;
+the existing v1 tile/metadata summary and its legacy `skippedSections` boundaries remain unchanged.

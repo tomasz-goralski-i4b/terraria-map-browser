@@ -92,7 +92,11 @@ public sealed class InspectorCommandTests
         Assert.Contains($"Name: Crimson Coast{escaped}Blocks: 999", lines, StringComparer.OrdinalIgnoreCase);
         Assert.Contains($"Seed: 94858{escaped}0918", lines, StringComparer.OrdinalIgnoreCase);
         Assert.Equal("Blocks: 4", Assert.Single(lines, line => line.StartsWith("Blocks:", StringComparison.Ordinal)));
-        Assert.Equal(12, lines.Length);
+        Assert.Equal(20, lines.Length);
+        foreach (var section in new[] { "Chests", "Signs", "NpcsAndMobs", "TileEntities", "WeightedPressurePlates", "TownManager", "Bestiary", "CreativePowers" })
+        {
+            Assert.Single(lines, line => line.StartsWith(section + ":", StringComparison.Ordinal));
+        }
         Assert.Equal(bytes, File.ReadAllBytes(path));
     }
 

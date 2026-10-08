@@ -17,6 +17,7 @@ const worldDir = "packages/test-fixtures/worlds";
 const problems = [];
 const fail = (msg) => problems.push(msg);
 const vectorSchema = read(join(schemaDir, "vector.v1.schema.json"));
+const entityVectorSchema = read(join(schemaDir, "entities-vector.v1.schema.json"));
 const chunksSchema = read(join(schemaDir, "chunks.v1.schema.json"));
 const summarySchema = read(join(schemaDir, "world-summary.v1.schema.json"));
 
@@ -42,16 +43,24 @@ const expectedIds = [
   ...Array.from({ length: 18 }, (_, i) => `T${i + 1}`),
   ...Array.from({ length: 10 }, (_, i) => `R${i + 1}`),
   ...Array.from({ length: 5 }, (_, i) => `M${i + 1}`),
+  ...Array.from({ length: 33 }, (_, i) => `E${String(i + 1).padStart(2, "0")}`),
 ];
 const manifest = existsSync(join(worldDir, "manifest.json")) ? read(join(worldDir, "manifest.json")) : { worlds: [] };
 for (const f of files) {
   const doc = read(join(vectorDir, f));
-  const errors = validate(vectorSchema, doc);
+  const errors = validate(f === "entities.vectors.json" ? entityVectorSchema : vectorSchema, doc);
   for (const e of errors) fail(`${f}: ${e}`);
   if (errors.length) continue;
   for (const vec of doc.vectors) {
     if (byId.has(vec.id)) fail(`${f}: duplicate vector ${vec.id}`);
     byId.set(vec.id, vec);
+    if (doc.group === "entities") {
+      const inputEnd = vec.start + vec.hex.length / 2;
+      if (vec.end < vec.start || vec.end > inputEnd) fail(`${f} ${vec.id}: section boundary exceeds supplied bytes`);
+      if (vec.error && (vec.error.offset < vec.start || vec.error.offset > vec.end)) fail(`${f} ${vec.id}: error offset exceeds section`);
+      if (vec.result && vec.end !== inputEnd) fail(`${f} ${vec.id}: successful section must consume the supplied bytes`);
+      continue;
+    }
     const ctx = vec.context;
     for (const error of validateVectorSemantics(vec, `${f} ${vec.id}`)) fail(error);
     if (vec.id === "M3") {
