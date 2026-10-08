@@ -46,6 +46,8 @@ export interface LayoutStorage {
 export interface LayoutState extends Layout {
   readonly setSectionOpen: (id: SectionId, open: boolean) => void;
   readonly setGroupOpen: (key: string, open: boolean) => void;
+  /** Opens or closes several groups at once (Expand all / Collapse all). */
+  readonly setGroupsOpen: (keys: readonly string[], open: boolean) => void;
   readonly setDockWidth: (width: number) => void;
   readonly setDockHidden: (hidden: boolean) => void;
   readonly setColumn: (table: string, column: string, layout: ColumnLayout) => void;
@@ -143,6 +145,9 @@ export const useLayoutStore = create<LayoutState>()((set, get) => {
     },
     setGroupOpen: (key, open) => {
       update({ groups: { ...get().groups, [key]: open } });
+    },
+    setGroupsOpen: (keys, open) => {
+      update({ groups: { ...get().groups, ...Object.fromEntries(keys.map((key) => [key, open])) } });
     },
     setDockWidth: (width) => {
       update({ dockWidth: clampDockWidth(width) });

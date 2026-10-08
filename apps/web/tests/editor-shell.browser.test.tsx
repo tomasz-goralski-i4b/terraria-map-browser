@@ -93,6 +93,18 @@ test("the World panel shows exactly the decoded metadata fields with their value
   expect(shown).toContainEqual(["Rock level", String(levels.rockLevel)]);
 });
 
+test("Collapse all and Expand all toggle every World group", async () => {
+  await render(<App layoutStorage={storage} />);
+  await openFixture("SCCO1.wld");
+  await expect.element(page.getByRole("region", { name: "World", exact: true })).toMatchTextContent("SCCR1");
+  const groupToggles = (): HTMLButtonElement[] => [...document.querySelectorAll<HTMLButtonElement>(".world-panel .section-toggle")];
+  await page.getByRole("button", { name: "Collapse all groups" }).click();
+  await expect.poll(() => groupToggles().map((toggle) => toggle.getAttribute("aria-expanded"))).toEqual(groupToggles().map(() => "false"));
+  expect(groupToggles().length).toBeGreaterThan(5);
+  await page.getByRole("button", { name: "Expand all groups" }).click();
+  await expect.poll(() => groupToggles().every((toggle) => toggle.getAttribute("aria-expanded") === "true")).toBe(true);
+});
+
 test("collapsed sections, a resized and a hidden dock persist across a reload", async () => {
   const first = await render(<App layoutStorage={storage} />);
   sectionToggle("Layers").click();

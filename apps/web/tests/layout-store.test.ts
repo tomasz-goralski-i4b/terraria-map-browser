@@ -61,6 +61,14 @@ test("section, dock and column changes survive a reload", () => {
   expect(state.columns["content"]?.["share"]).toEqual({ hidden: true, width: 90 });
 });
 
+test("several groups open or close at once", () => {
+  useLayoutStore.getState().setGroupOpen("world/size", false);
+  useLayoutStore.getState().setGroupsOpen(["world/identity", "world/size"], false);
+  expect(useLayoutStore.getState().groups).toMatchObject({ "world/identity": false, "world/size": false });
+  useLayoutStore.getState().setGroupsOpen(["world/identity", "world/size"], true);
+  expect(useLayoutStore.getState().groups).toMatchObject({ "world/identity": true, "world/size": true });
+});
+
 test("the dock width stays between its minimum and maximum", () => {
   useLayoutStore.getState().setDockWidth(10);
   expect(useLayoutStore.getState().dockWidth).toBe(DEFAULT_LAYOUT.minDockWidth);

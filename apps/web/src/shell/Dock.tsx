@@ -1,12 +1,19 @@
 import { ContentPanel } from "../panels/ContentPanel.js";
 import { EntitiesPanel, InspectorPanel, LayersPanel } from "../panels/placeholders.js";
-import { WorldPanel } from "../panels/WorldPanel.js";
+import { WorldPanel, WorldPanelActions } from "../panels/WorldPanel.js";
 import { Section } from "../ui/Section.js";
 import { Splitter } from "../ui/Splitter.js";
 import { DEFAULT_LAYOUT, SECTION_IDS, useLayoutStore, type SectionId } from "./layout-store.js";
 
-const SECTIONS: Readonly<Record<SectionId, { readonly title: string; readonly body: () => React.JSX.Element }>> = {
-  world: { title: "World", body: () => <WorldPanel /> },
+interface SectionDefinition {
+  readonly title: string;
+  readonly body: () => React.JSX.Element;
+  /** Header controls, shown while the section is open. */
+  readonly actions?: () => React.JSX.Element;
+}
+
+const SECTIONS: Readonly<Record<SectionId, SectionDefinition>> = {
+  world: { title: "World", body: () => <WorldPanel />, actions: () => <WorldPanelActions /> },
   layers: { title: "Layers", body: () => <LayersPanel /> },
   inspector: { title: "Inspector", body: () => <InspectorPanel /> },
   content: { title: "Content", body: () => <ContentPanel /> },
@@ -39,6 +46,7 @@ export function Dock(): React.JSX.Element | null {
           <Section
             key={id}
             title={SECTIONS[id].title}
+            {...(sections[id] && SECTIONS[id].actions !== undefined ? { actions: SECTIONS[id].actions() } : {})}
             open={sections[id]}
             onOpenChange={(open) => {
               setSectionOpen(id, open);

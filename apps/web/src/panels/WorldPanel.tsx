@@ -6,7 +6,7 @@ import { IconButton } from "../ui/IconButton.js";
 import { PropertyGrid, type Property } from "../ui/PropertyGrid.js";
 import { Section } from "../ui/Section.js";
 import { getDefaultWorldSession } from "../world/world-session.js";
-import { worldFieldGroups, type WorldField, type WorldFieldGroup, type WorldFieldsInput } from "./world-fields.js";
+import { WORLD_GROUP_IDS, worldFieldGroups, type WorldField, type WorldFieldGroup, type WorldFieldsInput } from "./world-fields.js";
 
 function property(field: WorldField): Property {
   if (field.kind !== "point") return field;
@@ -35,6 +35,23 @@ function badge(group: WorldFieldGroup): string | undefined {
 function loadedFields(fileSize: number): WorldFieldsInput | null {
   const loaded = getDefaultWorldSession().getLoadedWorld();
   return loaded === null ? null : { ...loaded, fileSize };
+}
+
+const WORLD_GROUP_KEYS = WORLD_GROUP_IDS.map((id) => `world/${id}`);
+
+/** Expand all / Collapse all, for the World section's header. */
+export function WorldPanelActions(): React.JSX.Element {
+  const setGroupsOpen = useLayoutStore((state) => state.setGroupsOpen);
+  return (
+    <>
+      <IconButton icon="expandAll" label="Expand all groups" tooltipSide="left" onClick={() => {
+        setGroupsOpen(WORLD_GROUP_KEYS, true);
+      }} />
+      <IconButton icon="collapseAll" label="Collapse all groups" tooltipSide="left" onClick={() => {
+        setGroupsOpen(WORLD_GROUP_KEYS, false);
+      }} />
+    </>
+  );
 }
 
 /** Everything decoded from the save's header and metadata, in collapsible groups. */

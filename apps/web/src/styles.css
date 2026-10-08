@@ -597,6 +597,16 @@ kbd {
   rotate: 90deg;
 }
 
+.section-actions {
+  display: flex;
+  gap: 2px;
+}
+
+.section-actions .icon-button {
+  width: 24px;
+  height: 24px;
+}
+
 .section-badge {
   margin-left: auto;
   padding: 0 6px;

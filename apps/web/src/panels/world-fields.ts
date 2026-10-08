@@ -12,6 +12,9 @@ export interface WorldFieldGroup {
   readonly fields: readonly WorldField[];
 }
 
+/** Every group id the World panel can show, in display order (for Expand all / Collapse all). */
+export const WORLD_GROUP_IDS = ["identity", "size", "generation", "time", "progression", "bosses", "events", "landmarks", "ores"] as const;
+
 export interface WorldFieldsInput {
   readonly metadata: WorldMetadata;
   readonly header: { readonly version: number };

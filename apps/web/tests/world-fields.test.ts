@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { expect, test } from "vitest";
 import { readWorldMetadata, type WorldDetails } from "@studio/world-codec";
-import { clockTime, formatBytes, formatDate, sizeClass, worldFieldGroups, type WorldField, type WorldFieldGroup } from "../src/panels/world-fields.js";
+import { WORLD_GROUP_IDS, clockTime, formatBytes, formatDate, sizeClass, worldFieldGroups, type WorldField, type WorldFieldGroup } from "../src/panels/world-fields.js";
 
 const fixture = new URL("../../../packages/test-fixtures/worlds/SCCO1.wld", import.meta.url);
 const bytes = new Uint8Array(readFileSync(fixture));
@@ -52,6 +52,10 @@ test("generation, progression and landmarks come from the decoded details", () =
   expect(value(group(groups, "bosses").fields, "Moon Lord")).toBe(world.details.progression.bosses.moonLord);
   expect(group(groups, "bosses").fields).toHaveLength(Object.keys(world.details.progression.bosses).length);
   expect(value(group(groups, "progression").fields, "Hardmode")).toBe(world.details.progression.hardmode);
+});
+
+test("the group ids for Expand all / Collapse all cover every group", () => {
+  expect(worldFieldGroups(world).map((candidate) => candidate.id)).toEqual([...WORLD_GROUP_IDS]);
 });
 
 test("fields the file's version does not store get no row", () => {
