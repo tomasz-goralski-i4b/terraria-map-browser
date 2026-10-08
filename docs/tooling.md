@@ -111,8 +111,10 @@ config fails with the package name when browser tests exist without a browser pr
 silently (follow-up #69). Vitest saves failure screenshots under `.vitest/attachments/`;
 `.vitest/` is gitignored so red-phase browser runs cannot stage generated binary artifacts through `git add -A`.
 
-Install the matching browser once locally with `pnpm exec playwright install chromium`. CI uses
-`pnpm exec playwright install --with-deps chromium` to also install Linux system libraries
+Install the matching browser once locally with `pnpm exec playwright install chromium`. CI caches
+`~/.cache/ms-playwright` per Playwright version and, only on a cache miss, runs
+`pnpm exec playwright install --with-deps --only-shell chromium` (headless tests need only the headless shell;
+`--with-deps` adds the Linux system libraries, which the runner image already has on a hit)
 ([Playwright browser setup](https://playwright.dev/docs/browsers)). Browser installation is an explicit setup
 step, not a dependency install hook. `bash scripts/verify.sh` runs the full build (.NET, `tsc -b`, Vite), lint with zero
 warnings, the contract and fixture checks, all Node and browser Vitest projects (`scripts/test.sh`) and the
