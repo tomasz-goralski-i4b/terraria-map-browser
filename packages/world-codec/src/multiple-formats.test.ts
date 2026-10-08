@@ -38,6 +38,15 @@ describe("one vanilla reader across released format families", () => {
   });
 
   it.each([269, 279, 315, 319, 325, 326])("keeps strict vanilla owner checks in format %i", (version) => {
-    expect(() => readWorldTiles(worldBytes(version, Uint8Array.from([0x05, 0x10, 1])))).toThrow("flag without owner");
+    expect(() => readWorldTiles(worldBytes(version, Uint8Array.from([0x01, 0x01, 0x08])))).toThrow("flag without owner");
+  });
+
+  it.each(releasedFormats)("preserves vanilla residual slopes and lava in format %i", (version) => {
+    const world = readWorldTiles(worldBytes(version, Uint8Array.from([0x51, 0x30, 255, 3, 0x40, 3])));
+    expect(world.palette).toEqual([]);
+    expect(Array.from(world.planes.block)).toEqual(Array<number>(8).fill(65535));
+    expect(Array.from(world.planes.shape)).toEqual([3, 3, 3, 3, 0, 0, 0, 0]);
+    expect(Array.from(world.planes.liquid)).toEqual([2, 2, 2, 2, 0, 0, 0, 0]);
+    expect(Array.from(world.planes.liquidAmount)).toEqual([255, 255, 255, 255, 0, 0, 0, 0]);
   });
 });
