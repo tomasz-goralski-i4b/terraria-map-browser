@@ -1,26 +1,36 @@
 import { useEffect, useMemo, useState } from "react";
 import type { MapRendererStats } from "@studio/renderer";
+import type { WorldChest } from "@studio/world-codec";
 import type { Tile } from "@studio/world-model";
+import { chestTitle } from "../panels/chest-fields.js";
 import { useAppStore } from "../store.js";
 import { canonicalWorldOf } from "../world/canonical-world.js";
+import { chestLookupOf } from "../world/chests.js";
 import { describeTile } from "../world/content-names.js";
 import { depthLabel, type DepthLevels } from "../world/depth.js";
 import { getDefaultWorldSession } from "../world/world-session.js";
 import { getMapController, useViewStore } from "./view-store.js";
 
-/** What the status bar reads of a world: its levels and the tile view at a coordinate. */
+/** What the status bar reads of a world: its levels, the tile view at a coordinate and the chest standing there. */
 export interface StatusWorld extends DepthLevels {
   readonly tileAt: (x: number, y: number) => Tile;
+  readonly chestAt?: (x: number, y: number) => WorldChest | null;
 }
 
 function sessionStatusWorld(): StatusWorld | null {
   const loaded = getDefaultWorldSession().getLoadedWorld();
   if (loaded === null) return null;
   const { height, surfaceLevel, rockLevel } = loaded.metadata;
-  return { height, surfaceLevel, rockLevel, tileAt: (x, y) => canonicalWorldOf(loaded).tileAt(x, y) };
+  return { height, surfaceLevel, rockLevel, tileAt: (x, y) => canonicalWorldOf(loaded).tileAt(x, y), chestAt: chestLookupOf(loaded) };
 }
 
 const STATS_INTERVAL_MS = 500;
+
+/** "Chest: Ores · 2 of 40 slots": the object, its name when it has one, and how many slots are filled. */
+function describeChest(chest: WorldChest, origin: Tile): string {
+  const title = chestTitle(origin);
+  return `${chest.name.length > 0 ? `${title}: ${chest.name}` : title} · ${String(chest.items.length)} of ${String(chest.slotCount)} slots`;
+}
 
 function RenderStats(): React.JSX.Element {
   const [stats, setStats] = useState<MapRendererStats | null>(null);
@@ -55,6 +65,8 @@ export function StatusBar({ world }: { readonly world?: StatusWorld | null }): R
   const sessionWorld = useMemo(() => (summary === null ? null : sessionStatusWorld()), [summary]);
   const shown = world === undefined ? sessionWorld : world;
   const inWorld = hover !== null && shown !== null && hover.y >= 0 && hover.y < shown.height;
+  const chest = inWorld ? shown.chestAt?.(hover.x, hover.y) ?? null : null;
+  const chestText = inWorld && chest !== null ? describeChest(chest, shown.tileAt(chest.x, chest.y)) : "";
 
   return (
     <footer className="status-bar">
@@ -66,6 +78,9 @@ export function StatusBar({ world }: { readonly world?: StatusWorld | null }): R
       </span>
       <span className="status-cell status-tile" title="Block, wall and liquid under the pointer" data-testid="tile-under-cursor">
         {inWorld ? describeTile(shown.tileAt(hover.x, hover.y)) : ""}
+      </span>
+      <span className="status-cell status-chest" title="Chest under the pointer" data-testid="chest-under-cursor">
+        {chestText}
       </span>
       <span className="status-spacer" />
       {statsVisible && <RenderStats />}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import type { WorldChest } from "@studio/world-codec";
 import type { Tile } from "@studio/world-model";
 import { useLayoutStore } from "../shell/layout-store.js";
@@ -73,72 +73,43 @@ export function tileProperties(point: TilePoint, tile: Tile, showAll = true): Pr
 }
 
 /**
- * Keeps the panel at the tallest height it reached during one hover pass, so the shy view's changing row count does
- * not make the dock below jump on every tile. A pass ends when the pointer leaves the map, a tile is pinned or
- * unpinned, or the empty-field view is toggled; then the panel fits its content again.
+ * The tile pinned with the Inspect tool. Hovering does not change it: the status bar previews the tile under the
+ * pointer, so this section changes only on a click and never resizes the dock while the pointer moves.
  */
-function useHoverHeight(reset: string): React.RefObject<HTMLDivElement | null> {
-  const ref = useRef<HTMLDivElement>(null);
-  const tallest = useRef(0);
-  const lastReset = useRef(reset);
-  // Leaving the map can be followed by a new hover within one batch, so it is watched on the store, not in render.
-  useEffect(() => useViewStore.subscribe((state, previous) => {
-    if (state.hoverTile === null && previous.hoverTile !== null) tallest.current = 0;
-  }), []);
-  useLayoutEffect(() => {
-    const panel = ref.current;
-    if (panel === null) return;
-    if (lastReset.current !== reset) {
-      lastReset.current = reset;
-      tallest.current = 0;
-    }
-    panel.style.minHeight = "";
-    tallest.current = Math.max(tallest.current, panel.getBoundingClientRect().height);
-    panel.style.minHeight = `${String(tallest.current)}px`;
-  });
-  return ref;
-}
-
-/** The tile pinned with the Inspect tool, or a preview of the hovered tile when nothing is pinned. */
 export function InspectorPanel({ world }: { readonly world?: InspectorWorld | null }): React.JSX.Element {
   const summary = useAppStore((state) => state.summary);
   const pinned = useViewStore((state) => state.pinnedTile);
-  const hover = useViewStore((state) => state.hoverTile);
   const setPinned = useViewStore((state) => state.setPinnedTile);
   const showAll = useLayoutStore((state) => state.inspectorShowAll);
   const setShowAll = useLayoutStore((state) => state.setInspectorShowAll);
   // A new summary means a newly loaded world; the session is not reactive, the store is.
   const sessionWorld = useMemo(() => (summary === null ? null : sessionInspectorWorld()), [summary]);
   const shown = world === undefined ? sessionWorld : world;
-  const point = pinned ?? hover;
-  const chest = point === null ? null : shown?.chestAt?.(point.x, point.y) ?? null;
+  const chest = pinned === null ? null : shown?.chestAt?.(pinned.x, pinned.y) ?? null;
   const [openChest, setOpenChest] = useState<WorldChest | null>(null);
   const closeChest = useCallback(() => {
     setOpenChest(null);
   }, []);
-  const panelRef = useHoverHeight(`${pinned === null ? "hover" : `${String(pinned.x)},${String(pinned.y)}`}|${String(showAll)}`);
 
   if (shown === null) return <p className="panel-empty">Open a world to inspect its tiles.</p>;
-  if (point === null || point.x < 0 || point.y < 0 || point.x >= shown.width || point.y >= shown.height) {
-    return <p className="panel-empty">Hover a tile to preview it. With the Inspect tool (I), click a tile or press Enter to pin it.</p>;
+  if (pinned === null || pinned.x < 0 || pinned.y < 0 || pinned.x >= shown.width || pinned.y >= shown.height) {
+    return <p className="panel-empty">Click a tile with the Inspect tool (I) to inspect it.</p>;
   }
   return (
-    <div className="inspector-panel" ref={panelRef}>
+    <div className="inspector-panel">
       <div className="inspector-header">
-        <span className="inspector-state" data-pinned={pinned !== null}>{pinned === null ? "Hover preview" : "Pinned"}</span>
+        <span className="inspector-state" data-pinned="true">Pinned</span>
         <span className="inspector-actions">
           {/* The same eye as the Layers rows: pressed (open eye) shows the empty fields too. */}
           <IconButton icon={showAll ? "eye" : "eyeOff"} label="Show empty fields" pressed={showAll} tooltipSide="left" onClick={() => {
             setShowAll(!showAll);
           }} />
-          {pinned !== null && (
           <IconButton icon="close" label="Unpin tile" shortcut="Escape" tooltipSide="left" onClick={() => {
-              setPinned(null);
-            }} />
-          )}
+            setPinned(null);
+          }} />
         </span>
       </div>
-      <PropertyGrid label="Tile" properties={tileProperties(point, shown.tileAt(point.x, point.y), showAll)} />
+      <PropertyGrid label="Tile" properties={tileProperties(pinned, shown.tileAt(pinned.x, pinned.y), showAll)} />
       {chest !== null && (
         <>
           <h3 className="inspector-subheading">{chestTitle(shown.tileAt(chest.x, chest.y))}</h3>

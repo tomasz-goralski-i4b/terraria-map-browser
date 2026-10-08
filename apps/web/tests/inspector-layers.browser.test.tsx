@@ -92,31 +92,18 @@ test.each([
   await expect.poll(rows).toEqual(expected);
 });
 
-test("hovering previews a tile until one is pinned, and Unpin returns to the preview", async () => {
+test("the Inspector shows only a pinned tile: hovering changes nothing, and Unpin empties it", async () => {
   await render(<InspectorPanel world={inspectorWorld(canonicalWorld())} />);
   useViewStore.getState().setHoverTile({ x: 1, y: 0 });
-  await expect.poll(() => rows()[0]).toEqual(["Position", "1, 0"]);
-  await expect.element(page.getByText("Hover preview")).toBeVisible();
+  await expect.element(page.getByText("Click a tile with the Inspect tool (I) to inspect it.")).toBeVisible();
+  expect(rows()).toEqual([]);
   useViewStore.getState().setPinnedTile({ x: 2, y: 2 });
-  useViewStore.getState().setHoverTile({ x: 0, y: 1 });
   await expect.poll(() => rows()[0]).toEqual(["Position", "2, 2"]);
+  useViewStore.getState().setHoverTile({ x: 0, y: 1 });
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(rows()[0]).toEqual(["Position", "2, 2"]);
   await page.getByRole("button", { name: "Unpin tile" }).click();
-  await expect.poll(() => rows()[0]).toEqual(["Position", "0, 1"]);
-});
-
-test("while hovering, the Inspector grows to its tallest tile and does not shrink until the pointer leaves the map", async () => {
-  await render(<InspectorPanel world={inspectorWorld(canonicalWorld())} />);
-  const height = (): number => Math.round(document.querySelector(".inspector-panel")?.getBoundingClientRect().height ?? 0);
-  // The shy view of (0, 0) has many rows, (0, 1) only two.
-  useViewStore.getState().setHoverTile({ x: 0, y: 0 });
-  await expect.poll(() => rows()[0]).toEqual(["Position", "0, 0"]);
-  const tall = height();
-  useViewStore.getState().setHoverTile({ x: 0, y: 1 });
-  await expect.poll(() => rows()[0]).toEqual(["Position", "0, 1"]);
-  expect(height()).toBe(tall);
-  useViewStore.getState().setHoverTile(null);
-  useViewStore.getState().setHoverTile({ x: 0, y: 1 });
-  await expect.poll(height).toBeLessThan(tall);
+  await expect.element(page.getByText("Click a tile with the Inspect tool (I) to inspect it.")).toBeVisible();
 });
 
 test("the Inspector names the frame-selected altar and its paint", async () => {

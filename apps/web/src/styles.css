@@ -1060,9 +1060,14 @@ kbd {
   text-transform: capitalize;
 }
 
-.status-tile {
+.status-tile,
+.status-chest {
   flex: 0 1 auto;
   min-width: 0;
+}
+
+.status-chest:empty {
+  display: none;
 }
 
 .status-spacer {
