@@ -11,5 +11,7 @@ export {
   visibleChunks, zoomAt,
 } from "./camera/camera.js";
 export type { Camera, ChunkCoord, Size } from "./camera/camera.js";
+export { CameraAnimator, wheelPixels } from "./camera/animator.js";
+export type { CameraStep } from "./camera/animator.js";
 export { WebGl2UnavailableError, createMapRenderer } from "./gpu/map-renderer.js";
 export type { MapRenderer, MapRendererOptions, MapRendererStats, RenderableWorld } from "./gpu/map-renderer.js";
