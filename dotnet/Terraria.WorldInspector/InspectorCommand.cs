@@ -44,6 +44,11 @@ internal static class InspectorCommand
 
     private static int RunCore(string[] arguments, TextWriter output, TextWriter error, Func<string, World> readWorld)
     {
+        if (arguments.Length > 0 && arguments[0] == "case")
+        {
+            return CaseCommand.Run(arguments, output, error);
+        }
+
         if (arguments.Length > 0 && arguments[0] == "export-cwm")
         {
             return ExportCwmCommand.Run(arguments, output, error, readWorld);

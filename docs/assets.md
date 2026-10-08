@@ -734,34 +734,82 @@ the "dirt") is open (O8, H8). Until then a viewer frames moss like stone over ro
 
 ### Human steps (in-game check, G)
 
-Use a small world, made with our own generator or a fresh "small" world, and commit nothing. Screenshots go to
-`local-renders/` (gitignored).
+Generate a disposable observation world from an unchanged vanilla corpus fixture. Prepare `local-renders/`
+(gitignored), then run this command from the repository root:
 
-- **H1** Build examples 1–19 in a flat area (Journey mode, 1:1 zoom, full lighting) and save. Read the tiles with
-  `Terraria.WorldInspector`, take a screenshot, and compare each listed tile with its look (outline / open / rim per
-  side). A look can be compared without knowing the variant.
+```bash
+dotnet run --project dotnet/Terraria.WorldCodec.Synthetic -- generate packages/test-fixtures/worlds/SJCO1.wld local-renders/framing-observations.wld
+```
+
+It writes a new `.wld` and `.wld.manifest.json`, refuses either existing output path, and accepts only corpus
+paths whose bytes match `packages/test-fixtures/worlds/manifest.json`. It never edits the base. Do not commit
+either output. Copy only the generated world to a new file in Terraria's local Worlds directory for the game
+check; retain the original generated copy beside its manifest. The copy retains the base's name, world ID,
+GUID, spawn, mode and opaque sections (choose `SJCO1` for Journey mode); it appears under that base name in
+the world picker. Use a disposable game copy and avoid replacing any player world.
+
+The cases are already stamped onto a flat stone terrace near the horizontal centre, at `height / 8` in the sky.
+Fly up from spawn in Journey mode. Sections run left to right; their numbers and names are in `sections` in
+the manifest. Each starts with a gray-brick (38) column, `section number + 1` tiles tall. Cases are packed in
+catalogue order, with at least two tiles of air between patterns and between a pattern and a marker or floor.
+The manifest gives each pattern's top-left `x,y`, dimensions, title and expected look/cells or `to observe`.
+In patterns that contain `#`, that character identifies the focus tile; for the three-row worked examples it
+is on the middle row. Both tiles of examples 8, 14 and 16 have separate cases and enough surrounding mass to
+preserve the paired tile's own neighbourhood.
+
+Find a case by its manifest ID (`B14a`, `G9`, `H3-shape2`, etc.) and print all its tiles:
+
+```bash
+dotnet run --project dotnet/Terraria.WorldInspector -- case local-renders/framing-observations.wld local-renders/framing-observations.wld.manifest.json B14a
+```
+
+The inspector checks the output hash, then prints types, shapes and frames at the manifest coordinates.
+After Terraria saves the disposable copy, pass `--allow-changed-world` to inspect that copy with the original
+manifest: the report explicitly notes the changed hash. Case coordinates still have to lie inside the world.
+Screenshots go to `local-renders/`. The generator does not run the game or judge the observations (#120).
+
+The data catalogue is `dotnet/Terraria.WorldCodec.Synthetic/framing-cases.json`: one entry per case, with
+section, ID, title, character rows, legend and expected result. Legend cells accept vanilla `block`, `wall`,
+numeric `shape` and optional `frameX`/`frameY`. Add an entry to add a case or section, without changing the
+layout. `--catalogue <cases.json>` selects an extended catalogue; the map-option cases are appended automatically.
+
+- **Map options (#138)** Compare the generated **Map options** section in the game map and the viewer: gems
+  (178), herbs (82–84), pots (28) and chests (21) each have exactly one isolated tile per option reachable by
+  the shipped `tileOptions` rules, using a selecting frame. The section also has one tile for every content
+  listed as depending on more than one frame axis or on position; the viewer keeps those at option 0. The
+  manifest names the expected option. Pot **option 7 is pending the palette fix [#195](https://github.com/tomasz-goralski-i4b/terraria-map-browser/issues/195)**:
+  no observed frame currently selects it, so there is no fabricated tile. It appears under `unreachableOptions`
+  as tile 28, option 7, reason `no observed frame selects it`. Regenerating the palette with a selecting rule
+  adds that case automatically and removes the unreachable entry. Until #195 is fixed, the generated pot
+  option-8 case uses the observed `frameY=792`; larger pot frames are outside the current observed range.
+
+- **H1** Inspect the generated **Blocks** cases `B1`–`B19` (Journey mode, 1:1 zoom, full lighting) and save.
+  Read the tiles with `Terraria.WorldInspector`, take a screenshot, and compare each listed tile with its
+  look (outline / open / rim per side). A look can be compared without knowing the variant.
 - **H2** Save and reload the world twice. Note whether the variants of the same tiles change (random per load) or
   stay the same (seeded).
-- **H3** Hammer a dirt block into each of the shapes 1–5 inside a dirt mass. Check whether its full neighbours draw
-  an outline toward the cut faces (O5), and that the shape value read by the inspector matches the "Cut corner"
-  column.
-- **H4** Examples 15–17: a copper ore fully surrounded by dirt (full rim or rim corner only?), copper next to iron
-  ore (seam or no seam?), copper inside stone (outline?).
-- **H5** Example 14, **both tiles**: stone with dirt only to its N and E. Record whether the stone draws an outline
-  or a partial rim, and whether the dirt tile to its E draws an edge toward the stone. Repeat with example 8 for the
-  case where the rim exists.
-- **H6** A dirt mass with a single one-tile hole at a diagonal of one dirt tile (all four edges dirt, one corner
-  empty), once per corner. Record whether that tile shows a small notch in the corner (O7) or a plain interior.
-- **H7** Build grass examples G1–G9 with grass on dirt (and G9 also with stone instead of the dirt, which A8 treats
-  as connected). For each tile, identify the drawn cell by comparing its outline and its grass/dirt split in the
-  screenshot with the cells of the sheet, and compare it with the expected cells.
-- **H8** Grow green moss on a stone mass with an open surface, a single-tile pillar, a one-tile hole and a
-  stone/dirt boundary. Record whether the drawn cells come from rows 15–21 of `Tiles_179` (grass rules) or only
-  from rows 0–14 (block rules) (O8).
-- **H9** Place a 6 × 8 area of one type-1 large-frame block (stone slab, 273) and one type-2 block (luminite brick,
-  409). For every interior tile, record which of the six interior cells ((1,1) (2,1) (3,1) (1,6) (2,6) (3,6)) it
-  shows, and write the pattern down by world `x mod 3, y mod 4` (type 1) or `x mod 2, y mod 2` (type 2) (O4).
-- **H10** Spread corrupt jungle grass on a mud mass next to dirt, and crimson jungle grass likewise. Record whether
+- **H3** Inspect **Shapes** cases `H3-shape1`–`H3-shape5`, each already shaped inside a dirt mass. Check whether
+  its full neighbours draw an outline toward the cut faces (O5), and that the inspector's shape matches the
+  "Cut corner" column.
+- **H4** Inspect **Ores** cases `H4-15`, `H4-16a`, `H4-17`: copper surrounded by dirt (full rim or rim corner
+  only?), copper next to iron (seam or no seam?), copper inside stone (outline?).
+- **H5** Inspect **Rim fallback** cases `H5-14a`/`H5-14b`, **both tiles**: stone with dirt only to its N and E.
+  Record whether stone draws an outline or a partial rim, and whether the dirt tile to its E draws an edge
+  toward stone. Repeat with `H5-8a`/`H5-8b` for the case where the rim exists.
+- **H6** Inspect **Diagonal hole** cases `H6-NW`, `H6-NE`, `H6-SE`, `H6-SW`: a dirt mass with a single one-tile
+  hole at a diagonal of one dirt tile (all four edges dirt, one corner empty), once per corner. Record whether
+  that tile shows a small notch in the corner (O7) or a plain interior.
+- **H7** Inspect **Grass** examples `G1`–`G9` on dirt and `G9-stone` on stone (which A8 treats as connected).
+  Identify each drawn cell by comparing its outline and grass/dirt split with the sheet cells, then compare
+  it with the expected cells.
+- **H8** Inspect **Moss** cases `H8-surface`, `H8-pillar`, `H8-hole`, `H8-boundary`: green moss on stone with
+  an open surface, a single-tile pillar, a one-tile hole and a stone/dirt boundary. Record whether the drawn
+  cells come from rows 15–21 of `Tiles_179` (grass rules) or only rows 0–14 (block rules) (O8).
+- **H9** Inspect **Large frame** cases `H9-slab`/`H9-luminite`, each a 6 × 8 area: stone slab (273, type 1)
+  and luminite brick (409, type 2). For every interior tile, record which of the six interior cells
+  ((1,1) (2,1) (3,1) (1,6) (2,6) (3,6)) it shows. Write the pattern by world `x mod 3, y mod 4` (type 1)
+  or `x mod 2, y mod 2` (type 2) (O4).
+- **H10** Inspect **Jungle grass** cases `H10-corrupt`/`H10-crimson`, already placed on mud next to dirt. Record whether
   the brown under the grass is mud and whether a dirt neighbour is drawn as partner (O10).
 
 ### Not covered (deferred)
