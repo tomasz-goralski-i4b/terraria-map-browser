@@ -22,7 +22,7 @@ describe.skipIf(worlds.length === 0)("local worlds (STUDIO_LOCAL_WORLDS)", () =>
     const planes: readonly ArrayLike<number>[] = Object.values(world.planes);
     for (const plane of planes) expect(plane.length).toBe(width * height);
 
-    // Every non-empty block/wall references the palette; residual shapes never invent a block.
+    // Every non-empty block/wall references the palette and every shape is defined.
     // Counted in a plain loop: one expect per tile would dominate the run time on large worlds.
     const { block, wall, shape } = world.planes;
     const paletteSize = world.palette.length;

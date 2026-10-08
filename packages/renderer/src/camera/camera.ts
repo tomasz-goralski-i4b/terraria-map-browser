@@ -27,7 +27,9 @@ export function clampZoom(zoom: number, minimum: number = MIN_ZOOM): number {
 
 /** Large/custom worlds can require a smaller scale than the usual wheel-zoom floor. */
 function minimumZoom(viewport: Size, world: Size): number {
-  return Math.min(MIN_ZOOM, viewport.width / world.width, viewport.height / world.height);
+  const fit = Math.min(viewport.width / world.width, viewport.height / world.height);
+  // An empty viewport (before layout) or empty world has no meaningful fit; keep the usual floor.
+  return fit > 0 && Number.isFinite(fit) ? Math.min(MIN_ZOOM, fit) : MIN_ZOOM;
 }
 
 /** Fractional tile coordinates under a screen pixel. */
@@ -64,7 +66,8 @@ export function panBy(camera: Camera, deltaX: number, deltaY: number, viewport: 
 
 /** Sets zoom within the world-fit floor and MAX_ZOOM, keeping the tile under the screen point fixed, then clamps. */
 export function zoomAt(camera: Camera, zoom: number, screenX: number, screenY: number, viewport: Size, world: Size): Camera {
-  const next = clampZoom(zoom, minimumZoom(viewport, world));
+  // A camera already below the floor (the viewport grew since it was fitted) may stay there: zooming out must not zoom in.
+  const next = clampZoom(zoom, Math.min(minimumZoom(viewport, world), camera.zoom));
   const tile = screenToTile(camera, screenX, screenY);
   return clampCamera({ x: tile.x - screenX / next, y: tile.y - screenY / next, zoom: next }, viewport, world);
 }

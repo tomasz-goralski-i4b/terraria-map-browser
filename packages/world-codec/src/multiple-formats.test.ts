@@ -10,7 +10,7 @@ const releasedFormats = [269, 270, 271, 272, 273, 274, 275, 276, 277, 278, 279, 
 function worldBytes(version: number, tiles = Uint8Array.from([0x42, 2, 3, 0x48, 255, 3])): Uint8Array {
   const layout = version < 315 ? "1.4.4" : version < 325 ? "1.4.5" : "1.4.5-lightning";
   const metadata = buildMetadata({ layout, width: 2, height: 4, name: "SCCR1", seed: "948580918" });
-  const bytes = wrapMetadata(metadata.bytes, tiles.length, version, version < 315 ? 693 : 754);
+  const bytes = wrapMetadata(metadata.bytes, tiles.length, version, version < 315 ? 693 : version < 325 ? 753 : 754);
   const metadataStart = new DataView(bytes.buffer).getInt32(26, true);
   bytes.set(tiles, metadataStart + metadata.bytes.length);
   return bytes;

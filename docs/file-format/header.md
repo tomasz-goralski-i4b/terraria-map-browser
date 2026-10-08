@@ -161,7 +161,8 @@ A 1.4.4.9 world (format 279 = `17 01 00 00`), otherwise a well-formed header:
 0000: 17 01 00 00 72 65 6c 6f 67 69 63 02 01 00 00 00
 0010: 00 00 00 00 00 00 00 00
 ```
-Result: `UnsupportedVersion(279)` — decided at step 2, nothing after the version is read.
+Result (M1/.NET contract): `UnsupportedVersion(279)` — decided at step 2, nothing after the version is read.
+The TS reader admits 279 ([compatibility.md](compatibility.md)), so for it this truncated header is `Truncated` at 24.
 Likewise `47 01 00 00` (327) → `UnsupportedVersion(327)`.
 
 ### Cross-check on real fixtures

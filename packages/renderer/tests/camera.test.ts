@@ -89,6 +89,20 @@ describe("fit world and 1:1", () => {
     expect(fitWorld(viewport, world).zoom).toBe(viewport.width / world.width);
   });
 
+  test.each([{ width: 0, height: 600 }, { width: 800, height: 0 }])("fitWorld keeps a finite camera for an empty viewport %o", (empty) => {
+    const camera = fitWorld(empty, { width: 4200, height: 1200 });
+    expect(camera.zoom).toBe(MIN_ZOOM);
+    expect(Number.isFinite(camera.x) && Number.isFinite(camera.y)).toBe(true);
+  });
+
+  test("zooming out below the current floor never zooms in (after the viewport grew)", () => {
+    const custom = { width: 13400, height: 3800 };
+    const fitted = fitWorld({ width: 1280, height: 636 }, custom);
+    const grown = { width: 2560, height: 1272 };
+    expect(zoomAt(fitted, fitted.zoom * 0.9, 1280, 636, grown, custom).zoom).toBe(fitted.zoom);
+    expect(zoomAt(fitted, fitted.zoom * 1.1, 1280, 636, grown, custom).zoom).toBeCloseTo(fitted.zoom * 1.1, 9);
+  });
+
   test("the wheel-zoom floor stays MIN_ZOOM when the world already fits at that scale", () => {
     const small = { width: 4200, height: 1200 };
     const roomy = { width: 1920, height: 1080 };
