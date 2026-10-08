@@ -153,6 +153,12 @@ importers:
         specifier: workspace:*
         version: link:../world-model
 
+  packages/test-fixtures:
+    devDependencies:
+      '@studio/world-codec':
+        specifier: workspace:*
+        version: link:../world-codec
+
   packages/world-codec: {}
 
   packages/world-model: {}
