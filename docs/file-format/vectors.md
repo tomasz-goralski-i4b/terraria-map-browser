@@ -24,7 +24,7 @@ an error. In a complete section the bytes shown are everything up to `pointer[2]
 
 A REC vector can be run through a public, whole-file API if a harness wraps it in a full world. The wrapping is
 harness filler, not part of the vector, and must not change the documented result:
-- **Run-0 records (T1–T17):** the record alone is the whole tile section of a **1 × 1** world. A 1 × 1 world
+- **Run-0 records (T1–T18):** the record alone is the whole tile section of a **1 × 1** world. A 1 × 1 world
   holds exactly one record, so the section ends right after it (as `WorldReaderTileRecordTests` does).
 - **Run records (R1, R2, R4, R5, R7, R8):** put the record at `x 0, y 0` of a 2 × 4 world. If it decodes, add
   filler records that complete the grid; if it is meant to fail, add none (the error comes first). For example,
@@ -46,9 +46,9 @@ harness filler, not part of the vector, and must not change the documented resul
   `pointer[1]` → `MalformedMetadata { field "name" }`.
 
 ### Single records (one tile, `run = 0`)
-Entry point **REC** for every row (T1–T17). Each byte string is one complete record at `x 0, y 0`: an
-intentional fragment, not a 2 × 4 section. None of them is cut short. The error rows (T14–T17) fail on the
-content of the record, and a decoder reports them before it needs any byte beyond the ones shown.
+Entry point **REC** for every row (T1–T18). Each byte string is one complete record at `x 0, y 0`: an
+intentional fragment, not a 2 × 4 section. None of them is cut short. The error rows (T14–T17 and T18 `01 60`)
+fail on the content of the record, and a decoder reports them before it needs any byte beyond the ones shown.
 
 | Id | Bytes | Result |
 |---|---|---|
@@ -69,6 +69,8 @@ content of the record, and a decoder reports them before it needs any byte beyon
 | T15 dangling paint | `01 01 08` | `MalformedTiles { reason "flag without owner" }` |
 | T16 shimmer + lava | `11 01 80 ff` | `MalformedTiles` |
 | T17 shape 6 | `03 60 01` | `MalformedTiles` |
+| T18 residual shape | `01 10` | shape `half` with no block, no wall, no liquid ([residual shapes](tiles.md#residual-shapes-are-vanilla-data)) |
+|  | `01 60` | shape 6 without a block → `MalformedTiles { reason "undefined block shape" }` |
 
 ### Runs and columns (width 2, height 4)
 | Id | Entry point | Bytes | Result |
@@ -92,7 +94,7 @@ report `truncated record`, not the documented result).
 
 | Vectors | Entry point | Intentional fragment? |
 |---|---|---|
-| T1–T17 | REC (one record) | yes: a single record |
+| T1–T18 | REC (one record) | yes: a single record |
 | R1, R2, R4, R5, R7, R8 | REC (one record) | yes: a single record |
 | R6 | REC (records from the start of column 0) | yes: a column prefix |
 | R3, R10 | SEC (complete 2 × 4 section) | no: all 8 tiles are present |

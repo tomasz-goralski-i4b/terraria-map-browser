@@ -720,6 +720,56 @@
           }
         }
       ]
+    },
+    {
+      "id": "T18",
+      "title": "residual shape",
+      "entry": "REC",
+      "context": {
+        "formatVersion": 326,
+        "baseOffset": 0,
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "columnHeight": 4,
+        "frameImportant": {
+          "k": 754,
+          "frame": [
+            4,
+            5
+          ],
+          "plain": [
+            1,
+            255,
+            256
+          ]
+        }
+      },
+      "cases": [
+        {
+          "hex": "0110",
+          "result": {
+            "kind": "record",
+            "tile": {
+              "wires": 0,
+              "actuator": false,
+              "shape": "half"
+            },
+            "run": 0
+          }
+        },
+        {
+          "hex": "0160",
+          "error": {
+            "code": "MalformedTiles",
+            "x": 0,
+            "y": 0,
+            "offset": 0,
+            "reason": "undefined block shape"
+          }
+        }
+      ]
     }
   ]
 }

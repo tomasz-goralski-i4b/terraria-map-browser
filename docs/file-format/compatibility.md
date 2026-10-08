@@ -49,9 +49,29 @@ bytes or validate that a supplied file is a world. Parsing entry points separate
 file type, section table, metadata and tile records. Their internal `requireWorldFormat` preserves
 `UnsupportedVersion` at offset 0 before any signature or section checks.
 
-Profiles are immutable. They describe the common eleven-section header, four-header-byte RLE tile encoding,
-metadata field presence and entity layout differences. Selection happens outside tile loops. The CWM and
+Profiles are immutable. They describe the common eleven-section header, four-header-byte RLE tile encoding, the
+vanilla id ranges, metadata field presence and entity layout differences. Selection happens outside tile loops. The CWM and
 worker protocol are unchanged; the worker uses the same parser and transfers the same plane buffers.
+
+## Vanilla id ranges
+
+Each game release defines a fixed set of block and wall types; a file can hold higher ids only when content
+outside that release wrote them (a mod, or a newer game). The profile states the highest block id
+(`maxTileId`) and highest wall id (`maxWallId`) of its release range. The tile decoder labels an id up to that
+limit `vanilla` and any higher id `unknown` (its raw number kept as `runtimeId`), so a format-279 wall 350 is
+never shown as the 1.4.5 wall that later took that number.
+
+| Format numbers | Highest vanilla block id | Highest vanilla wall id |
+|---|---|---|
+| 269–279 | 692 | 346 |
+| 315–319 | 752 | 366 |
+| 325–326 | 753 | 366 |
+
+The limits are equal for every format number inside a range (source T41 lists them per save number), and they are
+the "highest id", not a count: format 326 has 754 block types, ids 0–753. They are independent of the
+header's frame-important count, which only bounds which block ids a file can encode at all. The .NET reference
+codec reads only format 326 and uses the same 753/366 limits. Rendering still uses the 1.4.5.8 colour table
+for every vanilla id.
 
 ## Metadata changes
 
@@ -153,6 +173,7 @@ yet been checked against a real world.
 Rules are restated independently; no third-party code, framing lists, assets or player worlds are vendored.
 At TEdit revision `182031b83ce825719f857a6db4ecb6967118abd3`:
 
+- T41: [`Data/versions.json:753–962`](https://github.com/TEdit/Terraria-Map-Editor/blob/182031b83ce825719f857a6db4ecb6967118abd3/src/TEdit.Terraria/Data/versions.json#L753-L962): highest block and wall id per save number, summarized per range in [vanilla id ranges](#vanilla-id-ranges).
 - T1: [`Data/versions.json:1–90`](https://github.com/TEdit/Terraria-Map-Editor/blob/182031b83ce825719f857a6db4ecb6967118abd3/src/TEdit.Terraria/Data/versions.json#L1-L90): released game/save-number relationships, summarized as ranges here.
 - T11/T12: [`World.FileV2.cs:1996–2509`](https://github.com/TEdit/Terraria-Map-Editor/blob/182031b83ce825719f857a6db4ecb6967118abd3/src/TEdit.Terraria/World.FileV2.cs#L1996-L2509): physical metadata order and field gates.
 - T29/T32: [`World.FileV2.cs:1770–1915`](https://github.com/TEdit/Terraria-Map-Editor/blob/182031b83ce825719f857a6db4ecb6967118abd3/src/TEdit.Terraria/World.FileV2.cs#L1770-L1915): chest and NPC layout changes.

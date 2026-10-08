@@ -39,7 +39,7 @@ if (JSON.stringify(vectorSchema.$defs.contentRef) !== JSON.stringify(summarySche
 const files = readdirSync(vectorDir).filter((f) => f.endsWith(".vectors.json")).sort();
 const byId = new Map();
 const expectedIds = [
-  ...Array.from({ length: 17 }, (_, i) => `T${i + 1}`),
+  ...Array.from({ length: 18 }, (_, i) => `T${i + 1}`),
   ...Array.from({ length: 10 }, (_, i) => `R${i + 1}`),
   ...Array.from({ length: 5 }, (_, i) => `M${i + 1}`),
 ];

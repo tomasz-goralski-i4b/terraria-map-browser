@@ -1,6 +1,7 @@
 import { isFrameImportant, type WorldSectionTable } from "./header.js";
 import { readWorldMetadata, type WorldMetadataResult } from "./metadata.js";
 import { WorldFormatError } from "./world-format-error.js";
+import { requireWorldFormat, type WorldFormatProfile } from "./world-format.js";
 
 /** A stable reference to world content as stored in the CWM palette (vanilla or unknown ids in this section). */
 export type TileContentRef =
@@ -27,8 +28,6 @@ export interface WorldTilesResult extends WorldMetadataResult {
   readonly palette: readonly TileContentRef[];
 }
 
-const HIGHEST_VANILLA_BLOCK = 753;
-const HIGHEST_VANILLA_WALL = 366;
 /** Block and wall plane value for "no content". */
 const NO_CONTENT = 0xffff;
 /** Palette indices 0 … 65534 are usable; 65535 means "absent" in the block and wall planes. */
@@ -36,24 +35,34 @@ const MAX_PALETTE = 0xffff;
 const ID_SPACE = 0x10000;
 const SHIMMER = 4;
 
-/** First-appearance palette; per-id caches keep the per-record path free of hashing once an id is seen. */
+/**
+ * First-appearance palette; per-id caches keep the per-record path free of hashing once an id is seen.
+ * Ids above the format's highest vanilla block/wall id (docs/file-format/compatibility.md) become `unknown`.
+ */
 class Palette {
   readonly entries: TileContentRef[] = [];
   private readonly blocks = new Int32Array(ID_SPACE).fill(-1);
   private readonly walls = new Int32Array(ID_SPACE).fill(-1);
   private readonly vanilla = new Map<number, number>();
   private readonly unknown = new Map<number, number>();
+  private readonly maxTileId: number;
+  private readonly maxWallId: number;
+
+  constructor(profile: Pick<WorldFormatProfile, "maxTileId" | "maxWallId">) {
+    this.maxTileId = profile.maxTileId;
+    this.maxWallId = profile.maxWallId;
+  }
 
   /** Index of the block ref for `id`, or -1 when the palette is full. */
   block(id: number): number {
     const cached = this.blocks[id] ?? -1;
-    return cached >= 0 ? cached : this.remember(this.blocks, id, id <= HIGHEST_VANILLA_BLOCK);
+    return cached >= 0 ? cached : this.remember(this.blocks, id, id <= this.maxTileId);
   }
 
   /** Index of the wall ref for `id`, or -1 when the palette is full. */
   wall(id: number): number {
     const cached = this.walls[id] ?? -1;
-    return cached >= 0 ? cached : this.remember(this.walls, id, id <= HIGHEST_VANILLA_WALL);
+    return cached >= 0 ? cached : this.remember(this.walls, id, id <= this.maxWallId);
   }
 
   private remember(cache: Int32Array, id: number, isVanilla: boolean): number {
@@ -73,7 +82,7 @@ class Palette {
 /** One decoding pass over the tile section; the fields hold the context of the record being decoded. */
 class TileDecoder {
   readonly planes: TilePlanes;
-  readonly palette = new Palette();
+  readonly palette: Palette;
   private readonly bytes: Uint8Array;
   private readonly sections: WorldSectionTable;
   private readonly width: number;
@@ -84,7 +93,14 @@ class TileDecoder {
   private x = 0;
   private y = 0;
 
-  constructor(bytes: Uint8Array, sections: WorldSectionTable, width: number, height: number) {
+  constructor(
+    bytes: Uint8Array,
+    sections: WorldSectionTable,
+    width: number,
+    height: number,
+    profile: WorldFormatProfile,
+  ) {
+    this.palette = new Palette(profile);
     this.bytes = bytes;
     this.sections = sections;
     this.width = width;
@@ -229,7 +245,8 @@ class TileDecoder {
 export function readWorldTiles(bytes: Uint8Array): WorldTilesResult {
   const world = readWorldMetadata(bytes);
   const { width, height } = world.metadata;
-  const decoder = new TileDecoder(bytes, world.sections, width, height);
+  const profile = requireWorldFormat(world.header.version);
+  const decoder = new TileDecoder(bytes, world.sections, width, height, profile);
   decoder.decode();
   return { ...world, planes: decoder.planes, palette: decoder.palette.entries };
 }

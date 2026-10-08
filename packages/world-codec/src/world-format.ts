@@ -2,10 +2,11 @@ import { WorldFormatError } from "./world-format-error.js";
 
 // Independently stated version gates: docs/file-format/compatibility.md.
 // Sources T1/T11/T29/T32/T34 at TEdit revision 182031b83ce825719f857a6db4ecb6967118abd3.
+// Highest vanilla block/wall ids: T41 (Data/versions.json:753-962), equal within each range below.
 const releasedRanges = [
-  { first: 269, last: 279, family: "terraria-1.4.4" },
-  { first: 315, last: 319, family: "terraria-1.4.5" },
-  { first: 325, last: 326, family: "terraria-1.4.5" },
+  { first: 269, last: 279, family: "terraria-1.4.4", maxTileId: 692, maxWallId: 346 },
+  { first: 315, last: 319, family: "terraria-1.4.5", maxTileId: 752, maxWallId: 366 },
+  { first: 325, last: 326, family: "terraria-1.4.5", maxTileId: 753, maxWallId: 366 },
 ] as const;
 
 /** Admission is separate from structural feature gates: unreleased gaps are never inferred compatible. */
@@ -37,6 +38,10 @@ export interface WorldFormatProfile {
   readonly evidence: "generated-world-fixtures" | "synthetic";
   readonly sectionCount: 11;
   readonly tileEncoding: "four-header-byte-rle";
+  /** Highest block id the game of this format defines; higher ids are not vanilla content. */
+  readonly maxTileId: number;
+  /** Highest wall id the game of this format defines; higher ids are not vanilla content. */
+  readonly maxWallId: number;
   readonly metadata: WorldMetadataFeatures;
   /** Describes entity layouts; entity sections are still opaque to the TS viewer. */
   readonly entities: {
@@ -62,6 +67,8 @@ export function resolveWorldFormat(version: number): WorldFormatProfile | null {
     evidence: version === 326 ? "generated-world-fixtures" : "synthetic",
     sectionCount: 11,
     tileEncoding: "four-header-byte-rle",
+    maxTileId: range.maxTileId,
+    maxWallId: range.maxWallId,
     metadata: Object.freeze(metadata),
     entities: Object.freeze({
       chestSlotCounts: version >= 294 ? "per-chest-int32" : "shared-int16",

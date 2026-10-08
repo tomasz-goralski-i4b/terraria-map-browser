@@ -261,7 +261,7 @@
   "$defs": {
     "id": {
       "type": "string",
-      "pattern": "^(T([1-9]|1[0-7])|R([1-9]|10)|M[1-5])$"
+      "pattern": "^(T([1-9]|1[0-8])|R([1-9]|10)|M[1-5])$"
     },
     "recContext": {
       "description": "REC: one record (or a column prefix, R6) at `position`, column height `columnHeight`; the decoder consumes exactly the bytes shown.",
