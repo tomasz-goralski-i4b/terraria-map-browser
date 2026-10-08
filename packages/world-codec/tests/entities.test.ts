@@ -85,7 +85,7 @@ describe("entity layouts of older formats", () => {
   });
 
   it.each([279, 315, 326])("readWorldTiles exposes entities for format %i", (version) => {
-    expect(readWorldTiles(worldWithEmptyLists(version)).entities?.Signs.data?.entries).toEqual([]);
+    expect(readWorldTiles(worldWithEmptyLists(version)).entities.Signs.data?.entries).toEqual([]);
   });
 
   it("rejects a format without a known entity layout", () => {

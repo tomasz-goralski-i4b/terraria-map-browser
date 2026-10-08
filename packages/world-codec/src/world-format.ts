@@ -43,7 +43,7 @@ export interface WorldFormatProfile {
   /** Highest wall id the game of this format defines; higher ids are not vanilla content. */
   readonly maxWallId: number;
   readonly metadata: WorldMetadataFeatures;
-  /** Describes entity layouts; entity sections are still opaque to the TS viewer. */
+  /** Entity layout gates applied by the entity section decoder (entities.ts). */
   readonly entities: {
     readonly chestSlotCounts: "shared-int16" | "per-chest-int32";
     readonly npcHomelessDespawn: boolean;

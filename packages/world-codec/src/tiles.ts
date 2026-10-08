@@ -25,8 +25,8 @@ export interface TilePlanes {
 
 /** Header, metadata and the decoded tile section as CWM planes plus the first-appearance palette. */
 export interface WorldTilesResult extends WorldMetadataResult {
-  /** Read-only sections 3–10, available for format 326; individual failures remain local. */
-  readonly entities?: WorldEntities;
+  /** Read-only sections 3–10 in the layout of the world's format; individual failures remain local. */
+  readonly entities: WorldEntities;
   readonly planes: TilePlanes;
   readonly palette: readonly TileContentRef[];
 }
@@ -251,8 +251,5 @@ export function readWorldTiles(bytes: Uint8Array): WorldTilesResult {
   const profile = requireWorldFormat(world.header.version);
   const decoder = new TileDecoder(bytes, world.sections, width, height, profile);
   decoder.decode();
-  return {
-    ...world, planes: decoder.planes, palette: decoder.palette.entries,
-    ...(world.header.version === 326 ? { entities: readWorldEntities(bytes, world) } : {}),
-  };
+  return { ...world, planes: decoder.planes, palette: decoder.palette.entries, entities: readWorldEntities(bytes, world) };
 }

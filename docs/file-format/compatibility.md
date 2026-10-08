@@ -102,8 +102,10 @@ Version selection cannot hide unread bytes or turn a malformed section into a su
 
 ## Other sections and older families
 
-The resolver describes these entity changes for future reader work. The current TS viewer still treats
-those sections as opaque; a resolved profile does not imply implemented entity decoding.
+Both entity decoders apply these changes for every readable format (TS: `profile.entities`; .NET:
+`EntitySectionReader.SupportedVersions`), so formats 269–326 expose the same read-only entity model. Formats
+315–326 share the format-326 layout; 269–279 differ in all four rows. Vectors E34–E40 pin each gate. The
+evidence for formats below 326 is TEdit plus synthetic input only (open question 18).
 
 | Element | Before the change | Change threshold | After the change |
 |---|---|---|---|

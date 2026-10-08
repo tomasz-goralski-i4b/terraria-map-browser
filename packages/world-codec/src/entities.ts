@@ -1,5 +1,6 @@
 import { readWorldHeader, type SectionBoundary, type WorldHeader } from "./header.js";
 import { WorldFormatError } from "./world-format-error.js";
+import { requireWorldFormat, type WorldFormatProfile } from "./world-format.js";
 
 export interface EntityItem { readonly slot: number; readonly itemId: number; readonly stack: number; readonly prefix: number }
 export interface WorldChest { readonly x: number; readonly y: number; readonly name: string; readonly slotCount: number; readonly items: readonly EntityItem[] }
@@ -26,18 +27,21 @@ export type EntitySectionResult<K extends EntitySectionName> =
   | { readonly section: K; readonly boundary: SectionBoundary; readonly data: EntityDataBySection[K]; readonly error: null }
   | { readonly section: K; readonly boundary: SectionBoundary; readonly data: null; readonly error: EntitySectionFailure };
 export type WorldEntities = { readonly [K in EntitySectionName]: EntitySectionResult<K> };
+type EntityLayout = WorldFormatProfile["entities"];
 
 class EntityReader {
   private readonly view: DataView;
   private readonly bytes: Uint8Array;
   readonly section: EntitySectionName;
   readonly boundary: SectionBoundary;
+  private readonly layout: EntityLayout;
   pos: number;
 
-  constructor(bytes: Uint8Array, section: EntitySectionName, boundary: SectionBoundary) {
+  constructor(bytes: Uint8Array, section: EntitySectionName, boundary: SectionBoundary, layout: EntityLayout) {
     this.bytes = bytes;
     this.section = section;
     this.boundary = boundary;
+    this.layout = layout;
     this.view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     this.pos = boundary.start;
   }
@@ -100,9 +104,21 @@ class EntityReader {
     return entries;
   }
 
-  chest(): WorldChest {
+  chests(): WorldChest[] {
+    if (this.layout.chestSlotCounts === "per-chest-int32") return this.records(2, 13, () => this.chest(null));
+    // Before format 294 one Int16 slot count follows the chest count and applies to every chest.
+    const start = this.pos, count = this.i16("count");
+    if (count < 0) this.fail(start, "count", "list count is negative or does not fit in the section");
+    const slotCount = this.count(2, 2, "slotCount");
+    if (count * (9 + 2 * slotCount) > this.boundary.end - this.pos) this.fail(start, "count", "list count is negative or does not fit in the section");
+    const entries: WorldChest[] = [];
+    for (let index = 0; index < count; index++) entries.push(this.chest(slotCount));
+    return entries;
+  }
+
+  private chest(sharedSlotCount: number | null): WorldChest {
     const x = this.i32("x"), y = this.i32("y"), name = this.string("name");
-    const slotCount = this.count(4, 2, "slotCount");
+    const slotCount = sharedSlotCount ?? this.count(4, 2, "slotCount");
     const items: EntityItem[] = [];
     for (let slot = 0; slot < slotCount; slot++) {
       const offset = this.pos, stack = this.i16("stack");
@@ -128,7 +144,7 @@ class EntityReader {
       const offset = this.pos, bits = this.u8("extraBits");
       if ((bits & ~1) !== 0) this.fail(offset, "extraBits", "unknown NPC extra bits");
       if ((bits & 1) !== 0) this.i32("variationIndex");
-      this.bool("homelessDespawn");
+      if (this.layout.npcHomelessDespawn) this.bool("homelessDespawn");
       townNpcs.push({ npcId, displayName, x, y, homeless, homeX, homeY });
     }
     const mobs: WorldMob[] = [];
@@ -159,8 +175,8 @@ class EntityReader {
       case 2: this.u8("checkKind"); this.bool("on"); break;
       case 3: {
         const itemBits = this.u8("itemPresence"), dyeBits = this.u8("dyePresence");
-        this.u8("pose");
-        const extra = this.u8("extraPresence");
+        if (this.layout.displayDollPose) this.u8("pose");
+        const extra = this.layout.displayDollExtraSlots ? this.u8("extraPresence") : 0;
         items = this.presentItems(itemBits | ((extra & 2) << 7), 9);
         dyes = this.presentItems(dyeBits | ((extra & 4) << 6), 9);
         misc = this.presentItems(extra & 1, 1);
@@ -206,14 +222,15 @@ class EntityReader {
 
 const strictUtf8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
 
-/** Strict format-326 entity section entry point; diagnostics use absolute offsets. */
-export function readEntitySection<K extends EntitySectionName>(bytes: Uint8Array, section: K, boundary: SectionBoundary, _version = 326): EntityDataBySection[K] {
+/** Strict entity section entry point for one readable format's layout; diagnostics use absolute offsets. */
+export function readEntitySection<K extends EntitySectionName>(bytes: Uint8Array, section: K, boundary: SectionBoundary, version = 326): EntityDataBySection[K] {
+  const layout = requireWorldFormat(version).entities;
   if (!Number.isInteger(boundary.start) || !Number.isInteger(boundary.end) || boundary.start < 0 || boundary.end < boundary.start || boundary.end > bytes.length) {
     throw new RangeError("Invalid entity section boundary");
   }
-  const reader = new EntityReader(bytes, section, boundary);
+  const reader = new EntityReader(bytes, section, boundary, layout);
   const decoders: { [S in EntitySectionName]: () => EntityDataBySection[S] } = {
-    Chests: () => ({ entries: reader.records(2, 13, () => reader.chest()) }),
+    Chests: () => ({ entries: reader.chests() }),
     Signs: () => ({ entries: reader.records(2, 9, () => reader.sign()) }),
     NpcsAndMobs: () => reader.npcs(),
     TileEntities: () => ({ entries: reader.records(4, 9, () => reader.tileEntity()) }),
@@ -229,10 +246,10 @@ export function readEntitySection<K extends EntitySectionName>(bytes: Uint8Array
 
 /** Entity failures do not invalidate the independently decoded world tiles or other sections. */
 export function readWorldEntities(bytes: Uint8Array, header: WorldHeader = readWorldHeader(bytes)): WorldEntities {
-  if (header.header.version !== 326) throw new WorldFormatError("UnsupportedVersion", 0, "entity decoding requires format 326");
+  const version = requireWorldFormat(header.header.version).version;
   const decode = <K extends EntitySectionName>(section: K, boundary: SectionBoundary): EntitySectionResult<K> => {
     try {
-      return { section, boundary, data: readEntitySection(bytes, section, boundary), error: null };
+      return { section, boundary, data: readEntitySection(bytes, section, boundary, version), error: null };
     } catch (error) {
       if (!(error instanceof WorldFormatError) || error.kind !== "MalformedSection") throw error;
       return { section, boundary, data: null, error: { code: "MalformedSection", section, field: error.field ?? "end", offset: error.offset, reason: error.reason } };

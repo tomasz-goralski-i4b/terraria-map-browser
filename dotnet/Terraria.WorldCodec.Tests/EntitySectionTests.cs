@@ -44,4 +44,16 @@ public sealed class EntitySectionTests
             Assert.True(JsonNode.DeepEquals(JsonNode.Parse(vector.GetProperty("result").GetRawText()), actualJson), $"{id}: {actualJson}");
         }
     }
+
+    [Theory]
+    [InlineData(268)]
+    [InlineData(300)]
+    [InlineData(311)]
+    [InlineData(327)]
+    public void Read_FormatWithoutKnownEntityLayout_IsUnsupported(int version)
+    {
+        using var stream = new MemoryStream([0, 0]);
+        var error = Assert.Throws<WorldFormatException>(() => EntitySectionReader.Read(stream, "Signs", new WorldSectionBoundary(0, 2), version));
+        Assert.Equal(WorldFormatError.UnsupportedVersion, error.Error);
+    }
 }
