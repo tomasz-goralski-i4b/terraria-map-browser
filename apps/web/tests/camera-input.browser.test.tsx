@@ -68,7 +68,10 @@ async function frame(ms = 16): Promise<void> {
   time += ms;
   const callbacks = [...frames.values()];
   frames.clear();
-  await act(async () => { for (const callback of callbacks) callback(time); });
+  await act(async () => {
+    for (const callback of callbacks) callback(time);
+    await Promise.resolve(); // Flush the frame's React updates and attribute observers before assertions.
+  });
 }
 
 async function mount(reduce = false) {
