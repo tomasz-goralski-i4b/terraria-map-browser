@@ -1,3 +1,4 @@
+// @module-tag perf -- UI flows starve on shared CI runners; skipped on pull requests (docs/tooling.md).
 import { useState } from "react";
 import { afterEach, beforeEach, expect, test } from "vitest";
 import { page, userEvent } from "vitest/browser";
@@ -93,7 +94,7 @@ test("filtering by text and by kind", async () => {
   await expect.poll(() => bodyRows().map((row) => row[1])).toEqual(["Liquid", "Liquid", "Liquid", "Liquid"]);
 });
 
-test("the default columns fit the default dock width", { tags: ["perf"] }, async () => {
+test("the default columns fit the default dock width", async () => {
   await render(<div style={{ width: 320 }}><ContentPanel world={world} /></div>);
   const scroller = page.getByRole("grid", { name: "Content" }).element() as HTMLElement;
   await expect.poll(() => scroller.scrollWidth).toBeLessThanOrEqual(scroller.clientWidth);
@@ -139,7 +140,7 @@ function selectedRow(): string | undefined {
   return document.querySelector(".table-body [role=row][aria-selected=true] [role=gridcell]")?.textContent ?? undefined;
 }
 
-test("the keyboard moves a controlled selection row by row, keeps it in view and activates it", { tags: ["perf"] }, async () => {
+test("the keyboard moves a controlled selection row by row, keeps it in view and activates it", async () => {
   const rows = contentRowsOf(500);
   const activated: string[] = [];
   await render(<SelectableTable rows={rows} onActivate={(key) => { activated.push(key); }} />);

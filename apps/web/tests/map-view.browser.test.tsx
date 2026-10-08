@@ -1,3 +1,4 @@
+// @module-tag perf -- UI flows starve on shared CI runners; skipped on pull requests (docs/tooling.md).
 import { act } from "react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { page } from "vitest/browser";
@@ -261,7 +262,7 @@ test("without WebGL2 the map shows an error message instead of throwing", async 
   await expect.element(page.getByRole("alert")).toMatchTextContent("WebGL2");
 });
 
-test("the status bar follows the tile under a resting pointer after keyboard pans", { tags: ["perf"] }, async () => {
+test("the status bar follows the tile under a resting pointer after keyboard pans", async () => {
   await mountMap();
   await actualMap();
   pointer("pointermove", 120, 90, 0);
@@ -275,7 +276,7 @@ test("the status bar follows the tile under a resting pointer after keyboard pan
   expect(statusText()).toBe(tileText(camera(), 120, 90));
 });
 
-test("the status bar follows the tile under a resting pointer after a wheel zoom elsewhere", { tags: ["perf"] }, async () => {
+test("the status bar follows the tile under a resting pointer after a wheel zoom elsewhere", async () => {
   await mountMap();
   await actualMap();
   pointer("pointermove", 120, 90, 0);

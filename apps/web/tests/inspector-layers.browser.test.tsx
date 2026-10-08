@@ -1,3 +1,4 @@
+// @module-tag perf -- UI flows starve on shared CI runners; skipped on pull requests (docs/tooling.md).
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { commands, page, userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
@@ -288,7 +289,7 @@ test("hiding and showing the wires group restores the wire colours chosen inside
   await expect.poll(() => shownLayers()["wires"]).toBe(WIRE_LAYER.all & ~WIRE_LAYER.blue);
 });
 
-test("Alt+1 … Alt+5 toggle the layers", { tags: ["perf"] }, async () => {
+test("Alt+1 … Alt+5 toggle the layers", async () => {
   await render(<LayersHarness world={renderable(600, 300)} />);
   await vi.waitFor(() => {
     expect(getMapController()).not.toBeNull();

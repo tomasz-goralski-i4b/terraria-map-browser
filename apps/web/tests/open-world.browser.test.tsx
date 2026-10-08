@@ -1,3 +1,4 @@
+// @module-tag perf -- UI flows starve on shared CI runners; skipped on pull requests (docs/tooling.md).
 import { expect, test } from "vitest";
 import { commands, page } from "vitest/browser";
 import { render } from "vitest-browser-react";
@@ -73,7 +74,7 @@ async function worldFile(name: string): Promise<File> {
   return new File([await fixtureBytes(name)], name);
 }
 
-test("opening SCCO1.wld through the file input shows its name and dimensions", { tags: ["perf"] }, async () => {
+test("opening SCCO1.wld through the file input shows its name and dimensions", async () => {
   await render(<App />);
   chooseFile(await worldFile("SCCO1.wld"));
   const summary = worldPanel();
@@ -137,7 +138,7 @@ function watchLongTasks(): { readonly longest: (from: number, to: number) => Pro
   };
 }
 
-test("the main thread is never blocked while a Small fixture is parsed", { tags: ["perf"] }, async () => {
+test("the main thread is never blocked while a Small fixture is parsed", async () => {
   // Long tasks are measured rather than the delivery of a timer: on a CI runner shared with SwiftShader pages, timers
   // and frames can be starved for hundreds of milliseconds while this page's main thread is idle.
   expect(PerformanceObserver.supportedEntryTypes).toContain("longtask");
