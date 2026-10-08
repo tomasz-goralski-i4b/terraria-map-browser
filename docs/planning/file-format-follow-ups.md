@@ -246,8 +246,8 @@ Every view of a tile agrees with the writer about "no paint", so round-trip comp
 ## From the entity sections spike (#153)
 
 The drafts below follow [../file-format/entities.md](../file-format/entities.md). Suggested order: the TS decoder
-first (it unblocks the panel), the .NET reference decoder in parallel (separate area), the fixture whenever a
-human can generate it.
+first (it unblocks the panel), the .NET reference decoder in parallel (separate area), then the entity test world
+(generator, then the human check in game).
 
 ```markdown
 **Status:** not filed.
@@ -360,38 +360,101 @@ The reference .NET codec decodes sections 3–10 read-only, and both codecs agre
 - Test command: `bash scripts/verify.sh`
 ```
 
+The entity sections are checked in game the same way as tile framing (#158 generates the world, #120 is the
+human check): the generator writes every record the spec describes, the game loads and **re-saves** the world,
+and the game's own save is the evidence. The two drafts below close the gaps of entities.md ("Coverage limit")
+and open questions 15–17.
+
 ```markdown
-**Status:** not filed (needs a human with the game).
+**Status:** not filed. Blocked by: #158, the .NET entity decoder draft above.
 
 ## Goal
-The corpus contains every entity record the spec describes, so the TEdit-only layouts are checked against the
-game.
+The test-world generator also stamps an Entities section — every object of docs/file-format/entities.md with
+its section 3–10 record — so the TEdit-only layouts can be checked in game without building anything by hand.
 
 ## Scope
-- A human generates one Small Journey world in 1.4.5.8 and, in game: places a sign, a grave marker, an
-  announcement box and a tattered sign with text; one object of every tile-entity kind 0–10 (items in the
-  frame, rack, platter, jar, hat rack and a fully dressed display doll incl. slot 8 and the misc slot); a weighted
-  pressure plate; assigns housing to a town NPC; shimmers a town NPC; kills and talks to a few NPCs; changes
-  a few Journey powers (incl. the spawn-rate slider); saves with mobs alive. Adds it to the manifest.
-- Record offsets and counts in docs/file-format/entities.md ("Corpus evidence") and answer open questions
-  15–17 where the world shows the answer.
+- An **Entities** section in the #158 case catalogue (`dotnet/Terraria.WorldCodec.Synthetic/`). Each case
+  places the object's tiles (frame-important frames, top-left anchor) and writes the matching record into its
+  section, encoded exactly as in docs/file-format/entities.md:
+
+| Case | Gap it closes | Tiles placed | Record written |
+|---|---|---|---|
+| E1 signs | section 4 | sign 55, grave marker 85, announcement box 425, tattered sign 573 | one text each: plain, with a line break, non-ASCII ("Zażółć"), empty |
+| E2 chest | section 3 name, stack, prefix | chest 21 | name "E2", a max stack, a prefixed item, an empty slot between filled ones |
+| E3–E13 tile entities | section 6, kinds 0–10 | training dummy 378, item frame 395, logic sensor 423, display doll 470, weapon rack 471, hat rack 475, food platter 520, pylon 597, Dead Cells jar 698, kite anchor 723, critter anchor 724 | one per kind; the doll with item, dye and misc slots incl. slot 8; hat rack with 2 items + 2 dyes |
+| E14 pressure plate | section 7 | a weighted pressure plate (tile id: open question 15 — the case stays "to observe" until known) | its position |
+| E15 house | section 8 | a closed room with walls, door, light, table, chair | no room entry (the human assigns housing in game) |
+| E16 bestiary | section 9 | — | two kill entries, one seen, one chatted (keys: open question 15) |
+| E17 powers | section 10 | — | ids 0, 8–10, 12–14 with non-default values |
+| E18 shimmered NPC | section 5 | — | one shimmered town NPC id |
+
+- The generator manifest lists per case: section, coordinates, the record written and its byte offsets.
+- `Terraria.WorldInspector` prints the decoded record of a case from the manifest coordinates.
 
 ## Out of scope
-- Codec changes (a needed change becomes its own issue).
+- Running the game (the human check below); editing entities in the editor; modded items; committing the
+  generated world or manifest.
 
 ## Ownership
-- packages/test-fixtures/, docs/file-format/entities.md, docs/file-format/open-questions.md
+- `dotnet/Terraria.WorldCodec.Synthetic/`, `dotnet/Terraria.WorldCodec.Tests/`, `dotnet/Terraria.WorldInspector/`
+
+## Spec
+- docs/file-format/entities.md (all sections), docs/assets.md ("Tile framing" → "Human steps")
 
 ## Compatibility impact
-- Vanilla: None (evidence only)
+- Vanilla: None (test tooling only; output is a disposable world)
 - Modded worlds: None
 
 ## Acceptance criteria
-- The new fixture passes scripts/check-fixtures.mjs and decodes with the M1 rules.
-- entities.md states, with offsets in the new fixture, one record of every section 3–10 kind.
+- Reading the output back with the .NET entity decoder gives every case's record at its manifest coordinates,
+  and every section 3–10 ends at its pointer.
+- Every object's tiles are placed with the frames of its anchor, inside the cleared strip, 2 tiles apart.
+- The same inputs give a byte-identical world and manifest; an existing output path is refused.
 
 ## Proof
-- Fixture: packages/test-fixtures/worlds/<new>.wld
 - Test command: `bash scripts/verify.sh`
-- Manual test: in-game placement as listed in Scope
+- Manual test: generate the world and open it in Terraria 1.4.5.8 (the checks are the next issue).
+```
+
+```markdown
+**Status:** not filed (human). Blocked by: the generator draft above.
+
+## Goal
+Confirm in Terraria 1.4.5.8 that the entity layouts of docs/file-format/entities.md are what the game reads and
+writes, and answer open questions 15–17.
+
+## Scope
+- Generate the test world (note world and manifest hashes), open it in 1.4.5.8 and check each case E1–E18:
+  sign texts read correctly, the chest shows its name and items, every tile entity shows its item/doll/hat
+  and works (pylon, sensor), Journey powers show the written values, the bestiary shows the written entries.
+- In game, additionally: assign housing to a town NPC in the E15 house; kill and talk to a few NPCs; save while
+  enemies are on screen (mobs); then **save and exit**.
+- Decode the game-saved world and compare every section 3–10 with the generated one, record by record. Record in
+  docs/file-format/entities.md ("Corpus evidence") what the game kept, changed, dropped or added (e.g. the town
+  manager entry for E15, the mob list, the NPC extra-bits byte, positions not on the top-left tile), with offsets.
+- Answer or narrow open questions 15–17 (incl. the weighted pressure plate tile id and the bestiary key format).
+
+## Out of scope
+- Changing the generator or the codecs (a needed change becomes its own issue); committing any `.wld` file or
+  screenshot.
+
+## Ownership
+- docs/file-format/entities.md, docs/file-format/open-questions.md
+
+## Spec
+- docs/file-format/entities.md, docs/file-format/open-questions.md (15–17)
+
+## Compatibility impact
+- Vanilla: None (documentation only)
+- Modded worlds: None
+
+## Acceptance criteria
+- Each case E1–E18 has a recorded in-game result (shown correctly / discrepancy).
+- The game-saved world decodes with entities.md, and every record difference from the generated world is
+  explained in the doc or filed as a spec correction.
+- Open questions 15–17 are answered or restated with the reason they stay open.
+
+## Proof
+- Test command: `bash scripts/verify.sh`
+- Manual test: the in-game steps above, with world/manifest hashes and the game build noted in the PR.
 ```

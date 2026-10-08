@@ -50,8 +50,8 @@ previous pointer): chests 2970538, signs 2994270, NPCs 2994272, tile entities 29
 town-NPC records and the creative-power list are real data in all five worlds. **Signs, mobs, tile entities,
 pressure plates, room assignments, shimmered NPCs and bestiary entries are empty in every fixture**: for those,
 only the count/terminator fields are checked against F, and the record layouts rest on TEdit alone (its reader
-and writer agree, T29–T40). A fixture with those entities is proposed in
-[../planning/file-format-follow-ups.md](../planning/file-format-follow-ups.md) (open question 15).
+and writer agree, T29–T40). A generated test world with every entity, opened and re-saved in game, is proposed
+in [../planning/file-format-follow-ups.md](../planning/file-format-follow-ups.md) (open question 15).
 
 Hex of SCCO1 from the signs to the footer (offset 2994270 = `0x2DB05E`), split by field:
 
