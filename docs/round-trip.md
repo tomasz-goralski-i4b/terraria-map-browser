@@ -1,8 +1,8 @@
 # Round trip: backup, save and the in-game check (M2)
 
 How a world is saved safely, and how a human confirms that a saved world still works in the game. The byte-level
-rules of the writer are in [file-format/writer.md](file-format/writer.md) ("Footer (M2)" and "Writer contract"). To be
-implemented by #41 (open: guarded save + `roundtrip` CLI); the in-game check is #45 (open), whose results will go
+rules of the writer are in [file-format/writer.md](file-format/writer.md) ("Footer (M2)" and "Writer contract"). The `roundtrip` CLI (#41) implements a
+reduced form (see below); the guarded save with backups is still open; the in-game check is #45 (open), whose results will go
 to `docs/round-trip-validation.md` (human-owned, created by #45).
 
 **No gameplay-safety claim.** Until the in-game check below has passed for every fixture, a saved world is only
@@ -55,6 +55,20 @@ destination must all have the fixture's manifest hash, and the revision stays as
 | SMCO1 | 2 963 151 | 2 | `4aa2290b69278b2c8ea3df7b424592559d43ebff0e35146dcd96562abc544390` |
 
 Any other hash for an unchanged save is a writer bug, not a reason to update this table.
+
+## `roundtrip` CLI (#41)
+
+`Terraria.WorldInspector roundtrip <input.wld> <output.wld>` is the reduced, new-file-only form of the procedure
+above, for producing validation copies. It never replaces or overwrites anything, so it needs no backup.
+
+1. The output path must not exist (file, directory or symbolic link, also dangling) — this also covers the input
+   under any spelling (`..`, case, links). Otherwise exit `2`, nothing written.
+2. Read the input with the whole reader (B1), write it to `<output>.<guid>.tms.tmp` in the output directory
+   (create-new), flush, reload it and compare header, metadata and every tile with the source (B3/B5).
+3. Move the staged file to the output path without overwrite (B6) and print the output path on stdout, exit `0`.
+
+Any failure in step 2 or 3 deletes the staged file, leaves no output, prints one line on stderr and exits `1`.
+Wrong arguments exit `2` with the usage line.
 
 ## In-game check (human, pinned Terraria 1.4.5.8)
 
