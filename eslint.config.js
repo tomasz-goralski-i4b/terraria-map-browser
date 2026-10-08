@@ -4,7 +4,9 @@ import reactHooks from "eslint-plugin-react-hooks";
 import tseslint from "typescript-eslint";
 
 export default defineConfig(
-  globalIgnores(["**/dist/**", "**/node_modules/**", "dotnet/**", "**/*.config.*", "scripts/**", ".ai/**"]),
+  globalIgnores(["**/dist/**", "**/node_modules/**", "dotnet/**", "**/*.config.*", "scripts/**", ".ai/**",
+    // Gitignored local game assets and scratch tools that are never part of a project.
+    "local-assets/**"]),
   js.configs.recommended,
   tseslint.configs.strictTypeChecked,
   tseslint.configs.stylisticTypeChecked,

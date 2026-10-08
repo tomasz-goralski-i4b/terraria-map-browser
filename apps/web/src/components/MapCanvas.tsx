@@ -42,6 +42,7 @@ interface MapSession {
 export function MapCanvas({ world }: { readonly world: RenderableWorld }): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sessionRef = useRef<MapSession | null>(null);
+  const worldRef = useRef(world);
   const [error, setError] = useState<string | null>(null);
   const [hoverTile, setHoverTile] = useState<Point | null>(null);
 
@@ -82,23 +83,22 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
     return { x: clientX - rect.left, y: clientY - rect.top };
   };
 
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (canvas === null) return undefined;
+  /** Creates the renderer and wires input for the mounted canvas; returns the teardown, or null when it failed. */
+  const start = (canvas: HTMLCanvasElement): (() => void) | null => {
     let renderer: MapRenderer;
     try {
       renderer = createMapRenderer(canvas, { mapPalette: terrariaMapPalette });
     } catch (cause) {
-      // Creating the renderer needs the mounted canvas, so its failure is only known inside this effect.
-      // eslint-disable-next-line react-hooks/set-state-in-effect
+      // Creating the renderer needs the mounted canvas, so its failure is only known after mounting.
       setError(cause instanceof Error ? cause.message : String(cause));
-      return undefined;
+      return null;
     }
     const session: MapSession = {
-      renderer, world, camera: { x: 0, y: 0, zoom: 1 }, viewport: { width: 0, height: 0 }, pointers: new Map(), hover: null,
+      renderer, world: worldRef.current, camera: { x: 0, y: 0, zoom: 1 }, viewport: { width: 0, height: 0 },
+      pointers: new Map(), hover: null,
     };
     sessionRef.current = session;
-    renderer.setWorld(world);
+    renderer.setWorld(session.world);
 
     const onWheel = (event: WheelEvent): void => {
       event.preventDefault();
@@ -133,11 +133,29 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
       renderer.dispose();
       sessionRef.current = null;
     };
+  };
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (canvas === null) return undefined;
+    // Creating the renderer (WebGL context, shader compile) is a long synchronous task, up to hundreds of milliseconds
+    // with software GL. Started from a later task, it lets the commit that mounted the map (and the world summary next
+    // to it) finish and paint first instead of stalling it.
+    let teardown: (() => void) | null = null;
+    const timer = window.setTimeout(() => {
+      teardown = start(canvas);
+    }, 0);
+    return () => {
+      window.clearTimeout(timer);
+      teardown?.();
+    };
     // The renderer lives as long as the canvas; later world changes are handled by the effect below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
+    // The renderer is created a task after mounting and starts with the world current at that time.
+    worldRef.current = world;
     const session = sessionRef.current;
     if (session === null || session.world === world) return;
     session.world = world;
