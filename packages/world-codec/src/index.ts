@@ -14,6 +14,7 @@ export {
 } from "./header.js";
 export { WorldFormatError, type WorldFormatErrorKind } from "./world-format-error.js";
 export { readWorldMetadata, type WorldBounds, type WorldMetadata, type WorldMetadataResult, type WorldMode } from "./metadata.js";
+export { type WorldDetails, type WorldPoint } from "./details.js";
 export { readWorldTiles, type TileContentRef, type TilePlanes, type WorldTilesResult } from "./tiles.js";
 export { collectTransferList, type WorldWorkerFailure, type WorldWorkerRequest, type WorldWorkerResponse } from "./worker-protocol.js";
 export { WorldWorkerClient, WorldWorkerError } from "./world-worker-client.js";

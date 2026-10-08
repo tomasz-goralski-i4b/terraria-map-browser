@@ -2,6 +2,7 @@ import { ByteReader } from "./byte-reader.js";
 import { readWorldHeader, type WorldHeader } from "./header.js";
 import { WorldFormatError } from "./world-format-error.js";
 import { requireWorldFormat } from "./world-format.js";
+import { readWorldDetails, type WorldDetails } from "./details.js";
 
 export type WorldMode = "classic" | "expert" | "master" | "journey" | { mode: "unknown"; raw: number };
 
@@ -32,6 +33,7 @@ export interface WorldMetadata {
 
 export interface WorldMetadataResult extends WorldHeader {
   readonly metadata: WorldMetadata;
+  readonly details: WorldDetails;
 }
 
 /** A cursor bounded by the metadata section, never by the whole file. */
@@ -233,5 +235,5 @@ export function readWorldMetadata(bytes: Uint8Array): WorldMetadataResult {
   if (features.lightningSeeds) reader.bools(2); // 57; deprecated row 58 absent in admitted versions
   if (features.worldGenManifest) reader.string("worldGenManifest"); // 59
   reader.finish();
-  return { ...world, metadata: { name, seed, guid, worldId, bounds, width, height, mode, evil, surfaceLevel, rockLevel } };
+  return { ...world, details: readWorldDetails(), metadata: { name, seed, guid, worldId, bounds, width, height, mode, evil, surfaceLevel, rockLevel } };
 }
