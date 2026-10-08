@@ -34,6 +34,21 @@ afterEach(() => {
 });
 
 describe("world Worker", () => {
+  it.each([279, 315, 326])("parse_WorldDetails_SurviveWorkerRoundTripForFormat%i", async (version) => {
+    const layout = version === 279 ? "1.4.4" : version === 315 ? "1.4.5" : "1.4.5-lightning";
+    const metadata = buildMetadata({ layout, worldGenVersion: 0xffffffffffffffffn });
+    const tiles = Uint8Array.from([0x42, 2, 3, 0x48, 255, 3]);
+    const bytes = wrapMetadata(metadata.bytes, tiles.length, version);
+    bytes.set(tiles, METADATA_START + metadata.bytes.length);
+    const expected = readWorldTiles(bytes).details;
+    const actual = await newClient().parse(bytes.buffer.slice(0));
+    expect(actual.details).toEqual(expected);
+    expect(actual.details.generation.worldGenVersion).toBe("18446744073709551615");
+    expect(actual.details.generation.lastPlayed === undefined).toBe(version === 279);
+    expect(actual.details.generation.specialSeeds.moreLightning === undefined).toBe(version !== 326);
+    expect(structuredClone(actual.details)).toEqual(expected);
+  });
+
   it.each([279, 315, 325])("parse_File_ResolvesVanillaFormat%iInsideTheWorker", async (version) => {
     const layout = version === 279 ? "1.4.4" : version === 315 ? "1.4.5" : "1.4.5-lightning";
     const metadata = buildMetadata({ layout, width: 2, height: 4 });

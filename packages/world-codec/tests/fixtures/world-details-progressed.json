@@ -1,0 +1,81 @@
+{
+  "bossOffsets": {
+    "skeletronPrime": 387,
+    "dukeFishron": 2259,
+    "destroyer": 385,
+    "mourningWood": 2264,
+    "twins": 386,
+    "deerclops": 2396,
+    "queenBee": 384,
+    "lunaticCultist": 2261,
+    "santaNk1": 2266,
+    "anyMechanicalBoss": 388,
+    "moonLord": 2262,
+    "plantera": 389,
+    "eaterOfWorldsOrBrainOfCthulhu": 382,
+    "pumpking": 2263,
+    "kingSlime": 391,
+    "empressOfLight": 2394,
+    "everscream": 2267,
+    "golem": 390,
+    "iceQueen": 2265,
+    "eyeOfCthulhu": 381,
+    "skeletron": 383,
+    "queenSlime": 2395
+  },
+  "file": "SCCO1.wld",
+  "spawnAndLandmarks": {
+    "spawn": {
+      "y": 279,
+      "x": 2104
+    },
+    "dungeon": {
+      "y": 296,
+      "x": 3625
+    }
+  },
+  "progression": {
+    "bosses": {
+      "skeletronPrime": true,
+      "moonLord": false,
+      "destroyer": true,
+      "dukeFishron": true,
+      "mourningWood": true,
+      "twins": true,
+      "deerclops": true,
+      "queenBee": true,
+      "lunaticCultist": false,
+      "santaNk1": true,
+      "anyMechanicalBoss": true,
+      "plantera": true,
+      "eaterOfWorldsOrBrainOfCthulhu": true,
+      "pumpking": true,
+      "kingSlime": true,
+      "empressOfLight": false,
+      "everscream": true,
+      "golem": false,
+      "iceQueen": false,
+      "eyeOfCthulhu": true,
+      "skeletron": true,
+      "queenSlime": true
+    },
+    "hardmode": true
+  },
+  "hardmodeOffset": 406,
+  "generation": {
+    "lastPlayed": "2026-10-06T09:30:33.226Z",
+    "worldGenVersion": "1400159338497",
+    "creationTime": "2026-10-06T09:30:19.905Z"
+  },
+  "timeAndWeather": {
+    "time": 13500,
+    "moonPhase": 0,
+    "dayTime": true,
+    "eclipse": false,
+    "bloodMoon": false
+  },
+  "other": {
+    "claimableBannerLength": 293,
+    "killCountLength": 293
+  }
+}
