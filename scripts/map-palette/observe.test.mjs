@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { backgroundColor, paintedColor } from "../../packages/renderer/src/palette/map-palette.ts";
+import { backgroundColor, contentColor, paintedColor } from "../../packages/renderer/src/palette/map-palette.ts";
 import { terrariaMapPalette } from "../../packages/renderer/src/palette/terraria-map-palette.generated.ts";
 
 const assembly = process.env.TERRARIA_ASSEMBLY;
@@ -68,4 +68,27 @@ test("painted tile and wall colours match the game", { skip }, () => {
   assert.ok(shadowWorst <= 5, `shadow paint off by up to ${String(shadowWorst)}`);
   console.log(`paint: ${String(samples)} samples, ${String(offByOne.length)} off by one; `
     + `shadow: ${String(shadowExact)}/${String(shadowSamples)} exact, worst ${String(shadowWorst)}`);
+});
+
+test("the map option of every multi-option tile and wall matches the game for every observed frame", { skip }, () => {
+  // observed.frames: { layer, id, dependsOnMore, samples: [{ frameX, frameY, color }] }. Content whose option depends
+  // on more than its own frame is listed (dependsOnMore) and keeps option 0, so it is not compared.
+  assert.ok(observed.frames.length > 0, "no multi-option content was observed");
+  let samples = 0;
+  for (const { layer, id, dependsOnMore, samples: frames } of observed.frames) {
+    if (dependsOnMore) continue;
+    for (const { frameX, frameY, color } of frames) {
+      samples++;
+      assert.deepEqual(contentColor({ kind: "vanilla", id }, layer, terrariaMapPalette, frameX, frameY), rgba(color),
+        `${layer} ${String(id)} at frame (${String(frameX)}, ${String(frameY)})`);
+    }
+  }
+  console.log(`map options: ${String(samples)} frames of ${String(observed.frames.length)} multi-option contents`);
+});
+
+test("every multi-option content is either ruled by its frame or listed as depending on more", { skip }, () => {
+  for (const { layer, id, dependsOnMore } of observed.frames) {
+    const rules = layer === "block" ? terrariaMapPalette.tileOptions : terrariaMapPalette.wallOptions;
+    assert.equal(rules?.[id] === undefined, dependsOnMore, `${layer} ${String(id)}`);
+  }
 });

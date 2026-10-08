@@ -25,6 +25,9 @@ export interface RenderableWorld {
     readonly liquidAmount: Uint8Array;
     readonly paint: Uint8Array;
     readonly wallPaint: Uint8Array;
+    /** Frame planes pick the map option of multi-option content; absent planes mean frame 0 everywhere. */
+    readonly frameX?: Int16Array;
+    readonly frameY?: Int16Array;
   };
   /** Append-only palette. */
   readonly palette: readonly ContentRef[];

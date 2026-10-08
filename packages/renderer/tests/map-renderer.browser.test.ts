@@ -214,6 +214,47 @@ describe("GPU output equals renderChunk", () => {
   });
 });
 
+describe("GPU output equals renderChunk for multi-option content", () => {
+  /** Tiles 1 and 3 of the synthetic palette at frames inside and outside their rules, over blocks, paint and liquids. */
+  function framedWorld(width: number, height: number): RenderableWorld {
+    const base = syntheticWorld(width, height, { surfaceY: 90.5, rockY: 140.25 });
+    const count = width * height;
+    const block = new Uint16Array(count).fill(0xffff);
+    const frameX = new Int16Array(count).fill(-1);
+    const frameY = new Int16Array(count).fill(-1);
+    for (let x = 0; x < width; x++) {
+      for (let y = 0; y < height; y++) {
+        const i = x * height + y;
+        if ((x + 2 * y) % 5 === 4) continue;
+        block[i] = (x + y) % 2;
+        frameX[i] = ((x + y) % 5) * 9;
+        frameY[i] = ((x * 3 + y) % 6) * 18;
+      }
+    }
+    return {
+      ...base, planes: { ...base.planes, block, frameX, frameY },
+      palette: [{ kind: "vanilla", id: 1 }, { kind: "vanilla", id: 3 }],
+    };
+  }
+
+  test.each(layerCombos)("layers %o with a map palette at 1 pixel per tile", (layers) => {
+    const framed = framedWorld(300, 400);
+    const canvas = makeCanvas(300, 400);
+    const renderer = makeRenderer(canvas, { mapPalette: syntheticMapPalette });
+    renderer.setWorld(framed);
+    renderer.setLayers(layers);
+    renderer.setCamera({ x: 0, y: 0, zoom: 1 });
+    renderer.render();
+    expect(readCanvas(canvas)).toEqual(cpuReference(framed, layers, syntheticMapPalette));
+  });
+
+  test("the frames change the pixels: different options of one ID are drawn differently", () => {
+    const framed = framedWorld(300, 400);
+    const unframed: RenderableWorld = { ...framed, planes: { ...framed.planes, frameX: new Int16Array(300 * 400), frameY: new Int16Array(300 * 400) } };
+    expect(cpuReference(framed, allLayers, syntheticMapPalette)).not.toEqual(cpuReference(unframed, allLayers, syntheticMapPalette));
+  });
+});
+
 describe("uploads, cache and draw calls", () => {
   const world = syntheticWorld(1280, 256);
 
