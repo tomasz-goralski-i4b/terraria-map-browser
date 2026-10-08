@@ -1,26 +1,30 @@
 import { useMemo } from "react";
+import type { WorldChest } from "@studio/world-codec";
 import type { Tile } from "@studio/world-model";
 import { useLayoutStore } from "../shell/layout-store.js";
 import { useViewStore, type TilePoint } from "../shell/view-store.js";
 import { useAppStore } from "../store.js";
 import { IconButton } from "../ui/IconButton.js";
+import { chestProperties } from "./chest-fields.js";
 import { PropertyGrid, type Property } from "../ui/PropertyGrid.js";
 import { canonicalWorldOf } from "../world/canonical-world.js";
-import { contentKey, contentName, paintName } from "../world/content-names.js";
+import { chestLookupOf } from "../world/chests.js";
+import { contentName, paintName } from "../world/content-names.js";
 import { getDefaultWorldSession } from "../world/world-session.js";
 
-/** What the Inspector reads of a world: its size and the `tileAt` view (docs/cwm.md). */
+/** What the Inspector reads of a world: its size, the `tileAt` view (docs/cwm.md) and the chest standing on a tile. */
 export interface InspectorWorld {
   readonly width: number;
   readonly height: number;
   readonly tileAt: (x: number, y: number) => Tile;
+  readonly chestAt?: (x: number, y: number) => WorldChest | null;
 }
 
 function sessionInspectorWorld(): InspectorWorld | null {
   const loaded = getDefaultWorldSession().getLoadedWorld();
   if (loaded === null) return null;
   const { width, height } = loaded.metadata;
-  return { width, height, tileAt: (x, y) => canonicalWorldOf(loaded).tileAt(x, y) };
+  return { width, height, tileAt: (x, y) => canonicalWorldOf(loaded).tileAt(x, y), chestAt: chestLookupOf(loaded) };
 }
 
 const NONE = "None";
@@ -31,7 +35,7 @@ const SHAPE_NAMES: Readonly<Record<NonNullable<Tile["shape"]>, string>> = {
 };
 
 const optionalNumber = (value: number | undefined): string => (value === undefined ? NONE : String(value));
-const optionalPaint = (value: number | undefined): string => (value === undefined ? NONE : `${paintName(value)} (${String(value)})`);
+const optionalPaint = (value: number | undefined): string => (value === undefined ? NONE : paintName(value));
 
 /**
  * The fields of the tile's `tileAt` view. With `showAll`, every field in fixed rows (absent parts read "None", false
@@ -43,8 +47,8 @@ export function tileProperties(point: TilePoint, tile: Tile, showAll = true): Pr
   const flag = (label: string, value: boolean | undefined): Property => ({ kind: "flag", label, value: value ?? false });
   const all: Property[] = [
     { kind: "text", label: "Position", value: `${String(point.x)}, ${String(point.y)}` },
-    { kind: "text", label: "Block", value: tile.block === undefined ? NONE : `${contentName(tile.block, "block", tile)} (${contentKey(tile.block)})` },
-    { kind: "text", label: "Wall", value: tile.wall === undefined ? NONE : `${contentName(tile.wall, "wall")} (${contentKey(tile.wall)})` },
+    { kind: "text", label: "Block", value: tile.block === undefined ? NONE : contentName(tile.block, "block", tile) },
+    { kind: "text", label: "Wall", value: tile.wall === undefined ? NONE : contentName(tile.wall, "wall") },
     { kind: "text", label: "Frame X", value: optionalNumber(tile.frameX) },
     { kind: "text", label: "Frame Y", value: optionalNumber(tile.frameY) },
     { kind: "text", label: "Shape", value: tile.shape === undefined ? NONE : SHAPE_NAMES[tile.shape] },
@@ -77,6 +81,7 @@ export function InspectorPanel({ world }: { readonly world?: InspectorWorld | nu
   const sessionWorld = useMemo(() => (summary === null ? null : sessionInspectorWorld()), [summary]);
   const shown = world === undefined ? sessionWorld : world;
   const point = pinned ?? hover;
+  const chest = point === null ? null : shown?.chestAt?.(point.x, point.y) ?? null;
 
   if (shown === null) return <p className="panel-empty">Open a world to inspect its tiles.</p>;
   if (point === null || point.x < 0 || point.y < 0 || point.x >= shown.width || point.y >= shown.height) {
@@ -99,6 +104,12 @@ export function InspectorPanel({ world }: { readonly world?: InspectorWorld | nu
         </span>
       </div>
       <PropertyGrid label="Tile" properties={tileProperties(point, shown.tileAt(point.x, point.y), showAll)} />
+      {chest !== null && (
+        <>
+          <h3 className="inspector-subheading">Chest</h3>
+          <PropertyGrid label="Chest" properties={chestProperties(chest, shown.tileAt(chest.x, chest.y))} />
+        </>
+      )}
     </div>
   );
 }
