@@ -110,6 +110,9 @@ importers:
       '@studio/world-codec':
         specifier: workspace:*
         version: link:../../packages/world-codec
+      '@studio/world-model':
+        specifier: workspace:*
+        version: link:../../packages/world-model
       react:
         specifier: 'catalog:'
         version: 19.3.0
