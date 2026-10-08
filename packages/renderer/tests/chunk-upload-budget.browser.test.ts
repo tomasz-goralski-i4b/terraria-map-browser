@@ -136,12 +136,17 @@ describe("scheduled chunk upload budget", () => {
     expect(expectedChunks).toHaveLength(6);
     renderer.setWorld(world);
     renderer.setCamera(fittedCamera);
-    // Two full passes allow incremental completion, but bound the reproduction of an endless eviction loop.
-    for (let frame = 0; frame < expectedChunks.length * 2 && frames.pending.size > 0; frame++) frames.step();
+    let previousUploads = 0;
+    for (let frame = 0; frame < expectedChunks.length * 2 && frames.pending.size > 0; frame++) {
+      frames.step();
+      // The first frame also uploads the palette and background.
+      expect(renderer.stats().textureUploads - previousUploads).toBeLessThanOrEqual(frame === 0 ? 3 : 1);
+      previousUploads = renderer.stats().textureUploads;
+    }
     expect(frames.pending.size).toBe(0);
     expect(renderer.stats().visibleChunks).toEqual(expectedChunks);
     expect(renderer.stats().drawCalls).toBe(expectedChunks.length);
-    expect(renderer.stats().residentChunks).toBeLessThanOrEqual(options.maxCachedChunks);
+    expect(renderer.stats().residentChunks).toBe(expectedChunks.length);
     const scheduledPixels = pixels();
     const reference = setup(smallViewport.width, smallViewport.height, options);
     reference.renderer.setWorld(world);
@@ -150,6 +155,51 @@ describe("scheduled chunk upload budget", () => {
     expect(scheduledPixels).toEqual(reference.pixels());
     reference.renderer.dispose();
     expect(frames.pending.size).toBe(0);
+  });
+
+  test("a fitted modded world larger than Large keeps bounded uploads and shrinks its cache after zooming in", () => {
+    const frames = animationFrames();
+    const world = terrain(10000, 3000);
+    const moddedViewport = { width: 1250, height: 375 };
+    const fittedCamera = fitWorld(moddedViewport, world);
+    const expectedChunks = visibleChunks(fittedCamera, moddedViewport, world);
+    const budget = 127;
+    const { renderer } = setup(moddedViewport.width, moddedViewport.height, { maxChunkUploadsPerFrame: budget });
+    expect(expectedChunks.length).toBeGreaterThan(1536);
+    renderer.setWorld(world);
+    renderer.setCamera(fittedCamera);
+    let previousUploads = 0;
+    for (let frame = 0; frame < expectedChunks.length && frames.pending.size > 0; frame++) {
+      frames.step();
+      expect(renderer.stats().textureUploads - previousUploads).toBeLessThanOrEqual(frame === 0 ? budget + 2 : budget);
+      previousUploads = renderer.stats().textureUploads;
+    }
+    expect(frames.pending.size).toBe(0);
+    expect(renderer.stats().visibleChunks).toEqual(expectedChunks);
+    expect(renderer.stats().residentChunks).toBe(expectedChunks.length);
+    renderer.setCamera({ x: 0, y: 0, zoom: 1 });
+    frames.step();
+    expect(renderer.stats().residentChunks).toBe(1536);
+    expect(renderer.stats().textureUploads).toBe(previousUploads);
+    expect(frames.pending.size).toBe(0);
+  }, 60_000);
+
+  test("panning a full cache preserves overlapping visible chunks while uploads complete", () => {
+    const frames = animationFrames();
+    const world = terrain(1280, 128);
+    const { renderer } = setup(384, 128, { maxCachedChunks: 2, maxChunkUploadsPerFrame: 1 });
+    renderer.setWorld(world);
+    renderer.setCamera({ x: 0, y: 0, zoom: 1 });
+    for (let frame = 0; frame < 3 && frames.pending.size > 0; frame++) frames.step();
+    expect(renderer.stats().residentChunks).toBe(3);
+    const uploads = renderer.stats().textureUploads;
+    const nextCamera = { x: 256, y: 0, zoom: 1 };
+    renderer.setCamera(nextCamera);
+    for (let frame = 0; frame < 3 && frames.pending.size > 0; frame++) frames.step();
+    expect(frames.pending.size).toBe(0);
+    expect(renderer.stats().textureUploads - uploads).toBe(2);
+    expect(renderer.stats().residentChunks).toBe(3);
+    expect(renderer.stats().visibleChunks).toEqual(visibleChunks(nextCamera, { width: 384, height: 128 }, world));
   });
 
   test("synchronous render ignores the scheduled budget and uploads every visible chunk in one call", () => {
