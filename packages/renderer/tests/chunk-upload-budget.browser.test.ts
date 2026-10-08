@@ -125,6 +125,33 @@ describe("scheduled chunk upload budget", () => {
     expect(frames.pending.size).toBe(0);
   }, 60_000);
 
+  test("scheduled frames stop with a complete map when visible chunks exceed cache capacity", () => {
+    const frames = animationFrames();
+    const world = terrain(384, 256);
+    const smallViewport = { width: 384, height: 256 };
+    const fittedCamera = fitWorld(smallViewport, world);
+    const expectedChunks = visibleChunks(fittedCamera, smallViewport, world);
+    const options = { maxCachedChunks: 4, maxChunkUploadsPerFrame: 1 };
+    const { renderer, pixels } = setup(smallViewport.width, smallViewport.height, options);
+    expect(expectedChunks).toHaveLength(6);
+    renderer.setWorld(world);
+    renderer.setCamera(fittedCamera);
+    // Two full passes allow incremental completion, but bound the reproduction of an endless eviction loop.
+    for (let frame = 0; frame < expectedChunks.length * 2 && frames.pending.size > 0; frame++) frames.step();
+    expect(frames.pending.size).toBe(0);
+    expect(renderer.stats().visibleChunks).toEqual(expectedChunks);
+    expect(renderer.stats().drawCalls).toBe(expectedChunks.length);
+    expect(renderer.stats().residentChunks).toBeLessThanOrEqual(options.maxCachedChunks);
+    const scheduledPixels = pixels();
+    const reference = setup(smallViewport.width, smallViewport.height, options);
+    reference.renderer.setWorld(world);
+    reference.renderer.setCamera(fittedCamera);
+    reference.renderer.render();
+    expect(scheduledPixels).toEqual(reference.pixels());
+    reference.renderer.dispose();
+    expect(frames.pending.size).toBe(0);
+  });
+
   test("synchronous render ignores the scheduled budget and uploads every visible chunk in one call", () => {
     animationFrames();
     const { renderer } = setup(viewport.width, viewport.height, { maxChunkUploadsPerFrame: 1 });
