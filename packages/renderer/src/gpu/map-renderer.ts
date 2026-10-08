@@ -34,10 +34,12 @@ export interface MapRendererOptions {
   /**
    * Upper bound of uncached visible chunks uploaded per scheduled animation frame. Default 32.
    * Finite values are floored and clamped to at least 1; non-finite values use the default.
-   * If the visible set exceeds the cache capacity, the frame uploads and draws all visible chunks.
    */
   readonly maxChunkUploadsPerFrame?: number;
-  /** Upper bound of chunk textures kept on the GPU (LRU). Default 1536, enough for a whole Large world. */
+  /**
+   * Baseline chunk texture cache capacity (LRU). Default 1536, enough for a whole Large world.
+   * Each frame grows the capacity to fit its visible chunks and releases excess offscreen chunks when it shrinks.
+   */
   readonly maxCachedChunks?: number;
   /** Map colours (content, paint, background by depth), as in `renderChunk`; without one, placeholders are drawn. */
   readonly mapPalette?: MapPalette;
@@ -297,12 +299,6 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       chunks.delete(key);
     } else {
       textures = uploadChunk(source, chunk);
-      while (chunks.size >= maxCachedChunks) {
-        const oldest = chunks.entries().next();
-        if (oldest.done === true) break;
-        deleteChunk(oldest.value[1]);
-        chunks.delete(oldest.value[0]);
-      }
     }
     chunks.set(key, textures);
     return textures;
@@ -347,14 +343,24 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
 
     const chunksX = Math.ceil(world.width / CHUNK_SIZE);
     const visible = visibleChunks(camera, viewport, world);
-    // A visible set larger than the cache cannot accumulate across frames: eviction would prevent completion.
-    const frameUploadBudget = visible.length > maxCachedChunks ? Infinity : uploadBudget;
+    const visibleKeys = new Set(visible.map((chunk) => chunk.y * chunksX + chunk.x));
+    const capacity = Math.max(maxCachedChunks, visible.length);
+    let missing = 0;
+    for (const key of visibleKeys) if (!chunks.has(key)) missing++;
+    // Reserve room for the entire view before uploading. Evict only offscreen LRU entries so panning cannot
+    // discard visible chunks that later frames need, even when the view fills the adaptive capacity.
+    for (const [key, textures] of chunks) {
+      if (chunks.size + missing <= capacity) break;
+      if (visibleKeys.has(key)) continue;
+      deleteChunk(textures);
+      chunks.delete(key);
+    }
     const drawnChunks: ChunkCoord[] = [];
     let uploads = 0;
     let pending = false;
     for (const chunk of visible) {
       if (!chunks.has(chunk.y * chunksX + chunk.x)) {
-        if (uploads >= frameUploadBudget) {
+        if (uploads >= uploadBudget) {
           pending = true;
           continue;
         }
