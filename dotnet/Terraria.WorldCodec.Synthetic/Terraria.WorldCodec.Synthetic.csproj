@@ -3,11 +3,15 @@
   <!-- Explicitly generated synthetic inputs (tile sections, streams) for codec tests. Never shipped. -->
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Exe</OutputType>
     <IsPackable>false</IsPackable>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Terraria.WorldCodec\Terraria.WorldCodec.csproj" />
+    <EmbeddedResource Include="framing-cases.json" />
+    <!-- Read the generated input verbatim; no hand-maintained palette or frame table. -->
+    <EmbeddedResource Include="..\..\packages\renderer\src\palette\terraria-map-palette.generated.ts" LogicalName="FramingMapPalette" />
   </ItemGroup>
 
 </Project>

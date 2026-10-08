@@ -300,13 +300,13 @@ was converted into ours. Every numeric value below comes from the measurement or
 | F | [header.md](file-format/header.md) (frame-important bitset), [tiles.md](file-format/tiles.md) ("Record layout", byte-2 bits 4–6 = block shape) | this repo | which ids are framed at runtime; the shape values 0–5 |
 | S | **Sheet art**: local install L (1.4.5.8), sheets decoded with `packages/assets` and measured with [`packages/assets/tools/measure-tile-sheets.ts`](../packages/assets/tools/measure-tile-sheets.ts) (prints to the terminal; no pixels are saved) | measured 2026-10-07 and (layout agreement, grass and moss, large-frame sheets) 2026-10-08 | the cell catalogue ("Measuring the sheet", "Grass and moss sheets") |
 | X | **Cross-check**: the selection rule and A10's rule list, both evaluated over every neighbourhood by a one-off script that is deliberately **not** committed, because it had to encode A10's rule list. The grass run evaluates A10's grass lookup the same way | run 2026-10-07, grass 2026-10-08 | agreement figures quoted where used; the cells of the grass examples |
-| G | **In-game check** of a small generated world | **pending**: human steps H1–H6 below | none yet |
+| G | **In-game check** of v2 and v3 Frozen observation worlds, generated from `SJCO1` | user screenshots, 2026-10-08 20:27–20:29 and 20:59–21:01; disposable game saves | [Observation results](#observation-results-2026-10-08) and [Frozen-world results](#frozen-world-results): ore seams/rims, missing-rim fallback, corner priority, shape neighbours and growth control |
 
 TEdit names seancode's Terrafirma UV notes as the origin of its rule list (A10 82–85). We could not reach a pinned
 revision of that page, so it is not used. Nothing below comes from decompiled game code. Evidence marks: **S**
 (measured in the art), **X** (agrees with TEdit), **cited** (taken from a TEdit rule, restated), **chosen** (our
-decision where neither art nor source decides). **G** (observed in game) is not used yet, because H1–H6 are still
-open.
+decision where neither art nor source decides). **G** records only the cases actually visible in the screenshots;
+it does not establish a general rule for unobserved neighbourhoods or reload behaviour.
 
 ### Which tiles are framed at runtime
 
@@ -492,7 +492,8 @@ same script):
   closed toward the ore). The result is the same as rule 5: an outlined ore.
 
 The ore rows are where the two models really differ. Our rule 3 rests on the art: 37 rim looks per ore sheet that
-TEdit never draws. Rule 5 for ore ↔ ore has no art evidence either way and is **provisional** until H4.
+TEdit never draws. Rule 5 for ore ↔ ore has no art evidence either way. G confirms the seam for copper beside
+iron in H4-16a and the full dirt rim in H4-15; other ore pairs remain unobserved.
 
 ### Choosing the cell
 
@@ -502,14 +503,17 @@ Given the wanted letters:
    in the sheet map. 28 of the 65 side codes that contain `d` have no cell (`dddx ddox ddxd ddxo ddxx dodx
    doxd doxx dxdd dxdo dxod dxxd dxxo oddx odxd odxx oxdd oxxd xddd xddo xddx xdod xdox xodd xodx xxdd xxdo
    xxod`). For those, **turn every `d` side into `x`** and look again. All 16 `o`/`x` codes exist, so this always
-   finds a cell. The fallback is chosen; X: TEdit falls back the same way. In game it is still unobserved (H5).
-2. **Sides `oooo`:** the corners decide. Walk the nine interior looks in this order and take the first whose
+   finds a cell. X: TEdit falls back the same way. G: all 28 side codes match the fallback in v3 Frozen;
+   those generated cases have empty diagonals, so other corner contexts are not independently observed.
+2. **Sides `oooo`:** the corners decide. If **all four corners are `x`**, select the **NW+NE notches**
+   (G: both dirt and stone, v3 Frozen). Otherwise walk the nine interior looks in this cited order and take the first whose
    every non-`o` corner equals the wanted corner letter: rim SE, rim SW, rim NW, rim NE, notches SE+SW, NW+NE,
    NE+SE, NW+SW, plain interior. The art shows *which* looks exist. The order only matters when several fit
    (three or four missing corners, or a rim corner together with a notch) and is **cited** (A10 108–112 and
    168–179). Consequences: a single missing corner keeps the plain interior, because no one-notch look exists in the
    stone layout (S; dirt's rim-corner slots hold single notches, O7).
-   Two opposite missing corners also keep the plain interior. With all four corners missing, the SE+SW notches win.
+   Two opposite missing corners also keep the plain interior (G: dirt and stone). The all-four-corners exception
+   above corrects the cited order, which would select SE+SW and disagrees with the observed game cells.
 3. **Variant:** cell `v` of the look, with `v` from "Variant".
 
 **Edge check (rule 4).** The open edges of a cell are its sides that are not `x` (`o` or `d`). This follows
@@ -577,8 +581,9 @@ matter); only the drawing changes. TEdit's newer 8-way framer for gemsparks (A13
 neighbour connects only if both facing faces are full (per a face table, A13 43–51), and a corner only if the two
 edges next to it connect. A13's face table agrees with the column above for shapes 0–3 but not for 4 and 5 (O5).
 
-**M4 rule (cited, A8):** choose the cell as if the tile were full, then draw it by the shape table. Whether the game
-breaks a connection across a sloped face for ordinary blocks is open (O5, H3).
+**M4 rule (cited, A8):** choose the cell as if the tile were full, then draw it by the shape table. G shows that
+this approximation differs from the game: full dirt neighbours draw closed edges toward the cut faces in H3.
+The exact treatment of partial faces and diagonals still needs a derived rule (O5); the renderer is unchanged.
 
 ### Worked examples
 
@@ -734,35 +739,174 @@ the "dirt") is open (O8, H8). Until then a viewer frames moss like stone over ro
 
 ### Human steps (in-game check, G)
 
-Use a small world, made with our own generator or a fresh "small" world, and commit nothing. Screenshots go to
-`local-renders/` (gitignored).
+Generate a disposable observation world from an unchanged vanilla corpus fixture. Prepare `local-renders/`
+(gitignored), then run this command from the repository root:
 
-- **H1** Build examples 1–19 in a flat area (Journey mode, 1:1 zoom, full lighting) and save. Read the tiles with
-  `Terraria.WorldInspector`, take a screenshot, and compare each listed tile with its look (outline / open / rim per
-  side). A look can be compared without knowing the variant.
+```bash
+dotnet run --project dotnet/Terraria.WorldCodec.Synthetic -- generate packages/test-fixtures/worlds/SJCO1.wld local-renders/framing-observations.wld
+```
+
+It writes a new `.wld` and `.wld.manifest.json`, refuses either existing output path, and accepts only corpus
+paths whose bytes match `packages/test-fixtures/worlds/manifest.json`. It never edits the base. Do not commit
+either output. Copy only the generated world to a new file in Terraria's local Worlds directory for the game
+check; retain the original generated copy beside its manifest. It appears as **TMS Framing Tests #158 v3 Frozen** in
+the world picker and has a deterministic world ID and GUID distinct from the base. The mode and opaque
+sections are preserved except for time freezing (choose `SJCO1` for Journey mode). The generator sets
+creative power 0 to `true` in section 10 ([format contract](file-format/entities.md#section-10--creative-journey-powers)),
+preserving all other power values. The manifest records `timeFrozen: true`; tests reload the output and
+check the stored setting. Use a disposable game copy and avoid replacing
+any player world.
+
+The cases are already stamped onto a flat stone terrace near the horizontal centre, at `height / 8` in the sky.
+**You spawn directly on its stone floor; walk right to inspect the cases above you. No flight is needed.**
+The default catalogue uses compact panels of several rows, all within 30 tiles above the floor. Three tiles of
+headroom stay clear across the entire walking route. The manifest includes the menu name and spawn coordinates.
+Sections run left to right; their numbers and names are in `sections` in the manifest. Each starts with a
+gray-brick (38) column, `section number + 1` tiles tall. Cases are packed in catalogue order, with at least
+two tiles of air between patterns and between a pattern and a marker or floor. Panel width is derived from
+the total pattern area; individual patterns keep their original neighbourhoods. Extended catalogues use the
+same packing rule and may need their own access arrangements if their panels exceed the default height.
+The manifest gives each pattern's top-left `x,y`, dimensions, title and expected look/cells or `to observe`.
+In patterns that contain `#`, that character identifies the focus tile; for the three-row worked examples it
+is on the middle row. Both tiles of examples 8, 14 and 16 have separate cases and enough surrounding mass to
+preserve the paired tile's own neighbourhood.
+
+Find a case by its manifest ID (`B14a`, `G9`, `H3-shape2`, etc.) and print all its tiles:
+
+```bash
+dotnet run --project dotnet/Terraria.WorldInspector -- case local-renders/framing-observations.wld local-renders/framing-observations.wld.manifest.json B14a
+```
+
+The inspector checks the output hash, then prints types, shapes and frames at the manifest coordinates.
+After Terraria saves the disposable copy, pass `--allow-changed-world` to inspect that copy with the original
+manifest: the report explicitly notes the changed hash. Case coordinates still have to lie inside the world.
+Screenshots go to `local-renders/`. The generator does not run the game or judge the observations (#120).
+
+The data catalogue is `dotnet/Terraria.WorldCodec.Synthetic/framing-cases.json`: one entry per case, with
+section, ID, title, character rows, legend and expected result. Legend cells accept vanilla `block`, `wall`,
+numeric `shape` and optional `frameX`/`frameY`. Add an entry to add a case or section, without changing the
+layout. `--catalogue <cases.json>` selects an extended catalogue; additional observation templates in
+`AdditionalFramingCases.cs` and the map-option cases are appended automatically.
+
+The v3 catalogue adds coralstone in dirt, at a boundary and in isolation; all 28 missing rim side codes;
+full dirt next to shapes 1–5 on each cardinal side; opposite, three and four missing diagonals for dirt
+and stone; and moss against stone on three sides, at a corner and in a pillar. These cases have observation
+questions rather than fabricated expected game frames. Their IDs, coordinates and questions are in the manifest.
+For variant stability, take a screenshot at a fixed standing position, save/reload twice and repeat it.
+For map options, also capture the fullscreen game map. Keep Journey's time-freeze power enabled during
+observations. [Plant updates](https://terraria.wiki.gg/wiki/Plants) are suspended while Journey time is frozen;
+the generator stores the power before the first load. It does not prevent player edits or validate unsupported
+isolated multi-tile objects. Compare any game-saved copy with the original manifest before treating it as intact.
+
+- **Map options (#138)** Compare the generated **Map options** section in the game map and the viewer: gems
+  (178), herbs (82–84), pots (28) and chests (21) each have exactly one isolated tile per option reachable by
+  the shipped `tileOptions` rules, using a selecting frame. The section also has one tile for every content
+  listed as depending on more than one frame axis or on position; the viewer keeps those at option 0. The
+  manifest names the expected option. Pot **option 7 is pending the palette fix [#195](https://github.com/tomasz-goralski-i4b/terraria-map-browser/issues/195)**:
+  no observed frame currently selects it, so there is no fabricated tile. It appears under `unreachableOptions`
+  as tile 28, option 7, reason `no observed frame selects it`. Regenerating the palette with a selecting rule
+  adds that case automatically and removes the unreachable entry. Until #195 is fixed, the generated pot
+  option-8 case uses the observed `frameY=792`; larger pot frames are outside the current observed range.
+
+- **H1** Inspect the generated **Blocks** cases `B1`–`B19` (Journey mode, 1:1 zoom, full lighting) and save.
+  Read the tiles with `Terraria.WorldInspector`, take a screenshot, and compare each listed tile with its
+  look (outline / open / rim per side). A look can be compared without knowing the variant.
 - **H2** Save and reload the world twice. Note whether the variants of the same tiles change (random per load) or
   stay the same (seeded).
-- **H3** Hammer a dirt block into each of the shapes 1–5 inside a dirt mass. Check whether its full neighbours draw
-  an outline toward the cut faces (O5), and that the shape value read by the inspector matches the "Cut corner"
-  column.
-- **H4** Examples 15–17: a copper ore fully surrounded by dirt (full rim or rim corner only?), copper next to iron
-  ore (seam or no seam?), copper inside stone (outline?).
-- **H5** Example 14, **both tiles**: stone with dirt only to its N and E. Record whether the stone draws an outline
-  or a partial rim, and whether the dirt tile to its E draws an edge toward the stone. Repeat with example 8 for the
-  case where the rim exists.
-- **H6** A dirt mass with a single one-tile hole at a diagonal of one dirt tile (all four edges dirt, one corner
-  empty), once per corner. Record whether that tile shows a small notch in the corner (O7) or a plain interior.
-- **H7** Build grass examples G1–G9 with grass on dirt (and G9 also with stone instead of the dirt, which A8 treats
-  as connected). For each tile, identify the drawn cell by comparing its outline and its grass/dirt split in the
-  screenshot with the cells of the sheet, and compare it with the expected cells.
-- **H8** Grow green moss on a stone mass with an open surface, a single-tile pillar, a one-tile hole and a
-  stone/dirt boundary. Record whether the drawn cells come from rows 15–21 of `Tiles_179` (grass rules) or only
-  from rows 0–14 (block rules) (O8).
-- **H9** Place a 6 × 8 area of one type-1 large-frame block (stone slab, 273) and one type-2 block (luminite brick,
-  409). For every interior tile, record which of the six interior cells ((1,1) (2,1) (3,1) (1,6) (2,6) (3,6)) it
-  shows, and write the pattern down by world `x mod 3, y mod 4` (type 1) or `x mod 2, y mod 2` (type 2) (O4).
-- **H10** Spread corrupt jungle grass on a mud mass next to dirt, and crimson jungle grass likewise. Record whether
+- **H3** Inspect **Shapes** cases `H3-shape1`–`H3-shape5`, each already shaped inside a dirt mass. Check whether
+  its full neighbours draw an outline toward the cut faces (O5), and that the inspector's shape matches the
+  "Cut corner" column.
+- **H4** Inspect **Ores** cases `H4-15`, `H4-16a`, `H4-17`: copper surrounded by dirt (full rim or rim corner
+  only?), copper next to iron (seam or no seam?), copper inside stone (outline?).
+- **H5** Inspect **Rim fallback** cases `H5-14a`/`H5-14b`, **both tiles**: stone with dirt only to its N and E.
+  Record whether stone draws an outline or a partial rim, and whether the dirt tile to its E draws an edge
+  toward stone. Repeat with `H5-8a`/`H5-8b` for the case where the rim exists.
+- **H6** Inspect **Diagonal hole** cases `H6-NW`, `H6-NE`, `H6-SE`, `H6-SW`: a dirt mass with a single one-tile
+  hole at a diagonal of one dirt tile (all four edges dirt, one corner empty), once per corner. Record whether
+  that tile shows a small notch in the corner (O7) or a plain interior.
+- **H7** Inspect **Grass** examples `G1`–`G9` on dirt and `G9-stone` on stone (which A8 treats as connected).
+  Identify each drawn cell by comparing its outline and grass/dirt split with the sheet cells, then compare
+  it with the expected cells.
+- **H8** Inspect **Moss** cases `H8-surface`, `H8-pillar`, `H8-hole`, `H8-boundary`: green moss on stone with
+  an open surface, a single-tile pillar, a one-tile hole and a stone/dirt boundary. Record whether the drawn
+  cells come from rows 15–21 of `Tiles_179` (grass rules) or only rows 0–14 (block rules) (O8).
+- **H9** Inspect **Large frame** cases `H9-slab`/`H9-luminite`, each a 6 × 8 area: stone slab (273, type 1)
+  and luminite brick (409, type 2). For every interior tile, record which of the six interior cells
+  ((1,1) (2,1) (3,1) (1,6) (2,6) (3,6)) it shows. Write the pattern by world `x mod 3, y mod 4` (type 1)
+  or `x mod 2, y mod 2` (type 2) (O4).
+- **H10** Inspect **Jungle grass** cases `H10-corrupt`/`H10-crimson`, already placed on mud next to dirt. Record whether
   the brown under the grass is mud and whether a dirt neighbour is drawn as partner (O10).
+
+### Observation results (2026-10-08)
+
+The human supplied five game screenshots (`20261008202752_1.jpg`, `20261008202757_1.jpg`,
+`20261008202807_1.jpg`, `20261008202820_1.jpg`, `20261008202827_1.jpg`) and three cropped PNGs
+(`Screenshot 2026-10-08 202857.png`, `Screenshot 2026-10-08 202929.png`,
+`Screenshot 2026-10-08 202946.png`). They cover the ten numbered sections of the generated v2 world.
+The source files remain outside the repository. Texture comparisons use the local game's sheet art decoded
+with `packages/assets`, not game code. JPEG colour error and duplicate sheet cells prevent some exact frame identifications.
+
+The pristine generated world was compared read-only with its disposable game save, using inspector
+`export-json` regions covering the whole cleared strip (`1838,150,256,16`, `2094,150,256,16`,
+`2350,150,12,16`). The save is later than the screenshots, so its changes identify affected cases but do not
+date each change relative to each screenshot. The comparison found exactly 23 changed positions in the strip:
+
+- 11 dirt blocks became grass in G1 (3), G2 (4), G4 (2), and G9 (2).
+- The bottom stone of H8-pillar became green moss; four mud blocks became corrupt/crimson jungle grass,
+  two in each H10 case.
+- Five previously empty positions gained vegetation: three vines, one plant, and one immature herb.
+- `Map-block-82-option-2` and `Map-block-518-fallback` became air. The save cannot identify the cause.
+
+All other positions in the strip retain their generated tile fields, including all Blocks, Shapes, Ores,
+Rim fallback, Diagonal hole, and Large frame patterns. This validates their input neighbourhoods after play.
+The grass, moss and jungle cases above must not be treated as unchanged copies of the manifest.
+
+| Question | Evidence and conclusion | Remaining limit |
+|---|---|---|
+| O1 / H2, reload variants | One traversal, without a matched before/after reload pair. | Random versus seeded variants remains open. |
+| O2 / H4, ore neighbours | Copper in dirt matches full-rim cell (6,11); copper in stone matches outlined cell (9,3). Copper beside iron has a visible seam. | Confirms the selected cases, not every ore pair. The small copper fleck in dirt is the centre of a full dirt rim, not a missing ore tile. |
+| O3 / H5, missing rim | H5-14a stone matches outline (9,3), its duplicate matches (10,3), and the dirt east of it matches a closed-west cell (4,4). The valid boundary examples retain the stone west rim, matching (9,9) and (9,8). | The `ddxx` fallback and its dirt edge check are observed; the other 27 missing side codes and corner priorities are not. |
+| O4 / H9, large frames | Both 6 × 8 panels load intact and show spatial texture patterns. | A complete coordinate-to-cell rule for either type, and its applicability to the other 22 ids, is not established. Do not assign six interior cell indices from appearance alone. |
+| O5 / H3, shape neighbours | Full neighbours draw an edge toward the missing portion of the centre. For example, the north neighbour of the half block and of shape 2 matches (6,4), with its south edge closed; the east neighbour of shape 2 matches (5,1), with its west edge closed. | Treating every shaped neighbour as full is contradicted. The complete partial-face/diagonal algorithm remains open. |
+| O6, exceptional layouts | No coralstone case is present. | Coralstone remains open; moss is limited to H8 below. |
+| O7 / H6, missing dirt diagonal | The unobscured NE, SE and SW centres look like plain interiors; SW best matches (1,1). | JPEG comparisons are close for several cells; a damage number obscures NW. Supports the plain-interior choice but does not prove all four exact frames. |
+| O8 / H8, moss framing | Stone bodies and green exposed edges. Several clear moss cells match rows 0–14: surface (3,0), pillar middle (5,1), hole neighbours (2,2), (4,2), (0,1). | No uniquely identified row 15–21 cell is demonstrated. Low-row matches do not prove the selection algorithm or that higher rows are unused; H8-pillar also changed during play. |
+| O9, white grass masks | These rows were not exercised. | Remains outside the observation scope. |
+| O10 / H10, jungle grass partner | Both jungle grass types spread into the supplied mud; adjacent dirt stays dirt. The screenshot shows a boundary toward that dirt. | Mud is confirmed as the growth substrate. Growth does not prove the complete sprite merge-partner rule, and both patterns changed. |
+
+The unchanged grass cases visibly cover a narrow pillar (G3), a green ceiling edge (G5), a buried green
+centre (G6), an all-grass mass (G7), and a missing diagonal (G8). These provide qualitative checks, not
+exact sheet-cell assertions. G9-stone keeps its original pattern but gained a herb just outside it.
+
+The Map options section contains individual tiles with synthetic stored frames, including fragments of
+multi-tile sprites. It is not an in-game map screenshot, and partial pots or chests are not evidence of
+malformed `.wld` records. These images do not validate map colours or make pot option 7 reachable.
+Two map cases are absent from the final game save, so it is not a complete surviving catalogue.
+
+### Frozen-world results
+
+The next traversal supplied `Screenshot 2026-10-08 205952.png`, `210032.png`, `210054.png` and
+`210106.png` (the latter names share the same `Screenshot 2026-10-08 ` prefix). They show the compact
+v3 Frozen catalogue: 12 sections and 174 cases. The 21:01:10 game save retains creative power 0 as
+`true`. Read-only inspector comparisons cover all **9,912 tiles** of the 354 × 28 cleared strip and
+find **zero changed tile fields**. All grass, moss, jungle and map-option input patterns survived this
+session. This confirms the intended effect of the stored time-freeze setting for this traversal.
+
+Frame comparisons use the locally decoded sheet art and compensate for screenshot zoom and lighting.
+Nearest texture matches are evidence of appearance, not a way to recover distinct frame coordinates when
+several sheet cells have identical pixels. No game assets or screenshots are committed.
+
+| Observation | Result |
+|---|---|
+| Missing rims, O3 | All 28 `Rim-missing-*` focus tiles best match cells with side code equal to their input code with every `d` replaced by `x`. Existing `o` sides stay connected. This confirms the documented fallback for all 28 side codes in the generated empty-diagonal contexts. |
+| Corner priority, O3 | With four missing diagonals, dirt matches (7,1) and stone also matches (7,1): **NW+NE notches**, not the previously cited SE+SW preference. The three-hole cases (NW, NE, SW absent) also match NW+NE, at (7,1) for dirt and (8,1) for stone. Opposite-hole cases match plain interiors, (1,1) for dirt and (3,1) for stone. Other rotations of three holes and mixed rim/notch priorities remain unobserved. |
+| One missing dirt diagonal, O7 | The clear NW, SE and SW centres support plain interiors. The NE texture match remains ambiguous after screenshot scaling; do not claim four independently identified frame cells. |
+| Moss, O8 | The three new moss-against-stone cases match (1,2), (0,3), (5,1), respectively. These are the ordinary bottom edge, corner and vertical-column positions over rows 0–14, supporting the stone-family approximation for green moss in these contexts. No uniquely identified row 15–21 look is demonstrated; this does not prove such rows are never used by any moss. |
+| Jungle grass, O10 | Both unchanged cases connect to the supplied mud below and show a closed edge toward dirt on the left; the grass focus best matches (4,3) for both 661 and 662. This supports **mud as the sprite merge partner**, in addition to the earlier growth evidence. |
+| Coralstone, O6 | The dirt pocket suppresses the bright coral art at the enclosed centre; exposed boundary cells and the isolated tile show coloured coral. The isolated tile matches (10,3). Several enclosed cells are pixel-identical, so their exact frame/rim selection remains unresolved. |
+| Shapes, O5 | The expanded centre/neighbor-shape patterns remain intact and show that cut faces affect surrounding artwork. The complete half-face and diagonal algorithm still needs derivation; the shape-independent renderer approximation is unchanged. |
+| Map options | Every generated case survives the frozen traversal. The PNG shows sprites, not the fullscreen game map, so map colour agreement remains unverified. Pot option 7 remains the separate palette issue #195. |
+| Reloads and large frames, O1/O4 | Stable input panels are now available. These four screenshots still do not provide a matched reload pair or a complete unambiguous coordinate-to-frame pattern. |
 
 ### Not covered (deferred)
 
@@ -772,17 +916,21 @@ large-frame and moss framing wait for H8–H9.
 
 ### Open questions
 
+The [observation results](#observation-results-2026-10-08) and [Frozen-world results](#frozen-world-results)
+narrow these questions. A result for one material or context is not proof for all ids.
+
 - **O1** Does the game re-roll the variant on every load (H2)? The recommendation stands either way.
-- **O2** Ore ↔ ore and ore ↔ dirt. Rule 3 (dirt is a rim partner for ores, not a connection) rests on the art (S).
-  Rule 5 (two different ores show a seam) is provisional. TEdit joins both. H4 decides. If H4 shows a seam
-  between ores, only rule 5 and examples 16a/16b change; if it shows only a rim corner for ore in dirt, rule 3 for
-  non-stone blocks and example 15 change too.
-- **O3** The 28 rim side codes without art fall back to an outline (step 1). The game might instead pick a
-  partial rim (H5). The corner priority for three or four missing corners is cited, not observed.
+- **O2** Ore ↔ ore and ore ↔ dirt. G confirms rule 3's full dirt rim for copper and rule 5's seam for copper
+  beside iron; outlined copper in stone is also observed. Generalization to other non-stone blocks and ore
+  pairs remains based on the art and the chosen contract.
+- **O3** G confirms fallback for all 28 missing side codes in the empty-diagonal contexts, and NW+NE
+  notch priority for four missing diagonals in dirt and stone. Other three-hole rotations and mixed
+  rim/notch corner priorities remain unobserved.
 - **O4** Large-frame variant patterns (24 ids): still open. The art shows six cells per look (two copies of the
   rim-free block), not three, and gives no sign of how they are spread; restate the patterns from H9, not from A13.
-- **O5** Slopes: do full neighbours of a sloped tile keep their connection (A8) or break it at a cut face, as in
-  A13? A13's face entries for shapes 4 and 5 also disagree with its own drawing code.
+- **O5** G shows that full dirt neighbours close edges toward cut faces (H3), contradicting A8's
+  shape-independent approximation. The complete partial-face and corner rules remain to be derived;
+  A13's face entries for shapes 4 and 5 also disagree with its own drawing code.
 - **O6** Answered per sheet ("Measuring the sheet", "Grass and moss sheets", "Variant"): 88 of the 89 dirt-partner
   sheets of 288 × 270, ash and hellstone share stone's layout of sides and rims; the 21 taller sheets are moss and
   share the grass positions; the 24 large-frame sheets hold the rim-free block twice. Still open: **coralstone
@@ -792,12 +940,14 @@ large-frame and moss framing wait for H8–H9.
 - **O7** Dirt's sheet holds single-notch art in the 12 slots where stone has rim corners. The contract keeps the
   plain interior for one missing diagonal (cited order, A10 108–112). If H6 shows a notch, a partner-less block
   would select those slots for one missing corner, and step 2 of "Choosing the cell" gains four single-notch looks.
-- **O8** Moss: the art has the grass layout (rows 15–21 included), A12 and TEdit frame moss as a stone-family block
-  over rows 0–14. Which one the game uses is open (H8).
+- **O8** Green moss's tested stone-neighbour contexts support ordinary block positions over rows 0–14.
+  The art also has grass rows 15–21; no uniquely identified use of those rows is observed, and the
+  complete rule for all moss types and dirt boundaries remains open.
 - **O9** `Tiles_2` rows 22–109: four white-only mask blocks at the grass positions. Not used by framing; what the
   game draws with them is open and out of scope for the viewer until a feature needs it.
-- **O10** Corrupt and crimson jungle grass (661, 662): A12 names dirt as partner, the art is drawn on mud (S).
-  Which partner the game merges with is open (H10); a viewer uses mud, the partner the art shows.
+- **O10** Corrupt and crimson jungle grass (661, 662): A12 names dirt as partner, but both the art (S)
+  and the unchanged frozen cases (G) support mud: the grass connects to mud below and closes toward dirt
+  at the left. The viewer's mud-partner choice is supported for both observed ids.
 
 Proposed follow-up issues: [planning/tile-framing-follow-ups.md](planning/tile-framing-follow-ups.md).
 
