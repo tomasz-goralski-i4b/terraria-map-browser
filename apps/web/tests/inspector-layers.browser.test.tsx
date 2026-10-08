@@ -52,7 +52,7 @@ function rows(): [string, string][] {
 test.each([
   [0, 0, [
     ["Position", "0, 0"], ["Block", "Stone Block (vanilla:1)"], ["Wall", "Natural Dirt Wall (vanilla:2)"], ["Frame X", "18"], ["Frame Y", "36"],
-    ["Shape", "Half block"], ["Block paint", "3"], ["Wall paint", "4"], ["Liquid", "None"], ["Liquid amount", "None"],
+    ["Shape", "Half block"], ["Block paint", "Yellow Paint (3)"], ["Wall paint", "Lime Paint (4)"], ["Liquid", "None"], ["Liquid amount", "None"],
     ["Wires", "Red, Green"], ["Actuator", "Yes"], ["Inactive", "Yes"], ["Invisible block", "No"], ["Invisible wall", "No"],
     ["Full-bright block", "No"], ["Full-bright wall", "No"],
   ]],

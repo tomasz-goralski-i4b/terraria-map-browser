@@ -50,6 +50,7 @@ test("exports every map option of each content ID as a TypeScript module", { ski
       tiles: [["Dirt Block"], ["Demon Altar", "Crimson Altar"], [""], []],
       walls: [[], ["Stone Wall", "Aether \"Crystal\"\nWall"]],
       liquids: ["Water", "Lava", "Honey", "Shimmer"],
+      paints: ["", "Red Paint", "Blue Paint"],
     });
   });
 });
@@ -85,6 +86,10 @@ test("exports the palette of a local Terraria installation", {
     assert.equal(names.walls[2][0], "Natural Dirt Wall");
     assert.deepEqual(names.tiles[26], ["Demon Altar", "Crimson Altar"]);
     assert.deepEqual(names.liquids, ["Water", "Lava", "Honey", "Shimmer"]);
+    assert.equal(names.paints[19], "Deep Cyan Paint");
+    assert.equal(names.paints[29], "Shadow Paint");
+    assert.equal(names.paints[30], "Negative Paint");
+    assert.equal(names.paints.length, palette.paints.length);
     assert.deepEqual(names.tiles.map((options) => options.length), palette.tiles.map((options) => options.length));
     assert.deepEqual(names.walls.map((options) => options.length), palette.walls.map((options) => options.length));
   });

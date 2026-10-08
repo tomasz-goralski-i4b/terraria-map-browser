@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { contentName, describeTile, LIQUID_NAMES } from "../src/world/content-names.js";
+import { contentName, describeTile, LIQUID_NAMES, paintName } from "../src/world/content-names.js";
 
 test("names ordinary materials from the game's placement items and names map objects from its legend", () => {
   expect(contentName({ kind: "vanilla", id: 0 }, "block")).toBe("Dirt Block");
@@ -35,4 +35,17 @@ test("describes the hovered block's map option, wall and every liquid with gener
     })).toBe(`Crimson Altar · Stone Wall · ${kind.charAt(0).toUpperCase() + kind.slice(1)} 128`);
   }
   expect(describeTile({ wires: 0, actuator: false })).toBe("Empty");
+});
+
+test("names paints from item metadata and describes independent block and wall paints", () => {
+  expect(paintName(19)).toBe("Deep Cyan Paint");
+  expect(paintName(7)).toBe("Cyan Paint");
+  expect(paintName(29)).toBe("Shadow Paint");
+  expect(paintName(30)).toBe("Negative Paint");
+  expect(paintName(200)).toBe("paint:200");
+  expect(describeTile({
+    block: { kind: "vanilla", id: 1 }, paint: 19,
+    wall: { kind: "vanilla", id: 1 }, wallPaint: 7, wires: 0, actuator: false,
+  })).toBe("Stone Block (Deep Cyan Paint) · Stone Wall (Cyan Paint)");
+  expect(describeTile({ block: { kind: "vanilla", id: 0 }, paint: 0, wires: 0, actuator: false })).toBe("Dirt Block");
 });

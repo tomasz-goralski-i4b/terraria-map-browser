@@ -27,12 +27,15 @@ namespace Terraria {
     public class Item {
         public int createTile = -1;
         public int createWall = -1;
+        public byte paint;
         public string Name { get; private set; }
         public void SetDefaults(int id, Terraria.GameContent.Items.ItemVariant variant) {
             if (Main.player[Main.myPlayer] == null) throw new System.InvalidOperationException("Player not initialized.");
             Name = "";
             if (id == 2) { createTile = 0; Name = "Dirt Block"; }
             if (id == 3) { createTile = 1; Name = "Stone Block"; }
+            if (id == 10) { paint = 1; Name = "Red Paint"; }
+            if (id == 11) { paint = 2; Name = "Blue Paint"; }
             if (id == 26) { createWall = 1; Name = "Stone Wall"; }
             // Two different items for an unmapped tile: neither should become an arbitrary material name.
             if (id == 28 || id == 29) { createTile = 2; Name = id == 28 ? "Grass Seeds" : "Staff of Regrowth"; }
