@@ -188,6 +188,6 @@ describe("WorldDetails", () => {
     const fixture = buildMetadata();
     const offset = fieldOffset(field);
     expect(() => readWorldMetadata(wrapMetadata(fixture.bytes.subarray(0, offset + 1), 4096)))
-      .toThrowError(WorldFormatError);
+      .toThrow(WorldFormatError);
   });
 });
