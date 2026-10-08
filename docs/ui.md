@@ -140,9 +140,9 @@ opaque tiles, using the same integer expression on the GPU and in the CPU refere
 
 What a layer toggle costs:
 - At half a pixel per tile and above, or whenever the chunks around the view are cached: no upload at all.
-- Zoomed out on a world larger than the chunk cache (Medium and Large worlds): the overview is rebuilt progressively,
-  visible chunks first, re-uploading evicted chunks within the per-frame budget (a fraction of a second). Until a
-  chunk is rebuilt it keeps its old colours: the map never blanks.
+- Zoomed out on a world larger than the chunk cache (Medium and Large worlds): the new view is built in the
+  background, re-uploading evicted chunks within the per-frame budget (a fraction of a second), while the old view
+  stays on screen. The whole view then switches at once: the map never blanks and never changes slice by slice.
 - Never a re-parse.
 
 ## Theme and tokens

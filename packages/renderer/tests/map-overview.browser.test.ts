@@ -291,7 +291,7 @@ describe("overview below half a pixel per tile", () => {
     expect(differing).toBe(0);
   });
 
-  test("a layer change never blanks the map: every rebuild frame shows the old or the new colour, within budget", () => {
+  test("a layer change switches the whole view at once: every rebuild frame is entirely old or entirely new, within budget", () => {
     // 128 uniform chunks in two colours, all visible, in a cache of 16: the rebuild re-uploads evicted chunks.
     const colorIndex = (chunkX: number, chunkY: number): number => 1 + ((chunkX + chunkY) % 2);
     const world = blocks(2048, 1024, (x, y) => colorIndex(Math.floor(x / 128), Math.floor(y / 128)));
@@ -316,23 +316,26 @@ describe("overview below half a pixel per tile", () => {
 
     renderer.setLayers(hidden);
     let uploads = renderer.stats().textureUploads;
+    const near = (actual: readonly number[], expected: readonly number[] | undefined): boolean =>
+      expected !== undefined && actual.every((value, channel) => Math.abs(value - (expected[channel] ?? 0)) <= 2);
     let rebuildFrames = 0;
+    let oldFrames = 0;
     for (; frames.pending.size > 0 && rebuildFrames < 200; rebuildFrames++) {
       frames.step();
       const stats = renderer.stats();
       expect(stats.textureUploads - uploads).toBeLessThanOrEqual(budget);
       expect(stats.residentChunks).toBeLessThanOrEqual(cache);
       uploads = stats.textureUploads;
-      centres.forEach(([x, y], index) => {
-        const actual = pixel(x, y);
-        const near = (expected: readonly number[] | undefined): boolean =>
-          expected !== undefined && actual.every((value, channel) => Math.abs(value - (expected[channel] ?? 0)) <= 2);
-        expect(near(before[index]) || near(after[index]), `frame ${String(rebuildFrames)}, pixel ${String([x, y])}: ${String(actual)}`)
-          .toBe(true);
-      });
+      // No slice of the map changes before the rest: the frame is the old view or the new one, never a mix.
+      const shown = centres.map(([x, y]) => pixel(x, y));
+      const old = shown.every((actual, index) => near(actual, before[index]));
+      const updated = shown.every((actual, index) => near(actual, after[index]));
+      expect(old || updated, `frame ${String(rebuildFrames)} mixes the old and the new view`).toBe(true);
+      if (old) oldFrames++;
     }
     // The rebuild re-uploaded evicted chunks over several frames, and finished.
     expect(rebuildFrames).toBeGreaterThan(1);
+    expect(oldFrames).toBeGreaterThan(0);
     expect(frames.pending.size).toBe(0);
     const actual = all();
     const expected = reference.all();

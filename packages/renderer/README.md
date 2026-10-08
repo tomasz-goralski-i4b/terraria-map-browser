@@ -32,9 +32,12 @@ exactly the pixels `filterTiles` (below) makes of them. The browser tests assert
   mipmaps average transparency correctly). It is one draw call for the whole world and is filtered, so zoomed-out
   views do not shimmer while panning. Building it is subject to the same per-frame upload budget; texels never built
   stay clear. Its texels are built over the filter footprint around the viewport, not only the visible chunks.
-- **Overview rebuild.** Layer changes and palette appends mark every texel stale without clearing it: old texels stay
-  drawn until the rebuild overwrites them, visible chunks first, then the rest of the filter footprint, regenerating
-  the mipmaps after every batch. The cost of a layer toggle:
+- **Overview rebuild.** Layer changes and palette appends never clear the overview. The new view is built into a
+  second overview texture (a copy of the shown one), visible chunks first, then the rest of the filter footprint,
+  while the old one stays on screen; once the whole footprint is built the two are swapped and the mipmaps
+  regenerated. The view therefore switches in one frame, never slice by slice. The second texture exists only during
+  a rebuild (about 27 MiB for a Large world). Chunks outside the footprint keep their old texels after the swap and
+  are rebuilt when they come into view. The cost of a layer toggle:
   - no upload at half a pixel per tile and above, or whenever the footprint's chunks are resident;
   - at overview zoom, for worlds larger than the chunk cache (Medium and Large), a progressive rebuild that re-uploads
     evicted chunks within the per-frame budget (with the default 32 per frame, about 25 to 40 frames);

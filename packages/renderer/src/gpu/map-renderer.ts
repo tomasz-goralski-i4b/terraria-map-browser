@@ -157,19 +157,28 @@ interface GpuResources {
   readonly variantColors: WebGLTexture;
 }
 
-/** The overview of one world: a mipmapped RGBA8 texture, one texel per factor × factor tiles, premultiplied. */
-interface Overview {
-  readonly world: RenderableWorld;
+/** One overview texture: a mipmapped RGBA8 texture, one texel per factor × factor tiles, premultiplied. */
+interface OverviewTexture {
   readonly texture: WebGLTexture;
-  readonly factor: number;
-  readonly width: number;
-  readonly height: number;
   /** Per chunk (y * chunksX + x): 1 once its texels hold the current layers. */
   readonly built: Uint8Array;
   /** Number of chunks marked in `built`. */
   builtCount: number;
-  /** Whether any texel was ever built: invalidation keeps the old texels until the rebuild overwrites them. */
-  filled: boolean;
+}
+
+/**
+ * The overview of one world. `shown` is drawn; after a layer change or palette append the new view is built into
+ * `building` (a copy of `shown`, so chunks outside the footprint keep their old texels) while `shown` stays on screen,
+ * and replaces it once the whole footprint is built: the view switches in one frame, never slice by slice.
+ */
+interface Overview {
+  readonly world: RenderableWorld;
+  readonly factor: number;
+  readonly width: number;
+  readonly height: number;
+  readonly levels: number;
+  shown: OverviewTexture;
+  building: OverviewTexture | null;
 }
 
 function requireValue<T>(value: T | null, what: string): T {
@@ -326,18 +335,50 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   };
 
   const releaseOverview = (): void => {
-    if (overview !== null && !gl.isContextLost()) gl.deleteTexture(overview.texture);
+    if (overview !== null && !gl.isContextLost()) {
+      gl.deleteTexture(overview.shown.texture);
+      if (overview.building !== null) gl.deleteTexture(overview.building.texture);
+    }
     overview = null;
   };
 
+  /** An empty overview texture of `target`'s size, with a complete (zeroed) mip chain. */
+  const overviewTexture = (target: { readonly width: number; readonly height: number; readonly levels: number }, chunkCount: number): OverviewTexture => {
+    const texture = requireValue(gl.createTexture(), "a texture");
+    gl.activeTexture(gl.TEXTURE0 + UNIT_OVERVIEW);
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texStorage2D(gl.TEXTURE_2D, target.levels, gl.RGBA8, target.width, target.height);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    // Magnified only as the stand-in for chunks still loading: smooth rather than blocky.
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    // Storage starts zeroed but its mip chain is incomplete until generated.
+    gl.generateMipmap(gl.TEXTURE_2D);
+    return { texture, built: new Uint8Array(chunkCount), builtCount: 0 };
+  };
+
   /**
-   * Marks every overview texel stale: their chunks draw them again on demand. The texture is not cleared, so the old
-   * texels stay visible until the rebuild overwrites them and the map never blanks.
+   * Marks every overview texel stale: their chunks draw them again on demand. While the overview shows anything, the
+   * new view is built into a second texture and swapped in once complete, so the map neither blanks nor changes
+   * slice by slice.
    */
   const invalidateOverview = (): void => {
     if (overview === null) return;
-    overview.built.fill(0);
-    overview.builtCount = 0;
+    if (overview.building !== null) {
+      overview.building.built.fill(0);
+      overview.building.builtCount = 0;
+      return;
+    }
+    if (overview.shown.builtCount === 0) return;
+    const building = overviewTexture(overview, overview.shown.built.length);
+    // Start from the shown texels: after the swap, chunks outside the footprint keep their (old) colours instead of
+    // turning transparent, and are rebuilt when they come into view.
+    gl.bindFramebuffer(gl.FRAMEBUFFER, resources.framebuffer);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, overview.shown.texture, 0);
+    gl.copyTexSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 0, 0, overview.width, overview.height);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    overview.building = building;
   };
 
   const uploadPalette = (palette: readonly ContentRef[]): void => {
@@ -520,20 +561,9 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     const width = Math.ceil(source.width / factor);
     const height = Math.ceil(source.height / factor);
     if (width === 0 || height === 0 || Math.max(width, height) > maxTextureSize) return null;
-    const texture = requireValue(gl.createTexture(), "a texture");
-    gl.activeTexture(gl.TEXTURE0 + UNIT_OVERVIEW);
-    gl.bindTexture(gl.TEXTURE_2D, texture);
-    gl.texStorage2D(gl.TEXTURE_2D, Math.floor(Math.log2(Math.max(width, height))) + 1, gl.RGBA8, width, height);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-    // Magnified only as the stand-in for chunks still loading: smooth rather than blocky.
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    const chunksX = Math.ceil(source.width / CHUNK_SIZE);
-    const chunksY = Math.ceil(source.height / CHUNK_SIZE);
-    overview = { world: source, texture, factor, width, height, built: new Uint8Array(chunksX * chunksY), builtCount: 0, filled: false };
-    // Storage starts zeroed but its mip chain is incomplete until generated.
-    gl.generateMipmap(gl.TEXTURE_2D);
+    const size = { width, height, levels: Math.floor(Math.log2(Math.max(width, height))) + 1 };
+    const chunks = Math.ceil(source.width / CHUNK_SIZE) * Math.ceil(source.height / CHUNK_SIZE);
+    overview = { world: source, factor, ...size, shown: overviewTexture(size, chunks), building: null };
     return overview;
   };
 
@@ -598,12 +628,17 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     return calls;
   };
 
-  /** Draws the chunks' overview texels with the build pass, then regenerates the overview mipmaps. */
-  const buildOverview = (source: RenderableWorld, target: Overview, items: readonly (readonly [ChunkCoord, number])[]): void => {
+  /**
+   * Draws the chunks' overview texels into `into` with the build pass. The shown texture's mipmaps are regenerated at
+   * once; a texture being built gets them when it is swapped in.
+   */
+  const buildOverview = (
+    source: RenderableWorld, target: Overview, into: OverviewTexture, items: readonly (readonly [ChunkCoord, number])[],
+  ): void => {
     if (items.length === 0) return;
     const { build } = resources;
     gl.bindFramebuffer(gl.FRAMEBUFFER, resources.framebuffer);
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, target.texture, 0);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, into.texture, 0);
     gl.viewport(0, 0, target.width, target.height);
     gl.useProgram(build.program);
     setTileUniforms(build.uniforms);
@@ -614,12 +649,25 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     const chunksX = Math.ceil(source.width / CHUNK_SIZE);
     for (const [chunk] of items) {
       const key = chunk.y * chunksX + chunk.x;
-      if (target.built[key] === 0) target.builtCount++;
-      target.built[key] = 1;
+      if (into.built[key] === 0) into.builtCount++;
+      into.built[key] = 1;
     }
-    target.filled = true;
+    if (into === target.shown) {
+      gl.activeTexture(gl.TEXTURE0 + UNIT_OVERVIEW);
+      gl.bindTexture(gl.TEXTURE_2D, into.texture);
+      gl.generateMipmap(gl.TEXTURE_2D);
+    }
+  };
+
+  /** Replaces the shown overview with the one being built once every chunk of `footprint` is built in it. */
+  const swapWhenBuilt = (target: Overview, footprint: readonly number[]): void => {
+    const { building } = target;
+    if (building === null || footprint.some((key) => building.built[key] === 0)) return;
+    gl.deleteTexture(target.shown.texture);
+    target.shown = building;
+    target.building = null;
     gl.activeTexture(gl.TEXTURE0 + UNIT_OVERVIEW);
-    gl.bindTexture(gl.TEXTURE_2D, target.texture);
+    gl.bindTexture(gl.TEXTURE_2D, building.texture);
     gl.generateMipmap(gl.TEXTURE_2D);
   };
 
@@ -634,7 +682,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     gl.uniform2f(program.uniforms.uExtent, target.width * target.factor, target.height * target.factor);
     gl.uniform1i(program.uniforms.uOverview, UNIT_OVERVIEW);
     gl.activeTexture(gl.TEXTURE0 + UNIT_OVERVIEW);
-    gl.bindTexture(gl.TEXTURE_2D, target.texture);
+    gl.bindTexture(gl.TEXTURE_2D, target.shown.texture);
     gl.bindVertexArray(resources.emptyArray);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     gl.bindVertexArray(null);
@@ -724,13 +772,16 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     } else {
       // A chunk is needed only until its overview texels are built, so the cache does not grow: unbuilt chunks of
       // the filter footprint (visible ones first) are built in batches that fit it.
-      const needed = overviewFootprint(source, visible, viewport).filter((chunk) => target.built[keyOf(chunk)] === 0);
+      const into = target.building ?? target.shown;
+      const footprint = overviewFootprint(source, visible, viewport);
+      const needed = footprint.filter((chunk) => into.built[keyOf(chunk)] === 0);
       let budget = uploadBudget;
       for (let start = 0; start < needed.length; start += cacheCapacity) {
         const batch: (readonly [ChunkCoord, number])[] = [];
         budget = acquire(needed.slice(start, start + cacheCapacity), budget, batch);
-        buildOverview(source, target, batch);
+        buildOverview(source, target, into, batch);
       }
+      swapWhenBuilt(target, footprint.map(keyOf));
     }
 
     gl.viewport(0, 0, viewport.width, viewport.height);
@@ -739,7 +790,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     if (target === null) {
       // Chunks still loading show the overview (built when the area was seen zoomed out, possibly with other layers)
       // instead of a hole; drawn chunks overwrite it completely, so a complete frame stays exact.
-      if (loading.pending && candidate?.filled === true) drawCalls += drawOverview(source, candidate);
+      if (loading.pending && candidate !== null && candidate.shown.builtCount > 0) drawCalls += drawOverview(source, candidate);
       const { chunk: program } = resources;
       gl.useProgram(program.program);
       setTileUniforms(program.uniforms);
@@ -761,7 +812,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       drawn = visible.filter((chunk) => drawnKeys.has(keyOf(chunk)));
     } else {
       drawCalls = drawOverview(source, target);
-      drawn = visible.filter((chunk) => target.built[keyOf(chunk)] === 1);
+      drawn = visible.filter((chunk) => target.shown.built[keyOf(chunk)] === 1);
     }
     if (loading.pending) schedule();
   };
