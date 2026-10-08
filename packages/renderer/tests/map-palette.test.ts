@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { createWorld } from "@studio/world-model";
 import {
-  backgroundColor, contentColor, liquidColors, paintedColor, placeholderColor, renderChunk, terrariaMapPalette,
+  backgroundColor, contentColor, liquidColors, mapOption, paintedColor, placeholderColor, renderChunk, terrariaMapPalette,
 } from "../src/index.js";
 import type { ChunkLayers } from "../src/index.js";
 import { syntheticMapPalette } from "./map-palette.fixture.js";
@@ -50,6 +50,72 @@ test("map palette colours reach renderChunk pixels; unmapped IDs keep placeholde
   // Colours are cached per (CWM palette, map palette): an earlier map-palette render must not leak into this one.
   expect(Array.from(renderChunk(world, 0, 0, { surfaceY: 1, layers: allLayers }).pixels.slice(0, 4)))
     .toEqual(placeholderColor({ kind: "vanilla", id: 1 }, "block"));
+});
+
+describe("mapOption", () => {
+  const rule = { axis: "frameY", ranges: [[36, 71, 1], [72, 107, 2]] } as const;
+
+  test.each([
+    [0, 0], [35, 0], [36, 1], [71, 1], [72, 2], [107, 2], [108, 0], [-1, 0],
+  ])("frameY %i selects option %i", (frameY, option) => {
+    expect(mapOption(rule, 999, frameY)).toBe(option);
+  });
+
+  test("reads only the rule's axis", () => {
+    expect(mapOption({ axis: "frameX", ranges: [[18, 35, 1]] }, 18, 999)).toBe(1);
+    expect(mapOption({ axis: "frameX", ranges: [[18, 35, 1]] }, 999, 18)).toBe(0);
+  });
+
+  test("without a rule the option is 0", () => {
+    expect(mapOption(undefined, 18, 36)).toBe(0);
+  });
+});
+
+describe("contentColor with a frame", () => {
+  test.each([
+    [0, 0, 0x6c7078], [17, 0, 0x6c7078], [18, 0, 0x60666e], [35, 99, 0x60666e], [36, 0, 0x6c7078],
+  ])("tile 1 at frameX %i, frameY %i", (frameX, frameY, color) => {
+    expect(contentColor({ kind: "vanilla", id: 1 }, "block", syntheticMapPalette, frameX, frameY))
+      .toEqual([color >> 16, (color >> 8) & 0xff, color & 0xff, 255]);
+  });
+
+  test.each([[0, 0x112233], [36, 0x445566], [90, 0x778899], [108, 0x112233]])("tile 3 at frameY %i", (frameY, color) => {
+    expect(contentColor({ kind: "vanilla", id: 3 }, "block", syntheticMapPalette, 0, frameY))
+      .toEqual([color >> 16, (color >> 8) & 0xff, color & 0xff, 255]);
+  });
+
+  test("content without a rule keeps option 0 at any frame", () => {
+    expect(contentColor({ kind: "vanilla", id: 0 }, "block", syntheticMapPalette, 18, 36)).toEqual([0x76, 0x58, 0x3e, 255]);
+  });
+
+  test("a rule selecting an option the content lacks falls back to the placeholder-free option 0", () => {
+    const palette = {
+      ...syntheticMapPalette, tileOptions: { 0: { axis: "frameX", ranges: [[0, 9, 5]] } },
+    } as const;
+    expect(contentColor({ kind: "vanilla", id: 0 }, "block", palette, 4, 0)).toEqual([0x76, 0x58, 0x3e, 255]);
+  });
+});
+
+test("renderChunk picks each block's option by its frame planes", () => {
+  const world = createWorld(5, 1);
+  const frames: [number, number][] = [[0, 0], [18, 0], [0, 36], [0, 72], [0, 108]];
+  frames.forEach(([frameX, frameY], x) => {
+    world.setTile(x, 0, {
+      block: { kind: "vanilla", id: x === 1 ? 1 : 3 }, frameX, frameY, wires: 0, actuator: false,
+    });
+  });
+  const pixels = renderChunk(world, 0, 0, { surfaceY: 1, layers: allLayers, mapPalette: syntheticMapPalette }).pixels;
+  expect(Array.from(pixels)).toEqual([
+    0x11, 0x22, 0x33, 255, 0x60, 0x66, 0x6e, 255, 0x44, 0x55, 0x66, 255, 0x77, 0x88, 0x99, 255, 0x11, 0x22, 0x33, 255,
+  ]);
+});
+
+test("renderChunk gives the same content different options at different frames in one chunk, and paint still applies", () => {
+  const world = createWorld(2, 1);
+  world.setTile(0, 0, { block: { kind: "vanilla", id: 3 }, frameY: 36, wires: 0, actuator: false });
+  world.setTile(1, 0, { block: { kind: "vanilla", id: 3 }, frameY: 72, paint: 1, wires: 0, actuator: false });
+  const pixels = renderChunk(world, 0, 0, { surfaceY: 1, layers: allLayers, mapPalette: syntheticMapPalette }).pixels;
+  expect(Array.from(pixels)).toEqual([0x44, 0x55, 0x66, 255, 0x99, 0, 0, 255]);
 });
 
 describe("backgroundColor", () => {

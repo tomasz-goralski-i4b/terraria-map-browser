@@ -32,6 +32,11 @@ uniform usampler2D uPalette;
 // Background colour of world row y at texel (y % 256, y / 256), resolved on the CPU by backgroundColor();
 // row uPaintRow holds the paint colours by paint ID.
 uniform usampler2D uBackground;
+// Per tile (like the planes): 0 for the palette colour, else 1 + the index of its frame-selected colour in
+// uVariantColors (256 per row), resolved on the CPU by the same mapOption() as renderChunk.
+uniform usampler2D uVariant;
+uniform usampler2D uVariantColors;
+uniform int uHasVariants; // 0 when the chunk has no variant plane (every block uses its palette colour)
 uniform int uPaintRow;
 uniform int uPaintCount; // 0 without a map palette: paint is ignored
 uniform vec2 uCamera;
@@ -61,6 +66,14 @@ bool paletteColor(uint index, int xOffset, out ivec3 color) {
   return true;
 }
 
+bool blockColor(ivec2 texel, out ivec3 color) {
+  if (!paletteColor(texelFetch(uBlock, texel, 0).r, 0, color)) return false;
+  if (uHasVariants == 0) return true;
+  int variant = int(texelFetch(uVariant, texel, 0).r);
+  if (variant != 0) color = ivec3(texelFetch(uVariantColors, ivec2((variant - 1) % 256, (variant - 1) / 256), 0).rgb);
+  return true;
+}
+
 void main() {
   vec2 screen = vec2(gl_FragCoord.x, uViewport.y - gl_FragCoord.y);
   ivec2 tile = ivec2(floor(uCamera + screen / uZoom));
@@ -71,7 +84,7 @@ void main() {
   ivec4 color = ivec4(0);
   if ((uLayers & 1) != 0) color = ivec4(texelFetch(uBackground, ivec2(tileY % 256, tileY / 256), 0));
   ivec3 content;
-  if ((uLayers & 4) != 0 && paletteColor(texelFetch(uBlock, texel, 0).r, 0, content)) {
+  if ((uLayers & 4) != 0 && blockColor(texel, content)) {
     color = ivec4(painted(content, int(texelFetch(uPaint, texel, 0).r), false), 255);
   } else if ((uLayers & 2) != 0 && paletteColor(texelFetch(uWall, texel, 0).r, 256, content)) {
     color = ivec4(painted(content, int(texelFetch(uWallPaint, texel, 0).r), true), 255);

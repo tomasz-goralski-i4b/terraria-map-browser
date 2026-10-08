@@ -1,6 +1,8 @@
 import type { CanonicalWorld, ContentRef } from "@studio/world-model";
-import { backgroundColor, contentColor, liquidColors, paintedColor } from "../palette/map-palette.js";
-import type { MapPalette, Rgba } from "../palette/map-palette.js";
+import {
+  backgroundColor, contentColor, liquidColors, mapOption, optionColor, optionColors, optionRule, paintedColor,
+} from "../palette/map-palette.js";
+import type { MapOptionRule, MapPalette, Rgba } from "../palette/map-palette.js";
 
 export interface ChunkLayers {
   readonly background: boolean;
@@ -33,9 +35,17 @@ const chunkSize = 128;
 const absentContent = 0xffff;
 const transparent: Rgba = [0, 0, 0, 0];
 
+/** A block whose map option its frame selects: the rule and one colour per option. */
+interface FramedBlock {
+  readonly rule: MapOptionRule;
+  readonly colors: readonly Rgba[];
+}
+
 interface PaletteColors {
   readonly block: Rgba[];
   readonly wall: Rgba[];
+  /** By palette index; undefined for blocks without a frame rule (they use `block`). */
+  readonly framed: (FramedBlock | undefined)[];
 }
 
 // Keyed by map palette, then by CWM palette. CWM palettes are append-only, so a cached colour stays valid and
@@ -52,7 +62,7 @@ function paletteColors(palette: readonly ContentRef[], mapPalette: MapPalette | 
   }
   let colors = byPalette.get(palette);
   if (colors === undefined) {
-    colors = { block: [], wall: [] };
+    colors = { block: [], wall: [], framed: [] };
     byPalette.set(palette, colors);
   }
   for (let index = colors.block.length; index < palette.length; index++) {
@@ -60,6 +70,9 @@ function paletteColors(palette: readonly ContentRef[], mapPalette: MapPalette | 
     if (ref === undefined) break;
     colors.block.push(contentColor(ref, "block", mapPalette));
     colors.wall.push(contentColor(ref, "wall", mapPalette));
+    const rule = optionRule(ref, "block", mapPalette);
+    const options = optionColors(ref, "block", mapPalette);
+    colors.framed.push(rule === undefined || options === undefined ? undefined : { rule, colors: options });
   }
   return colors;
 }
@@ -85,6 +98,9 @@ export function renderChunk(
   const { layers, mapPalette } = options;
   const depth = { surfaceY: options.surfaceY, height: world.height, ...(options.rockY === undefined ? {} : { rockY: options.rockY }) };
   const { planes } = world;
+  // Typed as optional: the WebGL2 backend's worlds may omit the frame planes (frame 0), and its CPU reference reuses this.
+  const frameX = planes.frameX as Int16Array | undefined;
+  const frameY = planes.frameY as Int16Array | undefined;
   // Palette colours are cached outside the pixel loop; no semantic tile views are created.
   const colors = paletteColors(world.palette, mapPalette);
   const blockColors = layers.blocks ? colors.block : [];
@@ -101,7 +117,12 @@ export function renderChunk(
       let alpha = background[3];
 
       // Both content layers are opaque, so the uppermost present colour replaces the background.
-      const block = blockColors[planes.block[index] ?? absentContent];
+      const blockId = planes.block[index] ?? absentContent;
+      let block = blockColors[blockId];
+      const framed = block === undefined || !layers.blocks ? undefined : colors.framed[blockId];
+      if (framed !== undefined) {
+        block = optionColor(framed.colors, mapOption(framed.rule, frameX?.[index] ?? 0, frameY?.[index] ?? 0)) ?? block;
+      }
       const wall = block === undefined ? wallColors[planes.wall[index] ?? absentContent] : undefined;
       let color = block ?? wall;
       if (mapPalette !== undefined && color !== undefined) {

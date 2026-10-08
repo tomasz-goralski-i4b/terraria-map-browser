@@ -58,6 +58,16 @@ Shadow paint is approximated (the game's near-black grey is reproduced exactly f
 off); everything else matches except six colour-paint results one step off from the game's floating-point
 rounding. The world's surface and rock levels come from the world metadata, which the TypeScript codec now exposes.
 
+## Addendum: map options by frame
+
+Content with several map options picks one by its frame. The rule is observed, never read: `observe.ps1` places a
+synthetic tile or wall with every frame of a grid (multiples of 18 and 22 on each axis) in a synthetic world, asks
+`MapHelper.CreateMapTile` for its map colour index and maps it back to the option through the content's lookup range.
+It repeats the samples at other positions and next to same-kind tiles; content whose option changes with anything but
+one frame coordinate is listed as `dependsOnMore` and keeps option 0. For the rest, `export.ps1` writes
+`tileOptions`/`wallOptions` (an axis and inclusive frame ranges per ID) into the generated module. The WebGL2 backend
+resolves each block's option on the CPU at chunk upload, so GPU output stays equal to `renderChunk`.
+
 ## Rights
 
 The table is a list of colour values, not artwork, and fan tools have published Terraria's map colour tables for

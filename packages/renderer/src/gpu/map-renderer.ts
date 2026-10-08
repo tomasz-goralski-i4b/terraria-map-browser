@@ -6,8 +6,10 @@ import type { ContentRef } from "@studio/world-model";
 import { CHUNK_SIZE, visibleChunks } from "../camera/camera.js";
 import type { Camera, ChunkCoord } from "../camera/camera.js";
 import type { ChunkLayers } from "../chunk/render.js";
-import { backgroundColor, contentColor, liquidColors } from "../palette/map-palette.js";
-import type { MapPalette } from "../palette/map-palette.js";
+import {
+  backgroundColor, contentColor, liquidColors, mapOption, optionColor, optionColors, optionRule,
+} from "../palette/map-palette.js";
+import type { MapOptionRule, MapPalette, Rgba } from "../palette/map-palette.js";
 import { fragmentSource, vertexSource } from "./shaders.js";
 
 /** The slice of a world the renderer reads. Planes are column-major (`x * height + y`); never copied by the caller. */
@@ -25,6 +27,9 @@ export interface RenderableWorld {
     readonly liquidAmount: Uint8Array;
     readonly paint: Uint8Array;
     readonly wallPaint: Uint8Array;
+    /** Frame planes pick the map option of multi-option content; absent planes mean frame 0 everywhere. */
+    readonly frameX?: Int16Array;
+    readonly frameY?: Int16Array;
   };
   /** Append-only palette. */
   readonly palette: readonly ContentRef[];
@@ -84,11 +89,13 @@ const PALETTE_ROW = 256;
 const PALETTE_WIDTH = PALETTE_ROW * 2;
 const PALETTE_CAPACITY = 0xffff;
 const PALETTE_HEIGHT = PALETTE_ROW;
+const VARIANT_CAPACITY = 0xffff;
 const DEFAULT_MAX_CACHED_CHUNKS = 1536;
 const DEFAULT_MAX_CHUNK_UPLOADS_PER_FRAME = 32;
 const UNIFORM_NAMES = [
   "uBlock", "uWall", "uLiquid", "uAmount", "uPaint", "uWallPaint", "uPalette", "uBackground", "uCamera", "uZoom",
-  "uViewport", "uOrigin", "uSize", "uPaletteLength", "uLayers", "uLiquids", "uPaintRow", "uPaintCount",
+  "uViewport", "uOrigin", "uSize", "uPaletteLength", "uLayers", "uLiquids", "uPaintRow", "uPaintCount", "uVariant",
+  "uVariantColors", "uHasVariants",
 ] as const;
 type UniformName = (typeof UNIFORM_NAMES)[number];
 
@@ -99,6 +106,11 @@ interface ChunkTextures {
   readonly amount: WebGLTexture;
   readonly paint: WebGLTexture;
   readonly wallPaint: WebGLTexture;
+  /**
+   * Per tile: 0 for the palette colour, else 1 + the index of its frame-selected colour in the variant table.
+   * Null when every block of the chunk uses its palette colour, so such chunks keep their six planes.
+   */
+  readonly variant: WebGLTexture | null;
 }
 
 /** Everything owned by one GL context; rebuilt after a context loss. */
@@ -106,6 +118,8 @@ interface GpuResources {
   readonly program: WebGLProgram;
   readonly uniforms: Readonly<Record<UniformName, WebGLUniformLocation>>;
   readonly palette: WebGLTexture;
+  /** Colours of frame-selected options, 256 per row. */
+  readonly variantColors: WebGLTexture;
 }
 
 function requireValue<T>(value: T | null, what: string): T {
@@ -144,7 +158,11 @@ function createResources(gl: WebGL2RenderingContext): GpuResources {
   const uniforms = Object.fromEntries(
     UNIFORM_NAMES.map((name) => [name, requireValue(gl.getUniformLocation(program, name), `uniform ${name}`)]),
   ) as Record<UniformName, WebGLUniformLocation>;
-  return { program, uniforms, palette: integerTexture(gl, gl.RGBA8UI, PALETTE_WIDTH, PALETTE_HEIGHT) };
+  return {
+    program, uniforms,
+    palette: integerTexture(gl, gl.RGBA8UI, PALETTE_WIDTH, PALETTE_HEIGHT),
+    variantColors: integerTexture(gl, gl.RGBA8UI, PALETTE_ROW, PALETTE_ROW),
+  };
 }
 
 function layerBits(layers: ChunkLayers): number {
@@ -176,6 +194,11 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   const chunks = new Map<number, ChunkTextures>();
   const paletteMirror = new Uint8Array(PALETTE_WIDTH * PALETTE_HEIGHT * 4);
   let paletteUploaded = 0;
+  // Frame-selected colours, appended as chunks upload: variant ids (1-based) by palette index and option.
+  const variantMirror = new Uint8Array(PALETTE_ROW * PALETTE_ROW * 4);
+  const variantIds = new Map<number, number>();
+  const optionsByPalette = new Map<number, { readonly rule: MapOptionRule; readonly colors: readonly Rgba[] } | null>();
+  let variantCount = 0;
   // Per-row background colours plus the paint row, for the world they were computed for.
   let background: { readonly texture: WebGLTexture; readonly world: RenderableWorld; readonly paintRow: number } | null = null;
   const paintCount = mapPalette === undefined ? 0 : Math.min(PALETTE_ROW, mapPalette.paints.length);
@@ -192,6 +215,13 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     gl.deleteTexture(textures.amount);
     gl.deleteTexture(textures.paint);
     gl.deleteTexture(textures.wallPaint);
+    if (textures.variant !== null) gl.deleteTexture(textures.variant);
+  };
+
+  const resetVariants = (): void => {
+    variantIds.clear();
+    optionsByPalette.clear();
+    variantCount = 0;
   };
 
   const clearChunks = (): void => {
@@ -234,6 +264,77 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     paletteUploaded = total;
   };
 
+  /** The variant id of a block: its frame-selected option colour, or 0 when the palette colour (option 0) applies. */
+  const variantOf = (paletteIndex: number, frameX: number, frameY: number, palette: readonly ContentRef[]): number => {
+    let options = optionsByPalette.get(paletteIndex);
+    if (options === undefined) {
+      const ref = palette[paletteIndex];
+      const rule = ref === undefined ? undefined : optionRule(ref, "block", mapPalette);
+      const colors = ref === undefined ? undefined : optionColors(ref, "block", mapPalette);
+      options = rule === undefined || colors === undefined ? null : { rule, colors };
+      optionsByPalette.set(paletteIndex, options);
+    }
+    if (options === null) return 0;
+    const option = mapOption(options.rule, frameX, frameY);
+    if (option === 0) return 0;
+    const key = paletteIndex * 256 + option;
+    let id = variantIds.get(key);
+    if (id === undefined) {
+      const color = optionColor(options.colors, option);
+      if (color === undefined || variantCount >= VARIANT_CAPACITY) return 0;
+      variantMirror.set(color, variantCount * 4);
+      id = ++variantCount;
+      variantIds.set(key, id);
+    }
+    return id;
+  };
+
+  /**
+   * Resolves each block's frame-selected option on the CPU (as `renderChunk` does, so the GPU output is exact) into
+   * a plane in the column-major layout of the chunk, and uploads the variant colours it newly needs. Returns null
+   * (no texture) when no block of the chunk has a frame-selected option.
+   */
+  const variantPlane = (
+    source: RenderableWorld, originX: number, originY: number, columns: number, rows: number,
+  ): WebGLTexture | null => {
+    const { frameX, frameY, block } = source.planes;
+    if (mapPalette?.tileOptions === undefined || (frameX === undefined && frameY === undefined)) return null;
+    let ids: Uint16Array | null = null;
+    const firstNew = variantCount;
+    for (let column = 0; column < columns; column++) {
+      for (let row = 0; row < rows; row++) {
+        const index = (originX + column) * source.height + originY + row;
+        const paletteIndex = block[index] ?? 0xffff;
+        if (paletteIndex >= source.palette.length) continue;
+        const id = variantOf(paletteIndex, frameX?.[index] ?? 0, frameY?.[index] ?? 0, source.palette);
+        if (id === 0) continue;
+        ids ??= new Uint16Array(columns * rows);
+        ids[column * rows + row] = id;
+      }
+    }
+    if (ids === null) return null;
+    // Both uploads below read packed arrays, not the world planes the chunk upload set the unpack state for.
+    gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 0);
+    gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, 0);
+    gl.pixelStorei(gl.UNPACK_SKIP_ROWS, 0);
+    if (variantCount > firstNew) {
+      const firstRow = Math.floor(firstNew / PALETTE_ROW);
+      const lastRow = Math.floor((variantCount - 1) / PALETTE_ROW);
+      gl.activeTexture(gl.TEXTURE9);
+      gl.bindTexture(gl.TEXTURE_2D, resources.variantColors);
+      gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+      gl.texSubImage2D(
+        gl.TEXTURE_2D, 0, 0, firstRow, PALETTE_ROW, lastRow - firstRow + 1, gl.RGBA_INTEGER, gl.UNSIGNED_BYTE,
+        variantMirror.subarray(firstRow * PALETTE_ROW * 4),
+      );
+    }
+    gl.activeTexture(gl.TEXTURE0);
+    const texture = integerTexture(gl, gl.R16UI, rows, columns);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, rows, columns, gl.RED_INTEGER, gl.UNSIGNED_SHORT, ids);
+    return texture;
+  };
+
   /** Uploads one chunk straight from the column-major planes: a plane row is one world column. */
   const uploadChunk = (source: RenderableWorld, chunk: ChunkCoord): ChunkTextures => {
     const originX = chunk.x * CHUNK_SIZE;
@@ -257,6 +358,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       amount: plane(gl.R8UI, gl.UNSIGNED_BYTE, source.planes.liquidAmount),
       paint: plane(gl.R8UI, gl.UNSIGNED_BYTE, source.planes.paint),
       wallPaint: plane(gl.R8UI, gl.UNSIGNED_BYTE, source.planes.wallPaint),
+      variant: variantPlane(source, originX, originY, columns, rows),
     };
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
     gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 0);
@@ -320,7 +422,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     uploadBackground(world);
     const { uniforms } = resources;
     gl.useProgram(resources.program);
-    // Units 0–5: the chunk planes; 6: palette; 7: background and paint colours.
+    // Units 0–5: the chunk planes; 6: palette; 7: background and paint colours; 8: chunk variants; 9: variant colours.
     gl.uniform1i(uniforms.uBlock, 0);
     gl.uniform1i(uniforms.uWall, 1);
     gl.uniform1i(uniforms.uLiquid, 2);
@@ -329,6 +431,8 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     gl.uniform1i(uniforms.uWallPaint, 5);
     gl.uniform1i(uniforms.uPalette, 6);
     gl.uniform1i(uniforms.uBackground, 7);
+    gl.uniform1i(uniforms.uVariant, 8);
+    gl.uniform1i(uniforms.uVariantColors, 9);
     gl.uniform2f(uniforms.uCamera, camera.x, camera.y);
     gl.uniform1f(uniforms.uZoom, camera.zoom);
     gl.uniform2f(uniforms.uViewport, viewport.width, viewport.height);
@@ -341,6 +445,8 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     gl.bindTexture(gl.TEXTURE_2D, resources.palette);
     gl.activeTexture(gl.TEXTURE7);
     gl.bindTexture(gl.TEXTURE_2D, background?.texture ?? null);
+    gl.activeTexture(gl.TEXTURE9);
+    gl.bindTexture(gl.TEXTURE_2D, resources.variantColors);
 
     const chunksX = Math.ceil(world.width / CHUNK_SIZE);
     const visible = visibleChunks(camera, viewport, world);
@@ -373,6 +479,9 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
         gl.activeTexture(gl.TEXTURE0 + unit);
         gl.bindTexture(gl.TEXTURE_2D, texture);
       });
+      gl.activeTexture(gl.TEXTURE8);
+      gl.bindTexture(gl.TEXTURE_2D, textures.variant);
+      gl.uniform1i(uniforms.uHasVariants, textures.variant === null ? 0 : 1);
       const originX = chunk.x * CHUNK_SIZE;
       const originY = chunk.y * CHUNK_SIZE;
       gl.uniform2i(uniforms.uOrigin, originX, originY);
@@ -406,6 +515,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     // Every GL object died with the context: rebuild them and let chunks upload again on demand.
     chunks.clear();
     paletteUploaded = 0;
+    resetVariants();
     background = null;
     resources = createResources(gl);
     schedule();
@@ -420,6 +530,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
         cacheCapacity = maxCachedChunks;
         releaseBackground();
         paletteUploaded = 0;
+        resetVariants();
         world = next;
       }
       schedule();
@@ -449,6 +560,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       if (!gl.isContextLost()) {
         clearChunks();
         gl.deleteTexture(resources.palette);
+        gl.deleteTexture(resources.variantColors);
         gl.deleteProgram(resources.program);
       }
       releaseBackground();

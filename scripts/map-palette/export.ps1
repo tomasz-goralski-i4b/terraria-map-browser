@@ -126,6 +126,44 @@ function Format-Table([string]$Name, [Array]$Entries) {
     return $lines
 }
 
+# Per multi-option content, the frame -> option rule the game applies, from observe.ps1 (ADR 0002: observed, never
+# read). Returns the rules by layer plus the IDs whose option depends on more than the frame (they keep option 0).
+# An assembly without Terraria.Tile and CreateMapTile (a synthetic fixture) has nothing to observe.
+function Read-FrameRules([Reflection.Assembly]$Game, [Type]$Map, [string]$AssemblyPath) {
+    $rules = @{ block = @{}; wall = @{} }
+    $more = @{ block = @(); wall = @() }
+    if ($null -eq $Game.GetType('Terraria.Tile', $false) -or $null -eq $Map.GetMethod('CreateMapTile', $flags)) {
+        return @{ rules = $rules; more = $more }
+    }
+    $observed = Join-Path ([IO.Path]::GetTempPath()) ('terraria-map-observation-' + [Guid]::NewGuid().ToString('N') + '.json')
+    try {
+        $hostPath = (Get-Process -Id $PID).Path
+        & $hostPath -NoProfile -NonInteractive -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'observe.ps1') -TerrariaAssembly $AssemblyPath -OutputPath $observed
+        if ($LASTEXITCODE -ne 0) { throw 'The map observation failed.' }
+        $frames = (Get-Content -LiteralPath $observed -Raw -Encoding UTF8 | ConvertFrom-Json).frames
+    } finally {
+        Remove-Item -LiteralPath $observed -ErrorAction SilentlyContinue
+    }
+    foreach ($content in $frames) {
+        if ($content.dependsOnMore) { $more[$content.layer] += "$([int]$content.id) ($($content.dependsOn))"; continue }
+        $rules[$content.layer][[int]$content.id] = $content.rule
+    }
+    return @{ rules = $rules; more = $more }
+}
+
+# `name: { id: { axis, ranges }, ... },` for the IDs that have a rule, in ID order.
+function Format-Rules([string]$Name, [hashtable]$Rules) {
+    $lines = New-Object 'Collections.Generic.List[string]'
+    if ($Rules.Count -eq 0) { return ,$lines }
+    $lines.Add("  ${Name}: {")
+    foreach ($id in ($Rules.Keys | Sort-Object)) {
+        $ranges = @($Rules[$id].ranges | ForEach-Object { "[$($_[0]), $($_[1]), $($_[2])]" }) -join ', '
+        $lines.Add("    ${id}: { axis: `"$($Rules[$id].axis)`", ranges: [$ranges] },")
+    }
+    $lines.Add('  },')
+    return ,$lines
+}
+
 try {
     $game = [MapPaletteGameHost]::Load($assemblyPath)
     # Main's static initializer expects the launcher's save root. This process never opens or saves a world.
@@ -161,6 +199,8 @@ try {
     if ($null -eq $paintColour) { throw 'Unsupported map palette contract: missing paintColor(int).' }
     $paints = @(0..($paintCount - 1) | ForEach-Object { Read-Colour ($paintColour.Invoke($null, @([int]$_))) })
 
+    $frameRules = Read-FrameRules $game $map $assemblyPath
+
     $version = $game.GetName().Version.ToString()
     $main = $game.GetType('Terraria.Main', $false)
     if ($null -ne $main) {
@@ -179,6 +219,13 @@ try {
     $lines.Add("  gameVersion: `"$version`",")
     $lines.AddRange([string[]](Format-Table 'tiles' $tiles))
     $lines.AddRange([string[]](Format-Table 'walls' $walls))
+    $lines.AddRange([string[]](Format-Rules 'tileOptions' $frameRules.rules.block))
+    $lines.AddRange([string[]](Format-Rules 'wallOptions' $frameRules.rules.wall))
+    foreach ($layer in @('block', 'wall')) {
+        if ($frameRules.more[$layer].Count -gt 0) {
+            $lines.Add("  // $layer IDs whose option depends on more than the frame (they keep option 0): $($frameRules.more[$layer] -join ', ')")
+        }
+    }
     $lines.Add("  liquids: [$(Format-List $liquids)],")
     $lines.Add('  background: {')
     $lines.Add('    sky: [')
