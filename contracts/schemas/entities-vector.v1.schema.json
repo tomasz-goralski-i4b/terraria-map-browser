@@ -49,6 +49,10 @@
               "CreativePowers"
             ]
           },
+          "version": {
+            "description": "World format whose entity layout applies; 326 when omitted.",
+            "enum": [269, 270, 271, 272, 273, 274, 275, 276, 277, 278, 279, 315, 316, 317, 318, 319, 325, 326]
+          },
           "start": {
             "type": "integer",
             "minimum": 0

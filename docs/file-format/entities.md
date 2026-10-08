@@ -25,8 +25,14 @@ whose layout is unknown makes the rest of its section unreadable.
 | 9 | `pointer[9]` | bestiary | 210 | 3 × Int32 | 12 |
 | 10 | `pointer[10]` | creative (Journey) powers | 220 | Bool-terminated list | 1 |
 
-Every gate in this part is below 326, so for format 326 **every field described below is present**. Gates are
-listed so that a later widening of the supported range (open question 1) knows where the layouts differ.
+Every gate in this part is below 326, so for format 326 **every field described below is present**. The
+decoders also read the older formats whose tiles they read (269–279, 315–319, 325); the four gates inside that
+range — 294, 307, 308 and 315 — are listed in [compatibility.md](compatibility.md) ("Other sections and older
+families") and covered by vectors E34–E44. Before 294 the chest count is followed by one Int16 slot count for
+all chests, so the minimum chest record is `9 + 2 × slots` bytes. An empty list still carries the slot count
+(`00 00 28 00` = no chests, 40 slots); a negative slot count is an error, and `count × (9 + 2 × slots)` must fit
+before the end pointer (error at the chest count). Format 311 (display-doll item slot 8 after
+the misc slot) is not a readable format and is rejected.
 
 ## Corpus evidence
 

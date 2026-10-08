@@ -711,6 +711,274 @@
         "offset": 132,
         "reason": "list count is negative or does not fit in the section"
       }
+    },
+    {
+      "id": "E34",
+      "title": "Format 279 chests share one Int16 slot count",
+      "section": "Chests",
+      "version": 279,
+      "start": 128,
+      "end": 160,
+      "hex": "0100030040010000b400000003426f780c001c00000000000001009b00000012",
+      "result": {
+        "entries": [
+          {
+            "x": 320,
+            "y": 180,
+            "name": "Box",
+            "slotCount": 3,
+            "items": [
+              {
+                "slot": 0,
+                "itemId": 28,
+                "stack": 12,
+                "prefix": 0
+              },
+              {
+                "slot": 2,
+                "itemId": 155,
+                "stack": 1,
+                "prefix": 18
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "E35",
+      "title": "Format 279 shared chest slot count is negative",
+      "section": "Chests",
+      "version": 279,
+      "start": 128,
+      "end": 141,
+      "hex": "0100ffff40010000b400000000",
+      "error": {
+        "field": "slotCount",
+        "offset": 130,
+        "reason": "list count is negative or does not fit in the section"
+      }
+    },
+    {
+      "id": "E36",
+      "title": "Format 279 town NPC has no homeless-despawn byte",
+      "section": "NpcsAndMobs",
+      "version": 279,
+      "start": 128,
+      "end": 181,
+      "hex": "00000000011600000006416e647265770080034700808b4501380800001701000001000000000001010000000080a0450000344500",
+      "result": {
+        "townNpcs": [
+          {
+            "npcId": 22,
+            "displayName": "Andrew",
+            "x": 33664,
+            "y": 4464,
+            "homeless": true,
+            "homeX": 2104,
+            "homeY": 279
+          }
+        ],
+        "mobs": [
+          {
+            "npcId": 1,
+            "x": 5136,
+            "y": 2880
+          }
+        ]
+      }
+    },
+    {
+      "id": "E37",
+      "title": "Format 279 rejects a format-326 town NPC record",
+      "section": "NpcsAndMobs",
+      "version": 279,
+      "start": 128,
+      "end": 169,
+      "hex": "00000000011600000006416e647265770080034700808b450138080000170100000100000000000000",
+      "error": {
+        "field": "end",
+        "offset": 168,
+        "reason": "section does not end at its pointer"
+      }
+    },
+    {
+      "id": "E38",
+      "title": "Format 315 town NPC reads the homeless-despawn byte",
+      "section": "NpcsAndMobs",
+      "version": 315,
+      "start": 128,
+      "end": 169,
+      "hex": "00000000011600000006416e647265770080034700808b450138080000170100000100000000000000",
+      "result": {
+        "townNpcs": [
+          {
+            "npcId": 22,
+            "displayName": "Andrew",
+            "x": 33664,
+            "y": 4464,
+            "homeless": true,
+            "homeX": 2104,
+            "homeY": 279
+          }
+        ],
+        "mobs": []
+      }
+    },
+    {
+      "id": "E39",
+      "title": "Format 279 display doll has no pose or extra slots",
+      "section": "TileEntities",
+      "version": 279,
+      "start": 128,
+      "end": 153,
+      "hex": "01000000032d0000004001b40001809b00120100ef03000100",
+      "result": {
+        "entries": [
+          {
+            "kind": 3,
+            "entityId": 45,
+            "x": 320,
+            "y": 180,
+            "items": [
+              {
+                "slot": 0,
+                "itemId": 155,
+                "stack": 1,
+                "prefix": 18
+              }
+            ],
+            "dyes": [
+              {
+                "slot": 7,
+                "itemId": 1007,
+                "stack": 1,
+                "prefix": 0
+              }
+            ],
+            "misc": [],
+            "anchorItemId": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "E40",
+      "title": "Format 315 display doll reads pose and extra slots",
+      "section": "TileEntities",
+      "version": 315,
+      "start": 128,
+      "end": 155,
+      "hex": "01000000032d0000004001b40000000203aa020001005c13000100",
+      "result": {
+        "entries": [
+          {
+            "kind": 3,
+            "entityId": 45,
+            "x": 320,
+            "y": 180,
+            "items": [
+              {
+                "slot": 8,
+                "itemId": 682,
+                "stack": 1,
+                "prefix": 0
+              }
+            ],
+            "dyes": [],
+            "misc": [
+              {
+                "slot": 0,
+                "itemId": 4956,
+                "stack": 1,
+                "prefix": 0
+              }
+            ],
+            "anchorItemId": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "E41",
+      "title": "Format 279 empty chest list still carries the shared slot count",
+      "section": "Chests",
+      "version": 279,
+      "start": 128,
+      "end": 132,
+      "hex": "00002800",
+      "result": {
+        "entries": []
+      }
+    },
+    {
+      "id": "E42",
+      "title": "Format 279 negative chest count",
+      "section": "Chests",
+      "version": 279,
+      "start": 128,
+      "end": 132,
+      "hex": "ffff2800",
+      "error": {
+        "field": "count",
+        "offset": 128,
+        "reason": "list count is negative or does not fit in the section"
+      }
+    },
+    {
+      "id": "E43",
+      "title": "Format 279 chest count does not fit with the shared slot count",
+      "section": "Chests",
+      "version": 279,
+      "start": 128,
+      "end": 152,
+      "hex": "020003000000000000000000000000000000000000000000",
+      "error": {
+        "field": "count",
+        "offset": 128,
+        "reason": "list count is negative or does not fit in the section"
+      }
+    },
+    {
+      "id": "E44",
+      "title": "Format 279 shared slot count applies to every chest",
+      "section": "Chests",
+      "version": 279,
+      "start": 128,
+      "end": 169,
+      "hex": "0200020001000000020000000000000100050000000003000000040000000142020006000000010000",
+      "result": {
+        "entries": [
+          {
+            "x": 1,
+            "y": 2,
+            "name": "",
+            "slotCount": 2,
+            "items": [
+              {
+                "slot": 1,
+                "itemId": 5,
+                "stack": 1,
+                "prefix": 0
+              }
+            ]
+          },
+          {
+            "x": 3,
+            "y": 4,
+            "name": "B",
+            "slotCount": 2,
+            "items": [
+              {
+                "slot": 0,
+                "itemId": 6,
+                "stack": 2,
+                "prefix": 1
+              }
+            ]
+          }
+        ]
+      }
     }
   ]
 }

@@ -61,7 +61,7 @@ public static class WorldReader
             new(nameof(WorldSectionTable.CreativePowers), table.CreativePowers),
             new(nameof(WorldSectionTable.Footer), table.Footer),
         ];
-        var entities = EntitySectionReader.ReadAll(stream, table);
+        var entities = EntitySectionReader.ReadAll(stream, table, header.Version);
         stream.Position = table.Tiles.End;
         return (new World(header, metadata, tiles, skipped) { Entities = entities }, table);
     }

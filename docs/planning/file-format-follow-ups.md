@@ -264,8 +264,8 @@ other entities.
 - Each section succeeds or fails on its own: a failure is `MalformedSection { section, field, offset, reason }`
   and does not affect tiles, metadata or the other sections.
 - Run it in the world Worker after the tiles; the result is plain data (no per-tile objects).
-- `readWorldTiles` returns `entities` for format 326, so the existing Worker protocol transfers the same
-  section results to the viewer. Other supported versions omit `entities` until their layouts are specified.
+- `readWorldTiles` returns `entities` for every readable format (269–279, 315–319, 325–326) in that format's
+  layout, so the existing Worker protocol transfers the same section results to the viewer.
 - Shared `entities.vectors.json` inputs run directly against the independent .NET and TS parsers; their
   schema is `entities-vector.v1.schema.json`. Every result or error field is compared, including absolute offsets.
 

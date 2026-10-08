@@ -27,9 +27,10 @@ public sealed class EntitySectionTests
         using var stream = new MemoryStream(new byte[start].Concat(bytes).ToArray());
         var boundary = new WorldSectionBoundary(start, vector.GetProperty("end").GetInt32());
         var section = vector.GetProperty("section").GetString()!;
+        var version = vector.TryGetProperty("version", out var versionProperty) ? versionProperty.GetInt32() : 326;
         if (vector.TryGetProperty("error", out var expectedError))
         {
-            var error = Assert.Throws<WorldFormatException>(() => EntitySectionReader.Read(stream, section, boundary));
+            var error = Assert.Throws<WorldFormatException>(() => EntitySectionReader.Read(stream, section, boundary, version));
             Assert.Equal("MalformedSection", error.Error.ToString());
             Assert.Equal(section, error.Section);
             Assert.Equal(expectedError.GetProperty("field").GetString(), error.Field);
@@ -38,9 +39,22 @@ public sealed class EntitySectionTests
         }
         else
         {
-            var actual = EntitySectionReader.Read(stream, section, boundary);
+            var actual = EntitySectionReader.Read(stream, section, boundary, version);
             var actualJson = JsonSerializer.SerializeToNode(actual, actual.GetType(), JsonOptions);
             Assert.True(JsonNode.DeepEquals(JsonNode.Parse(vector.GetProperty("result").GetRawText()), actualJson), $"{id}: {actualJson}");
         }
+    }
+
+    [Theory]
+    [InlineData(268)]
+    [InlineData(300)]
+    [InlineData(311)]
+    [InlineData(327)]
+    public void Read_FormatWithoutKnownEntityLayout_IsUnsupported(int version)
+    {
+        using var stream = new MemoryStream([0, 0]);
+        var error = Assert.Throws<WorldFormatException>(() => EntitySectionReader.Read(stream, "Signs", new WorldSectionBoundary(0, 2), version));
+        Assert.Equal(WorldFormatError.UnsupportedVersion, error.Error);
+        Assert.Equal($"format version {version} is not supported", error.Reason);
     }
 }

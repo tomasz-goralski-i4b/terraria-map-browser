@@ -1,11 +1,31 @@
+using System.Collections.Frozen;
 using System.Collections.ObjectModel;
+using System.Globalization;
 
 namespace Terraria.WorldCodec;
 
-/// <summary>Independent read-only decoder for format 326 entity sections (docs/file-format/entities.md).</summary>
+/// <summary>
+/// Independent read-only decoder for entity sections (docs/file-format/entities.md) in the layout of each released
+/// format whose tiles the codecs can read (docs/file-format/compatibility.md, "Other sections and older families").
+/// </summary>
 public static class EntitySectionReader
 {
-    public static IReadOnlyList<WorldEntitySection> ReadAll(Stream stream, WorldSectionTable table)
+    /// <summary>Formats with a known entity layout: 269–279, 315–319, 325–326.</summary>
+    public static IReadOnlySet<int> SupportedVersions { get; } =
+        Enumerable.Range(269, 11).Concat(Enumerable.Range(315, 5)).Concat([325, 326]).ToFrozenSet();
+
+    /// <summary>Entity layout gates (format of the change): 294, 307, 308, 315.</summary>
+    private readonly record struct Layout(bool PerChestSlotCounts, bool DisplayDollPose, bool DisplayDollExtraSlots, bool NpcHomelessDespawn)
+    {
+        public static Layout For(int version) => SupportedVersions.Contains(version)
+            ? new Layout(version >= 294, version >= 307, version >= 308, version >= 315)
+            : throw new WorldFormatException(
+                WorldFormatError.UnsupportedVersion,
+                0,
+                string.Create(CultureInfo.InvariantCulture, $"format version {version} is not supported"));
+    }
+
+    public static IReadOnlyList<WorldEntitySection> ReadAll(Stream stream, WorldSectionTable table, int version = 326)
     {
         ArgumentNullException.ThrowIfNull(table);
         (string Name, WorldSectionBoundary Boundary)[] sections =
@@ -19,7 +39,7 @@ public static class EntitySectionReader
         {
             try
             {
-                return new WorldEntitySection(section.Name, section.Boundary, Read(stream, section.Name, section.Boundary), null);
+                return new WorldEntitySection(section.Name, section.Boundary, Read(stream, section.Name, section.Boundary, version), null);
             }
             catch (WorldFormatException error) when (error.Error == WorldFormatError.MalformedSection)
             {
@@ -28,10 +48,11 @@ public static class EntitySectionReader
         }).ToArray());
     }
 
-    public static EntitySectionData Read(Stream stream, string section, WorldSectionBoundary boundary)
+    public static EntitySectionData Read(Stream stream, string section, WorldSectionBoundary boundary, int version = 326)
     {
         ArgumentNullException.ThrowIfNull(stream);
         ArgumentNullException.ThrowIfNull(boundary);
+        var layout = Layout.For(version);
         if (!stream.CanRead || !stream.CanSeek)
         {
             throw new ArgumentException("Entity decoding requires a readable, seekable stream.", nameof(stream));
@@ -45,10 +66,10 @@ public static class EntitySectionReader
         var reader = new MetadataSectionReader(stream, boundary, section, WorldFormatError.MalformedSection);
         EntitySectionData data = section switch
         {
-            "Chests" => new ChestsSection(Records(reader, 2, 13, () => Chest(reader))),
+            "Chests" => new ChestsSection(Chests(reader, layout)),
             "Signs" => new SignsSection(Records(reader, 2, 9, () => Sign(reader))),
-            "NpcsAndMobs" => Npcs(reader),
-            "TileEntities" => new TileEntitiesSection(Records(reader, 4, 9, () => TileEntity(reader, section))),
+            "NpcsAndMobs" => Npcs(reader, layout),
+            "TileEntities" => new TileEntitiesSection(Records(reader, 4, 9, () => TileEntity(reader, section, layout))),
             "WeightedPressurePlates" => new PressurePlatesSection(Records(reader, 4, 8, () => new WorldPressurePlate(reader.Int32("x"), reader.Int32("y")))),
             "TownManager" => new RoomsSection(Records(reader, 4, 12, () => new WorldRoom(reader.Int32("npcId"), reader.Int32("x"), reader.Int32("y")))),
             "Bestiary" => Bestiary(reader),
@@ -62,6 +83,8 @@ public static class EntitySectionReader
 
         return data;
     }
+
+    private const string CountReason = "list count is negative or does not fit in the section";
 
     private static WorldFormatException Error(string section, long offset, string field, string reason) =>
         new(WorldFormatError.MalformedSection, offset, reason, section, field);
@@ -78,12 +101,49 @@ public static class EntitySectionReader
         return Array.AsReadOnly(entries);
     }
 
-    private static WorldChest Chest(MetadataSectionReader reader)
+    private static ReadOnlyCollection<WorldChest> Chests(MetadataSectionReader reader, Layout layout)
+    {
+        if (layout.PerChestSlotCounts)
+        {
+            return Records(reader, 2, 13, () => Chest(reader, null));
+        }
+
+        // Before format 294 one Int16 slot count follows the chest count and applies to every chest.
+        var start = reader.AbsolutePosition;
+        var count = reader.Int16("count");
+        if (count < 0)
+        {
+            throw Error("Chests", start, "count", CountReason);
+        }
+
+        // An empty list still carries the slot count, so only its sign is checked here; the fit check covers both.
+        var slotStart = reader.AbsolutePosition;
+        var slotCount = reader.Int16("slotCount");
+        if (slotCount < 0)
+        {
+            throw Error("Chests", slotStart, "slotCount", CountReason);
+        }
+
+        if (count * (9L + (2L * slotCount)) > reader.Remaining)
+        {
+            throw Error("Chests", start, "count", CountReason);
+        }
+
+        var entries = new WorldChest[count];
+        for (var index = 0; index < count; index++)
+        {
+            entries[index] = Chest(reader, slotCount);
+        }
+
+        return Array.AsReadOnly(entries);
+    }
+
+    private static WorldChest Chest(MetadataSectionReader reader, int? sharedSlotCount)
     {
         var x = reader.Int32("x");
         var y = reader.Int32("y");
         var name = reader.String("name", MetadataSectionReader.MaxOtherStringBytes);
-        var count = reader.Count(4, 2, "slotCount");
+        var count = sharedSlotCount ?? reader.Count(4, 2, "slotCount");
         var items = new List<EntityItem>();
         for (var slot = 0; slot < count; slot++)
         {
@@ -109,7 +169,7 @@ public static class EntitySectionReader
         return new WorldSign(reader.Int32("x"), reader.Int32("y"), text);
     }
 
-    private static NpcsSection Npcs(MetadataSectionReader reader)
+    private static NpcsSection Npcs(MetadataSectionReader reader, Layout layout)
     {
         var shimmered = reader.Count(4, 4, "shimmeredCount");
         for (var index = 0; index < shimmered; index++)
@@ -139,7 +199,11 @@ public static class EntitySectionReader
                 reader.Int32("variationIndex");
             }
 
-            reader.Bool("homelessDespawn");
+            if (layout.NpcHomelessDespawn)
+            {
+                reader.Bool("homelessDespawn");
+            }
+
             town.Add(new WorldTownNpc(id, name, x, y, homeless, homeX, homeY));
         }
 
@@ -160,7 +224,7 @@ public static class EntitySectionReader
         return new EntityItem(slot, id, reader.Int16("stack"), prefix);
     }
 
-    private static WorldTileEntity TileEntity(MetadataSectionReader reader, string section)
+    private static WorldTileEntity TileEntity(MetadataSectionReader reader, string section, Layout layout)
     {
         var offset = reader.AbsolutePosition;
         var kind = reader.UInt8("kind");
@@ -194,8 +258,12 @@ public static class EntitySectionReader
             case 3:
                 var itemBits = reader.UInt8("itemPresence");
                 var dyeBits = reader.UInt8("dyePresence");
-                reader.UInt8("pose");
-                var extra = reader.UInt8("extraPresence");
+                if (layout.DisplayDollPose)
+                {
+                    reader.UInt8("pose");
+                }
+
+                var extra = layout.DisplayDollExtraSlots ? reader.UInt8("extraPresence") : 0;
                 PresentItems(reader, items, itemBits | ((extra & 2) << 7), 9);
                 PresentItems(reader, dyes, dyeBits | ((extra & 4) << 6), 9);
                 PresentItems(reader, misc, extra & 1, 1);
