@@ -102,6 +102,9 @@ if (unregistered.length > 0) {
 export default defineConfig({
   test: {
     passWithNoTests: false,
+    // CI pull-request runs exclude `perf` (scripts/test.sh, STUDIO_SKIP_PERF=1): shared runners with software GL are
+    // too slow and too noisy for wall-clock bounds. Local runs, agent gates and pushes to main still run them.
+    tags: [{ name: "perf", description: "Asserts wall-clock time; skipped on CI pull requests." }],
     projects: [
       ...packageDirs.map((root) => ({
         extends: true,

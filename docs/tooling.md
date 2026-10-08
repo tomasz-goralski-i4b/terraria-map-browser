@@ -120,6 +120,12 @@ step, not a dependency install hook. `bash scripts/verify.sh` runs the full buil
 warnings, the contract and fixture checks, all Node and browser Vitest projects (`scripts/test.sh`) and the
 inspector smoke.
 
+Tests that assert wall-clock time (a heartbeat or long-task bound) carry the Vitest tag `perf`
+(`test(name, { tags: ["perf"] }, fn)`, defined in `vitest.config.ts`). CI runs on pull requests set
+`STUDIO_SKIP_PERF=1`, and `scripts/test.sh` then passes `--tags-filter '!perf'`: the shared runners, rendering through
+SwiftShader, are too slow and noisy for such bounds. Pushes to `main`, local `verify.sh` runs and the agent gates run
+every test. Tag only timing assertions; a correctness check that is merely slow raises its timeout instead.
+
 **Decision (2026-10-07, follow-up #69):** headless Chromium is a confirmed prerequisite — in CI (the install step
 in `.github/workflows/ci.yml`) and on every machine that runs `verify.sh`, including agent worktrees. The browser
 viewer (`apps/web`) and the Worker codec are tested in a real browser, so the extra CI time is accepted. Agent

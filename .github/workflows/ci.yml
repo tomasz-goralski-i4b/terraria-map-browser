@@ -46,5 +46,8 @@ jobs:
           key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
       - if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: pnpm exec playwright install --with-deps --only-shell chromium
-      # The same command the Cezar chain gates run — a single definition of "green".
+      # The same command the Cezar chain gates run — a single definition of "green". Pull requests skip the Vitest
+      # tests tagged `perf` (wall-clock bounds flake on shared runners); pushes to main run everything.
       - run: bash scripts/verify.sh
+        env:
+          STUDIO_SKIP_PERF: ${{ github.event_name == 'pull_request' && '1' || '' }}

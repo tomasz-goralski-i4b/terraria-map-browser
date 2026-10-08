@@ -137,7 +137,7 @@ function watchLongTasks(): { readonly longest: (from: number, to: number) => Pro
   };
 }
 
-test("the main thread is never blocked while a Small fixture is parsed", async () => {
+test("the main thread is never blocked while a Small fixture is parsed", { tags: ["perf"] }, async () => {
   // Long tasks are measured rather than the delivery of a timer: on a CI runner shared with SwiftShader pages, timers
   // and frames can be starved for hundreds of milliseconds while this page's main thread is idle.
   expect(PerformanceObserver.supportedEntryTypes).toContain("longtask");

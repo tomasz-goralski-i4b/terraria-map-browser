@@ -10,5 +10,10 @@ run_logged map-palette-tests node --test scripts/map-palette/export.test.mjs scr
 echo "== dotnet test"
 run_logged dotnet-test dotnet test --solution "$SLN" --no-build --no-progress || rc=1
 echo "== vitest"
-run_logged vitest pnpm -s test || rc=1
+vitest_args=()
+if [ "${STUDIO_SKIP_PERF:-}" = 1 ]; then
+  echo "   (STUDIO_SKIP_PERF=1: skipping tests tagged perf)"
+  vitest_args+=(--tags-filter '!perf')
+fi
+run_logged vitest pnpm -s test "${vitest_args[@]}" || rc=1
 exit $rc
