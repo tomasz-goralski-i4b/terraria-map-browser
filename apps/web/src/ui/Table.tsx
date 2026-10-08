@@ -97,6 +97,9 @@ export function Table<R>(props: TableProps<R>): React.JSX.Element {
   const template = visibleColumns.map((column, index) => (index === 0 && layout?.[column.id]?.width === undefined
     ? `minmax(${String(widthOf(column))}px, 1fr)`
     : `${String(widthOf(column))}px`)).join(" ");
+  // Every row is its own grid, so rows share one width: content never sizes a column, and the flexible column cuts
+  // a long name instead of shifting the cells after it.
+  const minWidth = visibleColumns.reduce((sum, column) => sum + widthOf(column), 0);
 
   const shown = useMemo(() => {
     const needle = filter.trim().toLowerCase();
@@ -157,7 +160,7 @@ export function Table<R>(props: TableProps<R>): React.JSX.Element {
   }));
 
   return (
-    <div className="table" style={{ "--table-columns": template } as React.CSSProperties}>
+    <div className="table" style={{ "--table-columns": template, "--table-min-width": `${String(minWidth)}px` } as React.CSSProperties}>
       <div className="table-toolbar">
         {filterText !== undefined && (
           <label className="search-field">

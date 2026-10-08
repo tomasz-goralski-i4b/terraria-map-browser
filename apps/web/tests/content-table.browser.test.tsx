@@ -124,6 +124,17 @@ test("the default columns fit the default dock width", async () => {
   await expect.poll(() => scroller.scrollWidth).toBeLessThanOrEqual(scroller.clientWidth);
 });
 
+test("a long name is cut with an ellipsis and every row keeps the header's column positions", async () => {
+  const long = { ...world, palette: [{ kind: "mod", mod: "SomeVeryLongModName", internalName: "AnExtremelyLongInternalTileNameThatOverflows" }, ...world.palette.slice(1)] } as const satisfies ContentWorld;
+  await render(<div style={{ width: 320 }}><ContentPanel world={long} /></div>);
+  await expect.poll(() => document.querySelectorAll(".table-body [role=row]").length).toBeGreaterThan(2);
+  const lefts = (row: Element): number[] => [...row.querySelectorAll("[role=gridcell], [role=columnheader]")].map((cell) => Math.round(cell.getBoundingClientRect().left));
+  const header = lefts(document.querySelector(".table-head [role=row]") ?? document.body);
+  for (const row of document.querySelectorAll(".table-body [role=row]")) expect(lefts(row)).toEqual(header);
+  const scroller = page.getByRole("grid", { name: "Content" }).element() as HTMLElement;
+  expect(scroller.scrollWidth).toBeLessThanOrEqual(scroller.clientWidth);
+});
+
 test("hiding a column from the column menu removes it and is remembered", async () => {
   const view = await render(<ContentPanel world={world} />);
   expect(headers()).toContain("Share");

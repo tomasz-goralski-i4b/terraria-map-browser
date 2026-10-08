@@ -816,6 +816,12 @@ kbd {
   color: var(--accent-text);
 }
 
+/* One label width for the tile and chest grids, wide enough for the longest label ("Full-bright block"): values
+   start in the same column in both, and do not shift as the shy view's labels change from tile to tile. */
+.inspector-panel .property-grid dl {
+  grid-template-columns: 10em minmax(0, 1fr);
+}
+
 .inspector-subheading {
   margin: var(--space-3) 0 0;
   padding: 0 var(--space-3);
@@ -914,8 +920,7 @@ kbd {
   display: grid;
   grid-template-columns: var(--table-columns);
   height: 24px;
-  min-width: 100%;
-  width: max-content;
+  width: max(100%, var(--table-min-width));
 }
 
 .table-body {
@@ -1005,6 +1010,11 @@ kbd {
   align-items: center;
   gap: var(--space-2);
   min-width: 0;
+}
+
+.content-name-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .swatch {
@@ -1121,11 +1131,14 @@ kbd {
   color: var(--text-3);
 }
 
+/* The count reads like every other value; the Open action sits at the row's end, like the header actions. */
 .chest-filled {
-  display: inline-flex;
+  flex: 1;
+  display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: var(--space-2);
-  padding-left: var(--space-2);
+  font-variant-numeric: tabular-nums;
 }
 
 .chest-open {

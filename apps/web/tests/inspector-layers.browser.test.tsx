@@ -104,6 +104,21 @@ test("hovering previews a tile until one is pinned, and Unpin returns to the pre
   await expect.poll(() => rows()[0]).toEqual(["Position", "0, 1"]);
 });
 
+test("while hovering, the Inspector grows to its tallest tile and does not shrink until the pointer leaves the map", async () => {
+  await render(<InspectorPanel world={inspectorWorld(canonicalWorld())} />);
+  const height = (): number => Math.round(document.querySelector(".inspector-panel")?.getBoundingClientRect().height ?? 0);
+  // The shy view of (0, 0) has many rows, (0, 1) only two.
+  useViewStore.getState().setHoverTile({ x: 0, y: 0 });
+  await expect.poll(() => rows()[0]).toEqual(["Position", "0, 0"]);
+  const tall = height();
+  useViewStore.getState().setHoverTile({ x: 0, y: 1 });
+  await expect.poll(() => rows()[0]).toEqual(["Position", "0, 1"]);
+  expect(height()).toBe(tall);
+  useViewStore.getState().setHoverTile(null);
+  useViewStore.getState().setHoverTile({ x: 0, y: 1 });
+  await expect.poll(height).toBeLessThan(tall);
+});
+
 test("the Inspector names the frame-selected altar and its paint", async () => {
   const world = createWorld(4, 3);
   world.setTile(2, 1, {
