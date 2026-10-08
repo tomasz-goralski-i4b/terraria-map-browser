@@ -51,6 +51,13 @@ public sealed record SectionPlacement(int Number, string Name, int MarkerX, int 
 
 public sealed record ClearedStrip(int X, int Y, int Width, int Height);
 
+public sealed record ObservationSpawn(int X, int Y);
+
 public sealed record FramingManifest(string GameBuild, string BaseWorldHash, string OutputHash,
     ClearedStrip ClearedStrip, IReadOnlyList<SectionPlacement> Sections,
-    IReadOnlyList<CasePlacement> Cases, IReadOnlyList<UnreachableOption> UnreachableOptions);
+    IReadOnlyList<CasePlacement> Cases, IReadOnlyList<UnreachableOption> UnreachableOptions)
+{
+    public string WorldName { get; init; } = "TMS Framing Tests #158";
+
+    public ObservationSpawn? Spawn { get; init; }
+}

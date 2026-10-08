@@ -25,7 +25,8 @@ public static class FramingWorldGenerator
         var manifest = Plan(envelope.World.Tiles.Width, envelope.World.Tiles.Height, catalogue);
         RequireNoEntities(envelope.World, manifest.ClearedStrip);
         var tiles = Stamp(envelope.World.Tiles, catalogue, manifest);
-        var candidate = envelope with { World = envelope.World with { Tiles = tiles } };
+        var candidate = ObservationWorldMetadata.Apply(envelope, manifest);
+        candidate = candidate with { World = candidate.World with { Tiles = tiles } };
         using var written = new MemoryStream();
         WorldWriter.Write(candidate, written);
         var outputBytes = written.ToArray();
@@ -59,7 +60,10 @@ public static class FramingWorldGenerator
         var terraceHeight = 0;
         foreach (var section in catalogue.Cases.GroupBy(entry => entry.Section, StringComparer.Ordinal))
         {
-            var contentWidth = Math.Max(30, section.Max(entry => entry.Pattern[0].Length));
+            // The default catalogue fits in one row so every case is visible from the
+            // walking floor. Extended catalogues still wrap without special-case layout.
+            var totalWidth = section.Sum(entry => entry.Pattern[0].Length) + ((section.Count() - 1) * AirGap);
+            var contentWidth = Math.Max(section.Max(entry => entry.Pattern[0].Length), Math.Min(180, totalWidth));
             var rowX = 0;
             var rowY = AirGap;
             var rowHeight = 0;
@@ -81,7 +85,7 @@ public static class FramingWorldGenerator
                 rowHeight = Math.Max(rowHeight, entry.Pattern.Length);
             }
 
-            terraceHeight = Math.Max(terraceHeight, Math.Max(rowY + rowHeight + AirGap, number + 3 + AirGap));
+            terraceHeight = Math.Max(terraceHeight, Math.Max(rowY + rowHeight + AirGap + 1, number + 6));
             sectionX += contentWidth + 7;
         }
 
@@ -95,7 +99,10 @@ public static class FramingWorldGenerator
         return new FramingManifest("1.4.5.8", string.Empty, string.Empty,
             new ClearedStrip(startX, startY, sectionX, terraceHeight),
             sections.Select(entry => entry with { MarkerX = entry.MarkerX + startX, MarkerY = entry.MarkerY + startY }).ToArray(),
-            placements.Select(entry => entry with { X = entry.X + startX, Y = entry.Y + startY }).ToArray(), catalogue.UnreachableOptions);
+            placements.Select(entry => entry with { X = entry.X + startX, Y = entry.Y + startY }).ToArray(), catalogue.UnreachableOptions)
+        {
+            Spawn = new ObservationSpawn(startX + 1, startY + terraceHeight),
+        };
     }
 
     private static void Validate(FramingCatalogue catalogue)

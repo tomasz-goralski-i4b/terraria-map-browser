@@ -744,14 +744,19 @@ dotnet run --project dotnet/Terraria.WorldCodec.Synthetic -- generate packages/t
 It writes a new `.wld` and `.wld.manifest.json`, refuses either existing output path, and accepts only corpus
 paths whose bytes match `packages/test-fixtures/worlds/manifest.json`. It never edits the base. Do not commit
 either output. Copy only the generated world to a new file in Terraria's local Worlds directory for the game
-check; retain the original generated copy beside its manifest. The copy retains the base's name, world ID,
-GUID, spawn, mode and opaque sections (choose `SJCO1` for Journey mode); it appears under that base name in
-the world picker. Use a disposable game copy and avoid replacing any player world.
+check; retain the original generated copy beside its manifest. It appears as **TMS Framing Tests #158** in
+the world picker and has a deterministic world ID and GUID distinct from the base. The mode and opaque
+sections are preserved (choose `SJCO1` for Journey mode). Use a disposable game copy and avoid replacing
+any player world.
 
 The cases are already stamped onto a flat stone terrace near the horizontal centre, at `height / 8` in the sky.
-Fly up from spawn in Journey mode. Sections run left to right; their numbers and names are in `sections` in
-the manifest. Each starts with a gray-brick (38) column, `section number + 1` tiles tall. Cases are packed in
-catalogue order, with at least two tiles of air between patterns and between a pattern and a marker or floor.
+**You spawn directly on its stone floor; walk right to inspect the cases above you. No flight is needed.**
+The default catalogue fits in one row and every pattern is within 16 tiles above the floor. Three tiles of
+headroom stay clear across the entire walking route. The manifest includes the menu name and spawn coordinates.
+Sections run left to right; their numbers and names are in `sections` in the manifest. Each starts with a
+gray-brick (38) column, `section number + 1` tiles tall. Cases are packed in catalogue order, with at least
+two tiles of air between patterns and between a pattern and a marker or floor. Extended catalogues wrap
+after 180 tiles per section and may need their own access arrangements.
 The manifest gives each pattern's top-left `x,y`, dimensions, title and expected look/cells or `to observe`.
 In patterns that contain `#`, that character identifies the focus tile; for the three-row worked examples it
 is on the middle row. Both tiles of examples 8, 14 and 16 have separate cases and enough surrounding mass to
