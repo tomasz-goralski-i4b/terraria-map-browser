@@ -41,7 +41,9 @@ export interface Tile {
   fullBrightWall?: boolean;
 }
 
-export interface WorldPlanes {
+// A type alias, not an interface, so Object.values(planes) is typed: aliases are implicitly indexable.
+// eslint-disable-next-line @typescript-eslint/consistent-type-definitions -- see above
+export type WorldPlanes = {
   block: Uint16Array;
   wall: Uint16Array;
   frameX: Int16Array;
@@ -124,16 +126,6 @@ export class CwmViewError extends Error {
   }
 }
 
-/** Wraps existing planes and a palette as a CanonicalWorld by reference; validates once, copies no plane. */
-export function viewWorld(
-  _width: number,
-  _height: number,
-  _planes: WorldPlanes,
-  _palette: readonly ContentRef[],
-): CanonicalWorld {
-  throw new Error("not implemented");
-}
-
 export function createWorld(
   width: number,
   height: number,
@@ -170,8 +162,61 @@ export function createWorld(
     shape: new Uint8Array(cells),
     flags: new Uint16Array(cells),
   };
-  const palette: ContentRef[] = [];
+  return worldOver(width, height, planes, [], new Map());
+}
+
+const planeTypes: { [K in keyof WorldPlanes]: new (length: number) => WorldPlanes[K] } = {
+  block: Uint16Array, wall: Uint16Array, frameX: Int16Array, frameY: Int16Array,
+  paint: Uint8Array, wallPaint: Uint8Array, liquid: Uint8Array, liquidAmount: Uint8Array,
+  shape: Uint8Array, flags: Uint16Array,
+};
+
+/** Wraps existing planes and a palette as a CanonicalWorld by reference; validates once, copies no plane. */
+export function viewWorld(
+  width: number,
+  height: number,
+  planes: WorldPlanes,
+  palette: readonly ContentRef[],
+): CanonicalWorld {
+  if (!Number.isSafeInteger(width) || width <= 0 || !Number.isSafeInteger(height) || height <= 0) {
+    throw new CwmViewError("dimensions", `Invalid world dimensions: ${String(width)} x ${String(height)}`);
+  }
+  const cells = width * height;
+  for (const name of Object.keys(planeTypes) as (keyof WorldPlanes)[]) {
+    const plane: unknown = planes[name];
+    // Exact constructor: a subclass or a different element type would change what a write stores.
+    if ((plane as { constructor?: unknown } | undefined)?.constructor !== planeTypes[name]) {
+      throw new CwmViewError("planeType", `Plane ${name} must be a ${planeTypes[name].name}`);
+    }
+    if ((plane as WorldPlanes[typeof name]).length !== cells) {
+      throw new CwmViewError("planeLength", `Plane ${name} must hold ${String(cells)} cells`);
+    }
+  }
+  if (palette.length > absentContent) throw new CwmViewError("palette", "CWM palette exceeds 65535 entries");
   const paletteIndices = new Map<string, number>();
+  palette.forEach((ref, index) => {
+    const key = contentKey(ref);
+    if (paletteIndices.has(key)) throw new CwmViewError("palette", `Palette entry ${String(index)} duplicates an earlier entry`);
+    paletteIndices.set(key, index);
+  });
+  for (const name of ["block", "wall"] as const) {
+    for (const value of planes[name]) {
+      if (value !== absentContent && value >= palette.length) {
+        throw new CwmViewError("paletteIndex", `Plane ${name} references palette index ${String(value)} outside ${String(palette.length)} entries`);
+      }
+    }
+  }
+  return worldOver(width, height, planes, palette as ContentRef[], paletteIndices);
+}
+
+function worldOver(
+  width: number,
+  height: number,
+  planes: WorldPlanes,
+  palette: ContentRef[],
+  paletteIndices: Map<string, number>,
+): CanonicalWorld {
+  const dimensions = `${String(width)} x ${String(height)}`;
 
   function coordinateIndex(x: number, y: number): number {
     if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0 || x >= width || y >= height) {
