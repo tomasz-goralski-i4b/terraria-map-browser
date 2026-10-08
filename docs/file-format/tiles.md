@@ -154,7 +154,7 @@ adopted by the writer contract (see "Writer contract", rule W-T7).
 ## Sections skipped in M1
 
 M1 reads sections 0–2 (header, metadata, tiles). Sections 3–10 (chests, signs, NPCs, tile entities, pressure
-plates, town manager, bestiary, creative powers) and the footer are **not parsed**: `WorldReader.Read` stops
+plates, town manager, bestiary, creative powers) and the footer are **not parsed** (their layout is specified in [entities.md](entities.md)): `WorldReader.Read` stops
 after `pointer[2]`; their positions are known only from the section table. For saving, `WorldReader.ReadForSave`
 (#38) additionally validates the footer, including its name/id cross-check with metadata rows 1 and 5
 ([writer.md](writer.md), "Footer (M2)"), and keeps sections 3–10 and the footer verbatim (W-S1, W-S5).

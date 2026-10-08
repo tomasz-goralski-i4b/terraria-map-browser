@@ -43,3 +43,14 @@ Part of the format specification; index and conventions: [../file-format.md](../
     while CWM treats it as "no paint". Should the reader normalize it to absent, so that every view agrees with
     the writer? Until then, round-trip tests compare paint 0 and absent as equal. This refines #39's "paint
     presence" criterion: a non-zero paint keeps its presence; a present 0 is normalized.
+15. Entity layouts without corpus evidence: every fixture has empty signs, mobs, tile entities, pressure plates,
+    room assignments, shimmered NPCs and bestiary ([entities.md](entities.md), "Corpus evidence"). Their record
+    layouts rest on TEdit only. A world saved by 1.4.5.8 with signs (incl. a grave marker and an announcement
+    box), every tile-entity kind, a weighted pressure plate, assigned housing, a shimmered NPC and bestiary
+    progress would confirm them, show whether sign and entity positions are top-left tiles, which tile id a
+    weighted pressure plate has, what adds a town-manager room, and the bestiary key format.
+16. NPC extra-bits byte (section 5): F only has `01`. Is any other bit ever set by the game, and what follows
+    it? Proposed: reject until a source or fixture shows one.
+17. Creative powers (section 10): an id outside 0, 5, 8–14 has no known value size. Proposed: the section fails
+    as unreadable rather than guessing. Do non-Journey worlds ever store anything but the six default entries
+    seen in F?

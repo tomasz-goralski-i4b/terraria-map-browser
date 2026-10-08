@@ -37,7 +37,7 @@ TEdit locations used below (all at commit `182031b`):
 | T15 | `src/TEdit.Terraria/World.FileV2.cs:1552-1768` | reading one tile record (flag bytes, payload order, run counter) |
 | T16 | `src/TEdit.Terraria/World.FileV2.cs:198-262` | writing tiles: run-length encoder, counter width choice |
 | T17 | `src/TEdit.Terraria/World.FileV2.cs:267-521` | writing one tile record (confirms payload order and flag omission) |
-| T18 | `src/TEdit.Terraria/Data/versions.json:951-960` | version 326: highest tile id 753, highest wall id 366 |
+| T18 | `src/TEdit.Terraria/Data/versions.json:951-960` | version 326: highest tile id 753, highest wall id 366, highest item id 6195, highest NPC id 696 |
 | T19 | `src/TEdit.Terraria/BrickStyle.cs:3-11`, `src/TEdit.Terraria/LiquidType.cs:3-10` | block shape values 0–5; liquid kinds |
 | T20 | `src/TEdit.Terraria/World.FileV2.cs:117-196` | `SaveV2`: revision increment (121-124), frame-important overlay (128-143), section order, pointers patched last (193-194) |
 | T21 | `src/TEdit.Terraria/World.FileV2.cs:718-725` | writing the footer (Bool true, title, world id) |
@@ -47,6 +47,19 @@ TEdit locations used below (all at commit `182031b`):
 | T25 | `src/TEdit.Terraria/Tile.cs:87-109` | tile equality used by the run-length encoder |
 | T26 | `src/TEdit.Terraria/TileType.cs:22,36,40` | ids 127 (ice-rod block), 520 (food platter), 423 (logic sensor) |
 | T27 | `src/TEdit.Terraria/World.cs:66-160` | `SaveAsync`: write to `<file>.tmp`, then copy over the target, no backup of the previous file |
+| T28 | `src/TEdit.Terraria/World.FileV2.cs:1427-1499` | sections 3–10 in `LoadV2`: order, version gates, end-position check after each; sign filter by tile (1443-1450), chest filter commented out (1429-1436) |
+| T29 | `src/TEdit.Terraria/World.FileV2.cs:1770-1826` | reading chests (`LoadChestData`) |
+| T30 | `src/TEdit.Terraria/World.FileV2.cs:523-574` | writing chests: legacy count cap below 216, per-chest slot count from 294 |
+| T31 | `src/TEdit.Terraria/World.FileV2.cs:1828-1839`, `576-596` | reading and writing signs |
+| T32 | `src/TEdit.Terraria/World.FileV2.cs:1841-1915`, `598-675` | reading and writing town NPCs, shimmered NPCs and mobs |
+| T33 | `src/TEdit.Terraria/World.FileV2.cs:1953-1982`, `1379-1390` | tile entity section: count, legacy dummies (< 122), writer |
+| T34 | `src/TEdit.Terraria/TileEntity.cs:377-419`, `428-433`, `435-465`, `502-580`, `335-375` | one tile entity: common head, per-kind payload, stack, hat rack, display doll; writer |
+| T35 | `src/TEdit.Terraria/TileEntityType.cs:3-16` | tile entity kinds 0–10 |
+| T36 | `src/TEdit.Terraria/TileType.cs:5-55`, `60-92` | tile ids of chests, signs and tile-entity objects; `IsChest` / `IsSign` / `IsTileEntity` |
+| T37 | `src/TEdit.Terraria/World.FileV2.cs:1983-1994`, `693-704` | reading and writing weighted pressure plates |
+| T38 | `src/TEdit.Terraria/World.FileV2.cs:1916-1926`, `677-691` | reading and writing the town manager rooms |
+| T39 | `src/TEdit.Terraria/Bestiary.cs:60-83`, `35-58` | reading and writing the bestiary |
+| T40 | `src/TEdit.Terraria/CreativePowers.cs:7-24`, `187-224`, `146-184` | creative power ids, reading (no value read for an unknown id) and writing |
 
 Line numbers count physical lines of the file at the pinned commit (CRLF endings, blank lines included), which is
 also what GitHub's `#L` anchors use, e.g.
