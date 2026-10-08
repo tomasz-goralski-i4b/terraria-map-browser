@@ -37,6 +37,7 @@ test("wall names use option zero independently of the block's frame", () => {
     wall: { kind: "vanilla", id: 1 }, wires: 0, actuator: false,
   })).toBe("Crimson Altar · Stone Wall");
   // The current game's only multi-option wall (27) uses the placement-item fallback.
+  // Both options say Planked Wall, so current game data cannot distinguish option zero from one.
   expect(terrariaMapNames.walls[27]).toHaveLength(2);
   expect(contentName({ kind: "vanilla", id: 27 }, "wall")).toBe("Planked Wall");
   expect(describeTile({
