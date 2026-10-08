@@ -39,12 +39,12 @@ public sealed class TileGrid
     }
 }
 
-/// <summary>A section the reader did not parse; only its position is known.</summary>
+/// <summary>A section omitted from the v1 tile/metadata summary; its boundary also identifies opaque save bytes.</summary>
 /// <param name="Name">Section name, as the property name in <see cref="WorldSectionTable"/>.</param>
 /// <param name="Boundary">Position from the section table.</param>
 public sealed record SkippedSection(string Name, WorldSectionBoundary Boundary);
 
-/// <summary>A world read in M1: header, metadata and tiles; later sections are reported as skipped.</summary>
+/// <summary>A read-only world with tiles and independently decoded entity sections.</summary>
 public sealed record World(
     WorldFileHeader Header,
     WorldMetadata Metadata,
