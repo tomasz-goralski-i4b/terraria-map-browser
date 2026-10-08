@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { contentColor, createMapRenderer, visibleChunks } from "../src/index.js";
+import { contentColor, createMapRenderer, fitWorld, visibleChunks } from "../src/index.js";
 import type { Camera, MapRenderer, MapRendererOptions, RenderableWorld } from "../src/index.js";
 
 const renderers: MapRenderer[] = [];
@@ -54,6 +54,26 @@ function closeTo(actual: readonly number[], expected: readonly number[], toleran
 
 const mean = (first: readonly number[], second: readonly number[]): number[] =>
   first.map((value, channel) => (value + (second[channel] ?? 0)) / 2);
+
+/** Run only callbacks queued for this frame; continuations belong to the next frame. */
+function animationFrames() {
+  let nextId = 1;
+  const pending = new Map<number, FrameRequestCallback>();
+  vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+    const id = nextId++;
+    pending.set(id, callback);
+    return id;
+  });
+  vi.spyOn(window, "cancelAnimationFrame").mockImplementation((id) => { pending.delete(id); });
+  return {
+    pending,
+    step: () => {
+      const callbacks = [...pending.values()];
+      pending.clear();
+      for (const callback of callbacks) callback(0);
+    },
+  };
+}
 
 describe("instanced chunk pass", () => {
   test("all visible resident chunks are drawn with one draw call per chunk page", () => {
@@ -174,6 +194,46 @@ describe("overview below half a pixel per tile", () => {
     renderer.setWorld(growing);
     renderer.render();
     expect(pixel(10, 10)).toEqual(contentColor(palette[0], "block"));
+  });
+
+  test("zoomed-out views do not grow the chunk cache: every chunk is uploaded once and only the baseline stays", () => {
+    const large = blocks(8400, 2400, (x) => 1 + (x % 2));
+    const viewport = { width: 1050, height: 300 };
+    const camera = fitWorld(viewport, large);
+    const visible = visibleChunks(camera, viewport, large);
+    const { renderer } = setup(viewport.width, viewport.height);
+    renderer.setWorld(large);
+    renderer.setCamera(camera);
+    renderer.render();
+    expect(renderer.stats().visibleChunks).toEqual(visible);
+    expect(renderer.stats().textureUploads).toBe(visible.length + 2);
+    expect(renderer.stats().residentChunks).toBeLessThanOrEqual(512);
+    expect(renderer.stats().drawCalls).toBe(1);
+  }, 60_000);
+
+  test("chunks still loading after zooming in show the overview instead of a hole, then the exact chunks", () => {
+    const frames = animationFrames();
+    const { renderer, pixel } = setup(512, 256, { maxCachedChunks: 4, maxChunkUploadsPerFrame: 1 });
+    renderer.setWorld(halves);
+    renderer.setCamera(fitted);
+    renderer.render();
+    expect(renderer.stats().residentChunks).toBeLessThanOrEqual(4);
+    const zoomedIn: Camera = { x: 0, y: 0, zoom: 1 };
+    const inView = visibleChunks(zoomedIn, { width: 512, height: 256 }, halves);
+    renderer.setCamera(zoomedIn);
+    frames.step();
+    const drawn = renderer.stats().visibleChunks;
+    const loading = inView.find((chunk) => !drawn.some((other) => other.x === chunk.x && other.y === chunk.y));
+    if (loading === undefined) throw new Error("expected a chunk still loading");
+    expect(pixel(loading.x * 128 + 64, loading.y * 128 + 64)).toEqual(blockA);
+    for (let frame = 0; frame < inView.length && frames.pending.size > 0; frame++) frames.step();
+    expect(frames.pending.size).toBe(0);
+    expect(renderer.stats().visibleChunks).toEqual(inView);
+    const reference = setup(512, 256);
+    reference.renderer.setWorld(halves);
+    reference.renderer.setCamera(zoomedIn);
+    reference.renderer.render();
+    for (const [x, y] of [[0, 0], [200, 100], [511, 255]] as const) expect(pixel(x, y)).toEqual(reference.pixel(x, y));
   });
 
   test("tileAt is independent of the overview", () => {

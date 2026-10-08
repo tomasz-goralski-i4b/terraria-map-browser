@@ -45,8 +45,10 @@ export interface MapRendererOptions {
    */
   readonly maxChunkUploadsPerFrame?: number;
   /**
-   * Baseline chunk texture cache capacity (LRU). Default 1536, enough for a whole Large world.
-   * Grows to fit the largest visible set for the current world; resets when the world changes.
+   * Baseline chunk texture cache capacity (LRU). Default 512 (about 100 MiB of chunk pages).
+   * Grows to fit the largest set drawn chunk by chunk (at half a pixel per tile and above, so bounded by the
+   * viewport) for the current world; resets when the world changes. Zoomed-out views come from the overview and do
+   * not grow it.
    */
   readonly maxCachedChunks?: number;
   /** Map colours (content, paint, background by depth), as in `renderChunk`; without one, placeholders are drawn. */
@@ -96,7 +98,7 @@ const PALETTE_CAPACITY = 0xffff;
 const PALETTE_HEIGHT = PALETTE_ROW;
 const VARIANT_CAPACITY = 0xffff;
 const ABSENT = 0xffff;
-const DEFAULT_MAX_CACHED_CHUNKS = 1536;
+const DEFAULT_MAX_CACHED_CHUNKS = 512;
 const DEFAULT_MAX_CHUNK_UPLOADS_PER_FRAME = 32;
 /** Chunks per page (array texture layers); a page of both textures is 12 MiB. */
 const PAGE_LAYERS = 64;
@@ -159,6 +161,8 @@ interface Overview {
   readonly height: number;
   /** Per chunk (y * chunksX + x): 1 once its texels hold the current layers. */
   readonly built: Uint8Array;
+  /** Number of chunks marked in `built`. */
+  builtCount: number;
 }
 
 function requireValue<T>(value: T | null, what: string): T {
@@ -318,6 +322,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   const invalidateOverview = (): void => {
     if (overview === null) return;
     overview.built.fill(0);
+    overview.builtCount = 0;
     gl.bindFramebuffer(gl.FRAMEBUFFER, resources.framebuffer);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, overview.texture, 0);
     gl.viewport(0, 0, overview.width, overview.height);
@@ -502,12 +507,13 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     gl.bindTexture(gl.TEXTURE_2D, texture);
     gl.texStorage2D(gl.TEXTURE_2D, Math.floor(Math.log2(Math.max(width, height))) + 1, gl.RGBA8, width, height);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    // Magnified only as the stand-in for chunks still loading: smooth rather than blocky.
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     const chunksX = Math.ceil(source.width / CHUNK_SIZE);
     const chunksY = Math.ceil(source.height / CHUNK_SIZE);
-    overview = { world: source, texture, factor, width, height, built: new Uint8Array(chunksX * chunksY) };
+    overview = { world: source, texture, factor, width, height, built: new Uint8Array(chunksX * chunksY), builtCount: 0 };
     // Storage starts zeroed but its mip chain is incomplete until generated.
     gl.generateMipmap(gl.TEXTURE_2D);
     return overview;
@@ -585,10 +591,32 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     drawInstances(source, items);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     const chunksX = Math.ceil(source.width / CHUNK_SIZE);
-    for (const [chunk] of items) target.built[chunk.y * chunksX + chunk.x] = 1;
+    for (const [chunk] of items) {
+      const key = chunk.y * chunksX + chunk.x;
+      if (target.built[key] === 0) target.builtCount++;
+      target.built[key] = 1;
+    }
     gl.activeTexture(gl.TEXTURE0 + UNIT_OVERVIEW);
     gl.bindTexture(gl.TEXTURE_2D, target.texture);
     gl.generateMipmap(gl.TEXTURE_2D);
+  };
+
+  /** Draws the overview over the whole world on the canvas; returns the number of draw calls. */
+  const drawOverview = (source: RenderableWorld, target: Overview): number => {
+    const { overview: program } = resources;
+    gl.useProgram(program.program);
+    gl.uniform2f(program.uniforms.uCamera, camera.x, camera.y);
+    gl.uniform1f(program.uniforms.uZoom, camera.zoom);
+    gl.uniform2f(program.uniforms.uViewport, canvas.width, canvas.height);
+    gl.uniform2f(program.uniforms.uWorld, source.width, source.height);
+    gl.uniform2f(program.uniforms.uExtent, target.width * target.factor, target.height * target.factor);
+    gl.uniform1i(program.uniforms.uOverview, UNIT_OVERVIEW);
+    gl.activeTexture(gl.TEXTURE0 + UNIT_OVERVIEW);
+    gl.bindTexture(gl.TEXTURE_2D, target.texture);
+    gl.bindVertexArray(resources.emptyArray);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    gl.bindVertexArray(null);
+    return 1;
   };
 
   /** The visible chunks followed by those within the overview's filter footprint around the viewport. */
@@ -624,53 +652,72 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     const target = candidate !== null && camera.zoom < 1 / candidate.factor ? candidate : null;
 
     const chunksX = Math.ceil(source.width / CHUNK_SIZE);
+    const keyOf = (chunk: ChunkCoord): number => chunk.y * chunksX + chunk.x;
     const visible = visibleChunks(camera, viewport, source);
-    // Filtered overview samples reach past the viewport (mipmap texels cover up to ~4 / zoom tiles), so its texels
-    // are built over that footprint: visible chunks first, then the margin.
-    const footprint = target === null ? visible : overviewFootprint(source, visible, viewport);
-    // In overview mode only chunks whose texels are not built yet are needed.
-    const needed = target === null ? visible : footprint.filter((chunk) => target.built[chunk.y * chunksX + chunk.x] === 0);
-    const visibleKeys = new Set(footprint.map((chunk) => chunk.y * chunksX + chunk.x));
-    cacheCapacity = Math.max(cacheCapacity, footprint.length);
-    let missing = 0;
-    for (const chunk of needed) if (!chunks.has(chunk.y * chunksX + chunk.x)) missing++;
-    const uploadsThisFrame = Math.min(missing, uploadBudget);
-    // Reserve only for this frame's uploads, so reversing a pending pan keeps terrain not yet replaced.
-    // Evict only offscreen LRU entries; visible residents must survive while the remaining chunks load.
-    for (const [key, slot] of chunks) {
-      if (chunks.size + uploadsThisFrame <= cacheCapacity) break;
-      if (visibleKeys.has(key)) continue;
-      chunks.delete(key);
-      freeSlots.push(slot);
-      evictedChunks++;
-    }
-    const ready: (readonly [ChunkCoord, number])[] = [];
-    let uploads = 0;
-    let pending = false;
-    for (const chunk of needed) {
-      const key = chunk.y * chunksX + chunk.x;
-      let slot = chunks.get(key);
-      if (slot === undefined) {
-        if (uploads >= uploadBudget) {
-          pending = true;
-          continue;
-        }
-        uploads++;
-        slot = allocateSlot();
-        uploadChunk(source, chunk, slot);
-      } else {
+    // Set by acquire() when a wanted chunk did not fit the upload budget.
+    const loading = { pending: false };
+    /** Evicts least recently used chunks outside `keep` until `count` uploads fit the cache. */
+    const makeRoom = (count: number, keep: ReadonlySet<number>): void => {
+      for (const [key, slot] of chunks) {
+        if (chunks.size + count <= cacheCapacity) break;
+        if (keep.has(key)) continue;
         chunks.delete(key);
+        freeSlots.push(slot);
+        evictedChunks++;
       }
-      chunks.set(key, slot);
-      ready.push([chunk, slot]);
-    }
+    };
+    /** Makes `wanted` resident (uploads within `budget`), appending the resident ones to `out`; returns the budget left. */
+    const acquire = (wanted: readonly ChunkCoord[], budget: number, out: (readonly [ChunkCoord, number])[]): number => {
+      let missing = 0;
+      for (const chunk of wanted) if (!chunks.has(keyOf(chunk))) missing++;
+      // Reserve only for this call's uploads, so reversing a pending pan keeps terrain not yet replaced.
+      makeRoom(Math.min(missing, budget), new Set(wanted.map(keyOf)));
+      let left = budget;
+      for (const chunk of wanted) {
+        const key = keyOf(chunk);
+        let slot = chunks.get(key);
+        if (slot === undefined) {
+          if (left <= 0) {
+            loading.pending = true;
+            continue;
+          }
+          left--;
+          slot = allocateSlot();
+          uploadChunk(source, chunk, slot);
+        } else {
+          chunks.delete(key);
+        }
+        chunks.set(key, slot);
+        out.push([chunk, slot]);
+      }
+      return left;
+    };
 
-    if (target !== null) buildOverview(source, target, ready);
+    const ready: (readonly [ChunkCoord, number])[] = [];
+    if (target === null) {
+      // At 1 / factor pixels per tile and above the visible set is bounded by the viewport, so the cache grows to
+      // hold it; visible residents survive while the remaining chunks load.
+      cacheCapacity = Math.max(cacheCapacity, visible.length);
+      acquire(visible, uploadBudget, ready);
+    } else {
+      // A chunk is needed only until its overview texels are built, so the cache does not grow: unbuilt chunks of
+      // the filter footprint (visible ones first) are built in batches that fit it.
+      const needed = overviewFootprint(source, visible, viewport).filter((chunk) => target.built[keyOf(chunk)] === 0);
+      let budget = uploadBudget;
+      for (let start = 0; start < needed.length; start += cacheCapacity) {
+        const batch: (readonly [ChunkCoord, number])[] = [];
+        budget = acquire(needed.slice(start, start + cacheCapacity), budget, batch);
+        buildOverview(source, target, batch);
+      }
+    }
 
     gl.viewport(0, 0, viewport.width, viewport.height);
     gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT);
     if (target === null) {
+      // Chunks still loading show the overview (built when the area was seen zoomed out) instead of a hole; drawn
+      // chunks overwrite it completely, so a complete frame stays exact.
+      if (loading.pending && candidate !== null && candidate.builtCount > 0) drawCalls += drawOverview(source, candidate);
       const { chunk: program } = resources;
       gl.useProgram(program.program);
       setTileUniforms(program.uniforms);
@@ -683,27 +730,14 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       gl.bindTexture(gl.TEXTURE_2D, background?.texture ?? null);
       gl.activeTexture(gl.TEXTURE0 + UNIT_VARIANTS);
       gl.bindTexture(gl.TEXTURE_2D, resources.variantColors);
-      drawCalls = drawInstances(source, ready);
-      const drawnKeys = new Set(ready.map(([chunk]) => chunk.y * chunksX + chunk.x));
-      drawn = visible.filter((chunk) => drawnKeys.has(chunk.y * chunksX + chunk.x));
+      drawCalls += drawInstances(source, ready);
+      const drawnKeys = new Set(ready.map(([chunk]) => keyOf(chunk)));
+      drawn = visible.filter((chunk) => drawnKeys.has(keyOf(chunk)));
     } else {
-      const { overview: program } = resources;
-      gl.useProgram(program.program);
-      gl.uniform2f(program.uniforms.uCamera, camera.x, camera.y);
-      gl.uniform1f(program.uniforms.uZoom, camera.zoom);
-      gl.uniform2f(program.uniforms.uViewport, viewport.width, viewport.height);
-      gl.uniform2f(program.uniforms.uWorld, source.width, source.height);
-      gl.uniform2f(program.uniforms.uExtent, target.width * target.factor, target.height * target.factor);
-      gl.uniform1i(program.uniforms.uOverview, UNIT_OVERVIEW);
-      gl.activeTexture(gl.TEXTURE0 + UNIT_OVERVIEW);
-      gl.bindTexture(gl.TEXTURE_2D, target.texture);
-      gl.bindVertexArray(resources.emptyArray);
-      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-      gl.bindVertexArray(null);
-      drawCalls = 1;
-      drawn = visible.filter((chunk) => target.built[chunk.y * chunksX + chunk.x] === 1);
+      drawCalls = drawOverview(source, target);
+      drawn = visible.filter((chunk) => target.built[keyOf(chunk)] === 1);
     }
-    if (pending) schedule();
+    if (loading.pending) schedule();
   };
 
   const schedule = (): void => {

@@ -26,7 +26,12 @@ pixels `renderChunk` produces for the same `mapPalette`, which the browser tests
   factor × factor tiles, built on the GPU from the chunk pages as the mean of those tiles (premultiplied, so
   mipmaps average transparency correctly). It is one draw call for the whole world and is filtered, so zoomed-out
   views do not shimmer while panning. Building it is subject to the same per-frame upload budget; texels not built
-  yet stay clear. Layer changes and palette appends rebuild it from resident chunks.
+  yet stay clear. Its texels are built over the filter footprint around the viewport, not only the visible chunks.
+  Layer changes and palette appends rebuild it.
+- **Chunk cache.** A chunk is needed in overview mode only until its texels are built, so zoomed-out views keep the
+  baseline cache (512 chunks, about 100 MiB) however large the world is. At half a pixel per tile and above the
+  cache grows to the visible set, which the viewport bounds. While chunks are still loading there, the overview is
+  drawn under them instead of a hole; a complete frame is exact.
 - `tileAt` and anything that reads tile data (names, coordinates) use the camera and the CWM planes, never GPU
   textures, so neither path changes them.
 

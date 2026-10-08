@@ -158,7 +158,7 @@ describe("scheduled chunk upload budget", () => {
     expect(frames.pending.size).toBe(0);
   });
 
-  test("a fitted modded world keeps bounded uploads and cached textures across repeated zoom changes", () => {
+  test("a fitted modded world keeps bounded uploads, a bounded cache and no re-uploads across repeated zoom changes", () => {
     const frames = animationFrames();
     const world = terrain(10000, 3000);
     const moddedViewport = { width: 1250, height: 375 };
@@ -177,17 +177,27 @@ describe("scheduled chunk upload budget", () => {
     }
     expect(frames.pending.size).toBe(0);
     expect(renderer.stats().visibleChunks).toEqual(expectedChunks);
-    expect(renderer.stats().residentChunks).toBe(expectedChunks.length);
+    // The fitted world is drawn from the overview: its chunks were needed only to build it.
+    expect(renderer.stats().textureUploads).toBe(expectedChunks.length + 2);
+    expect(renderer.stats().residentChunks).toBeLessThanOrEqual(512);
+    const zoomedIn = { x: 0, y: 0, zoom: 1 };
     const deleted = vi.spyOn(WebGL2RenderingContext.prototype, "deleteTexture");
+    let afterFirstCycle = 0;
     for (let cycle = 0; cycle < 3; cycle++) {
-      renderer.setCamera({ x: 0, y: 0, zoom: 1 });
-      frames.step();
-      expect(renderer.stats().residentChunks).toBe(expectedChunks.length);
+      renderer.setCamera(zoomedIn);
+      for (let frame = 0; frame < 10 && frames.pending.size > 0; frame++) frames.step();
+      expect(renderer.stats().visibleChunks).toEqual(visibleChunks(zoomedIn, moddedViewport, world));
+      const beforeFit = renderer.stats().textureUploads;
       renderer.setCamera(fittedCamera);
       frames.step();
+      // The overview persists: zooming back out uploads nothing.
+      expect(renderer.stats().textureUploads).toBe(beforeFit);
       expect(renderer.stats().visibleChunks).toEqual(expectedChunks);
-      expect(renderer.stats().textureUploads).toBe(previousUploads);
+      expect(renderer.stats().residentChunks).toBeLessThanOrEqual(512);
       expect(frames.pending.size).toBe(0);
+      // Only the first zoom-in uploads; the zoomed-in chunks then stay cached.
+      if (cycle === 0) afterFirstCycle = beforeFit;
+      else expect(beforeFit).toBe(afterFirstCycle);
     }
     expect(deleted).not.toHaveBeenCalled();
   }, 60_000);
@@ -235,7 +245,8 @@ describe("scheduled chunk upload budget", () => {
     renderer.setWorld(large);
     renderer.setCamera(camera);
     renderer.render();
-    expect(renderer.stats().residentChunks).toBe(visible.length);
+    // Drawn from the overview: every chunk uploaded once, and the cache keeps only its baseline.
+    expect(renderer.stats().residentChunks).toBeLessThanOrEqual(512);
     expect(renderer.stats().textureUploads).toBe(visible.length + 2);
     expect(renderer.stats().visibleChunks).toEqual(visible);
     expect(renderer.stats().drawCalls).toBe(1);
