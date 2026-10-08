@@ -5,13 +5,14 @@
 import type { ContentRef } from "@studio/world-model";
 import { CHUNK_SIZE, visibleChunks } from "../camera/camera.js";
 import type { Camera, ChunkCoord, Size } from "../camera/camera.js";
+import { filterTilesPerPixel } from "../chunk/box-filter.js";
 import { WIRE_ALPHA, WIRE_COLORS, WIRE_LAYER, type ChunkLayers } from "../chunk/render.js";
 import {
   backgroundColor, contentColor, liquidColors, mapOption, optionColor, optionColors, optionRule,
 } from "../palette/map-palette.js";
 import type { MapOptionRule, MapPalette, Rgba } from "../palette/map-palette.js";
 import {
-  LAYER_ATTRIBUTE, RECT_ATTRIBUTE, chunkFragmentSource, chunkVertexSource, overviewBuildFragmentSource,
+  LAYER_ATTRIBUTE, PAGE_APRON, RECT_ATTRIBUTE, chunkFragmentSource, chunkVertexSource, overviewBuildFragmentSource,
   overviewBuildVertexSource, overviewFragmentSource, overviewVertexSource,
 } from "./shaders.js";
 
@@ -102,8 +103,10 @@ const VARIANT_CAPACITY = 0xffff;
 const ABSENT = 0xffff;
 const DEFAULT_MAX_CACHED_CHUNKS = 512;
 const DEFAULT_MAX_CHUNK_UPLOADS_PER_FRAME = 32;
-/** Chunks per page (array texture layers); a page of both textures is 12 MiB. */
+/** Chunks per page (array texture layers); a page of both textures is about 12.4 MiB. */
 const PAGE_LAYERS = 64;
+/** Texels per side of a page layer: the chunk and its apron of neighbouring tiles on every side. */
+const PAGE_SIZE = CHUNK_SIZE + 2 * PAGE_APRON;
 /** Ints per instance: the chunk rectangle (origin x, origin y, columns, rows) and its page layer. */
 const INSTANCE_INTS = 5;
 /** The smallest overview factor: one overview texel per 2 × 2 tiles, used below half a pixel per tile. */
@@ -121,7 +124,7 @@ const TILE_UNIFORMS = [
   "uWide", "uNarrow", "uPalette", "uBackground", "uVariantColors", "uPaintRow", "uPaintCount", "uPaletteLength",
   "uLayers", "uLiquids", "uWireColors", "uWireBits", "uWireAlpha",
 ] as const;
-const CHUNK_UNIFORMS = [...TILE_UNIFORMS, "uCamera", "uZoom", "uViewport"] as const;
+const CHUNK_UNIFORMS = [...TILE_UNIFORMS, "uCamera", "uZoom", "uViewport", "uFilter", "uStep", "uWorldSize"] as const;
 const BUILD_UNIFORMS = [...TILE_UNIFORMS, "uFactor", "uTarget"] as const;
 const OVERVIEW_UNIFORMS = ["uCamera", "uZoom", "uViewport", "uWorld", "uExtent", "uOverview"] as const;
 
@@ -130,7 +133,7 @@ interface Program<Name extends string> {
   readonly uniforms: Readonly<Record<Name, WebGLUniformLocation>>;
 }
 
-/** One array texture pair holding up to PAGE_LAYERS chunks. */
+/** One array texture pair holding up to PAGE_LAYERS chunks, each with its apron. */
 interface Page {
   /** RGBA16UI: block, wall, variant, reserved. */
   readonly wide: WebGLTexture;
@@ -165,6 +168,8 @@ interface Overview {
   readonly built: Uint8Array;
   /** Number of chunks marked in `built`. */
   builtCount: number;
+  /** Whether any texel was ever built: invalidation keeps the old texels until the rebuild overwrites them. */
+  filled: boolean;
 }
 
 function requireValue<T>(value: T | null, what: string): T {
@@ -211,7 +216,7 @@ function integerTexture(gl: WebGL2RenderingContext, format: number, width: numbe
 function pageTexture(gl: WebGL2RenderingContext, format: number): WebGLTexture {
   const texture = requireValue(gl.createTexture(), "a texture");
   gl.bindTexture(gl.TEXTURE_2D_ARRAY, texture);
-  gl.texStorage3D(gl.TEXTURE_2D_ARRAY, 1, format, CHUNK_SIZE, CHUNK_SIZE, PAGE_LAYERS);
+  gl.texStorage3D(gl.TEXTURE_2D_ARRAY, 1, format, PAGE_SIZE, PAGE_SIZE, PAGE_LAYERS);
   gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
   gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
   return texture;
@@ -253,8 +258,9 @@ const wireColorUniform = new Int32Array(WIRE_COLORS.flatMap(([, color]) => [...c
 const wireBitUniform = new Int32Array(WIRE_COLORS.map(([bit]) => bit));
 
 export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRendererOptions): MapRenderer {
-  // Straight (non-premultiplied) alpha: the shader writes the same RGBA that `renderChunk` produces.
-  const context = canvas.getContext("webgl2", { premultipliedAlpha: false });
+  // Straight (non-premultiplied) alpha: the shader writes the same RGBA that `renderChunk` produces. No multisampling:
+  // it would blend a pixel the edge of a chunk quad crosses (the world's edge at a sub-tile camera) by coverage.
+  const context = canvas.getContext("webgl2", { premultipliedAlpha: false, antialias: false });
   if (context === null) throw new WebGl2UnavailableError();
   const gl: WebGL2RenderingContext = context;
   const maxCachedChunks = Math.max(1, options?.maxCachedChunks ?? DEFAULT_MAX_CACHED_CHUNKS);
@@ -280,9 +286,9 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   const pages: Page[] = [];
   const freeSlots: number[] = [];
   let nextSlot = 0;
-  // Interleaved planes of one chunk, in the page layout (transposed, CHUNK_SIZE texels per chunk column).
-  const wideStaging = new Uint16Array(CHUNK_SIZE * CHUNK_SIZE * 4);
-  const narrowStaging = new Uint8Array(CHUNK_SIZE * CHUNK_SIZE * 4);
+  // Interleaved planes of one chunk and its apron, in the page layout (transposed, PAGE_SIZE texels per column).
+  const wideStaging = new Uint16Array(PAGE_SIZE * PAGE_SIZE * 4);
+  const narrowStaging = new Uint8Array(PAGE_SIZE * PAGE_SIZE * 4);
   let instanceData = new Int32Array(INSTANCE_INTS * 256);
   const paletteMirror = new Uint8Array(PALETTE_WIDTH * PALETTE_HEIGHT * 4);
   let paletteUploaded = 0;
@@ -324,20 +330,14 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     overview = null;
   };
 
-  /** Forgets every overview texel (their chunks draw them again on demand) and clears the texture. */
+  /**
+   * Marks every overview texel stale: their chunks draw them again on demand. The texture is not cleared, so the old
+   * texels stay visible until the rebuild overwrites them and the map never blanks.
+   */
   const invalidateOverview = (): void => {
     if (overview === null) return;
     overview.built.fill(0);
     overview.builtCount = 0;
-    gl.bindFramebuffer(gl.FRAMEBUFFER, resources.framebuffer);
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, overview.texture, 0);
-    gl.viewport(0, 0, overview.width, overview.height);
-    gl.clearColor(0, 0, 0, 0);
-    gl.clear(gl.COLOR_BUFFER_BIT);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    gl.activeTexture(gl.TEXTURE0 + UNIT_OVERVIEW);
-    gl.bindTexture(gl.TEXTURE_2D, overview.texture);
-    gl.generateMipmap(gl.TEXTURE_2D);
   };
 
   const uploadPalette = (palette: readonly ContentRef[]): void => {
@@ -417,22 +417,28 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   };
 
   /**
-   * Interleaves one chunk's planes into its page layer with two uploads. Each block's frame-selected option is
-   * resolved on the CPU (as `renderChunk` does, so the GPU output is exact); new variant colours are uploaded too.
+   * Interleaves one chunk's planes, with its apron of neighbouring tiles, into its page layer with two uploads. Each
+   * block's frame-selected option is resolved on the CPU (as `renderChunk` does, so the GPU output is exact); new
+   * variant colours are uploaded too.
    */
   const uploadChunk = (source: RenderableWorld, chunk: ChunkCoord, slot: number): void => {
     const originX = chunk.x * CHUNK_SIZE;
     const originY = chunk.y * CHUNK_SIZE;
     const columns = Math.min(CHUNK_SIZE, source.width - originX);
     const rows = Math.min(CHUNK_SIZE, source.height - originY);
+    // The apron, clipped to the world: texels past the world's edges keep stale values the shaders never read.
+    const firstColumn = Math.max(-PAGE_APRON, -originX);
+    const endColumn = Math.min(columns + PAGE_APRON, source.width - originX);
+    const firstRow = Math.max(-PAGE_APRON, -originY);
+    const endRow = Math.min(rows + PAGE_APRON, source.height - originY);
     const { block, wall, liquid, liquidAmount, paint, wallPaint, frameX, frameY, flags } = source.planes;
     const framed = mapPalette?.tileOptions !== undefined && (frameX !== undefined || frameY !== undefined);
     const paletteLength = source.palette.length;
     const firstNewVariant = variantCount;
-    for (let column = 0; column < columns; column++) {
+    for (let column = firstColumn; column < endColumn; column++) {
       const from = (originX + column) * source.height + originY;
-      const to = column * CHUNK_SIZE * 4;
-      for (let row = 0; row < rows; row++) {
+      const to = ((column + PAGE_APRON) * PAGE_SIZE + PAGE_APRON) * 4;
+      for (let row = firstRow; row < endRow; row++) {
         const index = from + row;
         const texel = to + row * 4;
         const blockId = block[index] ?? ABSENT;
@@ -449,29 +455,30 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       }
     }
     if (variantCount > firstNewVariant) {
-      const firstRow = Math.floor(firstNewVariant / PALETTE_ROW);
-      const lastRow = Math.floor((variantCount - 1) / PALETTE_ROW);
+      const firstVariantRow = Math.floor(firstNewVariant / PALETTE_ROW);
+      const lastVariantRow = Math.floor((variantCount - 1) / PALETTE_ROW);
       gl.activeTexture(gl.TEXTURE0 + UNIT_VARIANTS);
       gl.bindTexture(gl.TEXTURE_2D, resources.variantColors);
       gl.texSubImage2D(
-        gl.TEXTURE_2D, 0, 0, firstRow, PALETTE_ROW, lastRow - firstRow + 1, gl.RGBA_INTEGER, gl.UNSIGNED_BYTE,
-        variantMirror.subarray(firstRow * PALETTE_ROW * 4),
+        gl.TEXTURE_2D, 0, 0, firstVariantRow, PALETTE_ROW, lastVariantRow - firstVariantRow + 1, gl.RGBA_INTEGER,
+        gl.UNSIGNED_BYTE, variantMirror.subarray(firstVariantRow * PALETTE_ROW * 4),
       );
     }
     const page = pages[Math.floor(slot / PAGE_LAYERS)];
     if (page === undefined) throw new Error(`chunk slot ${String(slot)} has no page`);
     const layer = slot % PAGE_LAYERS;
-    // Texture width is the chunk's rows (y), height its columns (x); rows past the edge keep stale texels the
-    // shaders never read.
+    // Texture width is the chunk's rows (y), height its columns (x), both with the apron; texels past the world's
+    // edges keep stale values the shaders never read.
+    const height = columns + 2 * PAGE_APRON;
     gl.activeTexture(gl.TEXTURE0 + UNIT_WIDE);
     gl.bindTexture(gl.TEXTURE_2D_ARRAY, page.wide);
     gl.texSubImage3D(
-      gl.TEXTURE_2D_ARRAY, 0, 0, 0, layer, CHUNK_SIZE, columns, 1, gl.RGBA_INTEGER, gl.UNSIGNED_SHORT, wideStaging,
+      gl.TEXTURE_2D_ARRAY, 0, 0, 0, layer, PAGE_SIZE, height, 1, gl.RGBA_INTEGER, gl.UNSIGNED_SHORT, wideStaging,
     );
     gl.activeTexture(gl.TEXTURE0 + UNIT_NARROW);
     gl.bindTexture(gl.TEXTURE_2D_ARRAY, page.narrow);
     gl.texSubImage3D(
-      gl.TEXTURE_2D_ARRAY, 0, 0, 0, layer, CHUNK_SIZE, columns, 1, gl.RGBA_INTEGER, gl.UNSIGNED_BYTE, narrowStaging,
+      gl.TEXTURE_2D_ARRAY, 0, 0, 0, layer, PAGE_SIZE, height, 1, gl.RGBA_INTEGER, gl.UNSIGNED_BYTE, narrowStaging,
     );
     textureUploads++;
   };
@@ -524,7 +531,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     const chunksX = Math.ceil(source.width / CHUNK_SIZE);
     const chunksY = Math.ceil(source.height / CHUNK_SIZE);
-    overview = { world: source, texture, factor, width, height, built: new Uint8Array(chunksX * chunksY), builtCount: 0 };
+    overview = { world: source, texture, factor, width, height, built: new Uint8Array(chunksX * chunksY), builtCount: 0, filled: false };
     // Storage starts zeroed but its mip chain is incomplete until generated.
     gl.generateMipmap(gl.TEXTURE_2D);
     return overview;
@@ -610,6 +617,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       if (target.built[key] === 0) target.builtCount++;
       target.built[key] = 1;
     }
+    target.filled = true;
     gl.activeTexture(gl.TEXTURE0 + UNIT_OVERVIEW);
     gl.bindTexture(gl.TEXTURE_2D, target.texture);
     gl.generateMipmap(gl.TEXTURE_2D);
@@ -729,15 +737,19 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT);
     if (target === null) {
-      // Chunks still loading show the overview (built when the area was seen zoomed out) instead of a hole; drawn
-      // chunks overwrite it completely, so a complete frame stays exact.
-      if (loading.pending && candidate !== null && candidate.builtCount > 0) drawCalls += drawOverview(source, candidate);
+      // Chunks still loading show the overview (built when the area was seen zoomed out, possibly with other layers)
+      // instead of a hole; drawn chunks overwrite it completely, so a complete frame stays exact.
+      if (loading.pending && candidate?.filled === true) drawCalls += drawOverview(source, candidate);
       const { chunk: program } = resources;
       gl.useProgram(program.program);
       setTileUniforms(program.uniforms);
       gl.uniform2f(program.uniforms.uCamera, camera.x, camera.y);
       gl.uniform1f(program.uniforms.uZoom, camera.zoom);
       gl.uniform2f(program.uniforms.uViewport, viewport.width, viewport.height);
+      // Below one pixel per tile a pixel averages the tiles under it (filterTiles) instead of point-sampling one.
+      gl.uniform1i(program.uniforms.uFilter, camera.zoom < 1 ? 1 : 0);
+      gl.uniform1f(program.uniforms.uStep, filterTilesPerPixel(camera.zoom));
+      gl.uniform2i(program.uniforms.uWorldSize, source.width, source.height);
       gl.activeTexture(gl.TEXTURE0 + UNIT_PALETTE);
       gl.bindTexture(gl.TEXTURE_2D, resources.palette);
       gl.activeTexture(gl.TEXTURE0 + UNIT_BACKGROUND);

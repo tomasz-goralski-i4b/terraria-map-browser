@@ -115,7 +115,7 @@ and removes the stored value. The active tool, sorting and filters are not persi
 | Section | Today | With editing |
 |---|---|---|
 | **World** | Every decoded metadata field in collapsible groups: Identity, Size & layers, Generation, Time & weather, Progression, Bosses (checklist with a count badge), Invasions & NPCs, Spawn & landmarks (each with *Go to on the map*), Ores & backgrounds. | The same rows become editable fields (world properties editor). |
-| **Layers** | Eye rows for background, walls, blocks and liquids (`Alt+1`…`Alt+4`), plus wires and actuators (`Alt+5`) with one row per wire colour. A layer is a renderer uniform: toggling it uploads and re-parses nothing. | Visibility *and* a lock per layer; a locked layer is never written by a tool. |
+| **Layers** | Eye rows for background, walls, blocks and liquids (`Alt+1`…`Alt+4`), plus wires and actuators (`Alt+5`) with one row per wire colour. A layer is a renderer uniform: toggling it never re-parses the world (see Map rendering for what it uploads). | Visibility *and* a lock per layer; a locked layer is never written by a tool. |
 | **Inspector** | The fields of the tile's `tileAt` view. By default it is "shy" and shows only what the tile has. The **Show empty fields** eye (the same eye button as the Layers rows; persisted) lists every field in fixed rows, with "None" for absent ones. The Inspect tool pins a tile on click or `Enter`; `Esc` unpins it. Without a pin, the Inspector previews the hovered tile. | Edits the selected tile or object: frames, paint, slope, wires, chest items, sign text. |
 | **Content** | Tiles per block, wall and liquid with its map colour, in a sortable, filterable, virtualised table. | The material picker: selecting a row sets the brush content; `K` picks it from the map. |
 | **Entities** | A slot (chests, signs, NPCs once decoded). | The same table pattern; selecting a row centres the map on it. |
@@ -128,6 +128,22 @@ The overlay is drawn over all other layers, at one colour per tile. Wires are dr
 green over blue over red); actuators show only on tiles with no visible wire. The overlay is blended at 75 % over
 opaque tiles, using the same integer expression on the GPU and in the CPU reference (`WIRE_COLORS`, `WIRE_ALPHA` in
 `packages/renderer`). These colours belong to the overlay, not to the map palette.
+
+### Map rendering
+
+- **Zoomed out** (below half a pixel per tile for every vanilla size) the map is the overview: one mipmapped texture
+  in which every texel is the mean of 2 × 2 tiles, all layers composited.
+- **From half a pixel per tile up to one** each pixel is the mean of the tiles under it, weighted by covered area. Just
+  above the overview threshold that is the same mean the overview shows, so zooming across it does not visibly sharpen
+  the map, and panning does not shimmer.
+- **From one pixel per tile** each pixel is exactly one tile.
+
+What a layer toggle costs:
+- At half a pixel per tile and above, or whenever the chunks around the view are cached: no upload at all.
+- Zoomed out on a world larger than the chunk cache (Medium and Large worlds): the overview is rebuilt progressively,
+  visible chunks first, re-uploading evicted chunks within the per-frame budget (a fraction of a second). Until a
+  chunk is rebuilt it keeps its old colours: the map never blanks.
+- Never a re-parse.
 
 ## Theme and tokens
 

@@ -17,20 +17,43 @@ world metadata, fractional): the sky is above `surfaceY`, the rock layer starts 
 none.
 `options.mapPalette` supplies map colours (see below); without it every block and wall uses its placeholder.
 
-`createMapRenderer(canvas, options)` is the WebGL2 backend. At half a pixel per tile and above it draws exactly the
-pixels `renderChunk` produces for the same `mapPalette`, which the browser tests assert for every layer combination.
+`createMapRenderer(canvas, options)` is the WebGL2 backend. At one pixel per tile and above it draws exactly the
+pixels `renderChunk` produces for the same `mapPalette`; from the overview threshold up to one pixel per tile it draws
+exactly the pixels `filterTiles` (below) makes of them. The browser tests assert both for every layer combination.
 
 - **Chunk pages.** Chunks are cached in pages of 64 array-texture layers: an `RGBA16UI` texture (block, wall,
   frame-selected variant, wire and actuator bits of `flags`) and an `RGBA8UI` one (liquid kind, liquid amount, block
-  paint, wall paint). The wire bits travel with the chunk upload, so switching the overlay is a uniform change.
+  paint, wall paint). A layer holds its chunk plus an apron of one tile of each neighbouring chunk (130 × 130 texels),
+  so the box filter below can cross chunk edges. The wire bits travel with the chunk upload, so switching the overlay is a uniform change.
   A chunk upload is two `texSubImage3D` calls, and a frame issues one instanced draw call per page, not per chunk.
 - **Overview.** Below `1 / factor` pixels per tile (factor 2, larger only when the world exceeds
   `MAX_TEXTURE_SIZE`) the map is drawn from an overview: a mipmapped `RGBA8` texture with one texel per
   factor × factor tiles, built on the GPU from the chunk pages as the mean of those tiles (premultiplied, so
   mipmaps average transparency correctly). It is one draw call for the whole world and is filtered, so zoomed-out
-  views do not shimmer while panning. Building it is subject to the same per-frame upload budget; texels not built
-  yet stay clear. Its texels are built over the filter footprint around the viewport, not only the visible chunks.
-  Layer changes and palette appends rebuild it.
+  views do not shimmer while panning. Building it is subject to the same per-frame upload budget; texels never built
+  stay clear. Its texels are built over the filter footprint around the viewport, not only the visible chunks.
+- **Overview rebuild.** Layer changes and palette appends mark every texel stale without clearing it: old texels stay
+  drawn until the rebuild overwrites them, visible chunks first, then the rest of the filter footprint, regenerating
+  the mipmaps after every batch. The cost of a layer toggle:
+  - no upload at half a pixel per tile and above, or whenever the footprint's chunks are resident;
+  - at overview zoom, for worlds larger than the chunk cache (Medium and Large), a progressive rebuild that re-uploads
+    evicted chunks within the per-frame budget (with the default 32 per frame, about 25 to 40 frames);
+  - never a re-parse.
+
+  A lost context loses the texture with everything else, so after a restore the overview is built from scratch.
+- **Box filter below one pixel per tile.** Between the overview threshold and one pixel per tile the chunk pass does
+  not point-sample one tile per pixel (that aliases: speckle and shimmer while panning). It averages the tiles the
+  pixel covers, weighted by covered area, exactly as `filterTiles(tiles, camera, viewport)` does on the CPU:
+  - the footprint is `1 / zoom` tiles per axis, capped at `MAX_FILTER_TILES` (2), with edges rounded to 1/64 tile
+    (`FILTER_SUBTILE`); it covers at most 3 × 3 tiles;
+  - the colour is the premultiplied mean of the in-world tiles under it (the overview build's rule), in unsigned
+    integers rounded half up, so the GPU output equals the reference;
+  - a pixel whose centre is outside the world is not drawn.
+
+  At half a pixel per tile with an aligned camera a pixel is exactly an overview texel, so crossing the threshold
+  changes the filter footprint, not the look. It costs nothing elsewhere: draw calls are unchanged, and at one pixel
+  per tile and above (`uFilter` 0) the pass reads one tile per pixel, bit-exact with `renderChunk`. The canvas is not
+  multisampled, so a pixel the world's edge crosses is not blended by coverage.
 - **Chunk cache.** A chunk is needed in overview mode only until its texels are built, so zoomed-out views keep the
   baseline cache (512 chunks, about 100 MiB) however large the world is. At half a pixel per tile and above the
   cache grows to the visible set, which the viewport bounds. While chunks are still loading there, the overview is

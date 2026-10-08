@@ -1,5 +1,9 @@
 // GLSL for the WebGL2 backend. The colour rules mirror `renderChunk` (../chunk/render.ts) and use integer arithmetic so
 // the chunk pass is bit-exact: no tie-breaking can differ because (l*a + c*(255-a)) / 255 never has a .5 fraction.
+import { FILTER_SUBTILE } from "../chunk/box-filter.js";
+
+/** Tiles of neighbouring chunks stored around each chunk's page layer, so the box filter can cross chunk edges. */
+export const PAGE_APRON = 1;
 
 /** Vertex attribute locations of the per-chunk instance data, bound before linking. */
 export const RECT_ATTRIBUTE = 0;
@@ -22,7 +26,8 @@ flat out int vLayer;
 const tileColorSource = `
 precision highp usampler2D;
 precision highp usampler2DArray;
-// Chunk pages: one layer per chunk, stored transposed (planes are column-major): texel (s, t) = (y in chunk, x in chunk).
+// Chunk pages: one layer per chunk with an apron of PAGE_APRON tiles of its neighbours, stored transposed (planes are
+// column-major): texel (s, t) = (y in chunk + PAGE_APRON, x in chunk + PAGE_APRON).
 // uWide holds block, wall, variant (0 for the palette colour, else 1 + its index in uVariantColors) and the wire and
 // actuator bits of CWM flags (bits 0–4); uNarrow holds liquid kind, liquid amount, block paint, wall paint.
 uniform usampler2DArray uWide;
@@ -63,10 +68,9 @@ bool paletteColor(uint index, int xOffset, out ivec3 color) {
   return true;
 }
 
-// Straight-alpha RGBA (0–255) of a tile inside the instance's chunk; tiles outside it are clamped to its edge.
-ivec4 tileColor(ivec2 tile) {
-  ivec2 local = clamp(tile - vRect.xy, ivec2(0), vRect.zw - 1);
-  ivec3 texel = ivec3(local.y, local.x, vLayer);
+// Straight-alpha RGBA (0–255) of a tile relative to the instance's chunk origin, apron included (-1 to the chunk size).
+ivec4 localColor(ivec2 local) {
+  ivec3 texel = ivec3(local.y + ${String(PAGE_APRON)}, local.x + ${String(PAGE_APRON)}, vLayer);
   uvec4 wide = texelFetch(uWide, texel, 0);
   uvec4 narrow = texelFetch(uNarrow, texel, 0);
   int tileY = vRect.y + local.y;
@@ -107,6 +111,11 @@ ivec4 tileColor(ivec2 tile) {
   }
   return color;
 }
+
+// Straight-alpha RGBA (0–255) of a tile inside the instance's chunk; tiles outside it are clamped to its edge.
+ivec4 tileColor(ivec2 tile) {
+  return localColor(clamp(tile - vRect.xy, ivec2(0), vRect.zw - 1));
+}
 `;
 
 /** Chunk pass: every instance is one chunk drawn on the canvas at one tile per `1 / uZoom` pixels. */
@@ -125,15 +134,62 @@ void main() {
 }
 `;
 
+/**
+ * Chunk pass fragment. At one pixel per tile and above (uFilter 0) a pixel is the one tile under it, bit-exact with
+ * `renderChunk`. Below (uFilter 1) it is the box filter of `filterTiles` (../chunk/box-filter.ts): the premultiplied
+ * mean of the in-world tiles its footprint covers, weighted by covered area in 1 / FILTER_SUBTILE tile units, in
+ * unsigned integers so that it equals the CPU reference. A footprint of at most MAX_FILTER_TILES tiles around a
+ * centre inside the chunk covers at most three tiles per axis and stays within the page apron.
+ */
 export const chunkFragmentSource: string = header + `
 uniform vec2 uCamera;
 uniform float uZoom;
 uniform vec2 uViewport;
+uniform int uFilter;
+// Tiles per pixel of the box filter (filterTilesPerPixel) and the world size in tiles.
+uniform float uStep;
+uniform ivec2 uWorldSize;
 out vec4 outColor;
 ${tileColorSource}
+const int SUBTILE = ${String(FILTER_SUBTILE)};
+
+ivec2 subtileEdge(vec2 pixel) {
+  return ivec2(floor((uCamera + pixel * uStep) * float(SUBTILE) + 0.5));
+}
+
+ivec4 filtered(ivec2 pixel) {
+  ivec2 first = subtileEdge(vec2(pixel));
+  ivec2 last = subtileEdge(vec2(pixel + 1));
+  ivec2 firstTile = ivec2(floor(vec2(first) / float(SUBTILE)));
+  // In-world tiles the page holds: the chunk and its apron.
+  ivec2 low = max(ivec2(0), vRect.xy - ${String(PAGE_APRON)});
+  ivec2 high = min(uWorldSize, vRect.xy + vRect.zw + ${String(PAGE_APRON)});
+  uint area = 0u;
+  uint alpha = 0u;
+  uvec3 sum = uvec3(0u);
+  for (int dy = 0; dy < 3; dy++) {
+    int y = firstTile.y + dy;
+    if (y * SUBTILE >= last.y) break;
+    if (y < low.y || y >= high.y) continue;
+    uint height = uint(min(last.y, (y + 1) * SUBTILE) - max(first.y, y * SUBTILE));
+    for (int dx = 0; dx < 3; dx++) {
+      int x = firstTile.x + dx;
+      if (x * SUBTILE >= last.x) break;
+      if (x < low.x || x >= high.x) continue;
+      uint weight = height * uint(min(last.x, (x + 1) * SUBTILE) - max(first.x, x * SUBTILE));
+      ivec4 color = localColor(ivec2(x, y) - vRect.xy);
+      area += weight;
+      alpha += uint(color.a) * weight;
+      sum += uvec3(color.rgb * color.a) * weight;
+    }
+  }
+  if (alpha == 0u) return ivec4(0);
+  return ivec4(ivec3((2u * sum + alpha) / (2u * alpha)), int((2u * alpha + area) / (2u * area)));
+}
+
 void main() {
   vec2 screen = vec2(gl_FragCoord.x, uViewport.y - gl_FragCoord.y);
-  outColor = vec4(tileColor(ivec2(floor(uCamera + screen / uZoom)))) / 255.0;
+  outColor = vec4(uFilter != 0 ? filtered(ivec2(floor(screen))) : tileColor(ivec2(floor(uCamera + screen / uZoom)))) / 255.0;
 }
 `;
 
