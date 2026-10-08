@@ -37,6 +37,43 @@ A paint byte of `0` and an absent paint byte are the same in CWM (the game uses 
 distinct by value: a block and a wall with the same `ContentRef` (e.g. vanilla id 1) share one entry — the plane
 that refers to it says whether it is a block or a wall. Unknown ids appear as `{ kind: "unknown", runtimeId }`.
 
+## Binary framing (`export-cwm`)
+
+The v1 file consists of a 12-byte prefix, a compact UTF-8 JSON header, and the ten complete planes.
+There is no compression, padding, BOM, trailing newline or trailing data:
+
+| Offset | Encoding | Value |
+|---|---|---|
+| 0 | four bytes | magic `43 57 4d 00` (`CWM` followed by NUL) |
+| 4 | Uint32 little-endian | CWM schema version `1` |
+| 8 | Uint32 little-endian | JSON header length in UTF-8 **bytes** |
+| 12 | UTF-8 JSON | header of exactly the declared byte length |
+| 12 + header length | plane bytes | planes in the Layout order above |
+
+The header has these properties in this exact order: `schemaVersion`, `formatVersion`, `metadata`,
+`dimensions`, `palette`. `schemaVersion` is `1` and agrees with the prefix; `formatVersion` is the source
+world format. Metadata keys are `name`, `seed`, `guid`, `worldId`, `gameMode`, `evil`, with the same values
+and null conventions as `export-json`. Dimension keys are `width`, `height`. Palette entries use the
+first-appearance order above and property order `kind`, then `id` for vanilla or `runtimeId` for unknown;
+mod entries use `kind`, `mod`, `internalName`, `runtimeId`, `modVersion` (absent optional fields are omitted).
+JSON is compact (no insignificant whitespace), invariant-culture, with non-ASCII text encoded directly as
+UTF-8 and standard JSON escaping for controls, quotes and backslashes. No paths, timestamps, section
+offsets, digests or other environment fields are included.
+
+Each plane has `width * height` elements: the first four and `flags` each have twice that many bytes,
+and the five Uint8 planes each have that many bytes. Total plane payload is `15 * width * height` bytes.
+Element types, absent sentinels, flags and `x * height + y` indexing are exactly the Layout contract.
+Consumers must reject unknown magic, incompatible schema versions (including disagreement between
+prefix and header), truncated headers/planes and inconsistent lengths; they must not interpret another
+schema as v1. The reference writer accepts only schema version 1 and rejects any other requested version
+before writing bytes. This export does not introduce a second world model or a binary reader API.
+
+`Terraria.WorldInspector export-cwm <input.wld> <output.cwm>` reads the source without modification.
+Success returns 0. Argument errors return 2 (including an output alias of the input); format and I/O
+failures return 1, with diagnostics on stderr. A destination is published only after serialization
+succeeds; a failed export leaves no completed partial output and preserves any pre-existing destination.
+Generated files belong only in temporary or artifact directories and must never be committed.
+
 ## TypeScript model API
 
 `packages/world-model` exports `createWorld(width, height, { maxBytes? })`. Dimensions must be positive
