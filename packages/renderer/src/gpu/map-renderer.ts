@@ -95,7 +95,7 @@ const DEFAULT_MAX_CHUNK_UPLOADS_PER_FRAME = 32;
 const UNIFORM_NAMES = [
   "uBlock", "uWall", "uLiquid", "uAmount", "uPaint", "uWallPaint", "uPalette", "uBackground", "uCamera", "uZoom",
   "uViewport", "uOrigin", "uSize", "uPaletteLength", "uLayers", "uLiquids", "uPaintRow", "uPaintCount", "uVariant",
-  "uVariantColors",
+  "uVariantColors", "uHasVariants",
 ] as const;
 type UniformName = (typeof UNIFORM_NAMES)[number];
 
@@ -106,8 +106,11 @@ interface ChunkTextures {
   readonly amount: WebGLTexture;
   readonly paint: WebGLTexture;
   readonly wallPaint: WebGLTexture;
-  /** Per tile: 0 for the palette colour, else 1 + the index of its frame-selected colour in the variant table. */
-  readonly variant: WebGLTexture;
+  /**
+   * Per tile: 0 for the palette colour, else 1 + the index of its frame-selected colour in the variant table.
+   * Null when every block of the chunk uses its palette colour, so such chunks keep their six planes.
+   */
+  readonly variant: WebGLTexture | null;
 }
 
 /** Everything owned by one GL context; rebuilt after a context loss. */
@@ -212,7 +215,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     gl.deleteTexture(textures.amount);
     gl.deleteTexture(textures.paint);
     gl.deleteTexture(textures.wallPaint);
-    gl.deleteTexture(textures.variant);
+    if (textures.variant !== null) gl.deleteTexture(textures.variant);
   };
 
   const resetVariants = (): void => {
@@ -288,37 +291,42 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
 
   /**
    * Resolves each block's frame-selected option on the CPU (as `renderChunk` does, so the GPU output is exact) into
-   * a plane in the column-major layout of the chunk, and uploads the variant colours it newly needs.
+   * a plane in the column-major layout of the chunk, and uploads the variant colours it newly needs. Returns null
+   * (no texture) when no block of the chunk has a frame-selected option.
    */
   const variantPlane = (
     source: RenderableWorld, originX: number, originY: number, columns: number, rows: number,
-  ): WebGLTexture => {
-    const ids = new Uint16Array(columns * rows);
+  ): WebGLTexture | null => {
     const { frameX, frameY, block } = source.planes;
-    if (mapPalette?.tileOptions !== undefined && (frameX !== undefined || frameY !== undefined)) {
-      const firstNew = variantCount;
-      for (let column = 0; column < columns; column++) {
-        for (let row = 0; row < rows; row++) {
-          const index = (originX + column) * source.height + originY + row;
-          const paletteIndex = block[index] ?? 0xffff;
-          if (paletteIndex >= source.palette.length) continue;
-          ids[column * rows + row] = variantOf(paletteIndex, frameX?.[index] ?? 0, frameY?.[index] ?? 0, source.palette);
-        }
+    if (mapPalette?.tileOptions === undefined || (frameX === undefined && frameY === undefined)) return null;
+    let ids: Uint16Array | null = null;
+    const firstNew = variantCount;
+    for (let column = 0; column < columns; column++) {
+      for (let row = 0; row < rows; row++) {
+        const index = (originX + column) * source.height + originY + row;
+        const paletteIndex = block[index] ?? 0xffff;
+        if (paletteIndex >= source.palette.length) continue;
+        const id = variantOf(paletteIndex, frameX?.[index] ?? 0, frameY?.[index] ?? 0, source.palette);
+        if (id === 0) continue;
+        ids ??= new Uint16Array(columns * rows);
+        ids[column * rows + row] = id;
       }
-      if (variantCount > firstNew) {
-        const firstRow = Math.floor(firstNew / PALETTE_ROW);
-        const lastRow = Math.floor((variantCount - 1) / PALETTE_ROW);
-        gl.activeTexture(gl.TEXTURE9);
-        gl.bindTexture(gl.TEXTURE_2D, resources.variantColors);
-        gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
-        gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 0);
-        gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, 0);
-        gl.pixelStorei(gl.UNPACK_SKIP_ROWS, 0);
-        gl.texSubImage2D(
-          gl.TEXTURE_2D, 0, 0, firstRow, PALETTE_ROW, lastRow - firstRow + 1, gl.RGBA_INTEGER, gl.UNSIGNED_BYTE,
-          variantMirror.subarray(firstRow * PALETTE_ROW * 4),
-        );
-      }
+    }
+    if (ids === null) return null;
+    // Both uploads below read packed arrays, not the world planes the chunk upload set the unpack state for.
+    gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 0);
+    gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, 0);
+    gl.pixelStorei(gl.UNPACK_SKIP_ROWS, 0);
+    if (variantCount > firstNew) {
+      const firstRow = Math.floor(firstNew / PALETTE_ROW);
+      const lastRow = Math.floor((variantCount - 1) / PALETTE_ROW);
+      gl.activeTexture(gl.TEXTURE9);
+      gl.bindTexture(gl.TEXTURE_2D, resources.variantColors);
+      gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+      gl.texSubImage2D(
+        gl.TEXTURE_2D, 0, 0, firstRow, PALETTE_ROW, lastRow - firstRow + 1, gl.RGBA_INTEGER, gl.UNSIGNED_BYTE,
+        variantMirror.subarray(firstRow * PALETTE_ROW * 4),
+      );
     }
     gl.activeTexture(gl.TEXTURE0);
     const texture = integerTexture(gl, gl.R16UI, rows, columns);
@@ -473,6 +481,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       });
       gl.activeTexture(gl.TEXTURE8);
       gl.bindTexture(gl.TEXTURE_2D, textures.variant);
+      gl.uniform1i(uniforms.uHasVariants, textures.variant === null ? 0 : 1);
       const originX = chunk.x * CHUNK_SIZE;
       const originY = chunk.y * CHUNK_SIZE;
       gl.uniform2i(uniforms.uOrigin, originX, originY);

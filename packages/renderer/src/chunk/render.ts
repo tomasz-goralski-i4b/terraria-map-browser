@@ -98,6 +98,9 @@ export function renderChunk(
   const { layers, mapPalette } = options;
   const depth = { surfaceY: options.surfaceY, height: world.height, ...(options.rockY === undefined ? {} : { rockY: options.rockY }) };
   const { planes } = world;
+  // Typed as optional: the WebGL2 backend's worlds may omit the frame planes (frame 0), and its CPU reference reuses this.
+  const frameX = planes.frameX as Int16Array | undefined;
+  const frameY = planes.frameY as Int16Array | undefined;
   // Palette colours are cached outside the pixel loop; no semantic tile views are created.
   const colors = paletteColors(world.palette, mapPalette);
   const blockColors = layers.blocks ? colors.block : [];
@@ -118,7 +121,7 @@ export function renderChunk(
       let block = blockColors[blockId];
       const framed = block === undefined || !layers.blocks ? undefined : colors.framed[blockId];
       if (framed !== undefined) {
-        block = optionColor(framed.colors, mapOption(framed.rule, planes.frameX[index] ?? 0, planes.frameY[index] ?? 0)) ?? block;
+        block = optionColor(framed.colors, mapOption(framed.rule, frameX?.[index] ?? 0, frameY?.[index] ?? 0)) ?? block;
       }
       const wall = block === undefined ? wallColors[planes.wall[index] ?? absentContent] : undefined;
       let color = block ?? wall;

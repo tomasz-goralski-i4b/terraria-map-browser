@@ -36,6 +36,7 @@ uniform usampler2D uBackground;
 // uVariantColors (256 per row), resolved on the CPU by the same mapOption() as renderChunk.
 uniform usampler2D uVariant;
 uniform usampler2D uVariantColors;
+uniform int uHasVariants; // 0 when the chunk has no variant plane (every block uses its palette colour)
 uniform int uPaintRow;
 uniform int uPaintCount; // 0 without a map palette: paint is ignored
 uniform vec2 uCamera;
@@ -67,6 +68,7 @@ bool paletteColor(uint index, int xOffset, out ivec3 color) {
 
 bool blockColor(ivec2 texel, out ivec3 color) {
   if (!paletteColor(texelFetch(uBlock, texel, 0).r, 0, color)) return false;
+  if (uHasVariants == 0) return true;
   int variant = int(texelFetch(uVariant, texel, 0).r);
   if (variant != 0) color = ivec3(texelFetch(uVariantColors, ivec2((variant - 1) % 256, (variant - 1) / 256), 0).rgb);
   return true;
