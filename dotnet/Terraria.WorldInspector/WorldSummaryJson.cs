@@ -50,7 +50,7 @@ public static class WorldSummaryJson
             writer.WriteStartObject();
             writer.WriteNumber("schemaVersion", 1);
             writer.WriteNumber("formatVersion", world.Header.Version);
-            WriteMetadata(writer, world.Metadata);
+            CanonicalWorldJson.WriteMetadata(writer, world.Metadata);
 
             writer.WriteStartObject("dimensions");
             writer.WriteNumber("width", model.Width);
@@ -117,60 +117,8 @@ public static class WorldSummaryJson
         }
     }
 
-    private static void WriteMetadata(Utf8JsonWriter writer, WorldMetadata metadata)
-    {
-        writer.WriteStartObject("metadata");
-        writer.WriteString("name", metadata.Name);
-        writer.WriteString("seed", metadata.Seed);
-        writer.WriteString("guid", metadata.GuidHex);
-        writer.WriteNumber("worldId", metadata.WorldId);
-        if (metadata.GameMode is { } mode)
-        {
-            writer.WriteNumber("gameMode", (int)mode);
-        }
-        else
-        {
-            writer.WriteNull("gameMode");
-        }
-
-        writer.WriteString("evil", metadata.Evil == WorldEvil.Crimson ? "crimson" : "corruption");
-        writer.WriteEndObject();
-    }
-
-    internal static void WriteContent(Utf8JsonWriter writer, ContentRef content)
-    {
-        writer.WriteStartObject();
-        switch (content)
-        {
-            case VanillaContentRef vanilla:
-                writer.WriteString("kind", "vanilla");
-                writer.WriteNumber("id", vanilla.Id);
-                break;
-            case ModContentRef mod:
-                writer.WriteString("kind", "mod");
-                writer.WriteString("mod", mod.Mod);
-                writer.WriteString("internalName", mod.InternalName);
-                if (mod.RuntimeId is { } runtimeId)
-                {
-                    writer.WriteNumber("runtimeId", runtimeId);
-                }
-
-                if (mod.ModVersion is { } modVersion)
-                {
-                    writer.WriteString("modVersion", modVersion);
-                }
-
-                break;
-            case UnknownContentRef unknown:
-                writer.WriteString("kind", "unknown");
-                writer.WriteNumber("runtimeId", unknown.RuntimeId);
-                break;
-            default:
-                throw new NotSupportedException($"Unsupported content reference {content.GetType().Name}.");
-        }
-
-        writer.WriteEndObject();
-    }
+    internal static void WriteContent(Utf8JsonWriter writer, ContentRef content) =>
+        CanonicalWorldJson.WriteContent(writer, content);
 
     private static void WriteChunks(Utf8JsonWriter writer, CanonicalWorldModel model)
     {

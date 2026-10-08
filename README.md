@@ -65,7 +65,7 @@ Export deterministic CWM v1 bytes (metadata, palette and all ten planes) to an a
 dotnet run --project dotnet/Terraria.WorldInspector -- export-cwm "Forest Observatory.wld" "artifacts/Forest Observatory.cwm"
 ```
 
-Create the output directory first. The binary framing is specified in
+Create the output directory first and choose a new output file. The binary framing is specified in
 [docs/cwm.md](docs/cwm.md#binary-framing-export-cwm). The input is read without modification;
 argument errors return `2`, format or I/O errors return `1`, and failures leave no completed partial
 output. Generated `.cwm` files belong in temporary or artifact directories and must never be committed.

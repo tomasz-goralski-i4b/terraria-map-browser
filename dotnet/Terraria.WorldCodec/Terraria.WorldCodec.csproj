@@ -6,6 +6,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Terraria.WorldCodec.Tests" />
+    <InternalsVisibleTo Include="Terraria.WorldInspector" />
   </ItemGroup>
 
 </Project>
