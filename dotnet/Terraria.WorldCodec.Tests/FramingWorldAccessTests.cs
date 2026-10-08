@@ -15,7 +15,8 @@ public sealed class FramingWorldAccessTests
         var generated = WorldReader.ReadForSave(output);
         using var original = File.OpenRead(input);
         var source = WorldReader.ReadForSave(original);
-        Assert.Equal("TMS Framing Tests #158 v3", generated.World.Metadata.Name);
+        Assert.Equal("TMS Framing Tests #158 v3 Frozen", generated.World.Metadata.Name);
+        Assert.True(manifest.TimeFrozen);
         Assert.NotEqual(source.World.Metadata.WorldId, generated.World.Metadata.WorldId);
         Assert.NotEqual(source.World.Metadata.GuidHex, generated.World.Metadata.GuidHex);
         // Read documented format-326 metadata fields independently of the generator.

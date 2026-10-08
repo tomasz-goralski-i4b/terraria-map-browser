@@ -21,11 +21,13 @@ public sealed record FramingCatalogue(IReadOnlyList<FramingCase> Cases, IReadOnl
             ?? throw new InvalidDataException("The framing catalogue is empty.");
         var cases = data.Select(entry => new FramingCase(entry.Section, entry.Id, entry.Title, entry.Pattern,
             entry.Legend.ToDictionary(pair => pair.Key, pair => pair.Value.ToTile()), entry.Expected)).ToList();
+        cases.AddRange(AdditionalFramingCases.Create());
         using var paletteStream = Assembly.GetExecutingAssembly().GetManifestResourceStream("FramingMapPalette")!;
         using var reader = new StreamReader(paletteStream);
         var map = MapOptionCatalogue.Read(reader.ReadToEnd());
         cases.AddRange(map.Cases);
-        return new FramingCatalogue(cases, map.UnreachableOptions);
+        return new FramingCatalogue(cases.GroupBy(entry => entry.Section, StringComparer.Ordinal)
+            .SelectMany(section => section).ToArray(), map.UnreachableOptions);
     }
 
     private sealed record CatalogueEntry(string Section, string Id, string Title, string[] Pattern,
@@ -57,7 +59,9 @@ public sealed record FramingManifest(string GameBuild, string BaseWorldHash, str
     ClearedStrip ClearedStrip, IReadOnlyList<SectionPlacement> Sections,
     IReadOnlyList<CasePlacement> Cases, IReadOnlyList<UnreachableOption> UnreachableOptions)
 {
-    public string WorldName { get; init; } = "TMS Framing Tests #158";
+    public string WorldName { get; init; } = "TMS Framing Tests #158 v3 Frozen";
+
+    public bool TimeFrozen { get; init; } = true;
 
     public ObservationSpawn? Spawn { get; init; }
 }

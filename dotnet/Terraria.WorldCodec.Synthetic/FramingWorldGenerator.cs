@@ -26,6 +26,7 @@ public static class FramingWorldGenerator
         RequireNoEntities(envelope.World, manifest.ClearedStrip);
         var tiles = Stamp(envelope.World.Tiles, catalogue, manifest);
         var candidate = ObservationWorldMetadata.Apply(envelope, manifest);
+        candidate = ObservationJourneyPowers.FreezeTime(candidate);
         candidate = candidate with { World = candidate.World with { Tiles = tiles } };
         using var written = new MemoryStream();
         WorldWriter.Write(candidate, written);
@@ -60,10 +61,12 @@ public static class FramingWorldGenerator
         var terraceHeight = 0;
         foreach (var section in catalogue.Cases.GroupBy(entry => entry.Section, StringComparer.Ordinal))
         {
-            // The default catalogue fits in one row so every case is visible from the
-            // walking floor. Extended catalogues still wrap without special-case layout.
             var totalWidth = section.Sum(entry => entry.Pattern[0].Length) + ((section.Count() - 1) * AirGap);
-            var contentWidth = Math.Max(section.Max(entry => entry.Pattern[0].Length), Math.Min(180, totalWidth));
+            // A roughly square panel keeps related observations together on screen.
+            // Give wide patterns enough room; wrap all others with the same air gap.
+            var area = section.Sum(entry => (entry.Pattern[0].Length + AirGap) * (entry.Pattern.Length + AirGap));
+            var contentWidth = Math.Max(section.Max(entry => entry.Pattern[0].Length),
+                Math.Min(totalWidth, (int)Math.Ceiling(Math.Sqrt(area * 2))));
             var rowX = 0;
             var rowY = AirGap;
             var rowHeight = 0;

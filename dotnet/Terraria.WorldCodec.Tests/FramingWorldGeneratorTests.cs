@@ -65,9 +65,9 @@ public sealed partial class FramingWorldGeneratorTests
 
         Assert.Contains("G9-stone", ids);
         Assert.Equal(4, catalogue.Cases.Count(entry => entry.Section == "Diagonal hole"));
-        Assert.Equal(4, catalogue.Cases.Count(entry => entry.Section == "Moss"));
+        Assert.Equal(7, catalogue.Cases.Count(entry => entry.Section == "Moss"));
         Assert.Equal(3, catalogue.Cases.Count(entry => entry.Section == "Ores"));
-        Assert.Equal(4, catalogue.Cases.Count(entry => entry.Section == "Rim fallback"));
+        Assert.Equal(32, catalogue.Cases.Count(entry => entry.Section == "Rim fallback"));
         Assert.Equal(2, catalogue.Cases.Count(entry => entry.Section == "Jungle grass"));
         Assert.All(catalogue.Cases.Where(entry => entry.Section == "Large frame"), entry =>
         {
