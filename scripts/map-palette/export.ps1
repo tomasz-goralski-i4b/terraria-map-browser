@@ -1,7 +1,7 @@
 # Regenerates the shipped Terraria map palette (ADR 0002) from a local game installation:
 #   ./scripts/map-palette/export.ps1 -TerrariaAssembly 'C:/Program Files (x86)/Steam/steamapps/common/Terraria/TerrariaServer.exe'
-# Reads the game's map colour tables at runtime through reflection (no decompiled code, nothing copied from other
-# tools) and writes them as a TypeScript module. Run it after a game update and commit the regenerated module.
+# Reads the game's map colours and English names at runtime through reflection (no decompiled code, nothing copied
+# from other tools) and writes them as a TypeScript module. Re-run after a game update and commit the module.
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)][string]$TerrariaAssembly,
@@ -73,6 +73,93 @@ function Read-Field([Type]$Type, [string]$Name) {
     $value = if ($field.IsLiteral) { $field.GetRawConstantValue() } else { $field.GetValue($null) }
     if ($null -eq $value) { throw "Map palette field $Name was not initialized." }
     return ,$value
+}
+
+function Require-Method([Type]$Type, [string]$Name, [Type[]]$Parameters, [Reflection.BindingFlags]$Bindings = $flags) {
+    $method = $Type.GetMethod($Name, $Bindings, $null, $Parameters, $null)
+    if ($null -eq $method) { throw "Unsupported map palette contract: missing $($Type.Name).$Name." }
+    return $method
+}
+
+# Use the game's own loader for its embedded English localization, including copy commands and name caches.
+function Initialize-English([Reflection.Assembly]$Game) {
+    $manager = $Game.GetType('Terraria.Localization.LanguageManager', $true)
+    $instance = Read-Field $manager 'Instance'
+    $bindings = [Reflection.BindingFlags]'Instance,Public,NonPublic'
+    $set = Require-Method $manager 'SetLanguage' ([Type[]]@([string])) $bindings
+    $null = $set.Invoke($instance, @('en-US'))
+    $active = $manager.GetProperty('ActiveCulture', $bindings)
+    if ($null -eq $active) { throw 'Unsupported map palette contract: missing ActiveCulture.' }
+    $culture = $active.GetValue($instance, $null)
+    $reload = Require-Method $manager 'ReloadLanguage' ([Type[]]@($culture.GetType())) $bindings
+    $null = $reload.Invoke($instance, @($culture))
+    $lang = $Game.GetType('Terraria.Lang', $true)
+    $initialize = Require-Method $lang 'InitializeLegacyLocalization' ([Type[]]@())
+    $null = $initialize.Invoke($null, @())
+    return @{ lang = $lang; instance = $instance; getText = (Require-Method $manager 'GetTextValue' ([Type[]]@([string])) $bindings) }
+}
+
+# Reverse the game's placement metadata, retaining a name only if all items placing that ID agree.
+# A synthetic local player is needed for cosmetic item defaults; no player files, graphics or worlds are loaded.
+function Read-ItemContentNames([Reflection.Assembly]$Game) {
+    $main = $Game.GetType('Terraria.Main', $true)
+    $playerField = $main.GetField('player', $flags)
+    $local = $main.GetField('myPlayer', $flags)
+    if ($null -eq $playerField -or $null -eq $local) { throw 'Unsupported map palette contract: player state.' }
+    # Read the actual array directly: PowerShell pipeline enumeration would produce a copy.
+    $players = $playerField.GetValue($null)
+    $players.SetValue([Activator]::CreateInstance($Game.GetType('Terraria.Player', $true)), 0)
+    $local.SetValue($null, 0)
+    $itemType = $Game.GetType('Terraria.Item', $true)
+    $variant = $Game.GetType('Terraria.GameContent.Items.ItemVariant', $true)
+    $defaults = Require-Method $itemType 'SetDefaults' ([Type[]]@([int], $variant)) ([Reflection.BindingFlags]'Instance,Public,NonPublic')
+    $count = [int](Read-Field ($Game.GetType('Terraria.ID.ItemID', $true)) 'Count')
+    if ($count -lt 1 -or $count -gt 65535) { throw 'Unsupported map palette contract: item count.' }
+    $candidates = @{ tiles = @{}; walls = @{}; paints = @{} }
+    for ($id = 1; $id -lt $count; $id++) {
+        $item = [Activator]::CreateInstance($itemType)
+        $null = $defaults.Invoke($item, @([int]$id, $null))
+        foreach ($layer in @('tiles', 'walls', 'paints')) {
+            $content = switch ($layer) { 'tiles' { [int]$item.createTile } 'walls' { [int]$item.createWall } 'paints' { [int]$item.paint } }
+            if ($content -lt 0 -or ($layer -eq 'paints' -and $content -eq 0)) { continue }
+            $name = [string]$item.Name
+            if ([string]::IsNullOrWhiteSpace($name)) { throw "Unsupported map palette contract: unnamed placement item $id." }
+            if (-not $candidates[$layer].ContainsKey($content)) { $candidates[$layer][$content] = @{} }
+            $candidates[$layer][$content][$name] = $true
+        }
+    }
+    $names = @{ tiles = @{}; walls = @{}; paints = @{} }
+    foreach ($layer in @('tiles', 'walls', 'paints')) {
+        foreach ($id in $candidates[$layer].Keys) {
+            if ($candidates[$layer][$id].Count -eq 1) { $names[$layer][$id] = [string]@($candidates[$layer][$id].Keys)[0] }
+        }
+    }
+    return $names
+}
+
+function Read-Names([Array]$Lookup, [Array]$Counts, [Reflection.MethodInfo]$GetName, [hashtable]$PlacementNames) {
+    $entries = New-Object 'Collections.Generic.List[object]'
+    for ($id = 0; $id -lt $Lookup.Length; $id++) {
+        $options = New-Object 'Collections.Generic.List[string]'
+        for ($option = 0; $option -lt [int]$Counts[$id]; $option++) {
+            $name = [string]$GetName.Invoke($null, @([int]($Lookup[$id] + $option)))
+            if (-not $name -and $PlacementNames.ContainsKey($id)) { $name = $PlacementNames[$id] }
+            $options.Add($name)
+        }
+        $entries.Add($options.ToArray())
+    }
+    return ,$entries.ToArray()
+}
+
+function Format-NameTable([string]$Name, [Array]$Entries) {
+    $lines = New-Object 'Collections.Generic.List[string]'
+    $lines.Add("  ${Name}: [")
+    for ($id = 0; $id -lt $Entries.Length; $id++) {
+        $options = @($Entries[$id] | ForEach-Object { ConvertTo-Json -InputObject ([string]$_) -Compress }) -join ', '
+        $lines.Add("    [$options], // $id")
+    }
+    $lines.Add('  ],')
+    return ,$lines
 }
 
 # A game colour as 0xRRGGBB.
@@ -177,9 +264,23 @@ try {
     if ($null -eq $initialize) { throw 'Unsupported map palette contract: missing Initialize().' }
     $null = $initialize.Invoke($null, @())
 
+    $english = Initialize-English $game
+    $atlas = Require-Method $english.lang 'BuildMapAtlas' ([Type[]]@())
+    $null = $atlas.Invoke($null, @())
+    $getName = Require-Method $english.lang 'GetMapObjectName' ([Type[]]@([int]))
+
     $colours = Read-Field $map 'colorLookup'
     $tiles = Read-Options (Read-Field $map 'tileLookup') (Read-Field $map 'tileOptionCounts') $colours
     $walls = Read-Options (Read-Field $map 'wallLookup') (Read-Field $map 'wallOptionCounts') $colours
+    $placementNames = Read-ItemContentNames $game
+    $tileNames = Read-Names (Read-Field $map 'tileLookup') (Read-Field $map 'tileOptionCounts') $getName $placementNames.tiles
+    $wallNames = Read-Names (Read-Field $map 'wallLookup') (Read-Field $map 'wallOptionCounts') $getName $placementNames.walls
+    # Runtime localization keys observed in the installed game; these are references, not a copied name table.
+    $liquidNames = @('LegacyInterface.53', 'LegacyInterface.56', 'LegacyInterface.58', 'SlimeNames_Rainbow.Shimmer') | ForEach-Object {
+        $name = [string]$english.getText.Invoke($english.instance, @([string]$_))
+        if ([string]::IsNullOrWhiteSpace($name) -or $name -eq $_) { throw "Unsupported map palette contract: unresolved localization $_." }
+        $name
+    }
     # Water, lava, honey and shimmer follow each other in the colour table.
     $liquids = Read-Range $map $colours 'liquidPosition' 4
     # The sky is a gradient from the top of the world down to the surface; the dirt and rock layers and the
@@ -213,7 +314,7 @@ try {
     $lines = New-Object 'Collections.Generic.List[string]'
     $lines.Add("// Generated by scripts/map-palette/export.ps1 from Terraria $version. Do not edit; re-run the exporter (ADR 0002).")
     $lines.Add('// Map colours as 0xRRGGBB per vanilla content ID, one per map option; an empty list means no map colour.')
-    $lines.Add('import type { MapPalette } from "./map-palette.js";')
+    $lines.Add('import type { MapContentNames, MapPalette } from "./map-palette.js";')
     $lines.Add('')
     $lines.Add('export const terrariaMapPalette: MapPalette = {')
     $lines.Add("  gameVersion: `"$version`",")
@@ -238,6 +339,20 @@ try {
     $lines.Add('  paints: [')
     for ($id = 0; $id -lt $paints.Length; $id++) { $lines.Add("    $(Format-Colour $paints[$id]), // $id") }
     $lines.Add('  ],')
+    $lines.Add('};')
+    $lines.Add('')
+    $lines.Add('// English map legend names, with unambiguous placement-item names for unnamed content (ADR 0002).')
+    $lines.Add('export const terrariaMapNames: MapContentNames = {')
+    $lines.Add("  gameVersion: `"$version`",")
+    $lines.AddRange([string[]](Format-NameTable 'tiles' $tileNames))
+    $lines.AddRange([string[]](Format-NameTable 'walls' $wallNames))
+    $quotedLiquids = @($liquidNames | ForEach-Object { ConvertTo-Json -InputObject ([string]$_) -Compress }) -join ', '
+    $lines.Add("  liquids: [$quotedLiquids],")
+    $quotedPaints = @(0..($paintCount - 1) | ForEach-Object {
+        $name = if ($placementNames.paints.ContainsKey($_)) { $placementNames.paints[$_] } else { '' }
+        ConvertTo-Json -InputObject ([string]$name) -Compress
+    }) -join ', '
+    $lines.Add("  paints: [$quotedPaints],")
     $lines.Add('};')
     # Everything was read and validated before the output is touched.
     $null = [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($output))
