@@ -158,6 +158,20 @@ describe("WorldDetails", () => {
     expect(generation.lastPlayed).toBeUndefined();
   });
 
+  it.each([2n, 3n])("floors wrapped negative UTC ticks for local kind %s to the preceding millisecond", (kind) => {
+    // Local midnight near year 1 can store a UTC instant before the DateTime epoch.
+    const utcTicks = -71999987654n; // 2 hours before the epoch, plus 1.2346 ms
+    const binary = ((1n << 62n) + utcTicks) | (kind << 62n);
+    expect(read({ creationTime: binary, lastPlayed: binary }).generation).toMatchObject({
+      creationTime: "0000-12-31T22:00:00.001Z", lastPlayed: "0000-12-31T22:00:00.001Z",
+    });
+  });
+
+  it("treats the ambiguous local kind as UTC-backed for ordinary dates too", () => {
+    const binary = 621355968001234567n | (3n << 62n);
+    expect(read({ creationTime: binary }).generation.creationTime).toBe("1970-01-01T00:00:00.123Z");
+  });
+
   it("decodes weather floats, variable lists and team coordinates without changing the input", () => {
     const file = wrapMetadata(buildMetadata().bytes);
     const before = file.slice();

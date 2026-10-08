@@ -11,6 +11,29 @@ const oracle = JSON.parse(readFileSync(new URL("fixtures/world-details.json", im
 };
 
 describe("WorldDetails — independent .NET fixture cross-check", () => {
+  it("matches an independently decoded .NET progression overlay with both defeated and undefeated bosses", () => {
+    const oracle = JSON.parse(readFileSync(new URL("fixtures/world-details-progressed.json", import.meta.url), "utf8")) as {
+      file: string; bossOffsets: Record<string, number>; hardmodeOffset: number;
+      progression: { hardmode: boolean; bosses: Record<string, boolean> };
+      generation: Record<string, unknown>; spawnAndLandmarks: Record<string, unknown>;
+      timeAndWeather: Record<string, unknown>; other: Record<string, unknown>;
+    };
+    const bytes = new Uint8Array(readFileSync(new URL(oracle.file, worldsDir)));
+    for (const [boss, offset] of Object.entries(oracle.bossOffsets)) {
+      const defeated = oracle.progression.bosses[boss];
+      if (defeated === undefined) throw new Error(`Missing synthetic progression state for ${boss}`);
+      bytes[offset] = defeated ? 1 : 0;
+    }
+    bytes[oracle.hardmodeOffset] = 1;
+    const { generation, spawnAndLandmarks, timeAndWeather, progression, other } = oracle;
+    const { details } = readWorldMetadata(bytes);
+    expect(details).toMatchObject({ generation, spawnAndLandmarks, timeAndWeather, progression, other });
+    expect(details.progression.bosses).toEqual(oracle.progression.bosses);
+    expect(details.progression.hardmode).toBe(true);
+    expect(details.progression.bosses.plantera).toBe(true);
+    expect(details.progression.bosses.golem).toBe(false);
+  });
+
   it.each(manifest.worlds)("matches metadata rows consumed by the reference reader in $file", ({ file }) => {
     const expected = oracle.worlds.find((world) => world.file === file);
     expect(expected, "Every manifest fixture needs independent expectations").toBeDefined();

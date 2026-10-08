@@ -1,5 +1,5 @@
 {
-  "provenance": "Independent .NET BinaryReader walk, matching dotnet/Terraria.WorldCodec/MetadataSection.cs rows 1-54; DateTime.FromBinary converted to UTC milliseconds. Checked 2026-10-08. All boss-defeated flags are false in all five manifest fixtures.",
+  "provenance": "Run powershell -NoProfile -File packages/world-codec/tests/fixtures/world-details-oracle.ps1 from the repository root. Independent .NET BinaryReader walk matching MetadataSection.cs rows 1-49; DateTime.FromBinary converted to UTC milliseconds. Add -Progressed to reproduce the synthetic progression case without modifying any world file. Checked 2026-10-08.",
   "worlds": [
     { "file": "SCCO1.wld", "spawn": { "x": 2104, "y": 279 }, "dungeon": { "x": 3625, "y": 296 }, "time": 13500, "creationTime": "2026-10-06T09:30:19.905Z", "lastPlayed": "2026-10-06T09:30:33.226Z" },
     { "file": "SCCR2.wld", "spawn": { "x": 2101, "y": 301 }, "dungeon": { "x": 442, "y": 251 }, "time": 13500, "creationTime": "2026-10-06T10:45:02.664Z", "lastPlayed": "2026-10-06T10:45:15.559Z" },
