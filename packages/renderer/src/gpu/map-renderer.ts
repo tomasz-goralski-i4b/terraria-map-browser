@@ -348,10 +348,11 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     cacheCapacity = Math.max(cacheCapacity, visible.length);
     let missing = 0;
     for (const key of visibleKeys) if (!chunks.has(key)) missing++;
-    // Reserve room for the entire view before uploading. Evict only offscreen LRU entries so panning cannot
-    // discard visible chunks that later frames need, even when the view fills the adaptive capacity.
+    const uploadsThisFrame = Math.min(missing, uploadBudget);
+    // Reserve only for this frame's uploads, so reversing a pending pan keeps terrain not yet replaced.
+    // Evict only offscreen LRU entries; visible residents must survive while the remaining chunks load.
     for (const [key, textures] of chunks) {
-      if (chunks.size + missing <= cacheCapacity) break;
+      if (chunks.size + uploadsThisFrame <= cacheCapacity) break;
       if (visibleKeys.has(key)) continue;
       deleteChunk(textures);
       chunks.delete(key);
