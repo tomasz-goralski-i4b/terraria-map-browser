@@ -51,7 +51,7 @@ beforeEach(() => {
         ? null : { x: Math.floor(tile.x), y: Math.floor(tile.y) };
     },
     render: vi.fn(), dispose: vi.fn(),
-    stats: () => ({ textureUploads: 0, drawCalls: 0, visibleChunks: [], residentChunks: 0 }),
+    stats: () => ({ textureUploads: 0, drawCalls: 0, visibleChunks: [], residentChunks: 0, evictedChunks: 0 }),
   };
   vi.mocked(createMapRenderer).mockReturnValue(renderer);
 });
