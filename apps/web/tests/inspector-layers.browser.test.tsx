@@ -83,7 +83,8 @@ test.each([
   useViewStore.getState().setPinnedTile({ x, y });
   await expect.element(page.getByText("Pinned")).toBeVisible();
   // Shy by default: only what the tile has (the keys of its view, set flags, wires when present).
-  await expect.poll(rows).toEqual(expected.filter(([, shown]) => shown !== "None" && shown !== "No"));
+  // The raw frame is not shy: it shows with every field only.
+  await expect.poll(rows).toEqual(expected.filter(([label, shown]) => shown !== "None" && shown !== "No" && !label.startsWith("Frame ")));
   const showEmpty = page.getByRole("button", { name: "Show empty fields" });
   await expect.element(showEmpty).toHaveAttribute("aria-pressed", "false");
   await showEmpty.click();

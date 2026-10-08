@@ -35,13 +35,15 @@ const SHAPE_NAMES: Readonly<Record<NonNullable<Tile["shape"]>, string>> = {
   slopeBottomRight: "Slope, bottom right", slopeBottomLeft: "Slope, bottom left",
 };
 
+const RAW_FRAME: ReadonlySet<string> = new Set(["Frame X", "Frame Y"]);
 const optionalNumber = (value: number | undefined): string => (value === undefined ? NONE : String(value));
 const optionalPaint = (value: number | undefined): string => (value === undefined ? NONE : paintName(value));
 
 /**
  * The fields of the tile's `tileAt` view. With `showAll`, every field in fixed rows (absent parts read "None", false
  * flags "No"), so rows do not jump between tiles. Otherwise only what the tile has: the keys present in its view,
- * wires when there are any, and flags that are set. A present liquid with amount 0 is shown either way.
+ * wires when there are any, and flags that are set. A present liquid with amount 0 is shown either way. The raw
+ * frame (sprite-sheet pixels) is shown with `showAll` only, until objects resolve it to a style and part.
  */
 export function tileProperties(point: TilePoint, tile: Tile, showAll = true): Property[] {
   const wires = WIRE_NAMES.filter((_, bit) => (tile.wires & (1 << bit)) !== 0);
@@ -67,7 +69,7 @@ export function tileProperties(point: TilePoint, tile: Tile, showAll = true): Pr
   ];
   if (showAll) return all;
   // Shy: drop what the tile does not have.
-  return all.filter((property) => property.kind === "flag" ? property.value : property.value !== NONE);
+  return all.filter((property) => property.kind === "flag" ? property.value : property.value !== NONE && !RAW_FRAME.has(property.label));
 }
 
 /** The tile pinned with the Inspect tool, or a preview of the hovered tile when nothing is pinned. */
