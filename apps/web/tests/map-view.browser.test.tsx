@@ -71,6 +71,15 @@ function key(name: string): void {
   canvas().dispatchEvent(new KeyboardEvent("keydown", { key: name, bubbles: true, cancelable: true }));
 }
 
+function releaseKey(name: string): void {
+  canvas().dispatchEvent(new KeyboardEvent("keyup", { key: name, bubbles: true }));
+}
+
+async function actualMap(): Promise<void> {
+  await page.getByRole("button", { name: /^1:1$/ }).click();
+  await vi.waitFor(() => { expect(camera().zoom).toBe(1); });
+}
+
 // Captured before any test overrides it; deleting an override would remove the property altogether.
 const originalDevicePixelRatio = Object.getOwnPropertyDescriptor(window, "devicePixelRatio");
 
@@ -88,7 +97,7 @@ afterEach(() => {
 
 test("the visible-chunk set follows the camera and equals the pure visibleChunks result", async () => {
   await mountMap();
-  await page.getByRole("button", { name: "1:1" }).click();
+  await actualMap();
   const cam = camera();
   expect(cam.zoom).toBe(1);
   await vi.waitFor(() => {
@@ -103,31 +112,33 @@ test("the map is drawn with the shipped Terraria map palette", async () => {
 
 test("dragging pans the map: content follows the pointer", async () => {
   await mountMap();
-  await page.getByRole("button", { name: "1:1" }).click();
+  await actualMap();
   const before = camera();
   pointer("pointerdown", 200, 150, 1);
   pointer("pointermove", 150, 120, 1);
-  pointer("pointerup", 150, 120, 0);
   await vi.waitFor(() => {
     const after = camera();
     expect(after.x).toBeCloseTo(before.x + 50, 6);
     expect(after.y).toBeCloseTo(before.y + 30, 6);
     expect(after.zoom).toBe(1);
   });
+  pointer("pointerup", 150, 120, 0);
 });
 
 test("arrow keys pan and +/- zoom around the viewport", async () => {
   await mountMap();
-  await page.getByRole("button", { name: "1:1" }).click();
+  await actualMap();
   const start = camera();
   key("ArrowRight");
   await vi.waitFor(() => {
     expect(camera().x).toBeGreaterThan(start.x);
   });
+  releaseKey("ArrowRight");
   key("ArrowDown");
   await vi.waitFor(() => {
     expect(camera().y).toBeGreaterThan(start.y);
   });
+  releaseKey("ArrowDown");
   const zoom = camera().zoom;
   key("+");
   await vi.waitFor(() => {
@@ -142,7 +153,7 @@ test("arrow keys pan and +/- zoom around the viewport", async () => {
 
 test("the wheel zooms around the pointer, keeping the tile under it fixed", async () => {
   await mountMap();
-  await page.getByRole("button", { name: "1:1" }).click();
+  await actualMap();
   const before = camera();
   const tile = screenToTile(before, 120, 90);
   wheel(120, 90, -100);
@@ -176,7 +187,7 @@ test("Fit world shows the whole world; the status bar shows the tile under the p
   const tile = screenToTile(fitted, 100, 80);
   await expect.element(page.getByRole("status")).toMatchTextContent(`${String(Math.floor(tile.x))}, ${String(Math.floor(tile.y))}`);
 
-  await page.getByRole("button", { name: "1:1" }).click();
+  await actualMap();
   pointer("pointermove", 10, 20, 0);
   const actual = camera();
   const under = screenToTile(actual, 10, 20);
@@ -204,7 +215,7 @@ function tileText(cam: Camera, x: number, y: number): string {
 
 test("the status bar follows the tile under a resting pointer after keyboard pans", async () => {
   await mountMap();
-  await page.getByRole("button", { name: "1:1" }).click();
+  await actualMap();
   pointer("pointermove", 120, 90, 0);
   await vi.waitFor(() => {
     expect(statusText()).toBe(tileText(camera(), 120, 90));
@@ -219,7 +230,7 @@ test("the status bar follows the tile under a resting pointer after keyboard pan
 
 test("the status bar follows the tile under a resting pointer after a wheel zoom elsewhere", async () => {
   await mountMap();
-  await page.getByRole("button", { name: "1:1" }).click();
+  await actualMap();
   pointer("pointermove", 120, 90, 0);
   await vi.waitFor(() => {
     expect(statusText()).toBe(tileText(camera(), 120, 90));
@@ -236,7 +247,7 @@ test("the status bar follows the tile under a resting pointer after a wheel zoom
 
 test("the status bar updates while dragging", async () => {
   await mountMap();
-  await page.getByRole("button", { name: "1:1" }).click();
+  await actualMap();
   // No earlier hover: the drag move itself must report the tile under the pointer.
   pointer("pointerdown", 200, 150, 1);
   pointer("pointermove", 150, 120, 1);
@@ -263,7 +274,7 @@ test("the status bar is cleared when the pointer leaves the canvas", async () =>
 
 test.each(["+", "-"])("the %s key zooms around the last pointer position", async (name) => {
   await mountMap();
-  await page.getByRole("button", { name: "1:1" }).click();
+  await actualMap();
   pointer("pointermove", 100, 70, 0);
   const before = camera();
   const tile = screenToTile(before, 100, 70);
@@ -345,7 +356,7 @@ async function doubleDevicePixelRatio(): Promise<void> {
 
 test("after a devicePixelRatio change the status bar reports the tile under the resting pointer", async () => {
   await mountMap();
-  await page.getByRole("button", { name: "1:1" }).click();
+  await actualMap();
   pointer("pointermove", 120, 90, 0);
   await vi.waitFor(() => {
     expect(statusText()).toBe(tileText(camera(), 120 * backingScale(), 90 * backingScale()));
@@ -363,7 +374,7 @@ test("after a devicePixelRatio change the status bar reports the tile under the 
 
 test("after a devicePixelRatio change keyboard zoom keeps the tile under the resting pointer fixed", async () => {
   await mountMap();
-  await page.getByRole("button", { name: "1:1" }).click();
+  await actualMap();
   pointer("pointermove", 100, 70, 0);
   try {
     await doubleDevicePixelRatio();

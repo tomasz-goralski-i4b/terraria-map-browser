@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  actualSize, clampCamera, createMapRenderer, fitWorld, panBy, terrariaMapPalette, visibleChunks, zoomAt,
+  CameraAnimator, clampCamera, createMapRenderer, fitWorld, terrariaMapPalette, visibleChunks, wheelPixels,
 } from "@studio/renderer";
 import type { Camera, MapRenderer, RenderableWorld, Size } from "@studio/renderer";
 
-const KEY_PAN_PIXELS = 64;
+const KEY_PAN_PIXELS_PER_MS = 0.384;
 const KEY_ZOOM_FACTOR = 1.25;
 const WHEEL_ZOOM_PER_PIXEL = 0.0015;
 const PINCH_ZOOM_PER_PIXEL = 0.01;
@@ -26,6 +26,12 @@ interface Point {
 /** Everything the input handlers mutate between renders; none of it is React state (no re-render per camera move). */
 interface MapSession {
   readonly renderer: MapRenderer;
+  readonly animator: CameraAnimator;
+  readonly requestFrame: () => void;
+  readonly keys: Set<string>;
+  cameraDirty: boolean;
+  pendingResize: Size | null;
+  hoverTile: Point | null;
   world: RenderableWorld;
   camera: Camera;
   viewport: Size;
@@ -57,10 +63,10 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
   const refreshHover = useCallback((session: MapSession): void => {
     const hover = session.hover === null ? null : toBacking(session.hover);
     const tile = hover === null ? null : session.renderer.tileAt(hover.x, hover.y);
-    setHoverTile((previous) => {
-      if (tile === null) return null;
-      return previous !== null && previous.x === tile.x && previous.y === tile.y ? previous : { x: tile.x, y: tile.y };
-    });
+    const previous = session.hoverTile;
+    if (previous?.x === tile?.x && previous?.y === tile?.y) return;
+    session.hoverTile = tile;
+    setHoverTile(tile);
   }, [toBacking]);
 
   const applyCamera = useCallback((session: MapSession, camera: Camera): void => {
@@ -74,6 +80,11 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
       visibleChunks(camera, session.viewport, session.world).map((chunk) => [chunk.x, chunk.y]),
     );
   }, [refreshHover]);
+
+  const queueCamera = (session: MapSession): void => {
+    session.cameraDirty = true;
+    session.requestFrame();
+  };
 
   /** CSS pixels of a pointer event relative to the canvas. */
   const localPoint = (clientX: number, clientY: number): Point => {
@@ -93,19 +104,59 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
       setError(cause instanceof Error ? cause.message : String(cause));
       return null;
     }
+    let frame: number | null = null;
     const session: MapSession = {
       renderer, world: worldRef.current, camera: { x: 0, y: 0, zoom: 1 }, viewport: { width: 0, height: 0 },
-      pointers: new Map(), hover: null,
+      animator: new CameraAnimator({ x: 0, y: 0, zoom: 1 }, { width: 0, height: 0 }, worldRef.current, () => performance.now()),
+      pointers: new Map(), hover: null, hoverTile: null, keys: new Set(), cameraDirty: false, pendingResize: null,
+      requestFrame: () => {
+        if (frame !== null) return;
+        frame = window.requestAnimationFrame(() => {
+          frame = null;
+          if (session.pendingResize !== null) {
+            const first = session.viewport.width === 0;
+            const size = session.pendingResize;
+            session.pendingResize = null;
+            canvas.width = size.width;
+            canvas.height = size.height;
+            session.viewport = size;
+            session.keys.clear();
+            session.animator.reset(first ? fitWorld(size, session.world) : clampCamera(session.animator.current, size, session.world), size, session.world);
+          }
+          const { camera, settled } = session.animator.step();
+          if (session.cameraDirty || camera.x !== session.camera.x || camera.y !== session.camera.y || camera.zoom !== session.camera.zoom) {
+            session.cameraDirty = false;
+            applyCamera(session, camera);
+          } else refreshHover(session);
+          if (!settled) session.requestFrame();
+        });
+      },
     };
     sessionRef.current = session;
     renderer.setWorld(session.world);
 
+    const motionPreference = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const updateMotionPreference = (): void => {
+      session.animator.setReducedMotion(motionPreference.matches);
+      session.requestFrame();
+    };
+    updateMotionPreference();
+    motionPreference.addEventListener("change", updateMotionPreference);
+
+    const stopMotion = (): void => {
+      session.keys.clear();
+      session.animator.cancelMotion();
+    };
+    window.addEventListener("blur", stopMotion);
+
     const onWheel = (event: WheelEvent): void => {
       event.preventDefault();
+      if (session.viewport.width === 0) return;
+      session.keys.clear();
       const rate = event.ctrlKey ? PINCH_ZOOM_PER_PIXEL : WHEEL_ZOOM_PER_PIXEL;
       const point = toBacking(localPoint(event.clientX, event.clientY));
-      applyCamera(session, zoomAt(session.camera, session.camera.zoom * Math.exp(-event.deltaY * rate), point.x, point.y,
-        session.viewport, session.world));
+      session.animator.zoom(Math.exp(-wheelPixels(event.deltaY, event.deltaMode, canvas.clientHeight) * rate), point.x, point.y, event.ctrlKey);
+      queueCamera(session);
     };
     canvas.addEventListener("wheel", onWheel, { passive: false });
 
@@ -113,11 +164,9 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
       const width = Math.round(canvas.clientWidth * window.devicePixelRatio);
       const height = Math.round(canvas.clientHeight * window.devicePixelRatio);
       if (width === 0 || height === 0 || (width === canvas.width && height === canvas.height && session.viewport.width !== 0)) return;
-      const first = session.viewport.width === 0;
-      canvas.width = width;
-      canvas.height = height;
-      session.viewport = { width, height };
-      applyCamera(session, first ? fitWorld(session.viewport, session.world) : clampCamera(session.camera, session.viewport, session.world));
+      // Geometry and camera must change in the same frame, including the test hooks and resting-pointer status.
+      session.pendingResize = { width, height };
+      queueCamera(session);
     };
     resize();
     const observer = new ResizeObserver(resize);
@@ -130,6 +179,9 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
       observer.disconnect();
       window.removeEventListener("resize", resize);
       canvas.removeEventListener("wheel", onWheel);
+      window.removeEventListener("blur", stopMotion);
+      motionPreference.removeEventListener("change", updateMotionPreference);
+      if (frame !== null) window.cancelAnimationFrame(frame);
       renderer.dispose();
       sessionRef.current = null;
     };
@@ -160,8 +212,12 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
     if (session === null || session.world === world) return;
     session.world = world;
     session.renderer.setWorld(world);
-    applyCamera(session, session.viewport.width === 0 ? session.camera : fitWorld(session.viewport, world));
-  }, [world, applyCamera]);
+    session.keys.clear();
+    session.pointers.clear();
+    session.animator.reset(session.viewport.width === 0 ? session.camera : fitWorld(session.viewport, world), session.viewport, world);
+    session.cameraDirty = true;
+    session.requestFrame();
+  }, [world]);
 
   const withSession = (action: (session: MapSession) => void): void => {
     const session = sessionRef.current;
@@ -170,6 +226,8 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
 
   const onPointerDown = (event: React.PointerEvent<HTMLCanvasElement>): void => {
     withSession((session) => {
+      session.keys.clear();
+      session.animator.beginDrag();
       session.pointers.set(event.pointerId, localPoint(event.clientX, event.clientY));
       try {
         event.currentTarget.setPointerCapture(event.pointerId);
@@ -185,7 +243,7 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
       const last = session.pointers.get(event.pointerId);
       session.hover = local;
       if (last === undefined) {
-        refreshHover(session);
+        session.requestFrame();
         return;
       }
       const others = [...session.pointers].filter(([id]) => id !== event.pointerId).map(([, other]) => toBacking(other));
@@ -194,41 +252,58 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
       const previous = toBacking(last);
       const other = others[0];
       if (other === undefined) {
-        applyCamera(session, panBy(session.camera, point.x - previous.x, point.y - previous.y, session.viewport, session.world));
+        session.animator.drag(point.x - previous.x, point.y - previous.y);
+        queueCamera(session);
         return;
       }
       // Pinch: pan with the midpoint, zoom with the change of distance between the two pointers.
       const before = { x: (previous.x + other.x) / 2, y: (previous.y + other.y) / 2 };
       const after = { x: (point.x + other.x) / 2, y: (point.y + other.y) / 2 };
       const ratio = Math.hypot(point.x - other.x, point.y - other.y) / Math.max(1, Math.hypot(previous.x - other.x, previous.y - other.y));
-      const panned = panBy(session.camera, after.x - before.x, after.y - before.y, session.viewport, session.world);
-      applyCamera(session, zoomAt(panned, panned.zoom * ratio, after.x, after.y, session.viewport, session.world));
+      session.animator.pan(after.x - before.x, after.y - before.y);
+      session.animator.zoom(ratio, after.x, after.y, true);
+      queueCamera(session);
     });
   };
 
   const onPointerEnd = (event: React.PointerEvent<HTMLCanvasElement>): void => {
-    sessionRef.current?.pointers.delete(event.pointerId);
+    withSession((session) => {
+      if (!session.pointers.delete(event.pointerId)) return;
+      if (session.pointers.size === 0) session.animator.endDrag(event.type !== "pointerup");
+      else session.animator.beginDrag();
+      session.requestFrame();
+    });
+  };
+
+  const updateKeyPan = (session: MapSession): void => {
+    const held = (name: string): number => session.keys.has(name) ? 1 : 0;
+    const scale = toBacking({ x: 1, y: 1 });
+    session.animator.keyPan((held("ArrowLeft") - held("ArrowRight")) * KEY_PAN_PIXELS_PER_MS * scale.x,
+      (held("ArrowUp") - held("ArrowDown")) * KEY_PAN_PIXELS_PER_MS * scale.y);
+    session.requestFrame();
   };
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLCanvasElement>): void => {
     withSession((session) => {
-      const { camera, viewport, world: current } = session;
-      const pan = (dx: number, dy: number): Camera => panBy(camera, dx * KEY_PAN_PIXELS, dy * KEY_PAN_PIXELS, viewport, current);
+      const { viewport } = session;
       const anchor = session.hover === null ? { x: viewport.width / 2, y: viewport.height / 2 } : toBacking(session.hover);
-      const zoom = (factor: number): Camera => zoomAt(camera, camera.zoom * factor, anchor.x, anchor.y, viewport, current);
-      const next = {
-        ArrowLeft: () => pan(1, 0),
-        ArrowRight: () => pan(-1, 0),
-        ArrowUp: () => pan(0, 1),
-        ArrowDown: () => pan(0, -1),
-        "+": () => zoom(KEY_ZOOM_FACTOR),
-        "=": () => zoom(KEY_ZOOM_FACTOR),
-        "-": () => zoom(1 / KEY_ZOOM_FACTOR),
-        _: () => zoom(1 / KEY_ZOOM_FACTOR),
-      }[event.key];
-      if (next === undefined) return;
+      const arrow = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key);
+      const factor = { "+": KEY_ZOOM_FACTOR, "=": KEY_ZOOM_FACTOR, "-": 1 / KEY_ZOOM_FACTOR, _: 1 / KEY_ZOOM_FACTOR }[event.key];
+      if (!arrow && factor === undefined) {
+        session.keys.clear();
+        session.animator.cancelMotion();
+        return;
+      }
       event.preventDefault();
-      applyCamera(session, next());
+      if (arrow) {
+        if (session.keys.has(event.key)) return;
+        session.keys.add(event.key);
+        updateKeyPan(session);
+      } else if (factor !== undefined) {
+        session.keys.clear();
+        session.animator.zoom(factor, anchor.x, anchor.y);
+        queueCamera(session);
+      }
     });
   };
 
@@ -245,20 +320,35 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
         onPointerMove={onPointerMove}
         onPointerUp={onPointerEnd}
         onPointerCancel={onPointerEnd}
+        onLostPointerCapture={onPointerEnd}
         onPointerLeave={() => {
           withSession((session) => {
             session.hover = null;
+            session.requestFrame();
           });
-          setHoverTile(null);
         }}
         onKeyDown={onKeyDown}
+        onKeyUp={(event) => {
+          withSession((session) => {
+            if (session.keys.delete(event.key)) updateKeyPan(session);
+          });
+        }}
+        onBlur={() => {
+          withSession((session) => {
+            session.keys.clear();
+            session.animator.cancelMotion();
+          });
+        }}
       />
       <div className="map-controls" style={CONTROLS_STYLE}>
         <button
           type="button"
           onClick={() => {
             withSession((session) => {
-              applyCamera(session, fitWorld(session.viewport, session.world));
+              session.keys.clear();
+              session.animator.zoom(fitWorld(session.viewport, session.world).zoom / session.animator.target.zoom,
+                session.viewport.width / 2, session.viewport.height / 2);
+              queueCamera(session);
             });
           }}
         >
@@ -268,7 +358,9 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
           type="button"
           onClick={() => {
             withSession((session) => {
-              applyCamera(session, actualSize(session.camera, session.viewport, session.world));
+              session.keys.clear();
+              session.animator.zoom(1 / session.animator.target.zoom, session.viewport.width / 2, session.viewport.height / 2);
+              queueCamera(session);
             });
           }}
         >
