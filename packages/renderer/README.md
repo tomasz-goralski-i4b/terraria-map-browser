@@ -32,15 +32,19 @@ exactly the pixels `filterTiles` (below) makes of them. The browser tests assert
   mipmaps average transparency correctly). It is one draw call for the whole world and is filtered, so zoomed-out
   views do not shimmer while panning. Building it is subject to the same per-frame upload budget; texels never built
   stay clear. Its texels are built over the filter footprint around the viewport, not only the visible chunks.
-- **Overview rebuild.** Layer changes and palette appends never clear the overview. The new view is built into a
-  second overview texture (a copy of the shown one), visible chunks first, then the rest of the filter footprint,
-  while the old one stays on screen; once the whole footprint is built the two are swapped and the mipmaps
-  regenerated. The view therefore switches in one frame, never slice by slice. The second texture exists only during
-  a rebuild (about 27 MiB for a Large world). Chunks outside the footprint keep their old texels after the swap and
-  are rebuilt when they come into view. The cost of a layer toggle:
+- **Upload budget.** A scheduled frame uploads chunks until it has spent `maxUploadMillisecondsPerFrame` (default
+  8 ms; it always uploads one) or reached `maxChunkUploadsPerFrame` (default 256), so a fast machine uploads more
+  chunks per frame than a slow one and input stays responsive on both. `render()` ignores both limits.
+- **Overview rebuild.** Layer changes and palette appends mark every texel stale without clearing it: old texels stay
+  drawn until the rebuild overwrites them, so the map never blanks. The rebuild is a sweep in one fixed order: the
+  visible chunks by distance from the centre of the view, then the rest of the filter footprint the same way. A frame
+  builds the chunks in that order until one does not fit its upload budget, and stops there: a chunk that is still
+  resident is never rebuilt ahead of the front, so the new view grows from the centre as one region. Mipmaps are
+  regenerated after every batch. The cost of a layer toggle:
   - no upload at half a pixel per tile and above, or whenever the footprint's chunks are resident;
-  - at overview zoom, for worlds larger than the chunk cache (Medium and Large), a progressive rebuild that re-uploads
-    evicted chunks within the per-frame budget (with the default 32 per frame, about 25 to 40 frames);
+  - at overview zoom, for worlds larger than the chunk cache (Medium, Large and larger custom sizes), the sweep
+    re-uploads evicted chunks within the upload budget. Preparing a chunk takes about 0.15–0.3 ms of CPU, so a
+    16000 × 4000 world (4,000 chunks) takes roughly two seconds;
   - never a re-parse.
 
   A lost context loses the texture with everything else, so after a restore the overview is built from scratch.

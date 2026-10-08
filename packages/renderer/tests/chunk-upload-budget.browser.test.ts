@@ -101,6 +101,45 @@ describe("scheduled chunk upload budget", () => {
     expect(frames.pending.size).toBe(1);
   });
 
+  /** A clock that advances `step` milliseconds every time it is read. */
+  function clock(step: number): void {
+    let now = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => (now += step));
+  }
+
+  /** Uploads of the first scheduled frame of the fitted Large world. */
+  function firstFrameUploads(options?: MapRendererOptions): number {
+    const frames = animationFrames();
+    const { renderer } = setup(viewport.width, viewport.height, options);
+    renderer.setWorld(large);
+    // Palette and background first, with no chunk on screen.
+    renderer.setCamera({ x: large.width + 128, y: large.height + 128, zoom: 1 });
+    renderer.render();
+    const before = renderer.stats().textureUploads;
+    renderer.setCamera(camera);
+    frames.step();
+    return renderer.stats().textureUploads - before;
+  }
+
+  test("a fast machine uploads more than 32 chunks per frame, up to the count cap", () => {
+    clock(0);
+    expect(firstFrameUploads()).toBeGreaterThan(32);
+    expect(firstFrameUploads({ maxChunkUploadsPerFrame: 40 })).toBe(40);
+  });
+
+  test("a slow machine stops uploading once the frame's time budget is spent, but always uploads one chunk", () => {
+    // Every clock read costs 5 ms: the default 8 ms budget allows the first upload and the one that crosses it.
+    clock(5);
+    const uploads = firstFrameUploads();
+    expect(uploads).toBeGreaterThanOrEqual(1);
+    expect(uploads).toBeLessThanOrEqual(3);
+    clock(1000);
+    expect(firstFrameUploads({ maxUploadMillisecondsPerFrame: 8 })).toBe(1);
+    // A larger budget allows more.
+    clock(5);
+    expect(firstFrameUploads({ maxUploadMillisecondsPerFrame: 50 })).toBeGreaterThan(uploads);
+  });
+
   test("continuations complete the Large world with synchronous pixels and then stop scheduling", () => {
     const frames = animationFrames();
     const { renderer, pixels } = setup(viewport.width, viewport.height, { maxChunkUploadsPerFrame: 127 });

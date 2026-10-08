@@ -291,7 +291,7 @@ describe("overview below half a pixel per tile", () => {
     expect(differing).toBe(0);
   });
 
-  test("a layer change switches the whole view at once: every rebuild frame is entirely old or entirely new, within budget", () => {
+  test("a layer change sweeps out from the centre of the view: no blank, no chunk ahead of the front, within budget", () => {
     // 128 uniform chunks in two colours, all visible, in a cache of 16: the rebuild re-uploads evicted chunks.
     const colorIndex = (chunkX: number, chunkY: number): number => 1 + ((chunkX + chunkY) % 2);
     const world = blocks(2048, 1024, (x, y) => colorIndex(Math.floor(x / 128), Math.floor(y / 128)));
@@ -302,8 +302,10 @@ describe("overview below half a pixel per tile", () => {
     renderer.setWorld(world);
     renderer.setCamera(fitted);
     renderer.render();
-    const centres = visibleChunks(fitted, { width: 512, height: 256 }, world)
-      .map((chunk) => [chunk.x * 32 + 16, chunk.y * 32 + 16] as const);
+    const visible = visibleChunks(fitted, { width: 512, height: 256 }, world);
+    const centres = visible.map((chunk) => [chunk.x * 32 + 16, chunk.y * 32 + 16] as const);
+    // Distance of each chunk's centre from the centre of the view, in tiles.
+    const distance = visible.map((chunk) => Math.hypot(chunk.x * 128 + 64 - 1024, chunk.y * 128 + 64 - 512));
     const before = centres.map(([x, y]) => pixel(x, y));
     // Blocks off: the background (underground, surfaceY 0) shows everywhere.
     const hidden = { background: true, walls: true, blocks: false, liquids: true };
@@ -319,23 +321,29 @@ describe("overview below half a pixel per tile", () => {
     const near = (actual: readonly number[], expected: readonly number[] | undefined): boolean =>
       expected !== undefined && actual.every((value, channel) => Math.abs(value - (expected[channel] ?? 0)) <= 2);
     let rebuildFrames = 0;
-    let oldFrames = 0;
+    let partialFrames = 0;
     for (; frames.pending.size > 0 && rebuildFrames < 200; rebuildFrames++) {
       frames.step();
       const stats = renderer.stats();
       expect(stats.textureUploads - uploads).toBeLessThanOrEqual(budget);
       expect(stats.residentChunks).toBeLessThanOrEqual(cache);
       uploads = stats.textureUploads;
-      // No slice of the map changes before the rest: the frame is the old view or the new one, never a mix.
-      const shown = centres.map(([x, y]) => pixel(x, y));
-      const old = shown.every((actual, index) => near(actual, before[index]));
-      const updated = shown.every((actual, index) => near(actual, after[index]));
-      expect(old || updated, `frame ${String(rebuildFrames)} mixes the old and the new view`).toBe(true);
-      if (old) oldFrames++;
+      const updated = centres.map(([x, y], index) => {
+        const actual = pixel(x, y);
+        // Never blank: every chunk shows its old or its new colour.
+        expect(near(actual, before[index]) || near(actual, after[index]), `frame ${String(rebuildFrames)}, chunk ${String(index)}: ${String(actual)}`)
+          .toBe(true);
+        return near(actual, after[index]);
+      });
+      // The new view grows as one front from the centre: no chunk (cached or not) is updated ahead of a nearer one.
+      const front = Math.max(...distance.filter((_, index) => updated[index]));
+      const behind = distance.findIndex((d, index) => d < front - 1 && updated[index] !== true);
+      expect(behind, `frame ${String(rebuildFrames)}: chunk ${String(behind)} is behind the front`).toBe(-1);
+      if (updated.includes(true) && updated.includes(false)) partialFrames++;
     }
-    // The rebuild re-uploaded evicted chunks over several frames, and finished.
+    // The sweep re-uploaded evicted chunks over several frames, visibly in progress, and finished.
     expect(rebuildFrames).toBeGreaterThan(1);
-    expect(oldFrames).toBeGreaterThan(0);
+    expect(partialFrames).toBeGreaterThan(0);
     expect(frames.pending.size).toBe(0);
     const actual = all();
     const expected = reference.all();
