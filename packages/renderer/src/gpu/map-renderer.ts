@@ -310,7 +310,21 @@ function checkLimits(gl: WebGL2RenderingContext): void {
   }
 }
 
+/**
+ * Sets GL's default unpack state. The context belongs to the canvas, not the renderer: a previous renderer on the
+ * same canvas, or other code, may have left any state behind.
+ */
+function defaultUnpack(gl: WebGL2RenderingContext): void {
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+  gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 0);
+  gl.pixelStorei(gl.UNPACK_IMAGE_HEIGHT, 0);
+  gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, 0);
+  gl.pixelStorei(gl.UNPACK_SKIP_ROWS, 0);
+  gl.pixelStorei(gl.UNPACK_SKIP_IMAGES, 0);
+}
+
 function createResources(gl: WebGL2RenderingContext, rules: RuleTable): GpuResources {
+  defaultUnpack(gl);
   const instances = requireValue(gl.createBuffer(), "a buffer");
   const rulesTexture = integerTexture(gl, gl.RGBA32I, RULE_ROW, RULE_HEADER_ROWS + rules.rows);
   if (rules.rows > 0) {
@@ -428,11 +442,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   /** Restores GL's default unpack state after chunk uploads. */
   const resetUnpack = (): void => {
     if (unpackWorld === null) return;
-    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
-    gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 0);
-    gl.pixelStorei(gl.UNPACK_IMAGE_HEIGHT, 0);
-    gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, 0);
-    gl.pixelStorei(gl.UNPACK_SKIP_ROWS, 0);
+    defaultUnpack(gl);
     unpackWorld = null;
   };
 
@@ -973,6 +983,8 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       canvas.removeEventListener("webglcontextlost", onContextLost);
       canvas.removeEventListener("webglcontextrestored", onContextRestored);
       if (!gl.isContextLost()) {
+        // The context outlives this renderer: leave it with the default unpack state.
+        resetUnpack();
         clearChunks();
         releaseOverview();
         for (const program of [resources.chunk, resources.build, resources.overview]) gl.deleteProgram(program.program);
@@ -984,6 +996,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
         gl.deleteFramebuffer(resources.framebuffer);
       }
       releaseBackground();
+      unpackWorld = null;
     },
   };
 }

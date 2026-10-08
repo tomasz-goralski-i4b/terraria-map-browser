@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { CHUNK_SIZE, createMapRenderer, fitWorld, renderChunk, terrariaMapPalette } from "../src/index.js";
-import type { ChunkLayers, MapPalette, MapRenderer, MapRendererOptions, RenderableWorld } from "../src/index.js";
+import { CHUNK_SIZE, createMapRenderer, fitWorld, mapOption, renderChunk, terrariaMapPalette } from "../src/index.js";
+import type {
+  ChunkLayers, MapOptionRule, MapPalette, MapRenderer, MapRendererOptions, RenderableWorld,
+} from "../src/index.js";
 import { syntheticMapPalette } from "./map-palette.fixture.js";
 
 const created: MapRenderer[] = [];
@@ -9,8 +11,8 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function setup(width: number, height: number, options?: MapRendererOptions) {
-  const canvas = document.createElement("canvas");
+function setup(width: number, height: number, options?: MapRendererOptions, reuse?: HTMLCanvasElement) {
+  const canvas = reuse ?? document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
   const renderer = createMapRenderer(canvas, options);
@@ -85,6 +87,22 @@ function fullWorld(width: number, height: number): RenderableWorld {
     width, height, surfaceY: Math.floor(height / 3), planes,
     palette: [{ kind: "vanilla", id: 0 }, { kind: "vanilla", id: 1 }, { kind: "vanilla", id: 2 }, { kind: "vanilla", id: 3 }],
   };
+}
+
+/**
+ * The same world with every plane a view at a non-zero byte offset into a larger buffer, as planes sliced out of one
+ * allocation would be.
+ */
+function offsetViews(world: RenderableWorld): RenderableWorld {
+  const view = <T extends Uint8Array | Uint16Array | Int16Array>(plane: T): T => {
+    const Type = plane.constructor as new (buffer: ArrayBuffer, offset: number, length: number) => T;
+    const offset = 8 * plane.BYTES_PER_ELEMENT;
+    const copy = new Type(new ArrayBuffer(offset + plane.byteLength + 16), offset, plane.length);
+    copy.set(plane);
+    return copy;
+  };
+  const planes = Object.fromEntries(Object.entries(world.planes).map(([name, plane]) => [name, view(plane)]));
+  return { ...world, planes: planes as unknown as RenderableWorld["planes"] };
 }
 
 type PlaneName = keyof RenderableWorld["planes"];
@@ -163,15 +181,17 @@ describe("chunk uploads read the world planes in place", () => {
   });
 
   test.each([
+    // 300 × 200 is not a multiple of 128: the right and bottom chunks are partial, and every chunk touches an edge.
     ["every plane", fullWorld(300, 200)],
     ["no optional planes", (() => {
       const world = fullWorld(300, 200);
       const { block, wall, liquid, liquidAmount, paint, wallPaint } = world.planes;
       return { ...world, planes: { block, wall, liquid, liquidAmount, paint, wallPaint } };
     })()],
+    // An odd height (rows are not 4-byte aligned), 3 × 3 chunks with a fully interior one, planes at byte offsets.
+    ["odd height, 3 × 3 chunks, offset views", offsetViews(fullWorld(300, 301))],
   ])("one texSubImage3D per present plane and chunk, selecting the chunk and its apron (%s)", (_name, world: RenderableWorld) => {
-    // 300 × 200 is not a multiple of 128: the right and bottom chunks are partial, and every chunk touches an edge.
-    const { renderer, gl, pixels } = setup(300, 200, { mapPalette: syntheticMapPalette });
+    const { renderer, gl, pixels } = setup(world.width, world.height, { mapPalette: syntheticMapPalette });
     const uploads = recordUploads(gl, world, true);
     renderer.setWorld(world);
     renderer.setLayers(allLayers);
@@ -183,9 +203,11 @@ describe("chunk uploads read the world planes in place", () => {
 
     const present = [...PLANES_16, ...PLANES_8].filter((plane) => world.planes[plane] !== undefined);
     const byChunk = Map.groupBy(uploads, (upload) => `${String(upload.skipRows)},${String(upload.skipPixels)}`);
-    expect(byChunk.size).toBe(6);
-    for (let cx = 0; cx < 3; cx++) {
-      for (let cy = 0; cy < 2; cy++) {
+    const chunksX = Math.ceil(world.width / CHUNK_SIZE);
+    const chunksY = Math.ceil(world.height / CHUNK_SIZE);
+    expect(byChunk.size).toBe(chunksX * chunksY);
+    for (let cx = 0; cx < chunksX; cx++) {
+      for (let cy = 0; cy < chunksY; cy++) {
         const originX = cx * CHUNK_SIZE;
         const originY = cy * CHUNK_SIZE;
         // The apron of one tile, cut at the world's edges.
@@ -301,6 +323,87 @@ describe("map options are resolved on the GPU", () => {
   });
 });
 
+describe("map option rules across the renderer's lifecycle", () => {
+  const layers = allLayers;
+
+  /** Asserts the canvas equals the CPU reference of `world`, with no GL error. */
+  function expectReference(gl: WebGL2RenderingContext, pixels: () => Uint8Array, world: RenderableWorld): void {
+    expect(gl.getError()).toBe(gl.NO_ERROR);
+    const wrong = differing(pixels(), cpuReference(world, layers, syntheticMapPalette), world.width);
+    expect(wrong.slice(0, 5), `${String(wrong.length)} pixels differ`).toEqual([]);
+  }
+
+  test("a renderer created on the canvas of a disposed one draws ruled content exactly", () => {
+    const first = setup(300, 200, { mapPalette: syntheticMapPalette });
+    first.renderer.setWorld(fullWorld(300, 200));
+    first.renderer.setLayers(layers);
+    first.renderer.setCamera({ x: 0, y: 0, zoom: 1 });
+    first.renderer.render();
+    first.renderer.dispose();
+    // The canvas keeps its GL context, and with it any unpack state the first renderer left behind.
+    const world = offsetViews(fullWorld(300, 200));
+    const second = setup(300, 200, { mapPalette: syntheticMapPalette }, first.canvas);
+    second.renderer.setWorld(world);
+    second.renderer.setLayers(layers);
+    second.renderer.setCamera({ x: 0, y: 0, zoom: 1 });
+    second.renderer.render();
+    expectReference(second.gl, second.pixels, world);
+  });
+
+  test("a lost and restored context draws ruled content exactly", async () => {
+    const world = fullWorld(300, 200);
+    const { renderer, canvas, gl, pixels } = setup(300, 200, { mapPalette: syntheticMapPalette });
+    renderer.setWorld(world);
+    renderer.setLayers(layers);
+    renderer.setCamera({ x: 0, y: 0, zoom: 1 });
+    renderer.render();
+    const lose = gl.getExtension("WEBGL_lose_context");
+    if (lose === null) throw new Error("WEBGL_lose_context unavailable");
+    const restored = new Promise<void>((resolve) => {
+      canvas.addEventListener("webglcontextrestored", () => { resolve(); });
+    });
+    lose.loseContext();
+    lose.restoreContext();
+    await restored;
+    renderer.render();
+    expectReference(gl, pixels, world);
+  });
+
+  test("palette entries with rules appended after the first upload are drawn by their rules", () => {
+    const world = fullWorld(300, 200);
+    const growing: RenderableWorld = { ...world, palette: world.palette.slice(0, 2) };
+    const { renderer, gl, pixels } = setup(300, 200, { mapPalette: syntheticMapPalette });
+    renderer.setWorld(growing);
+    renderer.setLayers(layers);
+    renderer.setCamera({ x: 0, y: 0, zoom: 1 });
+    renderer.render();
+    // Vanilla tile 3 has a frameY rule in the synthetic palette.
+    (growing.palette as unknown[]).push(...world.palette.slice(2));
+    renderer.setWorld(growing);
+    renderer.render();
+    expectReference(gl, pixels, world);
+  });
+
+  test("switching to a shorter palette of unknown and mod content leaves no rule of the previous world behind", () => {
+    const { renderer, gl, pixels } = setup(300, 200, { mapPalette: syntheticMapPalette });
+    renderer.setWorld(fullWorld(300, 200));
+    renderer.setLayers(layers);
+    renderer.setCamera({ x: 0, y: 0, zoom: 1 });
+    renderer.render();
+    // Index 1 was vanilla tile 1 (ruled by frameX); now it is mod content, and indices 2 and 3 are past the palette.
+    const next: RenderableWorld = {
+      ...fullWorld(300, 200),
+      palette: [
+        { kind: "unknown", runtimeId: 400 },
+        { kind: "mod", mod: "Calamity", internalName: "AstralDirt", runtimeId: 900, modVersion: "2.0.4" },
+      ],
+    };
+    renderer.setWorld(next);
+    renderer.render();
+    expectReference(gl, pixels, next);
+  });
+});
+
 describe("GPU limits", () => {
   const SAMPLERS = new Set<number>([
     WebGL2RenderingContext.SAMPLER_2D, WebGL2RenderingContext.SAMPLER_2D_ARRAY, WebGL2RenderingContext.INT_SAMPLER_2D,
@@ -364,24 +467,56 @@ describe("GPU limits", () => {
 });
 
 describe("cost of a layer toggle", () => {
-  /**
-   * A machine-independent cost model, charged to a fake `performance.now` instead of wall time. It is calibrated with
-   * the measurements of PR #201 on a 16000 × 4000 world: main prepared a chunk in about 0.26 ms of JavaScript (it read
-   * up to nine planes for each of the 130 × 130 tiles of the chunk and its apron and interleaved them into staging
-   * arrays), and its two texSubImage3D calls for all 4,000 chunks took about 0.1 s together, 25 µs per chunk of about
-   * 200 KB. A GL upload is charged a fixed overhead per call plus its bytes; JavaScript is charged per plane element
-   * the renderer reads.
-   */
-  const PER_READ = 0.26 / (130 * 130 * 9);
-  const CALL_OVERHEAD = 0.004;
-  const PER_BYTE = (0.025 - 2 * CALL_OVERHEAD) / (130 * 130 * 12);
+  /** Texels per side of a page layer: a chunk and its apron. */
+  const PAGE = CHUNK_SIZE + 2;
 
   /**
-   * Frames a layer toggle takes at Fit world under the default budget. With `perTile` the block upload of every chunk
-   * is also charged main's preparation for the uploaded tiles: the same sweep, scheduler and budget, at main's cost.
-   * Uploads and draws are not sent to the GPU.
+   * Main's chunk preparation before #203, kept as the baseline: it read every plane of the chunk and its apron (the
+   * frame planes only for blocks with a map option rule), interleaved them into RGBA staging arrays and resolved each
+   * ruled block's option per tile. Columns [x0, x1) and rows [y0, y1) are world tiles. Returns the elements it read.
    */
-  function toggleFrames(world: RenderableWorld, block: Uint16Array, perTile: number): number {
+  function mainPreparation(
+    world: RenderableWorld, rules: readonly (MapOptionRule | undefined)[], x0: number, x1: number, y0: number, y1: number,
+    wide: Uint16Array, narrow: Uint8Array,
+  ): number {
+    const { block, wall, flags, frameX, frameY, liquid, liquidAmount, paint, wallPaint } = world.planes;
+    let reads = 0;
+    for (let x = x0; x < x1; x++) {
+      for (let y = y0; y < y1; y++) {
+        const index = x * world.height + y;
+        const texel = ((x - x0) * PAGE + (y - y0)) * 4;
+        const id = block[index] ?? 0xffff;
+        wide[texel] = id;
+        wide[texel + 1] = wall[index] ?? 0xffff;
+        const rule = rules[id];
+        wide[texel + 2] = rule === undefined ? 0 : mapOption(rule, frameX?.[index] ?? 0, frameY?.[index] ?? 0);
+        wide[texel + 3] = (flags?.[index] ?? 0) & 31;
+        narrow[texel] = liquid[index] ?? 0;
+        narrow[texel + 1] = liquidAmount[index] ?? 0;
+        narrow[texel + 2] = paint[index] ?? 0;
+        narrow[texel + 3] = wallPaint[index] ?? 0;
+        reads += rule === undefined ? 7 : 9;
+      }
+    }
+    return reads;
+  }
+
+  /**
+   * A machine-independent cost model, charged to a fake `performance.now` instead of wall time. A texSubImage3D call
+   * costs a fixed overhead plus its bytes (from PR #201: main's two calls for all 4,000 chunks of a 16000 × 4000
+   * world took about 0.1 s together, 25 µs per chunk of about 200 KB); JavaScript costs `perRead` per plane element
+   * read. Draws come after a frame's uploads and are charged in neither run.
+   */
+  const CALL_OVERHEAD = 0.004;
+  const PER_BYTE = (0.025 - 2 * CALL_OVERHEAD) / (PAGE * PAGE * 12);
+
+  /**
+   * Frames a layer toggle takes at Fit world under the default budget, from the same scheduler, sweep and budget.
+   * `current`: this renderer, its planes wrapped so that every element it reads is charged. `main`: each chunk upload
+   * is charged as main's was instead (its preparation, by the elements it reads, and its two interleaved uploads);
+   * the renderer's own nine uploads are then free. Nothing is sent to the GPU.
+   */
+  function toggleFrames(world: RenderableWorld, mode: "current" | "main", perRead: number, rules: readonly (MapOptionRule | undefined)[]): number {
     let now = 0;
     vi.spyOn(performance, "now").mockImplementation(() => now);
     let nextId = 1;
@@ -391,10 +526,9 @@ describe("cost of a layer toggle", () => {
       return nextId++;
     });
     vi.spyOn(window, "cancelAnimationFrame").mockImplementation((id) => { pending.delete(id); });
-    // Every element read of a plane costs PER_READ.
     const charged = <T extends object>(plane: T): T => new Proxy(plane, {
       get: (target, property) => {
-        if (typeof property === "string" && /^\d+$/.test(property)) now += PER_READ;
+        if (typeof property === "string" && /^\d+$/.test(property)) now += perRead;
         const value: unknown = Reflect.get(target, property, target);
         return typeof value === "function" ? (value as (...args: unknown[]) => unknown).bind(target) : value;
       },
@@ -402,19 +536,30 @@ describe("cost of a layer toggle", () => {
     const planes = Object.fromEntries(Object.entries(world.planes).map(([name, plane]) => [name, charged(plane)]));
     const watched: RenderableWorld = { ...world, planes: planes as unknown as RenderableWorld["planes"] };
     const viewport = { width: 1600, height: 400 };
-    const { renderer, gl } = setup(viewport.width, viewport.height);
+    const { renderer, gl } = setup(viewport.width, viewport.height, { mapPalette: terrariaMapPalette });
+    const unpack = new Map<number, number>();
+    vi.spyOn(gl, "pixelStorei").mockImplementation((name, value) => { unpack.set(name, Number(value)); });
+    const wide = new Uint16Array(PAGE * PAGE * 4);
+    const narrow = new Uint8Array(PAGE * PAGE * 4);
     vi.spyOn(gl, "texSubImage3D").mockImplementation((...args: unknown[]) => {
       const [, , , , , width, height, , format, type] = args as number[];
-      const source = args[10] as ArrayBufferView;
       const texels = (width ?? 0) * (height ?? 0);
-      const bytes = texels * (format === gl.RGBA_INTEGER ? 4 : 1) * (type === gl.UNSIGNED_SHORT ? 2 : 1);
-      const prepare = source.byteOffset === block.byteOffset && source.buffer === block.buffer ? perTile * texels : 0;
-      now += CALL_OVERHEAD + bytes * PER_BYTE + prepare;
+      if (mode === "current") {
+        now += CALL_OVERHEAD + texels * (type === gl.UNSIGNED_SHORT ? 2 : 1) * PER_BYTE;
+        return;
+      }
+      // Main: one charge per chunk, at the block plane's upload (16-bit, layer slot * 5 + 0).
+      if (format !== gl.RED_INTEGER || type !== gl.UNSIGNED_SHORT || (args[4] as number) % 5 !== 0) return;
+      const y0 = unpack.get(gl.UNPACK_SKIP_PIXELS) ?? 0;
+      const x0 = unpack.get(gl.UNPACK_SKIP_ROWS) ?? 0;
+      const reads = mainPreparation(world, rules, x0, x0 + (height ?? 0), y0, y0 + (width ?? 0), wide, narrow);
+      // Main uploaded whole layer rows: PAGE texels by the chunk's columns, 8 + 4 bytes each, in two calls.
+      now += 2 * CALL_OVERHEAD + PAGE * (height ?? 0) * 12 * PER_BYTE + reads * perRead;
     });
-    // Only frames are counted: the overview build's draws and mipmaps are skipped too.
+    // Only frames are counted: the overview build's draws and mipmaps are skipped to keep the test fast.
     vi.spyOn(gl, "drawArraysInstanced").mockImplementation(() => undefined);
     vi.spyOn(gl, "generateMipmap").mockImplementation(() => undefined);
-    renderer.setWorld(watched);
+    renderer.setWorld(mode === "current" ? watched : world);
     renderer.setCamera(fitWorld(viewport, world));
     renderer.render();
     renderer.setLayers({ background: true, walls: false, blocks: true, liquids: true });
@@ -430,27 +575,32 @@ describe("cost of a layer toggle", () => {
     return frames;
   }
 
-  test("a 16000 × 4000 world at Fit world takes at most a third of the frames of main's per-tile preparation", () => {
-    // Plane contents do not matter (uploads are not sent): the planes share one zeroed buffer, and the block plane
-    // starts one element later so that its uploads can be told apart.
+  test("a 16000 × 4000 world at Fit world takes at most a third of the frames of main's chunk preparation", () => {
+    // Plane contents only matter to main's preparation: alternate rows of plain and ruled blocks (a chest, tile 21),
+    // over planes sharing one buffer.
     const width = 16000;
     const height = 4000;
     const count = width * height;
-    const buffer = new ArrayBuffer((count + 1) * 2);
-    const sixteen = new Uint16Array(buffer, 0, count);
-    const block = new Uint16Array(buffer, 2, count);
+    const buffer = new ArrayBuffer(count * 2);
+    const sixteen = new Uint16Array(buffer);
+    for (let index = 1; index < count; index += 2) sixteen[index] = 1;
     const eight = new Uint8Array(buffer, 0, count);
     const world: RenderableWorld = {
-      width, height, surfaceY: 1000, palette: [{ kind: "vanilla", id: 0 }],
+      width, height, surfaceY: 1000, palette: [{ kind: "vanilla", id: 0 }, { kind: "vanilla", id: 21 }],
       planes: {
-        block, wall: sixteen, flags: sixteen, frameX: new Int16Array(buffer, 0, count), frameY: new Int16Array(buffer, 0, count),
+        block: sixteen, wall: sixteen, flags: sixteen, frameX: new Int16Array(buffer), frameY: new Int16Array(buffer),
         liquid: eight, liquidAmount: eight, paint: eight, wallPaint: eight,
       },
     };
-    const current = toggleFrames(world, block, 0);
-    const main = toggleFrames(world, block, PER_READ * 9);
-    // Charged main's preparation, the model reproduces main's measured toggle of about 139 frames.
-    expect(main).toBeGreaterThan(110);
+    const rules = world.palette.map((ref) => (ref.kind === "vanilla" ? terrariaMapPalette.tileOptions?.[ref.id] : undefined));
+    expect(rules[1]).toBeDefined();
+    // Calibration: main prepared a full chunk of frame-selected content in about 0.26 ms (PR #201).
+    const fullChunkReads = mainPreparation(world, rules, 1000, 1000 + PAGE, 1000, 1000 + PAGE, new Uint16Array(PAGE * PAGE * 4), new Uint8Array(PAGE * PAGE * 4));
+    const perRead = 0.26 / fullChunkReads;
+    const current = toggleFrames(world, "current", perRead, rules);
+    const main = toggleFrames(world, "main", perRead, rules);
+    // Main's measured toggle on such a world was about 139 frames.
+    expect(main).toBeGreaterThan(100);
     expect(main).toBeLessThan(170);
     expect(current * 3).toBeLessThanOrEqual(main);
   }, 120_000);
