@@ -226,7 +226,8 @@ public class WorldReaderTileGridTests
         var (file, tileStart) = SyntheticTileWorld.Build(section.Width, WindowBoundaryTileSection.Height, section.Bytes);
         using var stream = new ShortReadStream(file, shortReads);
 
-        var grid = WorldReader.Read(stream).Tiles;
+        var world = WorldReader.Read(stream);
+        var grid = world.Tiles;
 
         Assert.Equal(section.Width, grid.Width);
         Assert.Equal(WindowBoundaryTileSection.Height, grid.Height);
@@ -239,7 +240,10 @@ public class WorldReaderTileGridTests
         }
 
         Assert.Equal(tileStart + section.Bytes.Length, stream.Position);
-        Assert.InRange(stream.HighestReadEnd, 0, tileStart + section.Bytes.Length);
+        // A successful world read now walks entity sections too, but never consumes the footer.
+        Assert.Equal(8, world.Entities.Count);
+        Assert.All(world.Entities, entity => Assert.NotNull(entity.Error));
+        Assert.InRange(stream.HighestReadEnd, tileStart + section.Bytes.Length, world.Entities[^1].Boundary.End);
     }
 
     [Theory]
