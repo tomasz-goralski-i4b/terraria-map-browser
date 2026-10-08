@@ -12,7 +12,7 @@ export interface WorldBounds {
   readonly bottom: number;
 }
 
-/** Validated format-326 metadata, before any tile planes are allocated. */
+/** Validated viewer metadata, before any tile planes are allocated. */
 export interface WorldMetadata {
   readonly name: string;
   readonly seed: string;
@@ -173,9 +173,10 @@ class MetadataReader {
   }
 }
 
-/** Reads the validated header and all format-326 metadata rows, bounded by pointer[1]. */
+/** Reads all metadata rows for supported formats 279 and 326, bounded by pointer[1]. */
 export function readWorldMetadata(bytes: Uint8Array): WorldMetadataResult {
   const world = readWorldHeader(bytes);
+  const version = world.header.version;
   const reader = new MetadataReader(bytes, world.sections.metadata.start, world.sections.metadata.end);
   const name = reader.string("name", 4096);
   const seed = reader.string("seed", 4096);
@@ -195,8 +196,9 @@ export function readWorldMetadata(bytes: Uint8Array): WorldMetadataResult {
   const rawMode = reader.int();
   const modes = ["classic", "expert", "master", "journey"] as const;
   const mode: WorldMode = modes[rawMode] ?? { mode: "unknown", raw: rawMode };
-  reader.bools(9); // special seeds (row 13)
-  reader.skip(16); // creation time and last played (rows 14–15)
+  reader.bools(version >= 302 ? 9 : 8); // special seeds (row 13); skyblock added in 302
+  reader.skip(8); // creation time (row 14)
+  if (version >= 284) reader.skip(8); // last played (row 15)
   reader.skip(1 + 17 * 4 + 2 * 4); // moon, backgrounds, spawn (16–18)
   const surfaceLevel = reader.level("surfaceLevel");
   const rockLevel = reader.level("rockLevel");
@@ -211,7 +213,7 @@ export function readWorldMetadata(bytes: Uint8Array): WorldMetadataResult {
   reader.list("anglerFinishers", 4, 1, true); // 32
   reader.bool(); reader.skip(4); reader.bools(3); reader.skip(8); // NPCs, quest, invasion/cultist (33)
   reader.list("killCounts", 2, 4); // 34
-  reader.list("claimableBanners", 2, 2); // 35
+  if (version >= 289) reader.list("claimableBanners", 2, 2); // 35
   reader.bools(19); // fast-forward, bosses, pillars/apocalypse (36–38)
   reader.bools(2); reader.skip(4); reader.list("partyingNpcs", 4, 4); // party (39)
   reader.bool(); reader.skip(12); // sandstorm (40)
@@ -221,10 +223,14 @@ export function readWorldMetadata(bytes: Uint8Array): WorldMetadataResult {
   reader.bools(2); reader.skip(16); reader.bools(3); // holidays, ores, pets (46–48)
   reader.bools(12); reader.bools(9); // bosses, NPC unlocks, book II, satchel, slimes (49–50)
   reader.bool(); reader.skip(1); // dusk and moondial (51)
-  reader.bools(2); reader.bools(2); reader.skip(8); // holidays, vampire/infected, meteor/coins (52–54)
-  reader.bool(); reader.list("teamSpawns", 1, 4); // team seed and coordinates (55)
-  reader.bools(3); // dual dungeons and lightning (56–57); row 58 absent in 326
-  reader.string("worldGenManifest"); // 59
+  if (version >= 287) reader.bools(2); // permanent holidays (52)
+  if (version >= 288) reader.bool(); // vampire seed (53)
+  if (version >= 296) reader.bool(); // infected seed (53)
+  if (version >= 291) reader.skip(8); // meteor/coins (54)
+  if (version >= 297) { reader.bool(); reader.list("teamSpawns", 1, 4); } // 55
+  if (version >= 304) reader.bool(); // dual dungeons (56)
+  if (version >= 323) reader.bools(2); // lightning (57); row 58 absent in both supported versions
+  if (version >= 299) reader.string("worldGenManifest"); // 59
   reader.finish();
   return { ...world, metadata: { name, seed, guid, worldId, bounds, width, height, mode, evil, surfaceLevel, rockLevel } };
 }

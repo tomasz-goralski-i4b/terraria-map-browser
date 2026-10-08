@@ -78,17 +78,21 @@ class TileDecoder {
   private readonly sections: WorldSectionTable;
   private readonly width: number;
   private readonly height: number;
+  private readonly allowResidualShape: boolean;
   private readonly end: number;
   private pos: number;
   private recordStart = 0;
   private x = 0;
   private y = 0;
 
-  constructor(bytes: Uint8Array, sections: WorldSectionTable, width: number, height: number) {
+  constructor(bytes: Uint8Array, sections: WorldSectionTable, width: number, height: number, version: number) {
     this.bytes = bytes;
     this.sections = sections;
     this.width = width;
     this.height = height;
+    // Observed in CMCO1 (format 279): 11,280 records retain a slope/half-block shape without an active block.
+    // Shapes carry no payload bytes, so preserving them does not change record boundaries.
+    this.allowResidualShape = version === 279;
     this.pos = sections.tiles.start;
     this.end = sections.tiles.end;
     const count = width * height;
@@ -157,7 +161,9 @@ class TileDecoder {
     if (runWidth === 3) this.fail("reserved run width");
     if (shape > 5) this.fail("undefined block shape");
     if (shimmer && liquid !== 1) this.fail("shimmer without water");
-    if (!hasBlock && ((flag1 & 32) !== 0 || hasBlockPaint || shape !== 0)) this.fail("flag without owner");
+    if (!hasBlock && ((flag1 & 32) !== 0 || hasBlockPaint || (shape !== 0 && !this.allowResidualShape))) {
+      this.fail("flag without owner");
+    }
     if (!hasWall && (hasWallPaint || hasWallHigh)) this.fail("flag without owner");
 
     let blockIndex = NO_CONTENT;
@@ -227,7 +233,7 @@ class TileDecoder {
 export function readWorldTiles(bytes: Uint8Array): WorldTilesResult {
   const world = readWorldMetadata(bytes);
   const { width, height } = world.metadata;
-  const decoder = new TileDecoder(bytes, world.sections, width, height);
+  const decoder = new TileDecoder(bytes, world.sections, width, height, world.header.version);
   decoder.decode();
   return { ...world, planes: decoder.planes, palette: decoder.palette.entries };
 }

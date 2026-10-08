@@ -81,6 +81,11 @@ Format version numbers come from TEdit (T1) and, for 326, from our own fixtures 
 
 ## Versions
 
+**Viewer PoC exception (2026-10-08):** the TypeScript reader also accepts exactly **279** (Terraria 1.4.4.9)
+for viewing tModLoader worlds. The .NET reference codec and writer still accept only 326. The M1 contract
+below describes the original scope; see [format-279-poc.md](format-279-poc.md) for compatibility evidence,
+the metadata differences and the narrowly scoped residual-shape rule.
+
 The **format version** is the first field of every `.wld` file. It is not the game version: several game
 builds may share a format version, and some format numbers were never released.
 
