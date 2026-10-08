@@ -331,8 +331,14 @@ describe("scheduled chunk upload budget", () => {
 
   test("panning with uploads pending uploads only chunks visible to the new camera", () => {
     const frames = animationFrames();
-    const { renderer } = setup(384, 128, { maxChunkUploadsPerFrame: 1 });
-    const world = terrain(1280, 128);
+    const { renderer, pixels } = setup(384, 128, { maxChunkUploadsPerFrame: 1 });
+    // Blocks vary along x with a period (7) that does not divide the chunk size, so every chunk's data differs.
+    const base = terrain(1280, 128);
+    const block = new Uint16Array(base.planes.block.length);
+    for (let x = 0; x < 1280; x++) {
+      for (let y = 0; y < 128; y++) block[x * 128 + y] = ((x % 7) + (y % 3)) % 2;
+    }
+    const world: RenderableWorld = { ...base, planes: { ...base.planes, block } };
     renderer.setWorld(world);
     renderer.setCamera({ x: 0, y: 0, zoom: 1 });
     frames.step();
@@ -348,5 +354,12 @@ describe("scheduled chunk upload budget", () => {
     expect(renderer.stats().visibleChunks).toEqual(nextVisible);
     expect(renderer.stats().residentChunks).toBe(1 + nextVisible.length);
     expect(frames.pending.size).toBe(0);
+    // Each new chunk's slot holds that chunk's own data: the map equals a fresh synchronous render.
+    const reference = setup(384, 128);
+    reference.renderer.setWorld(world);
+    reference.renderer.setCamera(nextCamera);
+    reference.renderer.render();
+    expect(pixels()).toEqual(reference.pixels());
+    reference.renderer.dispose();
   });
 });

@@ -145,6 +145,37 @@ describe("overview below half a pixel per tile", () => {
     expect(renderer.stats().textureUploads).toBe(uploads);
   });
 
+  test("the pixels of a view do not depend on which chunks were visited before (mipmaps sample built neighbours)", () => {
+    const uniform = blocks(512, 128, () => 1);
+    const view: Camera = { x: 128, y: 0, zoom: 0.3 };
+    const fresh = setup(32, 32);
+    fresh.renderer.setWorld(uniform);
+    fresh.renderer.setCamera(view);
+    fresh.renderer.render();
+    const visited = setup(32, 32);
+    visited.renderer.setWorld(uniform);
+    visited.renderer.setCamera({ x: 0, y: 0, zoom: 0.3 });
+    visited.renderer.render();
+    visited.renderer.setCamera(view);
+    visited.renderer.render();
+    for (const [x, y] of [[0, 0], [0, 16], [31, 31]] as const) {
+      expect(fresh.pixel(x, y)).toEqual(blockA);
+      expect(fresh.pixel(x, y)).toEqual(visited.pixel(x, y));
+    }
+  });
+
+  test("appending to an empty palette rebuilds the overview", () => {
+    const growing: RenderableWorld = { ...blocks(256, 128, () => 0), palette: [] };
+    const { renderer, pixel } = setup(64, 32);
+    renderer.setWorld(growing);
+    renderer.setCamera({ x: 0, y: 0, zoom: 0.25 });
+    renderer.render();
+    (growing.palette as unknown[]).push(...palette);
+    renderer.setWorld(growing);
+    renderer.render();
+    expect(pixel(10, 10)).toEqual(contentColor(palette[0], "block"));
+  });
+
   test("tileAt is independent of the overview", () => {
     const { renderer } = setup(512, 256);
     renderer.setWorld(halves);

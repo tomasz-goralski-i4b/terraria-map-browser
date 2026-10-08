@@ -4,7 +4,7 @@
 
 import type { ContentRef } from "@studio/world-model";
 import { CHUNK_SIZE, visibleChunks } from "../camera/camera.js";
-import type { Camera, ChunkCoord } from "../camera/camera.js";
+import type { Camera, ChunkCoord, Size } from "../camera/camera.js";
 import type { ChunkLayers } from "../chunk/render.js";
 import {
   backgroundColor, contentColor, liquidColors, mapOption, optionColor, optionColors, optionRule,
@@ -361,8 +361,8 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, 0);
     gl.pixelStorei(gl.UNPACK_SKIP_ROWS, 0);
     textureUploads++;
-    // Content colours the overview already holds may have been absent before this append.
-    if (paletteUploaded > 0) invalidateOverview();
+    // Content colours the overview already holds may have been absent (out of range) before this append.
+    invalidateOverview();
     paletteUploaded = total;
   };
 
@@ -591,6 +591,19 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     gl.generateMipmap(gl.TEXTURE_2D);
   };
 
+  /** The visible chunks followed by those within the overview's filter footprint around the viewport. */
+  const overviewFootprint = (source: RenderableWorld, visible: readonly ChunkCoord[], viewport: Size): ChunkCoord[] => {
+    const margin = Math.ceil(4 / camera.zoom);
+    const around = visibleChunks(
+      { x: camera.x - margin, y: camera.y - margin, zoom: camera.zoom },
+      { width: viewport.width + 2 * margin * camera.zoom, height: viewport.height + 2 * margin * camera.zoom },
+      source,
+    );
+    const chunksX = Math.ceil(source.width / CHUNK_SIZE);
+    const inView = new Set(visible.map((chunk) => chunk.y * chunksX + chunk.x));
+    return [...visible, ...around.filter((chunk) => !inView.has(chunk.y * chunksX + chunk.x))];
+  };
+
   const drawFrame = (uploadBudget: number): void => {
     if (disposed || gl.isContextLost()) return;
     const viewport = { width: canvas.width, height: canvas.height };
@@ -612,10 +625,13 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
 
     const chunksX = Math.ceil(source.width / CHUNK_SIZE);
     const visible = visibleChunks(camera, viewport, source);
+    // Filtered overview samples reach past the viewport (mipmap texels cover up to ~4 / zoom tiles), so its texels
+    // are built over that footprint: visible chunks first, then the margin.
+    const footprint = target === null ? visible : overviewFootprint(source, visible, viewport);
     // In overview mode only chunks whose texels are not built yet are needed.
-    const needed = target === null ? visible : visible.filter((chunk) => target.built[chunk.y * chunksX + chunk.x] === 0);
-    const visibleKeys = new Set(visible.map((chunk) => chunk.y * chunksX + chunk.x));
-    cacheCapacity = Math.max(cacheCapacity, visible.length);
+    const needed = target === null ? visible : footprint.filter((chunk) => target.built[chunk.y * chunksX + chunk.x] === 0);
+    const visibleKeys = new Set(footprint.map((chunk) => chunk.y * chunksX + chunk.x));
+    cacheCapacity = Math.max(cacheCapacity, footprint.length);
     let missing = 0;
     for (const chunk of needed) if (!chunks.has(chunk.y * chunksX + chunk.x)) missing++;
     const uploadsThisFrame = Math.min(missing, uploadBudget);
