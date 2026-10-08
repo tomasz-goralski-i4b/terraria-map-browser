@@ -157,7 +157,7 @@ describe("scheduled chunk upload budget", () => {
     expect(frames.pending.size).toBe(0);
   });
 
-  test("a fitted modded world larger than Large keeps bounded uploads and shrinks its cache after zooming in", () => {
+  test("a fitted modded world keeps bounded uploads and cached textures across repeated zoom changes", () => {
     const frames = animationFrames();
     const world = terrain(10000, 3000);
     const moddedViewport = { width: 1250, height: 375 };
@@ -177,12 +177,38 @@ describe("scheduled chunk upload budget", () => {
     expect(frames.pending.size).toBe(0);
     expect(renderer.stats().visibleChunks).toEqual(expectedChunks);
     expect(renderer.stats().residentChunks).toBe(expectedChunks.length);
-    renderer.setCamera({ x: 0, y: 0, zoom: 1 });
-    frames.step();
-    expect(renderer.stats().residentChunks).toBe(1536);
-    expect(renderer.stats().textureUploads).toBe(previousUploads);
-    expect(frames.pending.size).toBe(0);
+    const deleted = vi.spyOn(WebGL2RenderingContext.prototype, "deleteTexture");
+    for (let cycle = 0; cycle < 3; cycle++) {
+      renderer.setCamera({ x: 0, y: 0, zoom: 1 });
+      frames.step();
+      expect(renderer.stats().residentChunks).toBe(expectedChunks.length);
+      renderer.setCamera(fittedCamera);
+      frames.step();
+      expect(renderer.stats().visibleChunks).toEqual(expectedChunks);
+      expect(renderer.stats().textureUploads).toBe(previousUploads);
+      expect(frames.pending.size).toBe(0);
+    }
+    expect(deleted).not.toHaveBeenCalled();
   }, 60_000);
+
+  test.each([false, true])("changing worlds resets the grown cache capacity (clear first: %s)", (clearFirst) => {
+    const frames = animationFrames();
+    const { renderer } = setup(384, 256, { maxCachedChunks: 2, maxChunkUploadsPerFrame: 1 });
+    renderer.setWorld(terrain(384, 256));
+    renderer.setCamera({ x: 0, y: 0, zoom: 1 });
+    renderer.render();
+    expect(renderer.stats().residentChunks).toBe(6);
+    if (clearFirst) renderer.setWorld(null);
+    const nextWorld = terrain(1280, 128);
+    renderer.setWorld(nextWorld);
+    expect(renderer.stats().residentChunks).toBe(0);
+    renderer.render();
+    expect(renderer.stats().residentChunks).toBe(3);
+    renderer.setCamera({ x: 384, y: 0, zoom: 1 });
+    for (let frame = 0; frame < 3 && frames.pending.size > 0; frame++) frames.step();
+    expect(renderer.stats().residentChunks).toBe(3);
+    expect(frames.pending.size).toBe(0);
+  });
 
   test("panning a full cache preserves overlapping visible chunks while uploads complete", () => {
     const frames = animationFrames();
