@@ -31,6 +31,8 @@ export interface RenderableWorld {
 }
 
 export interface MapRendererOptions {
+  /** Upper bound of uncached visible chunks uploaded per scheduled animation frame. */
+  readonly maxChunkUploadsPerFrame?: number;
   /** Upper bound of chunk textures kept on the GPU (LRU). Default 1536, enough for a whole Large world. */
   readonly maxCachedChunks?: number;
   /** Map colours (content, paint, background by depth), as in `renderChunk`; without one, placeholders are drawn. */
