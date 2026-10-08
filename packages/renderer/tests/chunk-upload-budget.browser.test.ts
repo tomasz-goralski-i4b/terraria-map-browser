@@ -81,7 +81,8 @@ describe("scheduled chunk upload budget", () => {
       const stats = renderer.stats();
       expect(stats.textureUploads - previousUploads).toBeLessThanOrEqual(budget);
       expect(stats.textureUploads - previousUploads).toBeGreaterThan(0);
-      expect(stats.drawCalls).toBe(stats.visibleChunks.length);
+      // The fitted world is drawn through the overview: one draw call however many chunks it shows.
+      expect(stats.drawCalls).toBe(1);
       previousUploads = stats.textureUploads;
     }
     expect(renderer.stats().visibleChunks).toEqual(visible);
@@ -96,7 +97,7 @@ describe("scheduled chunk upload budget", () => {
     frames.step();
     expect(renderer.stats().residentChunks).toBeGreaterThan(0);
     expect(renderer.stats().residentChunks).toBeLessThan(visible.length);
-    expect(renderer.stats().drawCalls).toBe(renderer.stats().residentChunks);
+    expect(renderer.stats().drawCalls).toBe(1);
     expect(frames.pending.size).toBe(1);
   });
 
@@ -112,7 +113,7 @@ describe("scheduled chunk upload budget", () => {
     }
     expect(frames.pending.size).toBe(0);
     expect(renderer.stats().visibleChunks).toEqual(visible);
-    expect(renderer.stats().drawCalls).toBe(visible.length);
+    expect(renderer.stats().drawCalls).toBe(1);
     const incremental = pixels();
     const reference = setup(viewport.width, viewport.height, { maxChunkUploadsPerFrame: 1 });
     reference.renderer.setWorld(large);
@@ -145,7 +146,7 @@ describe("scheduled chunk upload budget", () => {
     }
     expect(frames.pending.size).toBe(0);
     expect(renderer.stats().visibleChunks).toEqual(expectedChunks);
-    expect(renderer.stats().drawCalls).toBe(expectedChunks.length);
+    expect(renderer.stats().drawCalls).toBe(1); // One instanced draw call for the chunk page.
     expect(renderer.stats().residentChunks).toBe(expectedChunks.length);
     const scheduledPixels = pixels();
     const reference = setup(smallViewport.width, smallViewport.height, options);
@@ -157,7 +158,7 @@ describe("scheduled chunk upload budget", () => {
     expect(frames.pending.size).toBe(0);
   });
 
-  test("a fitted modded world keeps bounded uploads and cached textures across repeated zoom changes", () => {
+  test("a fitted modded world keeps bounded uploads, a bounded cache and no re-uploads across repeated zoom changes", () => {
     const frames = animationFrames();
     const world = terrain(10000, 3000);
     const moddedViewport = { width: 1250, height: 375 };
@@ -176,17 +177,27 @@ describe("scheduled chunk upload budget", () => {
     }
     expect(frames.pending.size).toBe(0);
     expect(renderer.stats().visibleChunks).toEqual(expectedChunks);
-    expect(renderer.stats().residentChunks).toBe(expectedChunks.length);
+    // The fitted world is drawn from the overview: its chunks were needed only to build it.
+    expect(renderer.stats().textureUploads).toBe(expectedChunks.length + 2);
+    expect(renderer.stats().residentChunks).toBeLessThanOrEqual(512);
+    const zoomedIn = { x: 0, y: 0, zoom: 1 };
     const deleted = vi.spyOn(WebGL2RenderingContext.prototype, "deleteTexture");
+    let afterFirstCycle = 0;
     for (let cycle = 0; cycle < 3; cycle++) {
-      renderer.setCamera({ x: 0, y: 0, zoom: 1 });
-      frames.step();
-      expect(renderer.stats().residentChunks).toBe(expectedChunks.length);
+      renderer.setCamera(zoomedIn);
+      for (let frame = 0; frame < 10 && frames.pending.size > 0; frame++) frames.step();
+      expect(renderer.stats().visibleChunks).toEqual(visibleChunks(zoomedIn, moddedViewport, world));
+      const beforeFit = renderer.stats().textureUploads;
       renderer.setCamera(fittedCamera);
       frames.step();
+      // The overview persists: zooming back out uploads nothing.
+      expect(renderer.stats().textureUploads).toBe(beforeFit);
       expect(renderer.stats().visibleChunks).toEqual(expectedChunks);
-      expect(renderer.stats().textureUploads).toBe(previousUploads);
+      expect(renderer.stats().residentChunks).toBeLessThanOrEqual(512);
       expect(frames.pending.size).toBe(0);
+      // Only the first zoom-in uploads; the zoomed-in chunks then stay cached.
+      if (cycle === 0) afterFirstCycle = beforeFit;
+      else expect(beforeFit).toBe(afterFirstCycle);
     }
     expect(deleted).not.toHaveBeenCalled();
   }, 60_000);
@@ -234,10 +245,11 @@ describe("scheduled chunk upload budget", () => {
     renderer.setWorld(large);
     renderer.setCamera(camera);
     renderer.render();
-    expect(renderer.stats().residentChunks).toBe(visible.length);
+    // Drawn from the overview: every chunk uploaded once, and the cache keeps only its baseline.
+    expect(renderer.stats().residentChunks).toBeLessThanOrEqual(512);
     expect(renderer.stats().textureUploads).toBe(visible.length + 2);
     expect(renderer.stats().visibleChunks).toEqual(visible);
-    expect(renderer.stats().drawCalls).toBe(visible.length);
+    expect(renderer.stats().drawCalls).toBe(1);
   });
 
   test("returning mid-load keeps earlier terrain when this frame's upload fits in spare cache space", () => {
@@ -258,7 +270,7 @@ describe("scheduled chunk upload budget", () => {
     renderer.setCamera(initialCamera);
     frames.step();
     expect(renderer.stats().textureUploads - uploads).toBe(1);
-    expect(renderer.stats().drawCalls).toBe(3);
+    expect(renderer.stats().drawCalls).toBe(1);
     expect(pixels()).toEqual(initialPixels);
     expect(frames.pending.size).toBe(0);
   });
@@ -272,17 +284,17 @@ describe("scheduled chunk upload budget", () => {
     renderer.render();
     const initialPixels = pixels();
     const uploads = renderer.stats().textureUploads;
-    const deleted = vi.spyOn(WebGL2RenderingContext.prototype, "deleteTexture");
+    const evicted = renderer.stats().evictedChunks;
     renderer.setCamera({ x: 640, y: 0, zoom: 1 });
     frames.step();
     expect(renderer.stats().textureUploads - uploads).toBe(1);
-    expect(deleted).toHaveBeenCalledTimes(6); // Six textures for the one chunk actually replaced.
+    expect(renderer.stats().evictedChunks - evicted).toBe(1); // Only the one chunk actually replaced.
     expect(frames.pending.size).toBe(1);
     const beforeReturn = renderer.stats().textureUploads;
     renderer.setCamera(initialCamera);
     frames.step();
     expect(renderer.stats().textureUploads - beforeReturn).toBe(1);
-    expect(renderer.stats().drawCalls).toBe(3);
+    expect(renderer.stats().drawCalls).toBe(1);
     expect(renderer.stats().residentChunks).toBe(3);
     expect(pixels()).toEqual(initialPixels);
     expect(frames.pending.size).toBe(0);
@@ -316,7 +328,7 @@ describe("scheduled chunk upload budget", () => {
     expect(second.textureUploads - uploads).toBe(1);
     expect(second.visibleChunks).toHaveLength(2);
     expect(second.visibleChunks).toEqual(expect.arrayContaining([...first.visibleChunks]));
-    expect(second.drawCalls).toBe(2);
+    expect(second.drawCalls).toBe(1);
     const secondPixels = pixels();
     assertPixels(secondPixels, second.visibleChunks);
     for (const chunk of first.visibleChunks) {
@@ -324,39 +336,41 @@ describe("scheduled chunk upload budget", () => {
       expect(secondPixels.subarray(start, start + 128 * 4)).toEqual(firstPixels.subarray(start, start + 128 * 4));
     }
     frames.step();
-    expect(renderer.stats().drawCalls).toBe(3);
+    expect(renderer.stats().drawCalls).toBe(1);
     expect(frames.pending.size).toBe(0);
   });
 
   test("panning with uploads pending uploads only chunks visible to the new camera", () => {
     const frames = animationFrames();
-    const { renderer, gl } = setup(384, 128, { maxChunkUploadsPerFrame: 1 });
-    const world = terrain(1280, 128);
+    const { renderer, pixels } = setup(384, 128, { maxChunkUploadsPerFrame: 1 });
+    // Blocks vary along x with a period (7) that does not divide the chunk size, so every chunk's data differs.
+    const base = terrain(1280, 128);
+    const block = new Uint16Array(base.planes.block.length);
+    for (let x = 0; x < 1280; x++) {
+      for (let y = 0; y < 128; y++) block[x * 128 + y] = ((x % 7) + (y % 3)) % 2;
+    }
+    const world: RenderableWorld = { ...base, planes: { ...base.planes, block } };
     renderer.setWorld(world);
     renderer.setCamera({ x: 0, y: 0, zoom: 1 });
     frames.step();
     expect(frames.pending.size).toBe(1);
-    const uploaded: { x: number; y: number }[] = [];
-    // eslint-disable-next-line @typescript-eslint/unbound-method -- invoked below with the original GL receiver
-    const original = gl.texSubImage2D;
-    vi.spyOn(gl, "texSubImage2D").mockImplementation(function (this: WebGL2RenderingContext, ...args: unknown[]) {
-      if (args[6] === this.RED_INTEGER && args[7] === this.UNSIGNED_SHORT) {
-        uploaded.push({
-          x: (this.getParameter(this.UNPACK_SKIP_ROWS) as number) / 128,
-          y: (this.getParameter(this.UNPACK_SKIP_PIXELS) as number) / 128,
-        });
-      }
-      (original as unknown as (...rest: unknown[]) => void).apply(this, args);
-    });
+    const uploads = renderer.stats().textureUploads;
     const nextCamera = { x: 896, y: 0, zoom: 1 };
     renderer.setCamera(nextCamera);
     const nextVisible = visibleChunks(nextCamera, { width: 384, height: 128 }, world);
     let count = 0;
     while (frames.pending.size > 0 && count++ < nextVisible.length) frames.step();
-    expect(uploaded.length).toBe(nextVisible.length * 2); // Block and wall uploads for each new chunk.
-    for (const chunk of uploaded) expect(nextVisible).toContainEqual(chunk);
+    // None of the new chunks was resident: exactly they were uploaded, none of the chunks passed over.
+    expect(renderer.stats().textureUploads - uploads).toBe(nextVisible.length);
     expect(renderer.stats().visibleChunks).toEqual(nextVisible);
     expect(renderer.stats().residentChunks).toBe(1 + nextVisible.length);
     expect(frames.pending.size).toBe(0);
+    // Each new chunk's slot holds that chunk's own data: the map equals a fresh synchronous render.
+    const reference = setup(384, 128);
+    reference.renderer.setWorld(world);
+    reference.renderer.setCamera(nextCamera);
+    reference.renderer.render();
+    expect(pixels()).toEqual(reference.pixels());
+    reference.renderer.dispose();
   });
 });
