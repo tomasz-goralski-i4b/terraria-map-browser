@@ -31,7 +31,11 @@ export interface RenderableWorld {
 }
 
 export interface MapRendererOptions {
-  /** Upper bound of uncached visible chunks uploaded per scheduled animation frame. Default 32. */
+  /**
+   * Upper bound of uncached visible chunks uploaded per scheduled animation frame. Default 32.
+   * Finite values are floored and clamped to at least 1; non-finite values use the default.
+   * If the visible set exceeds the cache capacity, the frame uploads and draws all visible chunks.
+   */
   readonly maxChunkUploadsPerFrame?: number;
   /** Upper bound of chunk textures kept on the GPU (LRU). Default 1536, enough for a whole Large world. */
   readonly maxCachedChunks?: number;
@@ -343,12 +347,14 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
 
     const chunksX = Math.ceil(world.width / CHUNK_SIZE);
     const visible = visibleChunks(camera, viewport, world);
+    // A visible set larger than the cache cannot accumulate across frames: eviction would prevent completion.
+    const frameUploadBudget = visible.length > maxCachedChunks ? Infinity : uploadBudget;
     const drawnChunks: ChunkCoord[] = [];
     let uploads = 0;
     let pending = false;
     for (const chunk of visible) {
       if (!chunks.has(chunk.y * chunksX + chunk.x)) {
-        if (uploads >= uploadBudget) {
+        if (uploads >= frameUploadBudget) {
           pending = true;
           continue;
         }
