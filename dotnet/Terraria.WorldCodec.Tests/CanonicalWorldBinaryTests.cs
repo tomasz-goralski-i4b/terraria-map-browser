@@ -19,6 +19,35 @@ public sealed class CanonicalWorldBinaryTests
     }
 
     [Fact]
+    public void Write_ModReferencesWithAndWithoutOptionalFields_WritesExactHeaderBytes()
+    {
+        var source = ExampleWorld();
+        var world = source with
+        {
+            Tiles = new TileGrid(2, 4,
+            [
+                new Tile { Block = new ModContentRef("CalamityMod", "AstralStone", 900, "2.0.4.6") },
+                new Tile { Wall = new ModContentRef("CalamityMod", "AstralDirtWall", null, null) },
+                new Tile { Block = new ModContentRef("CalamityMod", "Navystone", 901, null) },
+                new Tile { Wall = new ModContentRef("CalamityMod", "EutrophicSandWall", null, "2.0.4.6") },
+                new Tile(), new Tile(), new Tile(), new Tile(),
+            ]),
+        };
+        const string ExpectedHeader = """
+            {"schemaVersion":1,"formatVersion":326,"metadata":{"name":"Forêt 海岸","seed":"948580918","guid":"00112233445566778899aabbccddeeff","worldId":948580918,"gameMode":1,"evil":"corruption"},"dimensions":{"width":2,"height":4},"palette":[{"kind":"mod","mod":"CalamityMod","internalName":"AstralStone","runtimeId":900,"modVersion":"2.0.4.6"},{"kind":"mod","mod":"CalamityMod","internalName":"AstralDirtWall"},{"kind":"mod","mod":"CalamityMod","internalName":"Navystone","runtimeId":901},{"kind":"mod","mod":"CalamityMod","internalName":"EutrophicSandWall","modVersion":"2.0.4.6"}]}
+            """;
+        var expectedHeader = Encoding.UTF8.GetBytes(ExpectedHeader);
+        using var output = new MemoryStream();
+
+        CanonicalWorldBinary.Write(world, output);
+
+        var exported = output.ToArray();
+        Assert.Equal((uint)expectedHeader.Length, BinaryPrimitives.ReadUInt32LittleEndian(exported.AsSpan(8, 4)));
+        Assert.Equal(expectedHeader, exported.AsSpan(12, expectedHeader.Length).ToArray());
+        Assert.Equal(12 + expectedHeader.Length + (15 * 2 * 4), exported.Length);
+    }
+
+    [Fact]
     public void Write_UnicodeAndControlMetadata_WritesExactUtf8AndJsonEscapes()
     {
         const string Name = "Forêt 😀\uFEFF\u2028\u2029\u007F \"海岸\"\\\b\t\n\f\r";
