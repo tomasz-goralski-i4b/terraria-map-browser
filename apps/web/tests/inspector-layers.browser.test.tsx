@@ -10,7 +10,7 @@ import { MapView } from "../src/components/MapView.js";
 import { InspectorPanel, type InspectorWorld } from "../src/panels/InspectorPanel.js";
 import { LayersPanel } from "../src/panels/LayersPanel.js";
 import { useCommands, useGlobalShortcuts } from "../src/shell/commands.js";
-import { hydrateLayout } from "../src/shell/layout-store.js";
+import { hydrateLayout, useLayoutStore } from "../src/shell/layout-store.js";
 import { DEFAULT_MAP_LAYERS, getMapController, rendererLayers, useViewStore } from "../src/shell/view-store.js";
 import { toCanonicalWorld } from "../src/world/canonical-world.js";
 import { getDefaultWorldSession } from "../src/world/world-session.js";
@@ -52,8 +52,8 @@ function rows(): [string, string][] {
 
 test.each([
   [0, 0, [
-    ["Position", "0, 0"], ["Block", "Stone Block (vanilla:1)"], ["Wall", "Natural Dirt Wall (vanilla:2)"], ["Frame X", "18"], ["Frame Y", "36"],
-    ["Shape", "Half block"], ["Block paint", "Yellow Paint (3)"], ["Wall paint", "Lime Paint (4)"], ["Liquid", "None"], ["Liquid amount", "None"],
+    ["Position", "0, 0"], ["Block", "Stone Block"], ["Wall", "Natural Dirt Wall"], ["Frame X", "18"], ["Frame Y", "36"],
+    ["Shape", "Half block"], ["Block paint", "Yellow Paint"], ["Wall paint", "Lime Paint"], ["Liquid", "None"], ["Liquid amount", "None"],
     ["Wires", "Red, Green"], ["Actuator", "Yes"], ["Inactive", "Yes"], ["Invisible block", "No"], ["Invisible wall", "No"],
     ["Full-bright block", "No"], ["Full-bright wall", "No"],
   ]],
@@ -64,13 +64,13 @@ test.each([
     ["Full-bright wall", "No"],
   ]],
   [1, 0, [
-    ["Position", "1, 0"], ["Block", "None"], ["Wall", "unknown:900 (unknown:900)"], ["Frame X", "None"], ["Frame Y", "None"],
+    ["Position", "1, 0"], ["Block", "None"], ["Wall", "unknown:900"], ["Frame X", "None"], ["Frame Y", "None"],
     ["Shape", "None"], ["Block paint", "None"], ["Wall paint", "None"], ["Liquid", "Lava"], ["Liquid amount", "255"],
     ["Wires", "Yellow"], ["Actuator", "No"], ["Inactive", "No"], ["Invisible block", "No"], ["Invisible wall", "Yes"],
     ["Full-bright block", "No"], ["Full-bright wall", "Yes"],
   ]],
   [2, 2, [
-    ["Position", "2, 2"], ["Block", "Tree (vanilla:5)"], ["Wall", "None"], ["Frame X", "None"], ["Frame Y", "None"],
+    ["Position", "2, 2"], ["Block", "Tree"], ["Wall", "None"], ["Frame X", "None"], ["Frame Y", "None"],
     ["Shape", "Slope, bottom left"], ["Block paint", "None"], ["Wall paint", "None"], ["Liquid", "None"], ["Liquid amount", "None"],
     ["Wires", "None"], ["Actuator", "No"], ["Inactive", "No"], ["Invisible block", "Yes"], ["Invisible wall", "No"],
     ["Full-bright block", "Yes"], ["Full-bright wall", "No"],
@@ -83,7 +83,8 @@ test.each([
   useViewStore.getState().setPinnedTile({ x, y });
   await expect.element(page.getByText("Pinned")).toBeVisible();
   // Shy by default: only what the tile has (the keys of its view, set flags, wires when present).
-  await expect.poll(rows).toEqual(expected.filter(([, shown]) => shown !== "None" && shown !== "No"));
+  // The raw frame is not shy: it shows with every field only.
+  await expect.poll(rows).toEqual(expected.filter(([label, shown]) => shown !== "None" && shown !== "No" && !label.startsWith("Frame ")));
   const showEmpty = page.getByRole("button", { name: "Show empty fields" });
   await expect.element(showEmpty).toHaveAttribute("aria-pressed", "false");
   await showEmpty.click();
@@ -91,16 +92,18 @@ test.each([
   await expect.poll(rows).toEqual(expected);
 });
 
-test("hovering previews a tile until one is pinned, and Unpin returns to the preview", async () => {
+test("the Inspector shows only a pinned tile: hovering changes nothing, and Unpin empties it", async () => {
   await render(<InspectorPanel world={inspectorWorld(canonicalWorld())} />);
   useViewStore.getState().setHoverTile({ x: 1, y: 0 });
-  await expect.poll(() => rows()[0]).toEqual(["Position", "1, 0"]);
-  await expect.element(page.getByText("Hover preview")).toBeVisible();
+  await expect.element(page.getByText("Click a tile with the Inspect tool (I) to inspect it.")).toBeVisible();
+  expect(rows()).toEqual([]);
   useViewStore.getState().setPinnedTile({ x: 2, y: 2 });
-  useViewStore.getState().setHoverTile({ x: 0, y: 1 });
   await expect.poll(() => rows()[0]).toEqual(["Position", "2, 2"]);
+  useViewStore.getState().setHoverTile({ x: 0, y: 1 });
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(rows()[0]).toEqual(["Position", "2, 2"]);
   await page.getByRole("button", { name: "Unpin tile" }).click();
-  await expect.poll(() => rows()[0]).toEqual(["Position", "0, 1"]);
+  await expect.element(page.getByText("Click a tile with the Inspect tool (I) to inspect it.")).toBeVisible();
 });
 
 test("the Inspector names the frame-selected altar and its paint", async () => {
@@ -111,8 +114,47 @@ test("the Inspector names the frame-selected altar and its paint", async () => {
   });
   await render(<InspectorPanel world={inspectorWorld(world)} />);
   useViewStore.getState().setPinnedTile({ x: 2, y: 1 });
-  await expect.poll(rows).toContainEqual(["Block", "Crimson Altar (vanilla:26)"]);
-  expect(rows()).toContainEqual(["Block paint", "Deep Cyan Paint (19)"]);
+  await expect.poll(rows).toContainEqual(["Block", "Crimson Altar"]);
+  expect(rows()).toContainEqual(["Block paint", "Deep Cyan Paint"]);
+});
+
+test("a tile of a chest also shows the chest, whose slots open over the map as a grid or a list", async () => {
+  const world = createWorld(4, 3);
+  for (const [x, y] of [[1, 0], [2, 0], [1, 1], [2, 1]] as const) world.setTile(x, y, { block: { kind: "vanilla", id: 21 }, frameX: 36, frameY: 0, wires: 0, actuator: false });
+  const chest = { x: 1, y: 0, name: "Ores", slotCount: 40, items: [{ slot: 2, itemId: 12, stack: 30, prefix: 0 }, { slot: 11, itemId: 46, stack: 1, prefix: 7 }] };
+  await render(<InspectorPanel world={{ ...inspectorWorld(world), chestAt: (x, y) => (x >= 1 && x <= 2 && y <= 1 ? chest : null) }} />);
+  useViewStore.getState().setPinnedTile({ x: 2, y: 1 });
+  await expect.element(page.getByRole("heading", { name: "Chest" })).toBeVisible();
+  const chestRows = (): [string, string][] => [...document.querySelectorAll('dl[aria-label="Chest"] .property-row')].map((row) => [
+    row.querySelector("dt")?.textContent ?? "", row.querySelector("dd")?.textContent ?? "",
+  ]);
+  expect(chestRows()).toEqual([["Name", "Ores"], ["Chest position", "1, 0"], ["Style", "1"], ["Filled slots", "2 of 40Open"]]);
+
+  // The grid shows every slot, empty ones too, labelled for assistive technology.
+  await page.getByRole("button", { name: "Open chest slots" }).click();
+  const dialog = page.getByRole("dialog", { name: "Ores" });
+  await expect.element(dialog).toBeVisible();
+  await expect.element(page.getByRole("button", { name: "Grid view" })).toHaveAttribute("aria-pressed", "true");
+  const cells = (): string[] => [...document.querySelectorAll(".chest-grid [role=listitem]")].map((cell) => cell.getAttribute("aria-label") ?? "");
+  expect(cells()).toHaveLength(40);
+  expect(cells()[0]).toBe("Slot 1: Empty");
+  expect(cells()[2]).toBe("Slot 3: Item 12 × 30");
+  expect(cells()[11]).toBe("Slot 12: Item 46 × 1, Prefix 7");
+
+  // The list shows the filled slots only, and the choice is remembered.
+  await page.getByRole("button", { name: "List view" }).click();
+  await expect.element(page.getByRole("button", { name: "List view" })).toHaveAttribute("aria-pressed", "true");
+  const listRows = [...document.querySelectorAll(".chest-list tbody tr")].map((row) => [...row.querySelectorAll("td")].map((cell) => cell.textContent));
+  expect(listRows).toEqual([["3", "Item 12", "30", ""], ["12", "Item 46", "1", "Prefix 7"]]);
+  expect(useLayoutStore.getState().chestView).toBe("list");
+
+  // Escape closes the slots and keeps the tile pinned.
+  await userEvent.keyboard("{Escape}");
+  await expect.element(dialog).not.toBeInTheDocument();
+  expect(useViewStore.getState().pinnedTile).toEqual({ x: 2, y: 1 });
+
+  useViewStore.getState().setPinnedTile({ x: 3, y: 1 });
+  await expect.element(page.getByRole("heading", { name: "Chest" })).not.toBeInTheDocument();
 });
 
 // ---------- Clicking the map with the Inspect tool ----------

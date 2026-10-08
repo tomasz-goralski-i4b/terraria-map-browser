@@ -72,7 +72,7 @@ export const CONTENT_COLUMNS: readonly Column<ContentRow>[] = [
     render: (row) => (
       <span className="content-name">
         <span className="swatch" style={swatch(row.color)} aria-hidden="true" />
-        {row.name}
+        <span className="content-name-text" title={row.name}>{row.name}</span>
       </span>
     ),
   },
