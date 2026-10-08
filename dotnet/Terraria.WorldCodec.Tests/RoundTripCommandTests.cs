@@ -6,7 +6,7 @@ namespace Terraria.WorldCodec.Tests;
 /// <summary>Issue #41: <c>roundtrip</c> writes a validated copy to a new path and never replaces a file (docs/round-trip.md).</summary>
 public sealed class RoundTripCommandTests
 {
-    private static byte[] World() => SyntheticTileWorld.Build(2, 4, TileAssert.Hex("42 01 03 40 03")).File;
+    private static byte[] World() => WorldWriterTests.Build(2, 4, TileAssert.Hex("42 01 03 40 03"));
 
     private static string[] Names(string directory) =>
         [.. Directory.GetFileSystemEntries(directory).Select(entry => Path.GetFileName(entry)).Order(StringComparer.Ordinal)];
