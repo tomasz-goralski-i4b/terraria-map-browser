@@ -59,6 +59,19 @@ The format is described in [docs/cwm.md](docs/cwm.md) and validated by
 `contracts/schemas/world-summary.v1.schema.json`. Exit codes are as above; a malformed region
 or one outside the world is an argument error (`2`).
 
+Write a round-tripped copy of a vanilla (format 326) world for validation:
+
+```bash
+dotnet run --project dotnet/Terraria.WorldInspector -- roundtrip "Forest Observatory.wld" "copy.wld"
+```
+
+The world is read, written to a staged file next to the output, reloaded and compared, and only then moved to
+the output path, which is printed on stdout (exit `0`). The command never replaces a file: an output path that
+already exists, or that is the input under another spelling (`..`, case, symbolic link), exits `2` and writes
+nothing. A failure while reading, writing or validating exits `1` with a one-line diagnostic and leaves no
+output and no staged file. A successful run is only a structural check, not a claim that the game accepts the
+world ([docs/round-trip.md](docs/round-trip.md)).
+
 Compare two M1 worlds semantically:
 
 ```bash

@@ -49,9 +49,15 @@ internal static class InspectorCommand
             return DiffCommand.Run(arguments, output, error, readWorld);
         }
 
+        if (arguments.Length > 0 && arguments[0] == "roundtrip")
+        {
+            return RoundTripCommand.Run(arguments, output, error);
+        }
+
         const string Usage = "Usage: Terraria.WorldInspector inspect <file.wld>\n"
             + "       Terraria.WorldInspector export-json <file.wld> [--region x,y,w,h]\n"
-            + "       Terraria.WorldInspector diff <left.wld> <right.wld> [--max n]";
+            + "       Terraria.WorldInspector diff <left.wld> <right.wld> [--max n]\n"
+            + "       Terraria.WorldInspector roundtrip <input.wld> <output.wld>";
 
         var exporting = arguments is ["export-json", _] or ["export-json", _, "--region", _];
         if (!exporting && arguments is not ["inspect", _])

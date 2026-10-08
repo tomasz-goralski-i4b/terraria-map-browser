@@ -505,7 +505,7 @@ public class WorldWriterTests
     }
 
     /// <summary>A complete synthetic world: the given tile bytes, sentinel sections 3–10 and a valid footer.</summary>
-    private static byte[] Build(
+    internal static byte[] Build(
         int width,
         int height,
         byte[] tiles,
