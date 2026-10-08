@@ -43,7 +43,7 @@ export function tileProperties(point: TilePoint, tile: Tile, showAll = true): Pr
   const flag = (label: string, value: boolean | undefined): Property => ({ kind: "flag", label, value: value ?? false });
   const all: Property[] = [
     { kind: "text", label: "Position", value: `${String(point.x)}, ${String(point.y)}` },
-    { kind: "text", label: "Block", value: tile.block === undefined ? NONE : `${contentName(tile.block, "block")} (${contentKey(tile.block)})` },
+    { kind: "text", label: "Block", value: tile.block === undefined ? NONE : `${contentName(tile.block, "block", tile)} (${contentKey(tile.block)})` },
     { kind: "text", label: "Wall", value: tile.wall === undefined ? NONE : `${contentName(tile.wall, "wall")} (${contentKey(tile.wall)})` },
     { kind: "text", label: "Frame X", value: optionalNumber(tile.frameX) },
     { kind: "text", label: "Frame Y", value: optionalNumber(tile.frameY) },
