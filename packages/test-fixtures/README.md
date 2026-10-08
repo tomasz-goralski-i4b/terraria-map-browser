@@ -91,3 +91,16 @@ If a world in the corpus ever falls outside the M1 contract, report it as a bloc
 After building (`pnpm build`), run `pnpm vitest run packages/world-codec/tests/shared-contracts.test.ts`.
 This checks the shared REC/SEC/META vectors and corpus golden summaries with the independent TypeScript
 codec, without invoking .NET or refreshing any expectations.
+
+## Round-trip evidence (load → save → load)
+
+`RoundTripCorpusTests` runs `roundtrip` (`WorldReader.ReadForSave` → `WorldWriter`) on every manifest world and proves
+nothing was lost: `RoundTripEvidence.Differences` compares header, metadata and every tile of the original and the
+reloaded world, plus every byte the model does not expose (file header, consumed metadata bytes, sections 3–10, footer),
+reporting the first differing byte as `<Section>: relative offset N`. A hash match alone is never the evidence.
+The same tests check `diff` (exit 0), `export-json` against the goldens and byte-identical `export-cwm` files, and that a
+second round trip equals the first. A missing fixture fails the test; it is never skipped.
+```bash
+bash scripts/build.sh
+dotnet test --project dotnet/Terraria.WorldCodec.Tests --no-progress --filter-class "*RoundTripCorpusTests"
+```
