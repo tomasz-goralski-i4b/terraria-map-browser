@@ -5,6 +5,8 @@
 //    local Cezar cockpit is reachable (its run for the issue finished, yet the issue never reached
 //    status:pr-ready); otherwise time-based (agent:ready for longer than STALL_MINUTES, e.g. in CI).
 //    A stalled issue keeps its area busy until a human resolves it.
+//    Exception: an issue labelled while the cockpit was down predates Cezar's automation baseline and was never
+//    seen, so the watchdog re-adds agent:ready (a fresh `labeled` event) instead of waiting for a human.
 //
 // 2. Promotion — adds agent:ready to issues labelled `backlog` when:
 //    - every "Blocked by: #N" is closed,
@@ -12,6 +14,7 @@
 //    - globally fewer than MAX_ACTIVE are in flight (default 2 = Cezar's maxParallel).
 //    Order: ascending issue number (the planner creates issues in execution order).
 import { execFileSync } from "node:child_process";
+import { missedByBaseline, readAutomationState } from "./baseline.mjs";
 import { gh, ghJson, LABELS, blockedBy, labelNames, areaOf, isTrusted } from "./gh.mjs";
 import { fetchRun, resumability, resumeRun } from "./resume.mjs";
 import { describe, probeAll } from "./usage-probe.mjs";
@@ -96,6 +99,7 @@ async function watchStalls(ready) {
   if (!ready.length) return;
   const cezar = await cezarRuns();
   console.log(`stall watchdog: ${cezar ? `Cezar at ${cezar.url}` : `no Cezar cockpit — time-based (${STALL_MINUTES} min)`}`);
+  const automationState = cezar ? readAutomationState() : null;
 
   for (const issue of ready) {
     const readyAt = lastLabeledAt(issue.number, LABELS.ready);
@@ -111,6 +115,17 @@ async function watchStalls(ready) {
         if (stalled) {
           console.log(`  #${issue.number} has a live Cezar run again (${run.id.slice(0, 8)} ${run.status}) — clearing ${LABELS.stalled}`);
           if (!DRY) gh(["issue", "edit", String(issue.number), "--remove-label", LABELS.stalled]);
+        }
+        continue;
+      }
+      const baseline = run ? null : missedByBaseline(readyAt, automationState);
+      if (baseline) {
+        // Labelled while the cockpit was down: Cezar's automations started "from now" and skipped it. Removing and
+        // re-adding the label is a new event after the baseline, so the matching automation launches it.
+        console.log(`  #${issue.number}: ${LABELS.ready} (${readyAt.toISOString()}) predates Cezar's baseline (${baseline.toISOString()}) — re-adding it${DRY ? " (dry-run)" : ""}`);
+        if (!DRY) {
+          gh(["issue", "edit", String(issue.number), "--remove-label", LABELS.ready, ...(stalled ? ["--remove-label", LABELS.stalled] : [])]);
+          gh(["issue", "edit", String(issue.number), "--add-label", LABELS.ready]);
         }
         continue;
       }
