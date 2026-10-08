@@ -170,6 +170,57 @@ public sealed class RoundTripCommandTests
         }
     }
 
+    [Theory]
+    [InlineData("footer")]
+    [InlineData("opaque-section")]
+    public void Run_StagedCopyCorruptedWithoutThrowing_ReturnsOneAndPublishesNothing(string corrupt)
+    {
+        using var directory = new TemporaryDirectory();
+        var bytes = World();
+        var input = directory.Write("in.wld", bytes);
+        var table = WorldReader.ReadForSave(new MemoryStream(bytes)).Table;
+        var boundaries = new[]
+        {
+            table.Chests, table.Signs, table.NpcsAndMobs, table.TileEntities,
+            table.WeightedPressurePlates, table.TownManager, table.Bestiary, table.CreativePowers,
+        };
+        var offset = corrupt == "footer" ? table.Footer.Start : boundaries.First(boundary => boundary.End > boundary.Start).Start;
+        var staged = new List<string>();
+        var hooks = new RoundTripHooks
+        {
+            AfterStage = path =>
+            {
+                staged.Add(path);
+                var copy = File.ReadAllBytes(path);
+                copy[offset] ^= 0xFF;
+                File.WriteAllBytes(path, copy);
+            },
+        };
+
+        var (code, output, error) = Run(hooks, input, Path.Combine(directory.Path, "out.wld"));
+
+        Assert.Equal(1, code);
+        Assert.Empty(output);
+        Assert.Single(error.TrimEnd().Split('\n'));
+        Assert.Equal(bytes, File.ReadAllBytes(input));
+        Assert.Equal(["in.wld"], Names(directory.Path));
+        Assert.Single(staged);
+    }
+
+    [Fact]
+    public void Run_OutputNameContainingNewlineWithMissingInput_WritesExactlyOneStderrLine()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "Windows file names cannot contain a newline.");
+        using var directory = new TemporaryDirectory();
+
+        var (code, output, error) = Run(null, Path.Combine(directory.Path, "none.wld"), Path.Combine(directory.Path, "out\nname.wld"));
+
+        Assert.Equal(1, code);
+        Assert.Empty(output);
+        Assert.Single(error.TrimEnd().Split('\n'));
+        Assert.Empty(Names(directory.Path));
+    }
+
     [Fact]
     public void Run_InputIsNotAWorld_ReturnsOneWithOneLineDiagnosticAndWritesNothing()
     {
