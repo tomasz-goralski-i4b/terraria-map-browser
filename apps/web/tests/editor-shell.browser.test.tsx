@@ -112,7 +112,7 @@ test("the World panel shows exactly the decoded metadata fields with their value
   expect(rows).toBe(worldFieldGroups({ ...decoded, fileSize: bytes.length }).flatMap((group) => group.fields).length);
 });
 
-test("Collapse all and Expand all toggle every World group", async () => {
+test("Collapse all and Expand all toggle every World group", { tags: ["perf"] }, async () => {
   await render(<App layoutStorage={storage} />);
   await openFixture("SCCO1.wld");
   await expect.element(page.getByRole("region", { name: "World", exact: true })).toMatchTextContent("SCCR1");

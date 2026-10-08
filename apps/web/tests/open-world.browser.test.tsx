@@ -73,7 +73,7 @@ async function worldFile(name: string): Promise<File> {
   return new File([await fixtureBytes(name)], name);
 }
 
-test("opening SCCO1.wld through the file input shows its name and dimensions", async () => {
+test("opening SCCO1.wld through the file input shows its name and dimensions", { tags: ["perf"] }, async () => {
   await render(<App />);
   chooseFile(await worldFile("SCCO1.wld"));
   const summary = worldPanel();

@@ -275,7 +275,7 @@ test("the status bar follows the tile under a resting pointer after keyboard pan
   expect(statusText()).toBe(tileText(camera(), 120, 90));
 });
 
-test("the status bar follows the tile under a resting pointer after a wheel zoom elsewhere", async () => {
+test("the status bar follows the tile under a resting pointer after a wheel zoom elsewhere", { tags: ["perf"] }, async () => {
   await mountMap();
   await actualMap();
   pointer("pointermove", 120, 90, 0);

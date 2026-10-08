@@ -107,7 +107,7 @@ describe("wire overlay", () => {
   test.each([
     ["red", WIRE_LAYER.red], ["blue", WIRE_LAYER.blue], ["green", WIRE_LAYER.green], ["yellow", WIRE_LAYER.yellow],
     ["actuator", WIRE_LAYER.actuator], ["every wire and actuators", WIRE_LAYER.all], ["red and yellow", WIRE_LAYER.red | WIRE_LAYER.yellow],
-  ] as const)("%s: the GPU equals renderChunk, over every layer combination", (_name, wires) => {
+  ] as const)("%s: the GPU equals renderChunk, over every layer combination", { tags: ["perf"] }, (_name, wires) => {
     for (const layers of layerCombos.filter((_, bits) => bits % 5 === 0 || bits === 15)) {
       const withWires = { ...layers, wires };
       const canvas = makeCanvas(300, 200);
@@ -174,7 +174,7 @@ describe("wire overlay", () => {
   });
 });
 
-describe("GPU output equals renderChunk", () => {
+describe("GPU output equals renderChunk", { tags: ["perf"] }, () => {
   // 300 × 200: a 3 × 2 chunk grid whose right and bottom chunks are partial.
   const world = syntheticWorld(300, 200);
 

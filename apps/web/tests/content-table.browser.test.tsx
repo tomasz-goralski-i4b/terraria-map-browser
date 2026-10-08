@@ -93,7 +93,7 @@ test("filtering by text and by kind", async () => {
   await expect.poll(() => bodyRows().map((row) => row[1])).toEqual(["Liquid", "Liquid", "Liquid", "Liquid"]);
 });
 
-test("the default columns fit the default dock width", async () => {
+test("the default columns fit the default dock width", { tags: ["perf"] }, async () => {
   await render(<div style={{ width: 320 }}><ContentPanel world={world} /></div>);
   const scroller = page.getByRole("grid", { name: "Content" }).element() as HTMLElement;
   await expect.poll(() => scroller.scrollWidth).toBeLessThanOrEqual(scroller.clientWidth);
