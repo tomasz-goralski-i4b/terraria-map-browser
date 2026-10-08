@@ -240,6 +240,54 @@ describe("scheduled chunk upload budget", () => {
     expect(renderer.stats().drawCalls).toBe(visible.length);
   });
 
+  test("returning mid-load keeps earlier terrain when this frame's upload fits in spare cache space", () => {
+    const frames = animationFrames();
+    const { renderer, pixels } = setup(384, 128, { maxCachedChunks: 4, maxChunkUploadsPerFrame: 1 });
+    renderer.setWorld(terrain(1280, 128));
+    const initialCamera = { x: 0, y: 0, zoom: 1 };
+    renderer.setCamera(initialCamera);
+    renderer.render();
+    const initialPixels = pixels();
+    const uploads = renderer.stats().textureUploads;
+    const deleted = vi.spyOn(WebGL2RenderingContext.prototype, "deleteTexture");
+    renderer.setCamera({ x: 512, y: 0, zoom: 1 });
+    frames.step();
+    expect(renderer.stats().textureUploads - uploads).toBe(1);
+    expect(deleted).not.toHaveBeenCalled();
+    expect(frames.pending.size).toBe(1);
+    renderer.setCamera(initialCamera);
+    frames.step();
+    expect(renderer.stats().textureUploads - uploads).toBe(1);
+    expect(renderer.stats().drawCalls).toBe(3);
+    expect(pixels()).toEqual(initialPixels);
+    expect(frames.pending.size).toBe(0);
+  });
+
+  test("reversing a pan mid-load replaces only chunks evicted for actual uploads", () => {
+    const frames = animationFrames();
+    const { renderer, pixels } = setup(384, 128, { maxCachedChunks: 3, maxChunkUploadsPerFrame: 1 });
+    renderer.setWorld(terrain(1280, 128));
+    const initialCamera = { x: 0, y: 0, zoom: 1 };
+    renderer.setCamera(initialCamera);
+    renderer.render();
+    const initialPixels = pixels();
+    const uploads = renderer.stats().textureUploads;
+    const deleted = vi.spyOn(WebGL2RenderingContext.prototype, "deleteTexture");
+    renderer.setCamera({ x: 640, y: 0, zoom: 1 });
+    frames.step();
+    expect(renderer.stats().textureUploads - uploads).toBe(1);
+    expect(deleted).toHaveBeenCalledTimes(6); // Six textures for the one chunk actually replaced.
+    expect(frames.pending.size).toBe(1);
+    const beforeReturn = renderer.stats().textureUploads;
+    renderer.setCamera(initialCamera);
+    frames.step();
+    expect(renderer.stats().textureUploads - beforeReturn).toBe(1);
+    expect(renderer.stats().drawCalls).toBe(3);
+    expect(renderer.stats().residentChunks).toBe(3);
+    expect(pixels()).toEqual(initialPixels);
+    expect(frames.pending.size).toBe(0);
+  });
+
   test("cached chunks stay drawn while pending chunks are clear and stats report actual draws", () => {
     const frames = animationFrames();
     const { renderer, pixels } = setup(384, 128, { maxChunkUploadsPerFrame: 1 });
