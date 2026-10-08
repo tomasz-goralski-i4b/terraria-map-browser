@@ -32,7 +32,7 @@ internal static class RoundTripCommand
         // input: aliases, case differences, "..", and links all resolve to an entry that exists.
         if (File.Exists(target) || Directory.Exists(target) || new FileInfo(target).LinkTarget is not null)
         {
-            error.WriteLine($"Refusing to write '{target}': the output path already exists (or is the input); roundtrip never overwrites a file.");
+            error.WriteLine($"Refusing to write '{target}': the output path already exists (or is the input); roundtrip never overwrites a file.".ReplaceLineEndings(" "));
             return 2;
         }
 
@@ -55,7 +55,7 @@ internal static class RoundTripCommand
             }
 
             hooks?.AfterStage?.Invoke(staged);
-            Validate(staged, envelope.World);
+            Validate(staged, envelope);
             hooks?.BeforeMove?.Invoke(staged);
 
             // No overwrite: a file that appeared meanwhile makes the move fail and the staged file is removed.
@@ -65,7 +65,7 @@ internal static class RoundTripCommand
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or WorldFormatException
             or WorldWriteException or TileEncodingException or InvalidDataException or ArgumentException or NotSupportedException)
         {
-            error.WriteLine($"Could not write round-tripped copy '{target}': {OneLine(exception.Message)}");
+            error.WriteLine($"Could not write round-tripped copy '{target}': {exception.Message}".ReplaceLineEndings(" "));
             return 1;
         }
         finally
@@ -80,18 +80,32 @@ internal static class RoundTripCommand
         return 0;
     }
 
-    private static void Validate(string staged, World source)
+    private static void Validate(string staged, WorldEnvelope sourceEnvelope)
     {
-        World copy;
+        // ReadForSave validates the whole file, footer included; the preserved byte ranges must match the source.
+        WorldEnvelope copyEnvelope;
         using (var stream = File.OpenRead(staged))
         {
-            copy = WorldReader.Read(stream);
+            copyEnvelope = WorldReader.ReadForSave(stream);
         }
 
+        var source = sourceEnvelope.World;
+        var copy = copyEnvelope.World;
         if (copy.Header != source.Header || copy.Metadata != source.Metadata
-            || copy.Tiles.Width != source.Tiles.Width || copy.Tiles.Height != source.Tiles.Height)
+            || copy.Tiles.Width != source.Tiles.Width || copy.Tiles.Height != source.Tiles.Height
+            || !sourceEnvelope.MetadataBytes.Span.SequenceEqual(copyEnvelope.MetadataBytes.Span)
+            || !sourceEnvelope.FooterBytes.Span.SequenceEqual(copyEnvelope.FooterBytes.Span)
+            || sourceEnvelope.OpaqueSections.Count != copyEnvelope.OpaqueSections.Count)
         {
             throw new InvalidDataException("the staged copy does not reload to the same world");
+        }
+
+        for (var i = 0; i < sourceEnvelope.OpaqueSections.Count; i++)
+        {
+            if (!sourceEnvelope.OpaqueSections[i].Bytes.Span.SequenceEqual(copyEnvelope.OpaqueSections[i].Bytes.Span))
+            {
+                throw new InvalidDataException($"the staged copy changed the {sourceEnvelope.OpaqueSections[i].Name} section");
+            }
         }
 
         for (var x = 0; x < source.Tiles.Width; x++)
@@ -105,8 +119,6 @@ internal static class RoundTripCommand
             }
         }
     }
-
-    private static string OneLine(string message) => message.ReplaceLineEndings(" ");
 
     private static void TryDelete(string path)
     {
