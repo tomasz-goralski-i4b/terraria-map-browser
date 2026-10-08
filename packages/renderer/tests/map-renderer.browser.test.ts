@@ -272,8 +272,8 @@ describe("uploads, cache and draw calls", () => {
     try {
       renderer.setWorld(null);
       renderer.render();
-      // Six plane textures per chunk plus the world's background texture.
-      expect(deleted).toHaveBeenCalledTimes(3 * 6 + 1);
+      // The chunk page's two array textures, the world's background and its overview.
+      expect(deleted).toHaveBeenCalledTimes(2 + 1 + 1);
     } finally {
       deleted.mockRestore();
     }
@@ -376,7 +376,7 @@ describe("uploads, cache and draw calls", () => {
     const first = renderer.stats();
     const expected = visibleChunks({ x: 1000, y: 0, zoom: 1 }, viewport, big);
     expect(first.visibleChunks).toEqual(expected);
-    expect(first.drawCalls).toBe(expected.length);
+    expect(first.drawCalls).toBe(1); // One instanced draw call: all visible chunks share a page.
     expect(first.textureUploads).toBeLessThan(66 * 19);
 
     renderer.setCamera({ x: 1128, y: 0, zoom: 1 });
@@ -387,8 +387,8 @@ describe("uploads, cache and draw calls", () => {
       .filter((chunk: { x: number; y: number }) => !resident.has(`${String(chunk.x)},${String(chunk.y)}`)).length;
     expect(entering).toBeGreaterThan(0);
     expect(second.textureUploads - first.textureUploads).toBeLessThanOrEqual(entering);
-    expect(second.drawCalls).toBe(second.visibleChunks.length);
-    expect(second.drawCalls).toBeLessThan(66 * 19);
+    expect(second.visibleChunks).toEqual(visibleChunks({ x: 1128, y: 0, zoom: 1 }, viewport, big));
+    expect(second.drawCalls).toBe(1);
   });
 });
 

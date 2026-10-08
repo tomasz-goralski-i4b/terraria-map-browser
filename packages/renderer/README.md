@@ -15,8 +15,20 @@ world metadata, fractional): the sky is above `surfaceY`, the rock layer starts 
 `options.layers` independently enables background, walls, blocks and liquids.
 `options.mapPalette` supplies map colours (see below); without it every block and wall uses its placeholder.
 
-`createMapRenderer(canvas, options)` is the WebGL2 backend. It draws exactly the pixels `renderChunk` produces for
-the same `mapPalette`, which the browser tests assert for every layer combination.
+`createMapRenderer(canvas, options)` is the WebGL2 backend. At half a pixel per tile and above it draws exactly the
+pixels `renderChunk` produces for the same `mapPalette`, which the browser tests assert for every layer combination.
+
+- **Chunk pages.** Chunks are cached in pages of 64 array-texture layers: an `RGBA16UI` texture (block, wall,
+  frame-selected variant, reserved) and an `RGBA8UI` one (liquid kind, liquid amount, block paint, wall paint).
+  A chunk upload is two `texSubImage3D` calls, and a frame issues one instanced draw call per page, not per chunk.
+- **Overview.** Below `1 / factor` pixels per tile (factor 2, larger only when the world exceeds
+  `MAX_TEXTURE_SIZE`) the map is drawn from an overview: a mipmapped `RGBA8` texture with one texel per
+  factor × factor tiles, built on the GPU from the chunk pages as the mean of those tiles (premultiplied, so
+  mipmaps average transparency correctly). It is one draw call for the whole world and is filtered, so zoomed-out
+  views do not shimmer while panning. Building it is subject to the same per-frame upload budget; texels not built
+  yet stay clear. Layer changes and palette appends rebuild it from resident chunks.
+- `tileAt` and anything that reads tile data (names, coordinates) use the camera and the CWM planes, never GPU
+  textures, so neither path changes them.
 
 ## Terraria map palette
 
