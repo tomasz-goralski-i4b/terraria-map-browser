@@ -1,5 +1,6 @@
 import { ByteReader } from "./byte-reader.js";
 import { WorldFormatError } from "./world-format-error.js";
+import { requireWorldFormat } from "./world-format.js";
 
 /** The fixed part of a `.wld` file header, up to the section table (docs/file-format.md, "File header"). */
 export interface WorldFileHeader {
@@ -54,7 +55,6 @@ export interface WorldHeader {
   readonly sections: WorldSectionTable;
 }
 
-const SUPPORTED_VERSION = 326;
 const SECTION_COUNT = 11;
 const TABLE_START = 26;
 const FRAME_COUNT_OFFSET = TABLE_START + 4 * SECTION_COUNT;
@@ -71,9 +71,7 @@ function readFixedFields(reader: ByteReader): WorldFileHeader {
     throw truncatedError(reader);
   }
   const version = reader.readInt32(0);
-  if (version !== SUPPORTED_VERSION) {
-    throw new WorldFormatError("UnsupportedVersion", 0, `format version ${String(version)} is not supported`);
-  }
+  requireWorldFormat(version);
   if (reader.length < TABLE_START) {
     throw truncatedError(reader);
   }
@@ -136,7 +134,7 @@ function readPointers(reader: ByteReader, headerEnd: number): number[] {
 }
 
 /**
- * Reads and validates the file header, section table and frame-important bits of a format-326 world.
+ * Reads and validates the common header of the admitted vanilla format families.
  * Offsets in errors and results are relative to the start of `bytes`; nothing outside the view is read.
  * @throws WorldFormatError when the header violates the contract (docs/file-format.md, "Check order").
  */
