@@ -357,6 +357,8 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   const releaseOverview = (): void => {
     if (overview !== null && !gl.isContextLost()) gl.deleteTexture(overview.texture);
     overview = null;
+    // The cached sweep order references its world: drop it so the previous world's planes can be collected.
+    sweep = null;
   };
 
   /**

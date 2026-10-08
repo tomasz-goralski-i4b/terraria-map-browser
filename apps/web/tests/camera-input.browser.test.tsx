@@ -2,7 +2,7 @@
 import { Profiler, act } from "react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { render } from "vitest-browser-react";
-import { createMapRenderer, screenToTile } from "@studio/renderer";
+import { createMapRenderer, fitWorld, screenToTile } from "@studio/renderer";
 import type { Camera, MapRenderer, RenderableWorld } from "@studio/renderer";
 import { MapCanvas } from "../src/components/MapCanvas.js";
 import { StatusBar } from "../src/shell/StatusBar.js";
@@ -249,4 +249,22 @@ test("a live reduced-motion change finishes easing and unmount cancels pending f
   await view.unmount();
   expect(frames.size).toBe(0);
   expect(renderer.dispose).toHaveBeenCalledOnce();
+});
+
+test("opening another world gives the renderer that world's fitted camera before the world itself", async () => {
+  const view = await mount();
+  // Wide and short: its fitted camera differs from the first world's and from the zoomed-in camera of mount().
+  const other: RenderableWorld = { ...world, width: 4800, height: 600 };
+  let cameraAtSetWorld: Camera | undefined;
+  vi.mocked(renderer.setWorld).mockImplementation((next) => { if (next === other) cameraAtSetWorld = drawn; });
+  await view.rerender(
+    <Profiler id="world-map" onRender={() => { commits++; }}>
+      <div style={{ position: "relative", width: 400, height: 300 }}><MapCanvas world={other} /></div>
+      <StatusBar world={null} />
+    </Profiler>,
+  );
+  expect(renderer.setWorld).toHaveBeenCalledWith(other);
+  // The renderer's first frame of the new world must not use the previous world's camera: it would start building
+  // around the wrong place.
+  expect(cameraAtSetWorld).toEqual(fitWorld({ width: canvas().width, height: canvas().height }, other));
 });

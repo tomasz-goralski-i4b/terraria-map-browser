@@ -263,15 +263,18 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
     const session = sessionRef.current;
     if (session === null || session.world === world) return;
     session.world = world;
-    session.renderer.setWorld(world);
     // A pin names a tile of the world it was picked in.
     useViewStore.getState().setPinnedTile(null);
     session.keys.clear();
     session.pointers.clear();
     session.animator.reset(session.viewport.width === 0 ? session.camera : fitWorld(session.viewport, world), session.viewport, world);
+    // The camera goes first: the renderer's first frame of the new world would otherwise use the previous world's
+    // camera and start building the overview around the wrong place.
+    applyCamera(session, session.animator.current);
+    session.renderer.setWorld(world);
     session.cameraDirty = true;
     session.requestFrame();
-  }, [world]);
+  }, [world, applyCamera]);
 
   useEffect(() => {
     // Layers are a uniform in the renderer: switching them uploads nothing.
