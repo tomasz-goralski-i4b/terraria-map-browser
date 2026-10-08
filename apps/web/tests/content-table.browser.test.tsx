@@ -139,7 +139,7 @@ function selectedRow(): string | undefined {
   return document.querySelector(".table-body [role=row][aria-selected=true] [role=gridcell]")?.textContent ?? undefined;
 }
 
-test("the keyboard moves a controlled selection row by row, keeps it in view and activates it", async () => {
+test("the keyboard moves a controlled selection row by row, keeps it in view and activates it", { tags: ["perf"] }, async () => {
   const rows = contentRowsOf(500);
   const activated: string[] = [];
   await render(<SelectableTable rows={rows} onActivate={(key) => { activated.push(key); }} />);

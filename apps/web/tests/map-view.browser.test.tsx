@@ -261,7 +261,7 @@ test("without WebGL2 the map shows an error message instead of throwing", async 
   await expect.element(page.getByRole("alert")).toMatchTextContent("WebGL2");
 });
 
-test("the status bar follows the tile under a resting pointer after keyboard pans", async () => {
+test("the status bar follows the tile under a resting pointer after keyboard pans", { tags: ["perf"] }, async () => {
   await mountMap();
   await actualMap();
   pointer("pointermove", 120, 90, 0);

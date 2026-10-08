@@ -278,7 +278,7 @@ test("the command palette keeps the active option in view and closes without run
   await expect.element(page.getByRole("dialog", { name: "Command palette" })).not.toBeInTheDocument();
 });
 
-test("at 320 px nothing overflows: secondary actions move to the app menu", async () => {
+test("at 320 px nothing overflows: secondary actions move to the app menu", { tags: ["perf"] }, async () => {
   await page.viewport(320, 568);
   await render(<App layoutStorage={storage} />);
   await openFixture("SCCO1.wld");

@@ -288,7 +288,7 @@ test("hiding and showing the wires group restores the wire colours chosen inside
   await expect.poll(() => shownLayers()["wires"]).toBe(WIRE_LAYER.all & ~WIRE_LAYER.blue);
 });
 
-test("Alt+1 … Alt+5 toggle the layers", async () => {
+test("Alt+1 … Alt+5 toggle the layers", { tags: ["perf"] }, async () => {
   await render(<LayersHarness world={renderable(600, 300)} />);
   await vi.waitFor(() => {
     expect(getMapController()).not.toBeNull();
