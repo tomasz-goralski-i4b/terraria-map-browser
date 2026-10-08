@@ -82,7 +82,8 @@ export function ContentPanel({ world }: { readonly world?: ContentWorld | null }
   const summary = useAppStore((state) => state.summary);
   const sessionWorld = useMemo(() => (summary === null ? null : sessionContentWorld()), [summary]);
   const shown = world === undefined ? sessionWorld : world;
-  const [counts, setCounts] = useState<{ readonly world: ContentWorld; readonly counts: ContentCounts } | null>(null);
+  // Only a signal that a count finished: the counts live in `countCache`, keyed by the planes, outside React.
+  const [, setCompleted] = useState(0);
   const [progress, setProgress] = useState<{ readonly planes: CountablePlanes; readonly done: number } | null>(null);
   const [kind, setKind] = useState<ContentKind | "all">("all");
   const [selected, setSelected] = useState<string | null>(null);
@@ -99,7 +100,7 @@ export function ContentPanel({ world }: { readonly world?: ContentWorld | null }
       },
     }).then((result) => {
       countCache.set(shown.planes, result);
-      setCounts({ world: shown, counts: result });
+      setCompleted((count) => count + 1);
     }, (error: unknown) => {
       if (!(error instanceof DOMException && error.name === "AbortError")) throw error;
     });
@@ -108,11 +109,7 @@ export function ContentPanel({ world }: { readonly world?: ContentWorld | null }
     };
   }, [shown]);
 
-  const rows = useMemo(() => {
-    if (shown === null) return null;
-    if (cached !== undefined) return contentRows(shown, cached);
-    return counts?.world === shown ? contentRows(shown, counts.counts) : null;
-  }, [counts, shown, cached]);
+  const rows = useMemo(() => (shown === null || cached === undefined ? null : contentRows(shown, cached)), [shown, cached]);
   const filtered = useMemo(() => (rows === null || kind === "all" ? rows : rows.filter((row) => row.kind === kind)), [rows, kind]);
 
   if (shown === null) return <p className="panel-empty">Open a world to count its content.</p>;

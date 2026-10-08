@@ -9,6 +9,8 @@ const KEY_PAN_PIXELS_PER_MS = 0.384;
 const KEY_ZOOM_FACTOR = 1.25;
 const WHEEL_ZOOM_PER_PIXEL = 0.0015;
 const PINCH_ZOOM_PER_PIXEL = 0.01;
+/** A press that moves less than this (CSS pixels) before release is a click. */
+const CLICK_SLOP = 4;
 
 /** Fills the nearest positioned ancestor; inline so the map sizes itself without the app stylesheet. */
 const CANVAS_STYLE: React.CSSProperties = {
@@ -56,6 +58,9 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
   const worldRef = useRef(world);
   const [error, setError] = useState<string | null>(null);
   const tool = useViewStore((state) => state.tool);
+  const layers = useViewStore((state) => state.layers);
+  /** Where the pointer went down, to tell a click (pin a tile) from a drag (pan). */
+  const pressRef = useRef<Point | null>(null);
 
   /** Canvas backing-store pixels of a point in CSS pixels relative to the canvas, at the current canvas geometry. */
   const toBacking = useCallback((point: Point): Point => {
@@ -140,6 +145,7 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
     };
     sessionRef.current = session;
     renderer.setWorld(session.world);
+    renderer.setLayers(useViewStore.getState().layers);
 
     const motionPreference = window.matchMedia("(prefers-reduced-motion: reduce)");
     const updateMotionPreference = (): void => {
@@ -253,6 +259,19 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
     session.requestFrame();
   }, [world]);
 
+  useEffect(() => {
+    // Layers are a uniform in the renderer: switching them uploads nothing.
+    sessionRef.current?.renderer.setLayers(layers);
+    const canvas = canvasRef.current;
+    if (canvas !== null) canvas.dataset["layers"] = JSON.stringify(layers);
+  }, [layers]);
+
+  /** Pins the tile under a backing-store point in the Inspector (Inspect tool). */
+  const pinAt = (session: MapSession, point: Point): void => {
+    const tile = session.renderer.tileAt(point.x, point.y);
+    if (tile !== null) useViewStore.getState().setPinnedTile(tile);
+  };
+
   const withSession = (action: (session: MapSession) => void): void => {
     const session = sessionRef.current;
     if (session !== null && session.viewport.width !== 0) action(session);
@@ -263,6 +282,7 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
       session.keys.clear();
       session.animator.beginDrag();
       session.pointers.set(event.pointerId, localPoint(event.clientX, event.clientY));
+      pressRef.current = session.pointers.size === 1 ? localPoint(event.clientX, event.clientY) : null;
       try {
         event.currentTarget.setPointerCapture(event.pointerId);
       } catch {
@@ -303,6 +323,13 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
   const onPointerEnd = (event: React.PointerEvent<HTMLCanvasElement>): void => {
     withSession((session) => {
       if (!session.pointers.delete(event.pointerId)) return;
+      const press = pressRef.current;
+      pressRef.current = null;
+      if (event.type === "pointerup" && press !== null && useViewStore.getState().tool === "inspect") {
+        const release = localPoint(event.clientX, event.clientY);
+        // A click, not a drag: the pointer stayed within a few CSS pixels.
+        if (Math.hypot(release.x - press.x, release.y - press.y) < CLICK_SLOP) pinAt(session, toBacking(release));
+      }
       if (session.pointers.size === 0) session.animator.endDrag(event.type !== "pointerup");
       else session.animator.beginDrag();
       session.requestFrame();
@@ -321,6 +348,11 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
     withSession((session) => {
       const { viewport } = session;
       const anchor = session.hover === null ? { x: viewport.width / 2, y: viewport.height / 2 } : toBacking(session.hover);
+      if (event.key === "Enter" && useViewStore.getState().tool === "inspect") {
+        event.preventDefault();
+        pinAt(session, anchor);
+        return;
+      }
       const arrow = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key);
       const factor = { "+": KEY_ZOOM_FACTOR, "=": KEY_ZOOM_FACTOR, "-": 1 / KEY_ZOOM_FACTOR, _: 1 / KEY_ZOOM_FACTOR }[event.key];
       if (!arrow && factor === undefined) {

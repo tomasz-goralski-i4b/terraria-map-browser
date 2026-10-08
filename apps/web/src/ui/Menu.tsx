@@ -10,7 +10,14 @@ export type MenuItem =
     readonly disabled?: boolean;
     readonly onSelect: () => void;
   }
-  | { readonly kind: "check"; readonly label: string; readonly checked: boolean; readonly disabled?: boolean; readonly onChange: (checked: boolean) => void }
+  | {
+    readonly kind: "check";
+    readonly label: string;
+    readonly checked: boolean;
+    readonly shortcut?: string;
+    readonly disabled?: boolean;
+    readonly onChange: (checked: boolean) => void;
+  }
   | { readonly kind: "separator" };
 
 export interface MenuButtonProps {
@@ -118,7 +125,7 @@ export function MenuButton({ label, icon, items, className, align = "start" }: M
                 role={item.kind === "check" ? "menuitemcheckbox" : "menuitem"}
                 aria-checked={item.kind === "check" ? item.checked : undefined}
                 aria-disabled={disabled || undefined}
-                aria-keyshortcuts={item.kind === "action" ? item.shortcut : undefined}
+                aria-keyshortcuts={item.shortcut}
                 tabIndex={-1}
                 className="menu-item"
                 onClick={activate}
@@ -131,7 +138,7 @@ export function MenuButton({ label, icon, items, className, align = "start" }: M
               >
                 <span className="menu-check" aria-hidden="true">{item.kind === "check" && item.checked && <Icon name="check" />}</span>
                 <span className="menu-label">{item.label}</span>
-                {item.kind === "action" && item.shortcut !== undefined && <kbd className="menu-shortcut">{shortcutText(item.shortcut)}</kbd>}
+                {item.shortcut !== undefined && <kbd className="menu-shortcut">{shortcutText(item.shortcut)}</kbd>}
               </div>
             );
           })}

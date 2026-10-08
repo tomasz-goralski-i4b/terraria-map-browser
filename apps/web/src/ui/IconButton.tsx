@@ -15,6 +15,8 @@ export interface IconButtonProps {
   readonly className?: string;
   /** For roving focus in toolbars. */
   readonly tabIndex?: number;
+  /** Identifies a tool button for roving focus (`data-tool`). */
+  readonly dataTool?: string;
   readonly onClick?: () => void;
 }
 
@@ -28,7 +30,7 @@ export function shortcutText(shortcut: string): string {
  * no layout and needs no portal; the name and shortcut reach assistive technology through ARIA instead.
  */
 export function IconButton(props: IconButtonProps): React.JSX.Element {
-  const { icon, label, shortcut, pressed, disabled = false, disabledReason, tooltipSide = "bottom", className, tabIndex, onClick } = props;
+  const { icon, label, shortcut, pressed, disabled = false, disabledReason, tooltipSide = "bottom", className, tabIndex, dataTool, onClick } = props;
   const tooltip = [label, shortcut === undefined ? "" : `(${shortcutText(shortcut)})`, disabled && disabledReason !== undefined ? `— ${disabledReason}` : ""]
     .filter((part) => part !== "").join(" ");
   return (
@@ -40,6 +42,7 @@ export function IconButton(props: IconButtonProps): React.JSX.Element {
       aria-keyshortcuts={shortcut}
       aria-disabled={disabled || undefined}
       tabIndex={tabIndex}
+      data-tool={dataTool}
       data-tooltip={tooltip}
       data-tooltip-side={tooltipSide}
       onClick={() => {

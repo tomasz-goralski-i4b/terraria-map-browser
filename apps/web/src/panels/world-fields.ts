@@ -1,10 +1,16 @@
 import type { WorldDetails, WorldMetadata, WorldPoint } from "@studio/world-codec";
 
-/** One row of the World panel. Only decoded values become rows: a field the file's version lacks has none. */
-export type WorldField =
-  | { readonly kind: "text"; readonly label: string; readonly value: string }
-  | { readonly kind: "flag"; readonly label: string; readonly value: boolean }
-  | { readonly kind: "point"; readonly label: string; readonly point: WorldPoint };
+/**
+ * One row of the World panel. Only decoded values become rows: a field the file's version lacks has none.
+ * `paths` names the decoded values the row shows (`metadata.name`, `details.timeAndWeather.rain.time`), so tests can
+ * prove every decoded value has a row.
+ */
+export type WorldField = { readonly label: string; readonly paths: readonly string[] } & (
+  | { readonly kind: "text"; readonly value: string }
+  | { readonly kind: "flag"; readonly value: boolean }
+  | { readonly kind: "point"; readonly point: WorldPoint }
+  | { readonly kind: "points"; readonly points: readonly WorldPoint[] }
+);
 
 export interface WorldFieldGroup {
   readonly id: string;
@@ -13,7 +19,9 @@ export interface WorldFieldGroup {
 }
 
 /** Every group id the World panel can show, in display order (for Expand all / Collapse all). */
-export const WORLD_GROUP_IDS = ["identity", "size", "generation", "time", "progression", "bosses", "events", "landmarks", "ores"] as const;
+export const WORLD_GROUP_IDS = [
+  "identity", "size", "generation", "seeds", "time", "progression", "bosses", "events", "npcs", "landmarks", "ores", "backgrounds",
+] as const;
 
 export interface WorldFieldsInput {
   readonly metadata: WorldMetadata;
@@ -22,9 +30,11 @@ export interface WorldFieldsInput {
   readonly fileSize?: number | undefined;
 }
 
-const text = (label: string, value: string): WorldField => ({ kind: "text", label, value });
-const flag = (label: string, value: boolean): WorldField => ({ kind: "flag", label, value });
+const text = (label: string, value: string, ...paths: string[]): WorldField => ({ kind: "text", label, value, paths });
+const flag = (label: string, value: boolean, path: string): WorldField => ({ kind: "flag", label, value, paths: [path] });
 const integer = (value: number): string => value.toLocaleString("en-US");
+const decimal = (value: number): string => (Number.isInteger(value) ? String(value) : value.toFixed(3).replace(/0+$/, ""));
+const list = (values: readonly (number | string)[]): string => (values.length === 0 ? "None" : values.join(", "));
 
 /** Rows for the values that exist; `undefined` (not in this file's version) yields no row. */
 function optional<T>(value: T | undefined, row: (value: T) => WorldField): WorldField[] {
@@ -43,19 +53,19 @@ export function formatBytes(bytes: number): string {
   return `${value.toFixed(value < 10 ? 2 : 1)} ${units[unit] ?? "GiB"}`;
 }
 
+/** `2026-10-06T09:30:19.905Z` → `2026-10-06 09:30 UTC`; a date without a zone stays without one. */
+export function formatDate(iso: string): string {
+  const match = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/.exec(iso);
+  if (match === null) return iso;
+  return `${match[1] ?? ""} ${match[2] ?? ""}${iso.endsWith("Z") ? " UTC" : ""}`;
+}
+
 /** Terraria's three preset sizes; anything else was made with a custom size. */
 export function sizeClass(width: number, height: number): string {
   if (width === 4200 && height === 1200) return "Small";
   if (width === 6400 && height === 1800) return "Medium";
   if (width === 8400 && height === 2400) return "Large";
   return "Custom";
-}
-
-/** `2026-10-06T09:30:19.905Z` → `2026-10-06 09:30 UTC`; a date without a zone stays without one. */
-export function formatDate(iso: string): string {
-  const match = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/.exec(iso);
-  if (match === null) return iso;
-  return `${match[1] ?? ""} ${match[2] ?? ""}${iso.endsWith("Z") ? " UTC" : ""}`;
 }
 
 function modeName(mode: WorldMetadata["mode"]): string {
@@ -83,6 +93,12 @@ const ORE_NAMES: Readonly<Record<number, string>> = {
 function ore(id: number): string {
   if (id < 0) return "Not chosen yet";
   return ORE_NAMES[id] ?? `Tile ${String(id)}`;
+}
+
+/** `oldOnesArmyTier1` → `Old ones army tier 1`, for keys without a curated name. */
+export function humanize(key: string): string {
+  const words = key.replace(/([a-z])([A-Z0-9])/g, "$1 $2").toLowerCase();
+  return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
 const SEED_NAMES: Readonly<Record<keyof WorldDetails["generation"]["specialSeeds"], string>> = {
@@ -114,86 +130,140 @@ const INVASION_NAMES: Readonly<Record<keyof WorldDetails["progression"]["defeate
 
 const PILLAR_NAMES = { solar: "Solar", vortex: "Vortex", nebula: "Nebula", stardust: "Stardust" } as const;
 
-/** Flags in the order of `names`, so the checklist reads in progression order, not file order. */
-function flags<K extends string>(values: Readonly<Record<K, boolean>>, names: Readonly<Record<K, string>>, prefix = ""): WorldField[] {
-  return (Object.keys(names) as K[]).map((key) => flag(`${prefix}${names[key]}`, values[key]));
+/** One flag row per key, in the order of `names` (progression order, not file order). */
+function flags<K extends string>(
+  values: Readonly<Record<K, boolean | undefined>>, names: Readonly<Record<K, string>>, path: string, prefix = "",
+): WorldField[] {
+  return (Object.keys(names) as K[]).flatMap((key) => optional<boolean>(values[key], (value) => flag(`${prefix}${names[key]}`, value, `${path}.${key}`)));
 }
 
-function generationGroups(details: WorldDetails, metadata: WorldMetadata): WorldFieldGroup[] {
-  const { generation, timeAndWeather: weather, progression, spawnAndLandmarks: landmarks } = details;
-  const seeds = (Object.keys(SEED_NAMES) as (keyof typeof SEED_NAMES)[])
-    .filter((key) => generation.specialSeeds[key] === true).map((key) => SEED_NAMES[key]);
+/** Flag rows for every key of a record, named by `humanize`. */
+function allFlags<K extends string>(values: Readonly<Record<K, boolean>>, path: string, prefix = ""): WorldField[] {
+  return (Object.keys(values) as K[]).map((key) => flag(`${prefix}${humanize(key)}`, values[key], `${path}.${key}`));
+}
+
+function detailGroups(details: WorldDetails, metadata: WorldMetadata): WorldFieldGroup[] {
+  const { generation, timeAndWeather: weather, progression, spawnAndLandmarks: landmarks, other } = details;
+  const g = "details.generation";
+  const w = "details.timeAndWeather";
+  const p = "details.progression";
+  const l = "details.spawnAndLandmarks";
   return [
     {
       id: "generation", title: "Generation", fields: [
-        text("Game mode", modeName(metadata.mode)),
-        text("Evil", metadata.evil === "crimson" ? "Crimson" : "Corruption"),
-        text("Special seeds", seeds.length === 0 ? "None" : seeds.join(", ")),
-        ...optional(generation.creationTime, (value) => text("Created", formatDate(value))),
-        ...optional(generation.lastPlayed, (value) => text("Last played", formatDate(value))),
-        text("World-gen version", generation.worldGenVersion),
-        text("Moon type", String(generation.moonType)),
-        ...optional(generation.worldGenManifest, (value) => text("World-gen manifest", value)),
+        text("Game mode", modeName(metadata.mode), "metadata.mode"),
+        text("Evil", metadata.evil === "crimson" ? "Crimson" : "Corruption", "metadata.evil"),
+        ...optional(generation.creationTime, (value) => text("Created", formatDate(value), `${g}.creationTime`)),
+        ...optional(generation.lastPlayed, (value) => text("Last played", formatDate(value), `${g}.lastPlayed`)),
+        text("World-gen version", generation.worldGenVersion, `${g}.worldGenVersion`),
+        text("Moon type", String(generation.moonType), `${g}.moonType`),
+        ...optional(generation.worldGenManifest, (value) => text("World-gen manifest", value, `${g}.worldGenManifest`)),
       ],
     },
+    { id: "seeds", title: "Special seeds", fields: flags(generation.specialSeeds, SEED_NAMES, `${g}.specialSeeds`) },
     {
       id: "time", title: "Time & weather", fields: [
-        text("Time", `${clockTime(weather.time, weather.dayTime)} (${weather.dayTime ? "day" : "night"})`),
-        text("Moon phase", MOON_PHASES[weather.moonPhase] ?? `Phase ${String(weather.moonPhase)}`),
-        flag("Blood moon", weather.bloodMoon),
-        flag("Solar eclipse", weather.eclipse),
-        flag("Raining", weather.rain.active),
-        flag("Sandstorm", weather.sandstorm.active),
-        flag("Party", weather.party.manual || weather.party.genuine),
-        flag("Lantern night", weather.lanternNight.manual || weather.lanternNight.genuine),
-        text("Wind speed", weather.windSpeed.toFixed(2)),
-        text("Clouds", String(weather.cloudCount)),
-        flag("Halloween today", weather.holidays.halloweenToday),
-        flag("Christmas today", weather.holidays.christmasToday),
-        ...optional(weather.holidays.halloweenForever, (value) => flag("Halloween always", value)),
-        ...optional(weather.holidays.christmasForever, (value) => flag("Christmas always", value)),
-        ...optional(weather.meteorShowerCount, (value) => text("Meteor showers", integer(value))),
-        ...optional(weather.coinRain, (value) => text("Coin rains", integer(value))),
+        text("Time", `${clockTime(weather.time, weather.dayTime)} (${weather.dayTime ? "day" : "night"}, ${decimal(weather.time)} ticks)`, `${w}.time`, `${w}.dayTime`),
+        text("Moon phase", MOON_PHASES[weather.moonPhase] ?? `Phase ${String(weather.moonPhase)}`, `${w}.moonPhase`),
+        flag("Blood moon", weather.bloodMoon, `${w}.bloodMoon`),
+        flag("Solar eclipse", weather.eclipse, `${w}.eclipse`),
+        flag("Raining", weather.rain.active, `${w}.rain.active`),
+        text("Rain time left", integer(weather.rain.time), `${w}.rain.time`),
+        text("Rain intensity", decimal(weather.rain.maximum), `${w}.rain.maximum`),
+        flag("Sandstorm", weather.sandstorm.active, `${w}.sandstorm.active`),
+        text("Sandstorm time left", integer(weather.sandstorm.time), `${w}.sandstorm.time`),
+        text("Sandstorm severity", decimal(weather.sandstorm.severity), `${w}.sandstorm.severity`),
+        text("Sandstorm target severity", decimal(weather.sandstorm.intendedSeverity), `${w}.sandstorm.intendedSeverity`),
+        text("Slime rain time", decimal(weather.slimeRainTime), `${w}.slimeRainTime`),
+        text("Wind speed", decimal(weather.windSpeed), `${w}.windSpeed`),
+        text("Clouds", String(weather.cloudCount), `${w}.cloudCount`),
+        text("Cloud background", String(weather.cloudBackground), `${w}.cloudBackground`),
+        flag("Party (manual)", weather.party.manual, `${w}.party.manual`),
+        flag("Party (genuine)", weather.party.genuine, `${w}.party.genuine`),
+        text("Party cooldown", integer(weather.party.cooldown), `${w}.party.cooldown`),
+        text("Partying NPCs", list(weather.party.npcs), `${w}.party.npcs`),
+        flag("Lantern night (manual)", weather.lanternNight.manual, `${w}.lanternNight.manual`),
+        flag("Lantern night (genuine)", weather.lanternNight.genuine, `${w}.lanternNight.genuine`),
+        flag("Next lantern night genuine", weather.lanternNight.nextIsGenuine, `${w}.lanternNight.nextIsGenuine`),
+        text("Lantern night cooldown", integer(weather.lanternNight.cooldown), `${w}.lanternNight.cooldown`),
+        flag("Halloween today", weather.holidays.halloweenToday, `${w}.holidays.halloweenToday`),
+        flag("Christmas today", weather.holidays.christmasToday, `${w}.holidays.christmasToday`),
+        ...optional(weather.holidays.halloweenForever, (value) => flag("Halloween always", value, `${w}.holidays.halloweenForever`)),
+        ...optional(weather.holidays.christmasForever, (value) => flag("Christmas always", value, `${w}.holidays.christmasForever`)),
+        flag("Fast-forward time (sundial)", weather.fastForwardTime, `${w}.fastForwardTime`),
+        text("Sundial cooldown", String(weather.sundialCooldown), `${w}.sundialCooldown`),
+        flag("Fast-forward to dusk (moondial)", weather.fastForwardToDusk, `${w}.fastForwardToDusk`),
+        text("Moondial cooldown", String(weather.moondialCooldown), `${w}.moondialCooldown`),
+        ...optional(weather.meteorShowerCount, (value) => text("Meteor showers", integer(value), `${w}.meteorShowerCount`)),
+        ...optional(weather.coinRain, (value) => text("Coin rains", integer(value), `${w}.coinRain`)),
       ],
     },
     {
       id: "progression", title: "Progression", fields: [
-        flag("Hardmode", progression.hardmode),
-        text("Shadow orbs smashed", String(progression.orbCount)),
-        text("Altars smashed", String(progression.altarCount)),
-        text("Angler quest", String(progression.anglerQuest)),
-        flag("Combat book", progression.combatBookUsed),
-        flag("Combat book volume 2", progression.combatBookVolumeTwoUsed),
-        flag("Peddler's satchel", progression.peddlersSatchelUsed),
-        flag("Lunar events", progression.apocalypse),
-        ...flags(progression.defeatedPillars, PILLAR_NAMES, "Pillar defeated: "),
+        flag("Hardmode", progression.hardmode, `${p}.hardmode`),
+        flag("Shadow orb smashed", progression.orbSmashed, `${p}.orbSmashed`),
+        text("Shadow orbs smashed", String(progression.orbCount), `${p}.orbCount`),
+        flag("Meteor due", progression.spawnMeteor, `${p}.spawnMeteor`),
+        text("Altars smashed", String(progression.altarCount), `${p}.altarCount`),
+        flag("Party of doom", progression.partyOfDoom, `${p}.partyOfDoom`),
+        flag("Lunar events", progression.apocalypse, `${p}.apocalypse`),
+        text("Cultist delay", integer(progression.cultistDelay), `${p}.cultistDelay`),
+        text("Angler quest", String(progression.anglerQuest), `${p}.anglerQuest`),
+        text("Angler quest finished by", list(progression.anglerFinishers), `${p}.anglerFinishers`),
+        flag("Combat book", progression.combatBookUsed, `${p}.combatBookUsed`),
+        flag("Combat book volume 2", progression.combatBookVolumeTwoUsed, `${p}.combatBookVolumeTwoUsed`),
+        flag("Peddler's satchel", progression.peddlersSatchelUsed, `${p}.peddlersSatchelUsed`),
+        text("Invasion type", String(progression.invasion.type), `${p}.invasion.type`),
+        text("Invasion size", `${integer(progression.invasion.size)} of ${integer(progression.invasion.startSize)}`, `${p}.invasion.size`, `${p}.invasion.startSize`),
+        text("Invasion delay", integer(progression.invasion.delay), `${p}.invasion.delay`),
+        text("Invasion position", decimal(progression.invasion.x), `${p}.invasion.x`),
+        text("Kill counts stored", integer(other.killCountLength), "details.other.killCountLength"),
+        ...optional(other.claimableBannerLength, (value) => text("Claimable banners stored", integer(value), "details.other.claimableBannerLength")),
       ],
     },
-    { id: "bosses", title: "Bosses", fields: flags(progression.bosses, BOSS_NAMES) },
+    { id: "bosses", title: "Bosses", fields: flags(progression.bosses, BOSS_NAMES, `${p}.bosses`) },
     {
-      id: "events", title: "Invasions & NPCs", fields: [
-        ...flags(progression.defeatedInvasions, INVASION_NAMES),
-        ...flags(progression.savedNpcs, NPC_NAMES, "Rescued: "),
+      id: "events", title: "Invasions & pillars", fields: [
+        ...flags(progression.defeatedInvasions, INVASION_NAMES, `${p}.defeatedInvasions`),
+        ...flags(progression.defeatedPillars, PILLAR_NAMES, `${p}.defeatedPillars`, "Pillar defeated: "),
+        ...flags(progression.activePillars, PILLAR_NAMES, `${p}.activePillars`, "Pillar active: "),
+      ],
+    },
+    {
+      id: "npcs", title: "NPCs & pets", fields: [
+        ...flags(progression.savedNpcs, NPC_NAMES, `${p}.savedNpcs`, "Rescued: "),
+        ...allFlags(progression.unlockedNpcs, `${p}.unlockedNpcs`, "Unlocked: "),
+        ...allFlags(progression.boughtPets, `${p}.boughtPets`, "Pet bought: "),
       ],
     },
     {
       id: "landmarks", title: "Spawn & landmarks", fields: [
-        { kind: "point", label: "Spawn", point: landmarks.spawn },
-        { kind: "point", label: "Dungeon", point: landmarks.dungeon },
-        ...(landmarks.teamSpawns ?? []).map((point, index): WorldField => ({ kind: "point", label: `Team spawn ${String(index + 1)}`, point })),
+        { kind: "point", label: "Spawn", point: landmarks.spawn, paths: [`${l}.spawn.x`, `${l}.spawn.y`] },
+        { kind: "point", label: "Dungeon", point: landmarks.dungeon, paths: [`${l}.dungeon.x`, `${l}.dungeon.y`] },
+        ...optional(landmarks.teamSpawns, (points): WorldField => ({ kind: "points", label: "Team spawn points", points, paths: [`${l}.teamSpawns`] })),
       ],
     },
     {
-      id: "ores", title: "Ores & backgrounds", fields: [
-        text("Copper tier", ore(progression.preHardmodeOres.copper)),
-        text("Iron tier", ore(progression.preHardmodeOres.iron)),
-        text("Silver tier", ore(progression.preHardmodeOres.silver)),
-        text("Gold tier", ore(progression.preHardmodeOres.gold)),
-        text("Cobalt tier", ore(progression.hardmodeOres.cobalt)),
-        text("Mythril tier", ore(progression.hardmodeOres.mythril)),
-        text("Adamantite tier", ore(progression.hardmodeOres.adamantite)),
-        ...Object.entries(generation.backgrounds).map(([name, style]) =>
-          text(`${name.charAt(0).toUpperCase()}${name.slice(1)} background`, String(style))),
+      id: "ores", title: "Ores", fields: [
+        ...(Object.keys(progression.preHardmodeOres) as (keyof typeof progression.preHardmodeOres)[]).map((key) =>
+          text(`${humanize(key)} tier`, ore(progression.preHardmodeOres[key]), `${p}.preHardmodeOres.${key}`)),
+        ...(Object.keys(progression.hardmodeOres) as (keyof typeof progression.hardmodeOres)[]).map((key) =>
+          text(`${humanize(key)} tier`, ore(progression.hardmodeOres[key]), `${p}.hardmodeOres.${key}`)),
+      ],
+    },
+    {
+      id: "backgrounds", title: "Backgrounds", fields: [
+        ...(Object.keys(generation.backgrounds) as (keyof typeof generation.backgrounds)[]).map((key) =>
+          text(`${humanize(key)} background`, String(generation.backgrounds[key]), `${g}.backgrounds.${key}`)),
+        text("Tree boundaries (x)", list(generation.treeX), `${g}.treeX`),
+        text("Tree styles", list(generation.treeStyles), `${g}.treeStyles`),
+        text("Extra tree backgrounds", list(generation.additionalTreeBackgrounds), `${g}.additionalTreeBackgrounds`),
+        text("Tree top variations", list(generation.treeTopVariations), `${g}.treeTopVariations`),
+        text("Cave boundaries (x)", list(generation.caveBackX), `${g}.caveBackX`),
+        text("Cave styles", list(generation.caveBackStyles), `${g}.caveBackStyles`),
+        text("Ice cave style", String(generation.iceBackStyle), `${g}.iceBackStyle`),
+        text("Jungle cave style", String(generation.jungleBackStyle), `${g}.jungleBackStyle`),
+        text("Underworld style", String(generation.hellBackStyle), `${g}.hellBackStyle`),
       ],
     },
   ];
@@ -206,30 +276,33 @@ export function worldFieldGroups(world: WorldFieldsInput): WorldFieldGroup[] {
   const groups: WorldFieldGroup[] = [
     {
       id: "identity", title: "Identity", fields: [
-        text("Name", metadata.name),
-        text("Seed", metadata.seed),
-        text("GUID", metadata.guid),
-        text("World ID", String(metadata.worldId)),
-        text("Format version", String(header.version)),
-        ...optional(fileSize, (value) => text("File size", formatBytes(value))),
+        text("Name", metadata.name, "metadata.name"),
+        text("Seed", metadata.seed, "metadata.seed"),
+        text("GUID", metadata.guid, "metadata.guid"),
+        text("World ID", String(metadata.worldId), "metadata.worldId"),
+        text("Format version", String(header.version), "header.version"),
+        ...optional(fileSize, (value) => text("File size", formatBytes(value), "file.size")),
       ],
     },
     {
       id: "size", title: "Size & layers", fields: [
-        text("Size", `${String(metadata.width)} × ${String(metadata.height)} tiles`),
+        text("Size", `${String(metadata.width)} × ${String(metadata.height)} tiles`, "metadata.width", "metadata.height"),
         text("Size class", sizeClass(metadata.width, metadata.height)),
-        text("Surface level", String(metadata.surfaceLevel)),
-        text("Rock level", String(metadata.rockLevel)),
-        text("Bounds (px)", `${String(bounds.left)}, ${String(bounds.top)} – ${String(bounds.right)}, ${String(bounds.bottom)}`),
+        text("Surface level", String(metadata.surfaceLevel), "metadata.surfaceLevel"),
+        text("Rock level", String(metadata.rockLevel), "metadata.rockLevel"),
+        text(
+          "Bounds (px)", `${String(bounds.left)}, ${String(bounds.top)} – ${String(bounds.right)}, ${String(bounds.bottom)}`,
+          "metadata.bounds.left", "metadata.bounds.top", "metadata.bounds.right", "metadata.bounds.bottom",
+        ),
       ],
     },
   ];
   if (details === undefined) {
     groups.push({ id: "generation", title: "Generation", fields: [
-      text("Game mode", modeName(metadata.mode)),
-      text("Evil", metadata.evil === "crimson" ? "Crimson" : "Corruption"),
+      text("Game mode", modeName(metadata.mode), "metadata.mode"),
+      text("Evil", metadata.evil === "crimson" ? "Crimson" : "Corruption", "metadata.evil"),
     ] });
     return groups;
   }
-  return [...groups, ...generationGroups(details, metadata)];
+  return [...groups, ...detailGroups(details, metadata)];
 }

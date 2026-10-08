@@ -328,6 +328,10 @@ kbd {
   margin-left: auto;
 }
 
+.hide-on-phone {
+  display: inline-flex;
+}
+
 .top-divider {
   width: 1px;
   height: 20px;
@@ -455,6 +459,8 @@ kbd {
   position: relative;
   display: grid;
   place-items: center;
+  width: 100%;
+  height: 100%;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
@@ -708,6 +714,11 @@ kbd {
   gap: var(--space-1);
 }
 
+.property-points {
+  display: flex;
+  flex-direction: column;
+}
+
 .property-point .icon-button {
   width: 22px;
   height: 22px;
@@ -762,6 +773,42 @@ kbd {
 .visibility-row .icon-button {
   width: 24px;
   height: 24px;
+}
+
+.visibility-children .visibility-row {
+  padding-left: calc(var(--space-2) + var(--space-4));
+}
+
+.visibility-label {
+  flex: 1;
+}
+
+.inspector-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--space-2) 0 var(--space-3);
+  min-height: var(--row);
+}
+
+.inspector-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-small);
+  color: var(--text-2);
+}
+
+.inspector-state {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.inspector-state[data-pinned="true"] {
+  color: var(--accent-text);
 }
 
 .visibility-row[aria-disabled="true"] .visibility-label {
@@ -1060,9 +1107,15 @@ kbd {
   margin-top: 12vh;
 }
 
+.palette-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin: var(--space-2);
+}
+
 .palette-search {
   height: 40px;
-  margin: var(--space-2);
 }
 
 .palette-list {
@@ -1102,20 +1155,25 @@ kbd {
   .app,
   .app[data-dock="hidden"] {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: var(--bar) auto minmax(50%, 1fr) auto var(--status);
+    grid-template-rows: var(--bar) auto auto minmax(50%, 1fr) auto var(--status);
     grid-template-areas:
       "top"
       "rail"
+      "options"
       "map"
       "dock"
       "status";
   }
 
   .brand,
-  .tool-options,
   .splitter,
   .top-actions .button:not(.button-primary) {
     display: none;
+  }
+
+  .tool-options {
+    grid-area: options;
+    height: 28px;
   }
 
   .tool-rail {
@@ -1155,6 +1213,26 @@ kbd {
     left: 50%;
     top: calc(100% + 6px);
     translate: -50% 0;
+  }
+}
+
+/* Phones: secondary actions move to the app menu and the palette (Ctrl+K stays bound); Open keeps only its icon. */
+@media (max-width: 639px) {
+  .hide-on-phone,
+  .top-divider {
+    display: none;
+  }
+
+  .button-primary .button-label {
+    display: none;
+  }
+
+  .button-primary {
+    padding: 0 var(--space-2);
+  }
+
+  .world-title .muted {
+    display: none;
   }
 }
 

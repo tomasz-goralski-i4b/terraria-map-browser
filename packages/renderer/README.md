@@ -12,14 +12,17 @@ Chunk coordinates are indices of 128 × 128 regions; right and bottom edges are 
 Negative, non-integer or past-the-edge chunk indices throw a `RangeError`.
 `options.surfaceY` and `options.rockY` are the world's surface and rock levels (`surfaceLevel`/`rockLevel` of the
 world metadata, fractional): the sky is above `surfaceY`, the rock layer starts at `rockY`.
-`options.layers` independently enables background, walls, blocks and liquids.
+`options.layers` independently enables background, walls, blocks and liquids. `layers.wires` is a mask of the CWM
+`flags` bits to show as the wire overlay (`WIRE_LAYER`: red, blue, green, yellow wire, actuator); absent or 0 shows
+none.
 `options.mapPalette` supplies map colours (see below); without it every block and wall uses its placeholder.
 
 `createMapRenderer(canvas, options)` is the WebGL2 backend. At half a pixel per tile and above it draws exactly the
 pixels `renderChunk` produces for the same `mapPalette`, which the browser tests assert for every layer combination.
 
 - **Chunk pages.** Chunks are cached in pages of 64 array-texture layers: an `RGBA16UI` texture (block, wall,
-  frame-selected variant, reserved) and an `RGBA8UI` one (liquid kind, liquid amount, block paint, wall paint).
+  frame-selected variant, wire and actuator bits of `flags`) and an `RGBA8UI` one (liquid kind, liquid amount, block
+  paint, wall paint). The wire bits travel with the chunk upload, so switching the overlay is a uniform change.
   A chunk upload is two `texSubImage3D` calls, and a frame issues one instanced draw call per page, not per chunk.
 - **Overview.** Below `1 / factor` pixels per tile (factor 2, larger only when the world exceeds
   `MAX_TEXTURE_SIZE`) the map is drawn from an overview: a mipmapped `RGBA8` texture with one texel per
@@ -91,6 +94,13 @@ Liquid opacity is exactly `amount / 255`; kind none or amount zero contributes n
 Composite with standard source-over in straight alpha, rounding final channels to nearest
 integer (`Math.round`). A disabled background starts at transparent black. Disabled layers
 contribute nothing. Paint, frames, shape and flags do not alter this initial placeholder view.
+
+**Wire overlay** (after liquids). A tile whose `flags & layers.wires` has a wire bit takes the colour of its topmost
+shown wire: yellow over green over blue over red, the game's drawing order. With no wire shown it takes the actuator
+colour if its actuator bit is shown (`WIRE_COLORS`). Over an opaque pixel the colour is blended with
+`WIRE_ALPHA` = 192, per channel `⌊(2 × (wire × 192 + c × 63) + 255) / 510⌋` (the shader uses the same integer
+expression). Over a non-opaque pixel the result is the wire colour with alpha 192. Bits 5 and up (inactive,
+invisible, full-bright) are never shown.
 
 For example, vanilla id 1 is block `[157, 173, 94, 255]`, wall `[78, 86, 47, 255]`.
 Rendering reads the column-major planes directly, without semantic tile views or per-tile objects.

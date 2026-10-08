@@ -9,6 +9,37 @@ export interface ChunkLayers {
   readonly walls: boolean;
   readonly blocks: boolean;
   readonly liquids: boolean;
+  /**
+   * Wire overlay: a mask of the CWM `flags` bits to show (bit 0 red, 1 blue, 2 green, 3 yellow wire, 4 actuator; see
+   * `WIRE_LAYER`). Absent or 0 draws no overlay.
+   */
+  readonly wires?: number;
+}
+
+/** Bits of `ChunkLayers.wires`, equal to the CWM `flags` bits they show. */
+export const WIRE_LAYER = { red: 1, blue: 2, green: 4, yellow: 8, actuator: 16, all: 31 } as const;
+
+/**
+ * Overlay colours, in drawing priority: a tile shows the topmost visible wire (yellow over green over blue over red,
+ * the order the game draws them), else its actuator. They are UI colours, not map colours.
+ */
+export const WIRE_COLORS: readonly (readonly [bit: number, color: readonly [number, number, number]])[] = [
+  [WIRE_LAYER.yellow, [255, 221, 51]],
+  [WIRE_LAYER.green, [51, 221, 85]],
+  [WIRE_LAYER.blue, [68, 119, 255]],
+  [WIRE_LAYER.red, [255, 68, 68]],
+  [WIRE_LAYER.actuator, [214, 140, 230]],
+];
+
+/** Opacity of the wire overlay over an opaque tile (0–255). */
+export const WIRE_ALPHA = 192;
+
+/** The overlay colour of a tile's flags under a wire mask, or undefined when it shows none. */
+export function wireColor(flags: number, mask: number): readonly [number, number, number] | undefined {
+  const shown = flags & mask & WIRE_LAYER.all;
+  if (shown === 0) return undefined;
+  for (const [bit, color] of WIRE_COLORS) if ((shown & bit) !== 0) return color;
+  return undefined;
 }
 
 export interface ChunkRenderOptions {
@@ -101,6 +132,8 @@ export function renderChunk(
   // Typed as optional: the WebGL2 backend's worlds may omit the frame planes (frame 0), and its CPU reference reuses this.
   const frameX = planes.frameX as Int16Array | undefined;
   const frameY = planes.frameY as Int16Array | undefined;
+  const flags = planes.flags as Uint16Array | undefined;
+  const wireMask = (layers.wires ?? 0) & WIRE_LAYER.all;
   // Palette colours are cached outside the pixel loop; no semantic tile views are created.
   const colors = paletteColors(world.palette, mapPalette);
   const blockColors = layers.blocks ? colors.block : [];
@@ -148,6 +181,19 @@ export function renderChunk(
         green = Math.round((liquid[1] * opacity + green * retainedAlpha) / outputAlpha);
         blue = Math.round((liquid[2] * opacity + blue * retainedAlpha) / outputAlpha);
         alpha = Math.round(outputAlpha * 255);
+      }
+
+      const wire = wireMask === 0 ? undefined : wireColor(flags?.[index] ?? 0, wireMask);
+      if (wire !== undefined) {
+        // Integer blend, the same expression as the shader (bit-exact); over a non-opaque pixel the wire replaces it.
+        if (alpha === 255) {
+          red = Math.floor((2 * (wire[0] * WIRE_ALPHA + red * (255 - WIRE_ALPHA)) + 255) / 510);
+          green = Math.floor((2 * (wire[1] * WIRE_ALPHA + green * (255 - WIRE_ALPHA)) + 255) / 510);
+          blue = Math.floor((2 * (wire[2] * WIRE_ALPHA + blue * (255 - WIRE_ALPHA)) + 255) / 510);
+        } else {
+          [red, green, blue] = wire;
+          alpha = WIRE_ALPHA;
+        }
       }
 
       const offset = (y * width + x) * 4;

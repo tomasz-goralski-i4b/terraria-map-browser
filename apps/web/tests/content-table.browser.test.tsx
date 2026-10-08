@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { afterEach, beforeEach, expect, test } from "vitest";
 import { page, userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
@@ -129,18 +130,74 @@ test("5,000 rows render through a virtualised body with a bounded DOM", async ()
   expect(document.querySelectorAll(".table-body [role=row]").length).toBeLessThan(60);
 });
 
-test("the keyboard moves the selection and keeps it in view", async () => {
+function selectedRow(): string | undefined {
+  return document.querySelector(".table-body [role=row][aria-selected=true] [role=gridcell]")?.textContent ?? undefined;
+}
+
+test("the keyboard moves a controlled selection row by row, keeps it in view and activates it", async () => {
   const rows = Array.from({ length: 500 }, (_, id) => ({ id }));
-  let selected: string | null = null;
-  const view = await render(<SelectableTable rows={rows} onSelect={(key) => { selected = key; }} />);
+  const activated: string[] = [];
+  await render(<SelectableTable rows={rows} onActivate={(key) => { activated.push(key); }} />);
   const grid = page.getByRole("grid", { name: "Numbers" });
   (grid.element() as HTMLElement).focus();
+  await userEvent.keyboard("{ArrowDown}");
+  await expect.poll(selectedRow).toBe("0");
+  await userEvent.keyboard("{ArrowDown}{ArrowDown}{ArrowDown}");
+  await expect.poll(selectedRow).toBe("3");
+  await userEvent.keyboard("{ArrowUp}");
+  await expect.poll(selectedRow).toBe("2");
+  expect(grid.element().getAttribute("aria-activedescendant")).toBe(document.querySelector(".table-body [aria-selected=true]")?.id);
+  await userEvent.keyboard("{Enter}");
+  expect(activated).toEqual(["2"]);
   await userEvent.keyboard("{End}");
-  await expect.poll(() => selected).toBe("499");
-  await expect.poll(() => bodyRows().map((row) => row[0])).toContain("499");
-  await view.unmount();
+  await expect.poll(selectedRow).toBe("499");
+  await userEvent.keyboard("{PageUp}");
+  await expect.poll(() => Number(selectedRow())).toBeLessThan(499);
+  await userEvent.keyboard("{Home}");
+  await expect.poll(selectedRow).toBe("0");
 });
 
-function SelectableTable({ rows, onSelect }: { readonly rows: readonly NumberRow[]; readonly onSelect: (key: string) => void }): React.JSX.Element {
-  return <Table id="numbers" label="Numbers" columns={NUMBER_COLUMNS} rows={rows} rowKey={(row) => String(row.id)} onSelect={(row) => { onSelect(String(row.id)); }} />;
+test("sortable headers work from the keyboard", async () => {
+  await render(<ContentPanel world={world} />);
+  const button = page.getByRole("button", { name: "Tiles", exact: true });
+  (button.element() as HTMLElement).focus();
+  await userEvent.keyboard("{Enter}");
+  // Tiles starts descending; the next step is unsorted, then ascending.
+  await expect.element(page.getByRole("columnheader").filter({ hasText: "Tiles" })).toHaveAttribute("aria-sort", "none");
+  await userEvent.keyboard("{Enter}");
+  await expect.element(page.getByRole("columnheader").filter({ hasText: "Tiles" })).toHaveAttribute("aria-sort", "ascending");
+});
+
+test("resizing the flexible first column starts from its displayed width and applies the new width", async () => {
+  await render(<div style={{ width: 640 }}><ContentPanel world={world} /></div>);
+  const header = (): HTMLElement => {
+    const cell = page.getByRole("columnheader").filter({ hasText: "Content" }).element();
+    return cell as HTMLElement;
+  };
+  const handle = page.getByRole("separator", { name: "Resize Content column" });
+  const displayed = Math.round(header().getBoundingClientRect().width);
+  expect(displayed).toBeGreaterThan(200);
+  await expect.element(handle).toHaveAttribute("aria-valuenow", String(displayed));
+  (handle.element() as HTMLElement).focus();
+  await userEvent.keyboard("{ArrowRight}");
+  await expect.poll(() => Math.round(header().getBoundingClientRect().width)).toBe(displayed + 8);
+  for (const expected of [displayed, displayed - 8, displayed - 16]) {
+    await userEvent.keyboard("{ArrowLeft}");
+    await expect.poll(() => Math.round(header().getBoundingClientRect().width)).toBe(expected);
+  }
+  await expect.element(handle).toHaveAttribute("aria-valuenow", String(displayed - 16));
+  // A narrower first column stays at the width the user chose (it no longer takes the space left over).
+  await expect.poll(() => Math.round(header().getBoundingClientRect().width)).toBeLessThan(displayed);
+});
+
+function SelectableTable({ rows, onActivate }: { readonly rows: readonly NumberRow[]; readonly onActivate: (key: string) => void }): React.JSX.Element {
+  const [selected, setSelected] = useState<string | null>(null);
+  return (
+    <Table
+      id="numbers" label="Numbers" columns={NUMBER_COLUMNS} rows={rows} rowKey={(row) => String(row.id)}
+      selectedKey={selected}
+      onSelect={(row) => { setSelected(String(row.id)); }}
+      onActivate={(row) => { onActivate(String(row.id)); }}
+    />
+  );
 }

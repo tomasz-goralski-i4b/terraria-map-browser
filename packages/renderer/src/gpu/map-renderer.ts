@@ -5,7 +5,7 @@
 import type { ContentRef } from "@studio/world-model";
 import { CHUNK_SIZE, visibleChunks } from "../camera/camera.js";
 import type { Camera, ChunkCoord, Size } from "../camera/camera.js";
-import type { ChunkLayers } from "../chunk/render.js";
+import { WIRE_ALPHA, WIRE_COLORS, WIRE_LAYER, type ChunkLayers } from "../chunk/render.js";
 import {
   backgroundColor, contentColor, liquidColors, mapOption, optionColor, optionColors, optionRule,
 } from "../palette/map-palette.js";
@@ -33,6 +33,8 @@ export interface RenderableWorld {
     /** Frame planes pick the map option of multi-option content; absent planes mean frame 0 everywhere. */
     readonly frameX?: Int16Array;
     readonly frameY?: Int16Array;
+    /** CWM flags; only the wire and actuator bits (0–4) are read, for the wire overlay. Absent means none. */
+    readonly flags?: Uint16Array;
   };
   /** Append-only palette. */
   readonly palette: readonly ContentRef[];
@@ -117,7 +119,7 @@ const UNIT_OVERVIEW = 5;
 
 const TILE_UNIFORMS = [
   "uWide", "uNarrow", "uPalette", "uBackground", "uVariantColors", "uPaintRow", "uPaintCount", "uPaletteLength",
-  "uLayers", "uLiquids",
+  "uLayers", "uLiquids", "uWireColors", "uWireBits", "uWireAlpha",
 ] as const;
 const CHUNK_UNIFORMS = [...TILE_UNIFORMS, "uCamera", "uZoom", "uViewport"] as const;
 const BUILD_UNIFORMS = [...TILE_UNIFORMS, "uFactor", "uTarget"] as const;
@@ -243,8 +245,12 @@ function createResources(gl: WebGL2RenderingContext): GpuResources {
 }
 
 function layerBits(layers: ChunkLayers): number {
-  return (layers.background ? 1 : 0) | (layers.walls ? 2 : 0) | (layers.blocks ? 4 : 0) | (layers.liquids ? 8 : 0);
+  return (layers.background ? 1 : 0) | (layers.walls ? 2 : 0) | (layers.blocks ? 4 : 0) | (layers.liquids ? 8 : 0)
+    | (((layers.wires ?? 0) & WIRE_LAYER.all) << 4);
 }
+
+const wireColorUniform = new Int32Array(WIRE_COLORS.flatMap(([, color]) => [...color]));
+const wireBitUniform = new Int32Array(WIRE_COLORS.map(([bit]) => bit));
 
 export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRendererOptions): MapRenderer {
   // Straight (non-premultiplied) alpha: the shader writes the same RGBA that `renderChunk` produces.
@@ -415,7 +421,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     const originY = chunk.y * CHUNK_SIZE;
     const columns = Math.min(CHUNK_SIZE, source.width - originX);
     const rows = Math.min(CHUNK_SIZE, source.height - originY);
-    const { block, wall, liquid, liquidAmount, paint, wallPaint, frameX, frameY } = source.planes;
+    const { block, wall, liquid, liquidAmount, paint, wallPaint, frameX, frameY, flags } = source.planes;
     const framed = mapPalette?.tileOptions !== undefined && (frameX !== undefined || frameY !== undefined);
     const paletteLength = source.palette.length;
     const firstNewVariant = variantCount;
@@ -431,6 +437,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
         wideStaging[texel + 2] = framed && blockId < paletteLength
           ? variantOf(blockId, frameX?.[index] ?? 0, frameY?.[index] ?? 0, source.palette)
           : 0;
+        wideStaging[texel + 3] = (flags?.[index] ?? 0) & WIRE_LAYER.all;
         narrowStaging[texel] = liquid[index] ?? 0;
         narrowStaging[texel + 1] = liquidAmount[index] ?? 0;
         narrowStaging[texel + 2] = paint[index] ?? 0;
@@ -528,6 +535,9 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     gl.uniform1i(uniforms.uVariantColors, UNIT_VARIANTS);
     gl.uniform1i(uniforms.uPaletteLength, paletteUploaded);
     gl.uniform1i(uniforms.uLayers, layers);
+    gl.uniform3iv(uniforms.uWireColors, wireColorUniform);
+    gl.uniform1iv(uniforms.uWireBits, wireBitUniform);
+    gl.uniform1i(uniforms.uWireAlpha, WIRE_ALPHA);
     gl.uniform3iv(uniforms.uLiquids, liquidUniform);
     gl.uniform1i(uniforms.uPaintRow, background?.paintRow ?? 0);
     gl.uniform1i(uniforms.uPaintCount, paintCount);

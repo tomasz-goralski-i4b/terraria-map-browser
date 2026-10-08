@@ -20,7 +20,7 @@ function labels(fields: readonly WorldField[]): string[] {
 function value(fields: readonly WorldField[], label: string): unknown {
   const field = fields.find((candidate) => candidate.label === label);
   if (field === undefined) throw new Error(`no field ${label}`);
-  return field.kind === "point" ? field.point : field.value;
+  return field.kind === "point" ? field.point : field.kind === "points" ? field.points : field.value;
 }
 
 test("identity and size show exactly the decoded header fields", () => {
@@ -54,6 +54,37 @@ test("generation, progression and landmarks come from the decoded details", () =
   expect(value(group(groups, "progression").fields, "Hardmode")).toBe(world.details.progression.hardmode);
 });
 
+/** Every decoded value as a dotted path; arrays are one value; `undefined` (not stored in this version) is none. */
+function leafPaths(value: unknown, path: string): string[] {
+  if (value === undefined) return [];
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return [path];
+  return Object.entries(value).flatMap(([key, child]) => leafPaths(child, `${path}.${key}`));
+}
+
+test("every decoded metadata and details value has exactly one row", () => {
+  const decoded = ["header.version", ...leafPaths(world.metadata, "metadata"), ...leafPaths(world.details, "details")];
+  const shown = worldFieldGroups(world).flatMap((candidate) => candidate.fields.flatMap((field) => field.paths));
+  expect(new Set(shown)).toEqual(new Set(decoded));
+  expect(shown).toHaveLength(new Set(shown).size);
+});
+
+test("distinct stored values keep distinct rows", () => {
+  const groups = worldFieldGroups(world);
+  const time = group(groups, "time").fields;
+  const { party, lanternNight, rain, sandstorm } = world.details.timeAndWeather;
+  expect(value(time, "Party (manual)")).toBe(party.manual);
+  expect(value(time, "Party (genuine)")).toBe(party.genuine);
+  expect(value(time, "Lantern night (manual)")).toBe(lanternNight.manual);
+  expect(value(time, "Lantern night (genuine)")).toBe(lanternNight.genuine);
+  expect(value(time, "Rain time left")).toBe(rain.time.toLocaleString("en-US"));
+  expect(value(time, "Sandstorm time left")).toBe(sandstorm.time.toLocaleString("en-US"));
+  const events = group(groups, "events").fields;
+  expect(value(events, "Pillar active: Solar")).toBe(world.details.progression.activePillars.solar);
+  const npcs = group(groups, "npcs").fields;
+  expect(value(npcs, "Unlocked: Merchant")).toBe(world.details.progression.unlockedNpcs.merchant);
+  expect(value(npcs, "Pet bought: Cat")).toBe(world.details.progression.boughtPets.cat);
+});
+
 test("the group ids for Expand all / Collapse all cover every group", () => {
   expect(worldFieldGroups(world).map((candidate) => candidate.id)).toEqual([...WORLD_GROUP_IDS]);
 });
@@ -69,7 +100,7 @@ test("fields the file's version does not store get no row", () => {
     spawnAndLandmarks: { ...world.details.spawnAndLandmarks, teamSpawns: undefined },
   };
   const all = worldFieldGroups({ ...world, details }).flatMap((candidate) => labels(candidate.fields));
-  for (const absent of ["Last played", "World-gen manifest", "Meteor showers", "Coin rains", "Halloween always", "Christmas always", "Team spawn 1"]) {
+  for (const absent of ["Last played", "World-gen manifest", "Meteor showers", "Coin rains", "Halloween always", "Christmas always", "Team spawn points"]) {
     expect(all).not.toContain(absent);
   }
   expect(labels(group(worldFieldGroups({ ...world, details: undefined }), "identity").fields)).not.toContain("File size");

@@ -2,10 +2,12 @@ import { useEffect } from "react";
 import type { IconName } from "../ui/Icon.js";
 import { useAppStore } from "../store.js";
 import { chooseWorldFile } from "../world/open-world.js";
+import { WIRE_LAYER } from "@studio/renderer";
+import { WORLD_GROUP_IDS } from "../panels/world-fields.js";
 import { resetLayout, useLayoutStore, type ThemeChoice } from "./layout-store.js";
-import { getMapController, useViewStore, type ToolId } from "./view-store.js";
+import { getMapController, useViewStore, type MapLayers, type ToolId } from "./view-store.js";
 
-export type CommandGroup = "File" | "View" | "Tools" | "Help";
+export type CommandGroup = "File" | "View" | "Layers" | "Tools" | "Help";
 
 /**
  * One user action. Menus, the tool rail, tooltips, the shortcut help and the command palette are all built from this
@@ -41,7 +43,7 @@ const EDITING_LATER = "World editing is not available yet";
 
 export const TOOLS: readonly ToolDefinition[] = [
   { id: "pan", label: "Pan", icon: "pan", shortcut: "H", group: "navigate", available: true, hint: "Drag to pan · Wheel or +/− to zoom · Arrow keys to move" },
-  { id: "inspect", label: "Inspect", icon: "inspect", shortcut: "I", group: "navigate", available: true, hint: "Hover a tile to see what it is in the status bar · Drag to pan" },
+  { id: "inspect", label: "Inspect", icon: "inspect", shortcut: "I", group: "navigate", available: true, hint: "Click a tile (or press Enter) to pin it in the Inspector · Hover to preview · Drag to pan" },
   { id: "brush", label: "Brush", icon: "brush", shortcut: "B", group: "edit", available: false, hint: "" },
   { id: "erase", label: "Erase", icon: "erase", shortcut: "E", group: "edit", available: false, hint: "" },
   { id: "fill", label: "Fill", icon: "fill", shortcut: "G", group: "edit", available: false, hint: "" },
@@ -66,6 +68,22 @@ export function toolCommands(tool: ToolId, setTool: (tool: ToolId) => void): Com
   }));
 }
 
+/** Layer toggles, in the order of the Layers panel, with their shortcuts. */
+export const LAYER_TOGGLES: readonly { readonly layer: Exclude<keyof MapLayers, "wires"> | "wires"; readonly label: string; readonly shortcut: string }[] = [
+  { layer: "background", label: "Background", shortcut: "Alt+1" },
+  { layer: "walls", label: "Walls", shortcut: "Alt+2" },
+  { layer: "blocks", label: "Blocks", shortcut: "Alt+3" },
+  { layer: "liquids", label: "Liquids", shortcut: "Alt+4" },
+  { layer: "wires", label: "Wires and actuators", shortcut: "Alt+5" },
+];
+
+/** Whether a layer is shown: wires count as shown while any wire colour or actuators are. */
+export function layerShown(layers: MapLayers, layer: (typeof LAYER_TOGGLES)[number]["layer"]): boolean {
+  return layer === "wires" ? layers.wires !== 0 : layers[layer];
+}
+
+const WORLD_GROUP_KEYS = WORLD_GROUP_IDS.map((id) => `world/${id}`);
+
 const THEME_LABELS: Readonly<Record<ThemeChoice, string>> = { system: "Theme: follow system", dark: "Theme: dark", light: "Theme: light" };
 
 /** The app's commands with their current state. */
@@ -81,6 +99,11 @@ export function useCommands(): Command[] {
   const setStatsVisible = useViewStore((state) => state.setStatsVisible);
   const setHelpOpen = useViewStore((state) => state.setHelpOpen);
   const setPaletteOpen = useViewStore((state) => state.setPaletteOpen);
+  const layers = useViewStore((state) => state.layers);
+  const setLayers = useViewStore((state) => state.setLayers);
+  const setGroupsOpen = useLayoutStore((state) => state.setGroupsOpen);
+  const pinnedTile = useViewStore((state) => state.pinnedTile);
+  const setPinnedTile = useViewStore((state) => state.setPinnedTile);
   const noWorld = hasWorld ? {} : { disabledReason: "Open a world first" };
 
   return [
@@ -118,7 +141,34 @@ export function useCommands(): Command[] {
       },
     })),
     { id: "view.reset", group: "View", label: "Reset layout", icon: "reset", enabled: true, run: resetLayout },
+    {
+      id: "view.worldExpand", group: "View", label: "Expand all World groups", icon: "expandAll", enabled: true,
+      run: () => {
+        setGroupsOpen(WORLD_GROUP_KEYS, true);
+      },
+    },
+    {
+      id: "view.worldCollapse", group: "View", label: "Collapse all World groups", icon: "collapseAll", enabled: true,
+      run: () => {
+        setGroupsOpen(WORLD_GROUP_KEYS, false);
+      },
+    },
+    ...LAYER_TOGGLES.map(({ layer, label, shortcut }): Command => ({
+      id: `layer.${layer}`, group: "Layers", label: `Show ${label.toLowerCase()}`, shortcut, enabled: true,
+      checked: layerShown(layers, layer),
+      run: () => {
+        if (layer === "wires") setLayers({ wires: layers.wires === 0 ? WIRE_LAYER.all : 0 });
+        else setLayers({ [layer]: !layers[layer] });
+      },
+    })),
     ...toolCommands(tool, setTool),
+    {
+      id: "tool.unpin", group: "Tools", label: "Unpin inspected tile", shortcut: "Escape", enabled: pinnedTile !== null,
+      ...(pinnedTile === null ? { disabledReason: "No tile is pinned" } : {}),
+      run: () => {
+        setPinnedTile(null);
+      },
+    },
     {
       id: "help.palette", group: "Help", label: "Command palette", icon: "command", shortcut: "Control+K", enabled: true,
       run: () => {
@@ -149,6 +199,8 @@ export function matchesShortcut(event: KeyboardEvent, shortcut: string): boolean
   if (control !== modifiers.has("Control") || event.altKey !== modifiers.has("Alt")) return false;
   // A printable key that needs Shift (e.g. `?`) is matched by the character; Shift is only compared for letters.
   if (/^[a-z]$/i.test(key) && event.shiftKey !== modifiers.has("Shift")) return false;
+  // Digits match by physical key: with Alt (Option on macOS) the produced character is not the digit.
+  if (/^[0-9]$/.test(key)) return event.code === `Digit${key}` || event.key === key;
   return event.key.toLowerCase() === key.toLowerCase();
 }
 

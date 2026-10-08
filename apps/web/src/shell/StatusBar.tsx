@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { MapRendererStats } from "@studio/renderer";
 import type { Tile } from "@studio/world-model";
 import { useAppStore } from "../store.js";
-import { toCanonicalWorld } from "../world/canonical-world.js";
+import { canonicalWorldOf } from "../world/canonical-world.js";
 import { describeTile } from "../world/content-names.js";
 import { depthLabel, type DepthLevels } from "../world/depth.js";
 import { getDefaultWorldSession } from "../world/world-session.js";
@@ -16,9 +16,8 @@ export interface StatusWorld extends DepthLevels {
 function sessionStatusWorld(): StatusWorld | null {
   const loaded = getDefaultWorldSession().getLoadedWorld();
   if (loaded === null) return null;
-  const canonical = toCanonicalWorld(loaded);
   const { height, surfaceLevel, rockLevel } = loaded.metadata;
-  return { height, surfaceLevel, rockLevel, tileAt: (x, y) => canonical.tileAt(x, y) };
+  return { height, surfaceLevel, rockLevel, tileAt: (x, y) => canonicalWorldOf(loaded).tileAt(x, y) };
 }
 
 const STATS_INTERVAL_MS = 500;

@@ -51,6 +51,7 @@ test("section, dock and column changes survive a reload", () => {
   actions.setDockWidth(400);
   actions.setDockHidden(true);
   actions.setColumn("content", "share", { hidden: true, width: 90 });
+  actions.setInspectorShowAll(true);
 
   hydrateLayout(storage);
   const state = useLayoutStore.getState();
@@ -59,6 +60,7 @@ test("section, dock and column changes survive a reload", () => {
   expect(state.dockWidth).toBe(400);
   expect(state.dockHidden).toBe(true);
   expect(state.columns["content"]?.["share"]).toEqual({ hidden: true, width: 90 });
+  expect(state.inspectorShowAll).toBe(true);
 });
 
 test("several groups open or close at once", () => {

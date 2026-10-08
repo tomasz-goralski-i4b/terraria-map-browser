@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { MapRendererStats } from "@studio/renderer";
+import { WIRE_LAYER, type ChunkLayers, type MapRendererStats } from "@studio/renderer";
 
 /** Tools of the left rail. Only the navigation tools work today; the rest mark where editing will go (docs/ui.md). */
 export type ToolId = "pan" | "inspect" | "brush" | "erase" | "fill" | "select" | "picker" | "object";
@@ -9,9 +9,17 @@ export interface TilePoint {
   readonly y: number;
 }
 
+/** Map layers the user can hide; `wires` is a mask of `WIRE_LAYER` bits (wire colours and actuators). */
+export type MapLayers = Required<ChunkLayers>;
+
+export const DEFAULT_MAP_LAYERS: MapLayers = { background: true, walls: true, blocks: true, liquids: true, wires: WIRE_LAYER.all };
+
 /** Transient view state: small values the chrome shows, never world data. Not persisted. */
 export interface ViewState {
   readonly hoverTile: TilePoint | null;
+  /** The tile the Inspect tool pinned in the Inspector; null shows the hovered tile instead. */
+  readonly pinnedTile: TilePoint | null;
+  readonly layers: MapLayers;
   /** Backing-store pixels per tile; null before the map has a camera. */
   readonly zoom: number | null;
   readonly tool: ToolId;
@@ -19,6 +27,8 @@ export interface ViewState {
   readonly paletteOpen: boolean;
   readonly statsVisible: boolean;
   readonly setHoverTile: (tile: TilePoint | null) => void;
+  readonly setPinnedTile: (tile: TilePoint | null) => void;
+  readonly setLayers: (layers: Partial<MapLayers>) => void;
   readonly setZoom: (zoom: number | null) => void;
   readonly setTool: (tool: ToolId) => void;
   readonly setHelpOpen: (open: boolean) => void;
@@ -28,6 +38,8 @@ export interface ViewState {
 
 export const useViewStore = create<ViewState>()((set, get) => ({
   hoverTile: null,
+  pinnedTile: null,
+  layers: DEFAULT_MAP_LAYERS,
   zoom: null,
   tool: "pan",
   helpOpen: false,
@@ -37,6 +49,12 @@ export const useViewStore = create<ViewState>()((set, get) => ({
     const previous = get().hoverTile;
     if (previous?.x === tile?.x && previous?.y === tile?.y) return;
     set({ hoverTile: tile });
+  },
+  setPinnedTile: (tile) => {
+    set({ pinnedTile: tile });
+  },
+  setLayers: (layers) => {
+    set({ layers: { ...get().layers, ...layers } });
   },
   setZoom: (zoom) => {
     if (get().zoom !== zoom) set({ zoom });

@@ -49,7 +49,7 @@ export function App({ layoutStorage }: AppProps = {}): React.JSX.Element {
       <ToolRail commands={commands} />
       <ToolOptions />
       <MapView renderer={RENDERER_PACKAGE} />
-      <Dock />
+      <Dock commands={commands} />
       <StatusBar />
       <HelpOverlay commands={commands} />
       <CommandPalette commands={commands} />

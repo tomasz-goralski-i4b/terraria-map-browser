@@ -10,12 +10,19 @@ import { commandById, type Command } from "./commands.js";
 
 function menuItem(command: Command): MenuItem {
   if (command.checked !== undefined) {
-    return { kind: "check", label: command.label, checked: command.checked, disabled: !command.enabled, onChange: command.run };
+    return {
+      kind: "check", label: command.label, checked: command.checked, disabled: !command.enabled, onChange: command.run,
+      ...(command.shortcut === undefined ? {} : { shortcut: command.shortcut }),
+    };
   }
   return {
     kind: "action", label: command.enabled || command.disabledReason === undefined ? command.label : `${command.label} — ${command.disabledReason}`,
     ...(command.shortcut === undefined ? {} : { shortcut: command.shortcut }), disabled: !command.enabled, onSelect: command.run,
   };
+}
+
+function themeMenuItems(commands: readonly Command[]): MenuItem[] {
+  return commands.filter((command) => command.id.startsWith("view.theme.")).map(menuItem);
 }
 
 /** App menu, the open world's name and size, and the global actions. Nothing else lives here. */
@@ -41,11 +48,12 @@ export function TopBar({ commands }: { readonly commands: readonly Command[] }):
     menuItem(get("view.dock")),
     menuItem(get("view.stats")),
     menuItem(get("view.reset")),
+    ...themeMenuItems(commands),
     { kind: "separator" },
     menuItem(get("help.palette")),
     menuItem(get("help.shortcuts")),
   ];
-  const themeMenu = commands.filter((command) => command.id.startsWith("view.theme.")).map(menuItem);
+  const themeMenu = themeMenuItems(commands);
   const dock = get("view.dock");
   const open = get("file.open");
   const assets = get("file.assets");
@@ -65,17 +73,21 @@ export function TopBar({ commands }: { readonly commands: readonly Command[] }):
         )}
       </div>
       <nav className="top-actions" aria-label="Actions">
-        <button type="button" className="button button-primary" aria-keyshortcuts={open.shortcut} onClick={open.run}>
+        <button type="button" className="button button-primary" aria-label="Open .wld world" aria-keyshortcuts={open.shortcut} onClick={open.run}>
           <Icon name="open" />
-          Open .wld world
+          <span className="button-label">Open .wld world</span>
         </button>
         <button type="button" className="button" aria-disabled="true" title={assets.disabledReason}>
           Connect Terraria assets
         </button>
-        <span className="top-divider" aria-hidden="true" />
-        <IconButton icon="command" label="Command palette" shortcut="Control+K" onClick={get("help.palette").run} />
-        <MenuButton label="Theme" icon="theme" items={themeMenu} align="end" />
-        <IconButton icon="help" label="Keyboard shortcuts" shortcut="Shift+?" onClick={get("help.shortcuts").run} />
+        <span className="top-divider hide-on-phone" aria-hidden="true" />
+        <span className="hide-on-phone">
+          <IconButton icon="command" label="Command palette" shortcut="Control+K" onClick={get("help.palette").run} />
+        </span>
+        <MenuButton label="Theme" icon="theme" items={themeMenu} align="end" className="hide-on-phone" />
+        <span className="hide-on-phone">
+          <IconButton icon="help" label="Keyboard shortcuts" shortcut="Shift+?" onClick={get("help.shortcuts").run} />
+        </span>
         <IconButton icon="dock" label="Show panels" shortcut="P" pressed={dock.checked ?? false} onClick={dock.run} />
       </nav>
       <input

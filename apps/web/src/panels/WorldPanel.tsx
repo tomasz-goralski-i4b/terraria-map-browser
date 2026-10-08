@@ -6,23 +6,41 @@ import { IconButton } from "../ui/IconButton.js";
 import { PropertyGrid, type Property } from "../ui/PropertyGrid.js";
 import { Section } from "../ui/Section.js";
 import { getDefaultWorldSession } from "../world/world-session.js";
-import { WORLD_GROUP_IDS, worldFieldGroups, type WorldField, type WorldFieldGroup, type WorldFieldsInput } from "./world-fields.js";
+import { commandById, type Command } from "../shell/commands.js";
+import { worldFieldGroups, type WorldField, type WorldFieldGroup, type WorldFieldsInput } from "./world-fields.js";
+
+function PointValue({ label, point }: { readonly label: string; readonly point: { readonly x: number; readonly y: number } }): React.JSX.Element {
+  return (
+    <span className="property-point">
+      <span className="numeric">{point.x}, {point.y}</span>
+      <IconButton icon="target" label={`Go to ${label} on the map`} tooltipSide="left" onClick={() => {
+        getMapController()?.centerOn(point.x, point.y);
+      }} />
+    </span>
+  );
+}
 
 function property(field: WorldField): Property {
-  if (field.kind !== "point") return field;
-  const { x, y } = field.point;
-  return {
-    kind: "custom",
-    label: field.label,
-    value: (
-      <span className="property-point">
-        <span className="numeric">{x}, {y}</span>
-        <IconButton icon="target" label={`Go to ${field.label} on the map`} tooltipSide="left" onClick={() => {
-          getMapController()?.centerOn(x, y);
-        }} />
-      </span>
-    ),
-  };
+  switch (field.kind) {
+    case "text":
+      return { kind: "text", label: field.label, value: field.value };
+    case "flag":
+      return { kind: "flag", label: field.label, value: field.value };
+    case "point":
+      return { kind: "custom", label: field.label, value: <PointValue label={field.label} point={field.point} /> };
+    case "points":
+      return {
+        kind: "custom",
+        label: field.label,
+        value: field.points.length === 0 ? <span className="muted">None</span> : (
+          <span className="property-points">
+            {field.points.map((point, index) => (
+              <PointValue key={`${String(point.x)},${String(point.y)},${String(index)}`} label={`${field.label} ${String(index + 1)}`} point={point} />
+            ))}
+          </span>
+        ),
+      };
+  }
 }
 
 /** "7/22" for groups that are checklists, so progress reads without opening them. */
@@ -37,19 +55,14 @@ function loadedFields(fileSize: number): WorldFieldsInput | null {
   return loaded === null ? null : { ...loaded, fileSize };
 }
 
-const WORLD_GROUP_KEYS = WORLD_GROUP_IDS.map((id) => `world/${id}`);
-
-/** Expand all / Collapse all, for the World section's header. */
-export function WorldPanelActions(): React.JSX.Element {
-  const setGroupsOpen = useLayoutStore((state) => state.setGroupsOpen);
+/** Expand all / Collapse all, for the World section's header (commands, so they are also in the palette). */
+export function WorldPanelActions({ commands }: { readonly commands: readonly Command[] }): React.JSX.Element {
+  const expand = commandById(commands, "view.worldExpand");
+  const collapse = commandById(commands, "view.worldCollapse");
   return (
     <>
-      <IconButton icon="expandAll" label="Expand all groups" tooltipSide="left" onClick={() => {
-        setGroupsOpen(WORLD_GROUP_KEYS, true);
-      }} />
-      <IconButton icon="collapseAll" label="Collapse all groups" tooltipSide="left" onClick={() => {
-        setGroupsOpen(WORLD_GROUP_KEYS, false);
-      }} />
+      <IconButton icon="expandAll" label="Expand all groups" tooltipSide="left" onClick={expand.run} />
+      <IconButton icon="collapseAll" label="Collapse all groups" tooltipSide="left" onClick={collapse.run} />
     </>
   );
 }

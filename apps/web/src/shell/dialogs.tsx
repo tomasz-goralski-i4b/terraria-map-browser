@@ -16,9 +16,15 @@ function useModal(open: boolean, onClose: () => void): React.RefObject<HTMLDialo
   useEffect(() => {
     const dialog = ref.current;
     if (dialog === null) return undefined;
+    // A click on the backdrop lands on the dialog element itself (its content never fills the backdrop).
+    const onClick = (event: MouseEvent): void => {
+      if (event.target === dialog) dialog.close();
+    };
     dialog.addEventListener("close", onClose);
+    dialog.addEventListener("click", onClick);
     return () => {
       dialog.removeEventListener("close", onClose);
+      dialog.removeEventListener("click", onClick);
     };
   }, [onClose]);
   return ref;
@@ -26,6 +32,8 @@ function useModal(open: boolean, onClose: () => void): React.RefObject<HTMLDialo
 
 const MAP_KEYS: readonly (readonly [string, string])[] = [
   ["Drag", "Pan the map"],
+  ["Click, Enter", "Pin a tile (Inspect tool)"],
+  ["Esc", "Unpin the tile"],
   ["Wheel, pinch", "Zoom at the pointer"],
   ["Arrow keys", "Pan (map focused)"],
   ["+ / −", "Zoom in / out (map focused)"],
@@ -41,7 +49,7 @@ export function HelpOverlay({ commands }: { readonly commands: readonly Command[
   }, [setOpen]);
   const ref = useModal(open, close);
   const titleId = useId();
-  const groups: CommandGroup[] = ["File", "View", "Tools", "Help"];
+  const groups: CommandGroup[] = ["File", "View", "Layers", "Tools", "Help"];
 
   return (
     <dialog ref={ref} className="dialog help-dialog" aria-labelledby={titleId}>
@@ -99,8 +107,14 @@ export function CommandPalette({ commands }: { readonly commands: readonly Comma
 
 function PaletteBody({ commands, close }: { readonly commands: readonly Command[]; readonly close: () => void }): React.JSX.Element {
   const listId = useId();
+  const list = useRef<HTMLUListElement>(null);
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
+
+  // Keep the active option visible while the keyboard moves it (including wrap-around).
+  useEffect(() => {
+    list.current?.querySelector(`[id="${listId}-${String(active)}"]`)?.scrollIntoView({ block: "nearest" });
+  }, [active, listId]);
   const matches = commands.filter((command) => `${command.group} ${command.label}`.toLowerCase().includes(query.trim().toLowerCase()));
   const run = (command: Command | undefined): void => {
     if (!command?.enabled) return;
@@ -110,7 +124,8 @@ function PaletteBody({ commands, close }: { readonly commands: readonly Command[
 
   return (
     <>
-      <label className="search-field palette-search">
+      <div className="palette-header">
+        <label className="search-field palette-search">
         <Icon name="search" />
         <input
           type="text"
@@ -137,8 +152,10 @@ function PaletteBody({ commands, close }: { readonly commands: readonly Command[
             }
           }}
         />
-      </label>
-      <ul id={listId} role="listbox" aria-label="Commands" className="palette-list">
+        </label>
+        <button type="button" className="icon-button" aria-label="Close" onClick={close}><Icon name="close" /></button>
+      </div>
+      <ul ref={list} id={listId} role="listbox" aria-label="Commands" className="palette-list">
         {matches.map((command, index) => (
           <li
             key={command.id}

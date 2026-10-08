@@ -77,20 +77,39 @@ test("the World panel shows exactly the decoded metadata fields with their value
   await expect.element(generation).toMatchTextContent("Classic");
   await expect.element(generation).toMatchTextContent("Corruption");
 
-  // Every row is a decoded field, and every decoded field has a row: the panel against the codec's own result.
-  const expected = worldFieldGroups({ ...readWorldMetadata(bytes), fileSize: bytes.length });
-  const shown = [...document.querySelectorAll(".world-panel .property-row")].map((row) => [
-    row.querySelector("dt")?.textContent,
-    row.querySelector("dd")?.textContent,
-  ]);
-  const values = expected.flatMap((group) => group.fields.map((field) => [
-    field.label,
-    field.kind === "text" ? field.value : field.kind === "flag" ? (field.value ? "Yes" : "No") : `${String(field.point.x)}, ${String(field.point.y)}`,
+  // Values checked against the codec's own result, not against the panel's row builder.
+  const decoded = readWorldMetadata(bytes);
+  const shown = new Map([...document.querySelectorAll(".world-panel .property-row")].map((row) => [
+    row.querySelector("dt")?.textContent ?? "",
+    row.querySelector("dd")?.textContent ?? "",
   ]));
-  expect(shown).toEqual(values);
-  const levels = readWorldMetadata(bytes).metadata;
-  expect(shown).toContainEqual(["Surface level", String(levels.surfaceLevel)]);
-  expect(shown).toContainEqual(["Rock level", String(levels.rockLevel)]);
+  const yesNo = (flag: boolean): string => (flag ? "Yes" : "No");
+  const { metadata, details } = decoded;
+  const spawn = details.spawnAndLandmarks.spawn;
+  expect(Object.fromEntries(shown)).toMatchObject({
+    "Name": metadata.name,
+    "Seed": metadata.seed,
+    "GUID": metadata.guid,
+    "World ID": String(metadata.worldId),
+    "Format version": String(decoded.header.version),
+    "Surface level": String(metadata.surfaceLevel),
+    "Rock level": String(metadata.rockLevel),
+    "Hardmode": yesNo(details.progression.hardmode),
+    "Moon Lord": yesNo(details.progression.bosses.moonLord),
+    "Blood moon": yesNo(details.timeAndWeather.bloodMoon),
+    "Party (genuine)": yesNo(details.timeAndWeather.party.genuine),
+    "Pillar active: Nebula": yesNo(details.progression.activePillars.nebula),
+    "Unlocked: Merchant": yesNo(details.progression.unlockedNpcs.merchant),
+    "Altars smashed": String(details.progression.altarCount),
+    "Moon type": String(details.generation.moonType),
+    "World-gen version": details.generation.worldGenVersion,
+    "Spawn": `${String(spawn.x)}, ${String(spawn.y)}`,
+  });
+  // Every row has a distinct label, and the rows are exactly the fields the builder covers (its coverage of every
+  // decoded value is proven in world-fields.test.ts against the codec's own object).
+  const rows = document.querySelectorAll(".world-panel .property-row").length;
+  expect(shown.size).toBe(rows);
+  expect(rows).toBe(worldFieldGroups({ ...decoded, fileSize: bytes.length }).flatMap((group) => group.fields).length);
 });
 
 test("Collapse all and Expand all toggle every World group", async () => {
@@ -195,6 +214,87 @@ test("tools, sections and dialogs are operable from the keyboard", async () => {
   await expect.element(page.getByRole("combobox", { name: "Command" })).toHaveFocus();
   await userEvent.keyboard("show panels{Enter}");
   await expect.element(page.getByRole("complementary", { name: "Panels" })).not.toBeInTheDocument();
+});
+
+function tabbableTools(): string[] {
+  return [...document.querySelectorAll<HTMLButtonElement>(".tool-rail button")].filter((button) => button.tabIndex === 0)
+    .map((button) => button.getAttribute("aria-label") ?? "");
+}
+
+test("the tool rail is one Tab stop; arrows move it and a tool change moves it to the active tool", async () => {
+  await render(<App layoutStorage={storage} />);
+  expect(tabbableTools()).toEqual(["Pan"]);
+  page.getByRole("button", { name: "Pan" }).element().focus();
+  await userEvent.keyboard("{ArrowDown}{ArrowDown}");
+  await expect.element(page.getByRole("button", { name: "Brush" })).toHaveFocus();
+  expect(tabbableTools()).toEqual(["Brush"]);
+  await userEvent.keyboard("{ArrowUp}");
+  await expect.element(page.getByRole("button", { name: "Inspect" })).toHaveFocus();
+  await userEvent.keyboard("{Enter}");
+  await expect.element(page.getByRole("button", { name: "Inspect" })).toHaveAttribute("aria-pressed", "true");
+  await userEvent.keyboard("{ArrowDown}{ArrowDown}");
+  await userEvent.keyboard("h");
+  await expect.element(page.getByRole("button", { name: "Pan" })).toHaveAttribute("aria-pressed", "true");
+  expect(tabbableTools()).toEqual(["Pan"]);
+  expect(page.getByRole("toolbar", { name: "Tools" }).element().getAttribute("aria-orientation")).toBe("vertical");
+});
+
+test("every dock section opens and closes from the keyboard", async () => {
+  await render(<App layoutStorage={storage} />);
+  for (const name of ["World", "Layers", "Inspector", "Content", "Entities"]) {
+    const toggle = sectionToggle(name);
+    const before = toggle.getAttribute("aria-expanded");
+    toggle.focus();
+    await userEvent.keyboard(" ");
+    await expect.poll(() => sectionToggle(name).getAttribute("aria-expanded")).toBe(before === "true" ? "false" : "true");
+    sectionToggle(name).focus();
+    await userEvent.keyboard("{Enter}");
+    await expect.poll(() => sectionToggle(name).getAttribute("aria-expanded")).toBe(before);
+  }
+});
+
+test("the command palette keeps the active option in view and closes without running anything", async () => {
+  await render(<App layoutStorage={storage} />);
+  await userEvent.keyboard("{Control>}k{/Control}");
+  const list = page.getByRole("listbox", { name: "Commands" }).element() as HTMLElement;
+  for (let step = 0; step < 19; step++) await userEvent.keyboard("{ArrowDown}");
+  const active = list.querySelector<HTMLElement>("[aria-selected=true]");
+  if (active === null) throw new Error("no active option");
+  const listBox = list.getBoundingClientRect();
+  const optionBox = active.getBoundingClientRect();
+  expect(optionBox.top).toBeGreaterThanOrEqual(listBox.top - 1);
+  expect(optionBox.bottom).toBeLessThanOrEqual(listBox.bottom + 1);
+
+  await userEvent.keyboard("zzzz no such command");
+  await expect.element(page.getByRole("option", { name: "No matching command" })).toBeVisible();
+  await page.getByRole("dialog", { name: "Command palette" }).getByRole("button", { name: "Close" }).click();
+  await expect.element(page.getByRole("dialog", { name: "Command palette" })).not.toBeInTheDocument();
+  await expect.element(page.getByRole("complementary", { name: "Panels" })).toBeVisible();
+
+  await userEvent.keyboard("{Control>}k{/Control}");
+  const dialog = page.getByRole("dialog", { name: "Command palette" }).element() as HTMLDialogElement;
+  // A click on the backdrop targets the dialog element itself.
+  dialog.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  await expect.element(page.getByRole("dialog", { name: "Command palette" })).not.toBeInTheDocument();
+});
+
+test("at 320 px nothing overflows: secondary actions move to the app menu", async () => {
+  await page.viewport(320, 568);
+  await render(<App layoutStorage={storage} />);
+  await openFixture("SCCO1.wld");
+  await expect.element(page.getByRole("main", { name: "Map" })).toBeVisible();
+  expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(320);
+  for (const button of document.querySelectorAll<HTMLElement>(".top-bar button")) {
+    if (button.offsetParent === null) continue; // hidden at this width
+    const box = button.getBoundingClientRect();
+    expect(box.right).toBeLessThanOrEqual(320);
+  }
+  await expect.element(page.getByRole("button", { name: "Show panels" })).toBeVisible();
+  await expect.element(page.getByRole("button", { name: "Open .wld world" })).toBeVisible();
+  await page.getByRole("button", { name: "App menu" }).click();
+  await expect.element(page.getByRole("menuitemcheckbox", { name: "Theme: dark" })).toBeVisible();
+  await expect.element(page.getByRole("menuitem", { name: /Keyboard shortcuts/ })).toBeVisible();
+  expect(page.getByRole("toolbar", { name: "Tools" }).element().getAttribute("aria-orientation")).toBe("horizontal");
 });
 
 test("the main screen with a loaded world has no accessibility violations", async () => {

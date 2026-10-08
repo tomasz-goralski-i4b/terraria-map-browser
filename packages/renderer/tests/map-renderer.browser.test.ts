@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { WebGl2UnavailableError, createMapRenderer, renderChunk, visibleChunks } from "../src/index.js";
+import { WIRE_ALPHA, WIRE_COLORS, WIRE_LAYER, WebGl2UnavailableError, createMapRenderer, renderChunk, visibleChunks } from "../src/index.js";
 import type { ChunkLayers, MapPalette, MapRenderer, MapRendererOptions, RenderableWorld } from "../src/index.js";
 import { syntheticMapPalette } from "./map-palette.fixture.js";
 
@@ -91,6 +91,88 @@ const layerCombos: ChunkLayers[] = Array.from({ length: 16 }, (_, bits) => ({
   background: (bits & 1) !== 0, walls: (bits & 2) !== 0, blocks: (bits & 4) !== 0, liquids: (bits & 8) !== 0,
 }));
 const allLayers: ChunkLayers = { background: true, walls: true, blocks: true, liquids: true };
+
+/** The synthetic world plus a flags plane carrying every combination of the four wires and the actuator. */
+function wiredWorld(width: number, height: number): RenderableWorld {
+  const base = syntheticWorld(width, height);
+  const flags = new Uint16Array(width * height);
+  // Bits 5+ (inactive, invisible, full-bright) are set too: the overlay must ignore them.
+  for (let i = 0; i < flags.length; i++) flags[i] = ((i * 7) % 32) | (i % 3 === 0 ? 0b1110_0000 : 0);
+  return { ...base, planes: { ...base.planes, flags } };
+}
+
+describe("wire overlay", () => {
+  const world = wiredWorld(300, 200);
+
+  test.each([
+    ["red", WIRE_LAYER.red], ["blue", WIRE_LAYER.blue], ["green", WIRE_LAYER.green], ["yellow", WIRE_LAYER.yellow],
+    ["actuator", WIRE_LAYER.actuator], ["every wire and actuators", WIRE_LAYER.all], ["red and yellow", WIRE_LAYER.red | WIRE_LAYER.yellow],
+  ] as const)("%s: the GPU equals renderChunk, over every layer combination", (_name, wires) => {
+    for (const layers of layerCombos.filter((_, bits) => bits % 5 === 0 || bits === 15)) {
+      const withWires = { ...layers, wires };
+      const canvas = makeCanvas(300, 200);
+      const renderer = makeRenderer(canvas, { mapPalette: syntheticMapPalette });
+      renderer.setWorld(world);
+      renderer.setLayers(withWires);
+      renderer.setCamera({ x: 0, y: 0, zoom: 1 });
+      renderer.render();
+      expect(readCanvas(canvas)).toEqual(cpuReference(world, withWires, syntheticMapPalette));
+    }
+  });
+
+  test("a tile shows the topmost visible wire, else its actuator, blended over an opaque tile", () => {
+    const one = (flags: number, wires: number, background = true): number[] => {
+      const tiny: RenderableWorld = {
+        width: 1, height: 1, surfaceY: 0,
+        planes: {
+          block: Uint16Array.of(0xffff), wall: Uint16Array.of(0xffff), liquid: new Uint8Array(1), liquidAmount: new Uint8Array(1),
+          paint: new Uint8Array(1), wallPaint: new Uint8Array(1), flags: Uint16Array.of(flags),
+        },
+        palette: [],
+      };
+      return Array.from(cpuReference(tiny, { ...allLayers, background, wires }));
+    };
+    const base = one(0, WIRE_LAYER.all);
+    const blend = (wire: readonly number[]): number[] =>
+      [0, 1, 2].map((c) => Math.floor((2 * ((wire[c] ?? 0) * WIRE_ALPHA + (base[c] ?? 0) * (255 - WIRE_ALPHA)) + 255) / 510)).concat(255);
+    const colorOf = (bit: number): readonly number[] => WIRE_COLORS.find(([candidate]) => candidate === bit)?.[1] ?? [];
+    expect(one(WIRE_LAYER.red, WIRE_LAYER.all)).toEqual(blend(colorOf(WIRE_LAYER.red)));
+    expect(one(WIRE_LAYER.red | WIRE_LAYER.blue, WIRE_LAYER.all)).toEqual(blend(colorOf(WIRE_LAYER.blue)));
+    expect(one(WIRE_LAYER.all, WIRE_LAYER.all)).toEqual(blend(colorOf(WIRE_LAYER.yellow)));
+    expect(one(WIRE_LAYER.all, WIRE_LAYER.red | WIRE_LAYER.green)).toEqual(blend(colorOf(WIRE_LAYER.green)));
+    expect(one(WIRE_LAYER.actuator | WIRE_LAYER.red, WIRE_LAYER.actuator)).toEqual(blend(colorOf(WIRE_LAYER.actuator)));
+    expect(one(WIRE_LAYER.red, WIRE_LAYER.blue)).toEqual(base);
+    expect(one(WIRE_LAYER.red, 0)).toEqual(base);
+    // Without background the pixel is transparent, so the wire replaces it at the overlay's opacity.
+    expect(one(WIRE_LAYER.green, WIRE_LAYER.all, false)).toEqual([...colorOf(WIRE_LAYER.green), WIRE_ALPHA]);
+  });
+
+  test("toggling wires changes only wired pixels and uploads no texture data", () => {
+    const canvas = makeCanvas(300, 200);
+    const renderer = makeRenderer(canvas);
+    renderer.setWorld(world);
+    renderer.setCamera({ x: 0, y: 0, zoom: 1 });
+    renderer.setLayers(allLayers);
+    renderer.render();
+    const plain = readCanvas(canvas);
+    const uploads = renderer.stats().textureUploads;
+    renderer.setLayers({ ...allLayers, wires: WIRE_LAYER.all });
+    renderer.render();
+    const wired = readCanvas(canvas);
+    const flags = world.planes.flags ?? new Uint16Array(0);
+    for (let y = 0; y < 200; y += 7) {
+      for (let x = 0; x < 300; x += 5) {
+        const offset = (y * 300 + x) * 4;
+        const changed = [0, 1, 2, 3].some((c) => wired[offset + c] !== plain[offset + c]);
+        if ((((flags[x * 200 + y] ?? 0)) & WIRE_LAYER.all) === 0) expect(changed).toBe(false);
+      }
+    }
+    renderer.setLayers(allLayers);
+    renderer.render();
+    expect(readCanvas(canvas)).toEqual(plain);
+    expect(renderer.stats().textureUploads).toBe(uploads);
+  });
+});
 
 describe("GPU output equals renderChunk", () => {
   // 300 × 200: a 3 × 2 chunk grid whose right and bottom chunks are partial.

@@ -23,8 +23,8 @@ const tileColorSource = `
 precision highp usampler2D;
 precision highp usampler2DArray;
 // Chunk pages: one layer per chunk, stored transposed (planes are column-major): texel (s, t) = (y in chunk, x in chunk).
-// uWide holds block, wall, variant (0 for the palette colour, else 1 + its index in uVariantColors); uNarrow holds
-// liquid kind, liquid amount, block paint, wall paint.
+// uWide holds block, wall, variant (0 for the palette colour, else 1 + its index in uVariantColors) and the wire and
+// actuator bits of CWM flags (bits 0–4); uNarrow holds liquid kind, liquid amount, block paint, wall paint.
 uniform usampler2DArray uWide;
 uniform usampler2DArray uNarrow;
 // Row r holds palette entries 256r…256r+255: block colours in x 0…255, wall colours in x 256…511.
@@ -37,7 +37,11 @@ uniform usampler2D uVariantColors;
 uniform int uPaintRow;
 uniform int uPaintCount; // 0 without a map palette: paint is ignored
 uniform int uPaletteLength;
-uniform int uLayers; // bit 0 background, 1 walls, 2 blocks, 3 liquids
+uniform int uLayers; // bit 0 background, 1 walls, 2 blocks, 3 liquids; bits 4–8 the wire mask (ChunkLayers.wires)
+// Wire overlay colours in priority order (yellow, green, blue, red, actuator) and their flag bits; see WIRE_COLORS.
+uniform ivec3 uWireColors[5];
+uniform int uWireBits[5];
+uniform int uWireAlpha;
 uniform ivec3 uLiquids[4]; // colours of CWM liquid kinds 1–4
 flat in ivec4 vRect;
 flat in int vLayer;
@@ -86,6 +90,19 @@ ivec4 tileColor(ivec2 tile) {
       color.rgb = (2 * (tint * amount + color.rgb * (255 - amount)) + 255) / 510;
     } else {
       color = ivec4(tint, amount);
+    }
+  }
+
+  int wires = int(wide.a) & (uLayers >> 4) & 31;
+  if (wires != 0) {
+    ivec3 wire = ivec3(0);
+    for (int i = 4; i >= 0; i--) {
+      if ((wires & uWireBits[i]) != 0) wire = uWireColors[i];
+    }
+    if (color.a == 255) {
+      color.rgb = (2 * (wire * uWireAlpha + color.rgb * (255 - uWireAlpha)) + 255) / 510;
+    } else {
+      color = ivec4(wire, uWireAlpha);
     }
   }
   return color;

@@ -92,8 +92,11 @@ export function Table<R>(props: TableProps<R>): React.JSX.Element {
   const isHidden = (column: Column<R>): boolean => layout?.[column.id]?.hidden ?? column.defaultHidden ?? false;
   const visibleColumns = columns.filter((column) => !isHidden(column));
   const widthOf = (column: Column<R>): number => Math.max(column.minWidth ?? DEFAULT_MIN_WIDTH, layout?.[column.id]?.width ?? column.width);
-  // The first column takes the space left over, so a wider dock shows longer names instead of an empty gutter.
-  const template = visibleColumns.map((column, index) => (index === 0 ? `minmax(${String(widthOf(column))}px, 1fr)` : `${String(widthOf(column))}px`)).join(" ");
+  // Until the user sizes it, the first column takes the space left over, so a wider dock shows longer names instead
+  // of an empty gutter. A width the user set is the width shown.
+  const template = visibleColumns.map((column, index) => (index === 0 && layout?.[column.id]?.width === undefined
+    ? `minmax(${String(widthOf(column))}px, 1fr)`
+    : `${String(widthOf(column))}px`)).join(" ");
 
   const shown = useMemo(() => {
     const needle = filter.trim().toLowerCase();
@@ -208,7 +211,6 @@ export function Table<R>(props: TableProps<R>): React.JSX.Element {
                   )}
                   <ColumnResizer
                     label={`Resize ${column.title} column`}
-                    width={widthOf(column)}
                     min={column.minWidth ?? DEFAULT_MIN_WIDTH}
                     onChange={(width) => {
                       setColumn(id, column.id, { width });
@@ -253,11 +255,35 @@ export function Table<R>(props: TableProps<R>): React.JSX.Element {
   );
 }
 
-function ColumnResizer({ label, width, min, onChange }: { readonly label: string; readonly width: number; readonly min: number; readonly onChange: (width: number) => void }): React.JSX.Element {
+/** Resizes its header cell from the width it is displayed at (a flexible first column can be wider than its minimum). */
+function ColumnResizer({ label, min, onChange }: { readonly label: string; readonly min: number; readonly onChange: (width: number) => void }): React.JSX.Element {
   const drag = useRef<{ readonly x: number; readonly width: number } | null>(null);
+  const handle = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(min);
+  // The width just requested, until the cell is measured at it: quick key repeats step from it, not from a stale measure.
+  const requested = useRef<number | null>(null);
   const clamp = (next: number): number => Math.round(Math.min(800, Math.max(min, next)));
+
+  useEffect(() => {
+    const cell = handle.current?.parentElement;
+    if (cell === null || cell === undefined) return undefined;
+    const measure = (): void => {
+      const measured = Math.round(cell.getBoundingClientRect().width);
+      // Forget the request once the layout shows it; a measure of the old layout keeps it.
+      if (requested.current === measured) requested.current = null;
+      setWidth(measured);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(cell);
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
+
   return (
     <div
+      ref={handle}
       className="table-resizer"
       role="separator"
       aria-orientation="vertical"
@@ -283,11 +309,13 @@ function ColumnResizer({ label, width, min, onChange }: { readonly label: string
       }}
       onKeyDown={(event) => {
         const step = event.shiftKey ? 32 : 8;
-        const next = { ArrowLeft: width - step, ArrowRight: width + step }[event.key];
+        const base = requested.current ?? width;
+        const next = { ArrowLeft: base - step, ArrowRight: base + step }[event.key];
         if (next === undefined) return;
         event.preventDefault();
         event.stopPropagation();
-        onChange(clamp(next));
+        requested.current = clamp(next);
+        onChange(requested.current);
       }}
     />
   );

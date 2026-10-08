@@ -88,9 +88,14 @@ The game names no exact boundary for the sky (Space) layer, so the one-third spl
 
 ### Narrow screens (< 1024 px)
 
-The tool rail becomes a row under the top bar, and the dock becomes a bottom sheet (at most 40 % of the height)
-under the map. The map keeps at least half of the screen. The tool options bar, the brand and the secondary top bar
-buttons are hidden; the commands stay reachable from the app menu and `Ctrl+K`.
+The tool rail becomes a row under the top bar (`aria-orientation="horizontal"`; the left and right arrows move in
+it). The tool options bar stays, as a compact row under the rail, because edit tools need their settings there. The
+dock becomes a bottom sheet under the map, at most 40 % of the height, and the map keeps at least half of the screen.
+The brand and the asset button are hidden.
+
+Below 640 px (phones), more is hidden:
+- the command palette, theme and help buttons, and Open's text label (its icon stays);
+- these actions remain in the app menu, including the theme choices.
 
 ### Persisted layout
 
@@ -98,7 +103,8 @@ buttons are hidden; the commands stay reachable from the app menu and `Ctrl+K`.
 - which dock sections are open, and which groups inside them;
 - the dock width and whether the dock is hidden;
 - each table's column visibility and widths;
-- the theme.
+- the theme;
+- whether the Inspector shows empty fields.
 
 Every read and write is wrapped in `try/catch`, and every field is validated on its own. With storage blocked or
 corrupt, the defaults apply and the app works for the visit. **Reset layout** in the app menu restores the defaults
@@ -109,12 +115,19 @@ and removes the stored value. The active tool, sorting and filters are not persi
 | Section | Today | With editing |
 |---|---|---|
 | **World** | Every decoded metadata field in collapsible groups: Identity, Size & layers, Generation, Time & weather, Progression, Bosses (checklist with a count badge), Invasions & NPCs, Spawn & landmarks (each with *Go to on the map*), Ores & backgrounds. | The same rows become editable fields (world properties editor). |
-| **Layers** | The eye-icon row pattern, disabled (#88 wires the toggles). | Visibility *and* a lock per layer; a locked layer is never written by a tool. |
-| **Inspector** | A slot (#88: the pinned tile from the Inspect tool). | Edits the selected tile or object: frames, paint, slope, wires, chest items, sign text. |
+| **Layers** | Eye rows for background, walls, blocks and liquids (`Alt+1`…`Alt+4`), plus wires and actuators (`Alt+5`) with one row per wire colour. A layer is a renderer uniform: toggling it uploads and re-parses nothing. | Visibility *and* a lock per layer; a locked layer is never written by a tool. |
+| **Inspector** | The fields of the tile's `tileAt` view. By default it is "shy" and shows only what the tile has. The **Show empty fields** eye (the same eye button as the Layers rows; persisted) lists every field in fixed rows, with "None" for absent ones. The Inspect tool pins a tile on click or `Enter`; `Esc` unpins it. Without a pin, the Inspector previews the hovered tile. | Edits the selected tile or object: frames, paint, slope, wires, chest items, sign text. |
 | **Content** | Tiles per block, wall and liquid with its map colour, in a sortable, filterable, virtualised table. | The material picker: selecting a row sets the brush content; `K` picks it from the map. |
 | **Entities** | A slot (chests, signs, NPCs once decoded). | The same table pattern; selecting a row centres the map on it. |
 
 A future **History** section (undo stack, `Ctrl+Z` / `Ctrl+Shift+Z`) goes under Inspector.
+
+### Wire overlay
+
+The overlay is drawn over all other layers, at one colour per tile. Wires are drawn in the game's order (yellow over
+green over blue over red); actuators show only on tiles with no visible wire. The overlay is blended at 75 % over
+opaque tiles, using the same integer expression on the GPU and in the CPU reference (`WIRE_COLORS`, `WIRE_ALPHA` in
+`packages/renderer`). These colours belong to the overlay, not to the map palette.
 
 ## Theme and tokens
 
@@ -149,7 +162,7 @@ Panels compose these primitives, with no ad-hoc styling:
 | `IconButton` | Icon-only button. The label is its accessible name and tooltip, `aria-keyshortcuts` carries the shortcut, and `aria-pressed` marks toggles. A disabled button uses `aria-disabled` so it stays focusable and its tooltip can say why. |
 | `Section` | WAI-ARIA accordion item: a heading button with `aria-expanded` controls a labelled region. A collapsed body is not rendered, so it costs nothing. |
 | `PropertyGrid` | Label and value rows (`<dl>`). Text values copy on click, announced in a polite live region. Flags read Yes or No with a check or a cross. |
-| `Table` | Virtualised ARIA grid with sortable headers (`aria-sort`; ascending → descending → none), a text filter, extra filters, a column menu (show and hide), resizable columns (drag, or the arrow keys on the handle), a sticky header and keyboard row selection (arrows, Page Up/Down, Home, End, Enter). Column layout is persisted per table id. |
+| `Table` | Virtualised ARIA grid with sortable headers (`aria-sort`; ascending → descending → none), a text filter, extra filters, a column menu (show and hide; `defaultHidden` columns start hidden), a sticky header and keyboard row selection (arrows, Page Up/Down, Home, End, Enter). Columns resize by dragging, or with the arrow keys on the handle, starting from the width shown. The first column takes the space left over until the user sizes it. Column layout is persisted per table id. |
 | `Toggle`, `VisibilityRow` | Switch (`role="switch"`); the eye-icon row of layer lists. |
 | `Splitter` | Focusable `separator` with `aria-valuenow`, `aria-valuemin` and `aria-valuemax`. |
 | `MenuButton` | WAI-ARIA menu button: the arrows, Home, End and Escape work, and focus returns to the button. Items can be actions or checkboxes, with shortcuts shown. |
@@ -163,7 +176,8 @@ They cost no layout and need no portal.
   shortcuts work anywhere except in text fields, open menus and dialogs. On the focused map, the arrow keys pan and
   `+` and `−` zoom. `Ctrl` shortcuts also accept `⌘`.
 - **Focus** is always visible (`:focus-visible`, a 2 px `--focus` outline). Dialogs are native `<dialog>` elements
-  opened modal, which trap focus, close on Escape and restore focus.
+  opened modal, which trap focus and restore focus when closed. They close on Escape, on a click on the backdrop, or
+  with a visible close button, so touch users can always leave them.
 - **ARIA:** accordion (sections), menu (menus), grid (tables), toolbar (tool rail), switch (toggles), dialog, and
   combobox with listbox (command palette). Landmarks: `banner` (top bar), `navigation` (tools), `main` (map),
   `complementary` (dock), `contentinfo` (status bar).
