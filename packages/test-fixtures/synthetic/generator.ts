@@ -180,7 +180,10 @@ function encode(world: Workload, sink: (bytes: Uint8Array) => void): { header: U
   pointers.forEach((pointer, index) => { view.setInt32(26 + 4 * index, pointer, true); });
   view.setInt16(70, 754, true);
   // These are deliberately synthetic frame claims, not a copied vanilla framing table.
-  for (const id of [4, 300]) header[72 + (id >> 3)] = 1 << (id & 7);
+  for (const id of [4, 300]) {
+    const at = 72 + (id >> 3);
+    header[at] = (header[at] ?? 0) | (1 << (id & 7)); // OR in, so ids sharing a byte keep each other's bit.
+  }
   return { header, length: out.length };
 }
 
