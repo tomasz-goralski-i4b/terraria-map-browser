@@ -56,9 +56,14 @@ world format. Metadata keys are `name`, `seed`, `guid`, `worldId`, `gameMode`, `
 and null conventions as `export-json`. Dimension keys are `width`, `height`. Palette entries use the
 first-appearance order above and property order `kind`, then `id` for vanilla or `runtimeId` for unknown;
 mod entries use `kind`, `mod`, `internalName`, `runtimeId`, `modVersion` (absent optional fields are omitted).
-JSON is compact (no insignificant whitespace), invariant-culture, with non-ASCII text encoded directly as
-UTF-8 and standard JSON escaping for controls, quotes and backslashes. No paths, timestamps, section
-offsets, digests or other environment fields are included.
+JSON is compact (no insignificant whitespace) and invariant-culture. All header string values and keys
+use exactly this escaping rule: double quotes and backslashes become `\"` and `\\`; U+0008, U+0009,
+U+000A, U+000C and U+000D become `\b`, `\t`, `\n`, `\f` and `\r`, respectively. All other characters
+in U+0000–U+001F become `\u00xx`, using lowercase hexadecimal digits. Every other Unicode scalar value
+is encoded directly as UTF-8, including U+007F, U+FEFF, U+2028, U+2029 and supplementary-plane
+characters; forward slashes are not escaped. A valid UTF-16 surrogate pair encodes its scalar value;
+each unpaired high or low surrogate is replaced with U+FFFD, encoded directly as UTF-8.
+No paths, timestamps, section offsets, digests or other environment fields are included.
 
 Each plane has `width * height` elements: the first four and `flags` each have twice that many bytes,
 and the five Uint8 planes each have that many bytes. Total plane payload is `15 * width * height` bytes.
