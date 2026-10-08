@@ -34,10 +34,12 @@ export interface MapRendererOptions {
   /**
    * Upper bound of uncached visible chunks uploaded per scheduled animation frame. Default 32.
    * Finite values are floored and clamped to at least 1; non-finite values use the default.
-   * If the visible set exceeds the cache capacity, the frame uploads and draws all visible chunks.
    */
   readonly maxChunkUploadsPerFrame?: number;
-  /** Upper bound of chunk textures kept on the GPU (LRU). Default 1536, enough for a whole Large world. */
+  /**
+   * Baseline chunk texture cache capacity (LRU). Default 1536, enough for a whole Large world.
+   * Grows to fit the largest visible set for the current world; resets when the world changes.
+   */
   readonly maxCachedChunks?: number;
   /** Map colours (content, paint, background by depth), as in `renderChunk`; without one, placeholders are drawn. */
   readonly mapPalette?: MapPalette;
@@ -167,6 +169,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   const loseContext = gl.getExtension("WEBGL_lose_context");
   let resources = createResources(gl);
   let world: RenderableWorld | null = null;
+  let cacheCapacity = maxCachedChunks;
   let camera: Camera = { x: 0, y: 0, zoom: 1 };
   let layers = 15;
   // LRU: Map iteration order is insertion order, and a hit re-inserts its key at the end.
@@ -297,12 +300,6 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       chunks.delete(key);
     } else {
       textures = uploadChunk(source, chunk);
-      while (chunks.size >= maxCachedChunks) {
-        const oldest = chunks.entries().next();
-        if (oldest.done === true) break;
-        deleteChunk(oldest.value[1]);
-        chunks.delete(oldest.value[0]);
-      }
     }
     chunks.set(key, textures);
     return textures;
@@ -347,14 +344,25 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
 
     const chunksX = Math.ceil(world.width / CHUNK_SIZE);
     const visible = visibleChunks(camera, viewport, world);
-    // A visible set larger than the cache cannot accumulate across frames: eviction would prevent completion.
-    const frameUploadBudget = visible.length > maxCachedChunks ? Infinity : uploadBudget;
+    const visibleKeys = new Set(visible.map((chunk) => chunk.y * chunksX + chunk.x));
+    cacheCapacity = Math.max(cacheCapacity, visible.length);
+    let missing = 0;
+    for (const key of visibleKeys) if (!chunks.has(key)) missing++;
+    const uploadsThisFrame = Math.min(missing, uploadBudget);
+    // Reserve only for this frame's uploads, so reversing a pending pan keeps terrain not yet replaced.
+    // Evict only offscreen LRU entries; visible residents must survive while the remaining chunks load.
+    for (const [key, textures] of chunks) {
+      if (chunks.size + uploadsThisFrame <= cacheCapacity) break;
+      if (visibleKeys.has(key)) continue;
+      deleteChunk(textures);
+      chunks.delete(key);
+    }
     const drawnChunks: ChunkCoord[] = [];
     let uploads = 0;
     let pending = false;
     for (const chunk of visible) {
       if (!chunks.has(chunk.y * chunksX + chunk.x)) {
-        if (uploads >= frameUploadBudget) {
+        if (uploads >= uploadBudget) {
           pending = true;
           continue;
         }
@@ -409,6 +417,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     setWorld: (next) => {
       if (next !== world) {
         clearChunks();
+        cacheCapacity = maxCachedChunks;
         releaseBackground();
         paletteUploaded = 0;
         world = next;
