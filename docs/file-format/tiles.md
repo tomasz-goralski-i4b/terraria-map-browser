@@ -86,7 +86,8 @@ Note the order: the wall high byte comes **after** the liquid amount, not next t
 | Block id `≥ k` (frame-important count from the header) | `MalformedTiles { reason "no frame-important entry" }` — payload size is undecidable. TEdit guesses "frame-important" instead. | T15 (TEdit's guess), our decision |
 | Block id written as 2 bytes although `< 256` | accepted, same tile (non-canonical; never in F, writer emits 1 byte iff id ≤ 255) | T17, F |
 | Wall flag set but wall id (after the high byte) = 0 | `MalformedTiles` — "no wall" has its own encoding (flag clear); the writer never emits it | T17, our decision |
-| Paint flag without block, wall-paint flag without wall, wall-high flag without wall, non-zero block shape without block, block-id-width flag without block | `MalformedTiles { reason "flag without owner" }`. Never in F. TEdit ignores most of these but **does** consume the wall-high byte without a wall, so readers would otherwise disagree about the byte stream. | T15, F, our decision |
+| Paint flag without block, wall-paint flag without wall, wall-high flag without wall, block-id-width flag without block | `MalformedTiles { reason "flag without owner" }`. Never in F. TEdit ignores most of these but **does** consume the wall-high byte without a wall, so readers would otherwise disagree about the byte stream. | T15, F, our decision |
+| Defined block shape 1–5 without an active block | Accepted and preserved. Shape bits do not add a payload; block absence still means empty foreground. The former vanilla owner check was incorrect. | T17; vanilla black-box observation below |
 | Shimmer bit with liquid kind 2 or 3, or with no liquid | `MalformedTiles` (never in F; writer only sets it with kind 1) | T17, F |
 | Block shape 6 or 7 | `MalformedTiles` (only 0–5 are defined) | T19 |
 | Byte-2 bit 7, byte-4 bits 0 and 5–7 | must be 0 → otherwise `MalformedTiles { reason "reserved bit" }`. Strict so that unknown future data is not silently dropped. | F (always 0), our decision |
@@ -107,6 +108,23 @@ block id 752; ids 255 and 256 do not occur; 2-byte ids 68–76 k per world; no w
 water/lava/honey/shimmer all present, liquid amount 255 is the maximum and 0 never occurs; UInt8 runs
 ~450 k per world and Int16 runs ~2 k (longest run 604); no run crosses a column; wall paint occurs only in
 `SECR1` (43 tiles); every "never" rule above has zero occurrences.
+
+### Residual shapes are vanilla data
+
+The original validation incorrectly inferred from the generated-world corpus that a non-zero shape required
+an active block. Black-box observation on 2026-10-08 used the unmodified local TerrariaServer 1.4.5.8
+(format 326): a synthetic tile was made active, given vanilla slope value 2, then made inactive with
+`active(false)`. Its slope getter still returned 2. With a one-cell tile grid, the game's own
+`SaveWorldTiles(BinaryWriter)` emitted `01 30`: no active block, stored shape 3. No game code was read and
+no player world was modified. T17 independently describes shape emission outside the active-block payload.
+
+The TS reader accepts defined residual shapes in every admitted modern format; the .NET reader and writer
+preserve them in format 326. CWM retains the shape value even though an absent block has no foreground to
+render. This is a correction to vanilla validation, not a tModLoader-specific exception. Undefined shapes
+6–7 and the other malformed-record rules remain errors. This experiment proves the vanilla state and writer
+can produce such records; it does not establish which operation produced them in any particular world.
+The records do occur in practice: a local tModLoader 1.4.4.9 world (format 279, not in the repository)
+contains 11,280 of them, for example flags `11 30` (lava, no block, shape 3).
 
 ## Model mapping
 

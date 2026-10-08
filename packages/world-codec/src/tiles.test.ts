@@ -133,6 +133,14 @@ describe("readWorldTiles — single records T1–T13", () => {
   it("keeps paint bytes above 31 as read", () => {
     expect(cell(single([0x03, 0x01, 0x08, 0x01, 0xff]), 0, 0).paint).toBe(255);
   });
+
+  it.each([1, 2, 3, 4, 5])("preserves residual shape %i without an active block", (shape) => {
+    expect(cell(single([0x01, shape << 4]), 0, 0)).toEqual(tile({ shape }));
+  });
+
+  it("preserves a residual slope alongside lava without inventing a block", () => {
+    expect(cell(single([0x11, 0x30, 0xff]), 0, 0)).toEqual(tile({ shape: 3, liquid: 2, liquidAmount: 255 }));
+  });
 });
 
 describe("readWorldTiles — single-record errors T14–T17 and the other documented rules", () => {
@@ -149,7 +157,7 @@ describe("readWorldTiles — single-record errors T14–T17 and the other docume
     ["wall flag with wall id 0 after high byte", [0x05, 0x01, 0x40, 0x00, 0x00], undefined],
     ["wall paint without wall", [0x03, 0x01, 0x10, 0x01, 0x05], "flag without owner"],
     ["wall high byte without wall", [0x01, 0x01, 0x40, 0x01], "flag without owner"],
-    ["shape without block", [0x05, 0x10, 0x01], "flag without owner"],
+    ["undefined shape without block", [0x01, 0x60], "undefined block shape"],
     ["wide block-id flag without block", [0x20], "flag without owner"],
     ["flag byte 2 bit 7", [0x03, 0x80, 0x01], "reserved bit"],
     ["flag byte 4 bit 0", [0x03, 0x01, 0x01, 0x01, 0x01], "reserved bit"],

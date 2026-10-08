@@ -81,6 +81,11 @@ Format version numbers come from TEdit (T1) and, for 326, from our own fixtures 
 
 ## Versions
 
+**Vanilla format compatibility:** the TS viewer admits released groups 269–279, 315–319 and
+325–326 through a common [format resolver](compatibility.md). Only 326 has actual generated-world fixture
+coverage; the additional groups have independent synthetic coverage and remain experimental. The .NET
+reference codec and writer still accept only 326. The M1 table and range below describe the original contract.
+
 The **format version** is the first field of every `.wld` file. It is not the game version: several game
 builds may share a format version, and some format numbers were never released.
 

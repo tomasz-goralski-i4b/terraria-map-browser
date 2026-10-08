@@ -1,7 +1,9 @@
-/** Synthetic format-326 metadata, independently generated from docs/file-format/metadata.md rows 1–59.
+/** Synthetic released metadata layouts, independently generated from docs/file-format/metadata.md rows 1–59.
  * Test support only; never exported from the package API.
  */
 export interface MetadataSpec {
+  /** Independently generated released layouts; deliberately does not import the production resolver. */
+  layout?: "1.4.4" | "1.4.5" | "1.4.5-lightning";
   name?: string;
   seed?: string;
   manifest?: string;
@@ -82,6 +84,7 @@ export function buildMetadata(spec: MetadataSpec = {}): {
   };
   const width = spec.width ?? 2;
   const height = spec.height ?? 4;
+  const oldLayout = spec.layout === "1.4.4";
   string("name", spec.name ?? "SCCR1");
   string("seed", spec.seed ?? "948580918");
   mark("worldGenVersion"); long(spec.worldGenVersion ?? 0x0000014600000001n);
@@ -92,9 +95,9 @@ export function buildMetadata(spec: MetadataSpec = {}): {
   mark("height"); int(height);
   mark("width"); int(width);
   mark("gameMode"); int(spec.mode ?? 0);
-  bools(9);
+  bools(oldLayout ? 8 : 9);
   mark("creationTime"); long(spec.creationTime ?? 638000000000000001n);
-  mark("lastPlayed"); long(spec.lastPlayed ?? 638000000100000001n);
+  if (!oldLayout) { mark("lastPlayed"); long(spec.lastPlayed ?? 638000000100000001n); }
   bytes(1); ints(17); ints(2);
   mark("surfaceLevel"); number(8, spec.surfaceLevel ?? 300, true);
   mark("rockLevel"); number(8, spec.rockLevel ?? 420.5, true);
@@ -109,7 +112,7 @@ export function buildMetadata(spec: MetadataSpec = {}): {
   string("anglerFinisher0", spec.finisher ?? "Ålice"); string("anglerFinisher1", "Guide Andrew");
   bools(1); ints(1); bools(3); ints(2);
   mark("killCounts"); number(2, 3); int(21); int(400); int(17);
-  mark("claimableBanners"); number(2, 2); number(2, 50); number(2, 200);
+  if (!oldLayout) { mark("claimableBanners"); number(2, 2); number(2, 50); number(2, 200); }
   bools(19); bools(2); ints(1);
   mark("partyingNpcs"); int(3); int(17); int(18); int(19);
   bools(1); ints(1); number(4, 0.125, true); number(4, 0.25, true);
@@ -117,10 +120,12 @@ export function buildMetadata(spec: MetadataSpec = {}): {
   mark("treeTopVariations"); int(13);
   for (let index = 0; index < 13; index++) int(index);
   bools(2); ints(4); bools(3); bools(12); bools(9); bools(1); bytes(1);
+  if (oldLayout) return { bytes: Uint8Array.from(data), offsets, booleans };
   bools(2); bools(2); ints(2); bools(1);
   mark("teamSpawns"); number(1, 2);
   number(2, 10); number(2, 20); number(2, -1); number(2, 32767);
-  bools(1); bools(2);
+  bools(1);
+  if (spec.layout !== "1.4.5") bools(2);
   string("worldGenManifest", spec.manifest ?? '{"passes":["Terrain","Caves","Corruption"]}');
   return { bytes: Uint8Array.from(data), offsets, booleans };
 }
@@ -128,20 +133,21 @@ export function buildMetadata(spec: MetadataSpec = {}): {
 export const METADATA_START = 167;
 
 /** Full header and opaque later sections; tile contents deliberately are not decoded by these tests. */
-export function wrapMetadata(metadata: Uint8Array, tileLength = 2): Uint8Array {
-  const pointers = [METADATA_START, METADATA_START + metadata.length, METADATA_START + metadata.length + tileLength];
+export function wrapMetadata(metadata: Uint8Array, tileLength = 2, version = 326, frameCount = 754): Uint8Array<ArrayBuffer> {
+  const metadataStart = 72 + Math.ceil(frameCount / 8);
+  const pointers = [metadataStart, metadataStart + metadata.length, metadataStart + metadata.length + tileLength];
   for (let index = 3; index < 11; index++) pointers.push((pointers[index - 1] ?? 0) + 2);
   const bytes = new Uint8Array((pointers[10] ?? 0) + 6);
   const view = new DataView(bytes.buffer);
-  view.setInt32(0, 326, true);
+  view.setInt32(0, version, true);
   bytes.set([0x72, 0x65, 0x6c, 0x6f, 0x67, 0x69, 0x63], 4);
   bytes[11] = 2;
   view.setUint32(12, 1, true);
   view.setInt16(24, 11, true);
   pointers.forEach((pointer, index) => { view.setInt32(26 + index * 4, pointer, true); });
-  view.setInt16(70, 754, true);
+  view.setInt16(70, frameCount, true);
   bytes[72] = 0x30;
-  bytes.set(metadata, METADATA_START);
+  bytes.set(metadata, metadataStart);
   bytes.fill(0xa5, pointers[1]);
   return bytes;
 }

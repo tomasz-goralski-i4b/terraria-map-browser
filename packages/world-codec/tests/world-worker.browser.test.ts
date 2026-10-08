@@ -1,6 +1,7 @@
 import { server } from "vitest/browser";
 import { afterEach, describe, expect, it } from "vitest";
 import { readWorldTiles, WorldWorkerClient, WorldWorkerError } from "@studio/world-codec";
+import { buildMetadata, METADATA_START, wrapMetadata } from "../src/metadata-fixture.js";
 
 async function loadWorld(name: string): Promise<Uint8Array<ArrayBuffer>> {
   const base64 = await server.commands.readFile(`../test-fixtures/worlds/${name}`, "base64");
@@ -33,6 +34,19 @@ afterEach(() => {
 });
 
 describe("world Worker", () => {
+  it.each([279, 315, 325])("parse_File_ResolvesVanillaFormat%iInsideTheWorker", async (version) => {
+    const layout = version === 279 ? "1.4.4" : version === 315 ? "1.4.5" : "1.4.5-lightning";
+    const metadata = buildMetadata({ layout, width: 2, height: 4 });
+    const tiles = Uint8Array.from([0x42, 2, 3, 0x48, 255, 3]);
+    const bytes = wrapMetadata(metadata.bytes, tiles.length, version);
+    bytes.set(tiles, METADATA_START + metadata.bytes.length);
+    const world = await newClient().parse(new File([bytes], "SCCR1.wld"));
+    expect(world.header.version).toBe(version);
+    expect(world.metadata).toMatchObject({ name: "SCCR1", width: 2, height: 4 });
+    expect(world.palette).toEqual([{ kind: "vanilla", id: 2 }]);
+    expect(Array.from(world.planes.liquid)).toEqual([0, 0, 0, 0, 1, 1, 1, 1]);
+  });
+
   it("parse_TransferredArrayBuffer_ReturnsPlanesPaletteAndMetadata_AndDetachesSender", async () => {
     const bytes = await loadWorld("SCCO1.wld");
     const buffer = bytes.buffer.slice(0);

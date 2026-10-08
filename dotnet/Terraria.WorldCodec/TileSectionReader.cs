@@ -133,7 +133,9 @@ internal sealed class TileSectionReader(Stream stream, WorldSectionBoundary sect
             throw Error("undefined block shape");
         }
 
-        if ((!hasBlock && (wideId || shape != 0 || hasPaint)) || (!hasWall && (hasWallPaint || hasWallHigh)))
+        // Our former vanilla validation incorrectly treated residual shape bits as ownerless flags.
+        // Vanilla SaveWorldTiles preserves slopes after active(false), even without an active block.
+        if ((!hasBlock && (wideId || hasPaint)) || (!hasWall && (hasWallPaint || hasWallHigh)))
         {
             throw Error("flag without owner");
         }

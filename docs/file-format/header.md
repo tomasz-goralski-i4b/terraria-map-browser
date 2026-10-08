@@ -6,6 +6,10 @@ Part of the format specification; index and conventions: [../file-format.md](../
 
 All multi-byte integers are **little-endian**. Offsets are for format version 326.
 
+The original M1 acceptance rules below remain the .NET contract. The TS viewer's independent
+[format resolver](compatibility.md) uses the same header layout for admitted released formats from 269
+onward; its resolver replaces the `version == 326` check while preserving all other header checks.
+
 | Offset | Size | Type | Field | Rule |
 |---|---|---|---|---|
 | 0 | 4 | Int32 | format version | must be 326 in M1 |
@@ -157,7 +161,8 @@ A 1.4.4.9 world (format 279 = `17 01 00 00`), otherwise a well-formed header:
 0000: 17 01 00 00 72 65 6c 6f 67 69 63 02 01 00 00 00
 0010: 00 00 00 00 00 00 00 00
 ```
-Result: `UnsupportedVersion(279)` — decided at step 2, nothing after the version is read.
+Result (M1/.NET contract): `UnsupportedVersion(279)` — decided at step 2, nothing after the version is read.
+The TS reader admits 279 ([compatibility.md](compatibility.md)), so for it this truncated header is `Truncated` at 24.
 Likewise `47 01 00 00` (327) → `UnsupportedVersion(327)`.
 
 ### Cross-check on real fixtures

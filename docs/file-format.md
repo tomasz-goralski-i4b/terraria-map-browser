@@ -2,8 +2,8 @@
 
 The format specification in our own words (the contract for both the .NET and TS codecs).
 Filled in by `spike` issues and implementation steps. Nothing here is copied from TEdit or tModLoader: the sources
-were read, the behaviour is restated, and every byte-level claim was checked against the M1 fixture corpus
-(`packages/test-fixtures/worlds/`).
+were read and the behaviour is restated. The core format-326 contract was checked against the M1 fixture
+corpus (`packages/test-fixtures/worlds/`); [compatibility.md](file-format/compatibility.md) distinguishes synthetic evidence for other formats.
 
 The specification is split into parts. **Read only the part your task needs** — the issue's `Spec:` line names it;
 otherwise pick it from the table. Code and tests cite sections by name (e.g. `docs/file-format.md, "Model mapping"`);
@@ -12,6 +12,7 @@ the table maps every section name to its file.
 | Part | Sections |
 |---|---|
 | [sources-and-versions.md](file-format/sources-and-versions.md) | Sources (source ids T1–T27), Versions, Discrepancies between sources |
+| [compatibility.md](file-format/compatibility.md) | Vanilla format resolver: admission, format families, feature gates, evidence, read/write limits, extension workflow |
 | [header.md](file-format/header.md) | File header (version gates, **Check order**), Section table, Frame-important bits, Hex examples A–E |
 | [metadata.md](file-format/metadata.md) | Primitive types, World metadata (section 1; rows 1–59, **Dimensions**) |
 | [tiles.md](file-format/tiles.md) | Tile data (section 2): Order and coordinates, Record layout, Rules and limits; Model mapping; Sections skipped in M1 |
