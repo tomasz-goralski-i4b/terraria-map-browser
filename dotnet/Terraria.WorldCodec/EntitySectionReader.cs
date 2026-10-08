@@ -28,7 +28,7 @@ public static class EntitySectionReader
         }).ToArray());
     }
 
-    public static EntitySectionData Read(Stream stream, string section, WorldSectionBoundary boundary)
+    public static EntitySectionData Read(Stream stream, string section, WorldSectionBoundary boundary, int version = 326)
     {
         ArgumentNullException.ThrowIfNull(stream);
         ArgumentNullException.ThrowIfNull(boundary);

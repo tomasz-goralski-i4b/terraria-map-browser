@@ -12,7 +12,7 @@ C#↔TS call (ADR 0001).
 | `vectors/metadata.vectors.json` | `vector.v1` | M1–M5 |
 | `vectors/tiles.vectors.json` | `vector.v1` | T1–T18 |
 | `vectors/runs.vectors.json` | `vector.v1` | R1–R10 |
-| `vectors/entities.vectors.json` | `entities-vector.v1` | E01–E33: complete sections, every entity kind and failure diagnostics |
+| `vectors/entities.vectors.json` | `entities-vector.v1` | E01–E40: complete sections, older-format layouts, every entity kind and failure diagnostics |
 | `vectors/malformed/mutations.json` | — | malformed examples: each mutation is rejected by its declared schema or semantic validation layer |
 
 ## Schema versions
@@ -98,7 +98,8 @@ and metadata tests retain their full-section/full-world checks beyond the shared
 the absolute `start`/exclusive `end` boundary and the supplied hex bytes, with exactly one complete `result`
 or `error` (`field`, absolute `offset`, `reason`). The parsers must consume the section exactly. The vectors
 include every tile-entity kind (0–10), all creative-power layouts, sparse chest slots, NPCs/mobs, signs,
-plates, rooms and bestiary records, plus malformed inputs. The bestiary keys are synthetic examples, not
+plates, rooms and bestiary records, plus malformed inputs. An optional `version` (default 326) selects the
+entity layout of an older readable format; E34–E40 cover the format gates 294, 307/308 and 315. The bestiary keys are synthetic examples, not
 claims about keys observed in game. xUnit and Vitest read the same committed inputs independently.
 
 Decoded entities are read-only. The .NET save envelope continues to preserve all section 3–10 bytes verbatim;

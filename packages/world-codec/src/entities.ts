@@ -207,7 +207,7 @@ class EntityReader {
 const strictUtf8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
 
 /** Strict format-326 entity section entry point; diagnostics use absolute offsets. */
-export function readEntitySection<K extends EntitySectionName>(bytes: Uint8Array, section: K, boundary: SectionBoundary): EntityDataBySection[K] {
+export function readEntitySection<K extends EntitySectionName>(bytes: Uint8Array, section: K, boundary: SectionBoundary, _version = 326): EntityDataBySection[K] {
   if (!Number.isInteger(boundary.start) || !Number.isInteger(boundary.end) || boundary.start < 0 || boundary.end < boundary.start || boundary.end > bytes.length) {
     throw new RangeError("Invalid entity section boundary");
   }

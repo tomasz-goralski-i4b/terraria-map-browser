@@ -2,9 +2,11 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { readEntitySection, readWorldEntities, type EntitySectionName } from "../src/entities.js";
 import { readWorldHeader } from "../src/header.js";
+import { buildMetadata, METADATA_START, wrapMetadata } from "../src/metadata-fixture.js";
+import { readWorldTiles } from "../src/tiles.js";
 
 interface EntityVector {
-  readonly id: string; readonly section: EntitySectionName; readonly start: number; readonly end: number; readonly hex: string;
+  readonly id: string; readonly section: EntitySectionName; readonly version?: number; readonly start: number; readonly end: number; readonly hex: string;
   readonly result?: unknown; readonly error?: { readonly field: string; readonly offset: number; readonly reason: string };
 }
 const root = new URL("../../../", import.meta.url);
@@ -14,7 +16,7 @@ describe("independent shared entity vectors", () => {
   it.each(document.vectors)("decodes $id ($section)", (vector) => {
     const bytes = new Uint8Array(vector.start + vector.hex.length / 2);
     bytes.set(Buffer.from(vector.hex, "hex"), vector.start);
-    const decode = (): unknown => readEntitySection(bytes, vector.section, { start: vector.start, end: vector.end });
+    const decode = (): unknown => readEntitySection(bytes, vector.section, { start: vector.start, end: vector.end }, vector.version);
     if (vector.error) {
       expect(decode).toThrow(expect.objectContaining({ kind: "MalformedSection", section: vector.section, ...vector.error }));
     } else {
@@ -53,5 +55,44 @@ describe("entity corpus", () => {
     expect(sections.Chests.data?.entries).toHaveLength(190);
     expect(sections.NpcsAndMobs.data?.townNpcs).toHaveLength(2);
     expect(Object.values(sections).filter(({ error }) => error !== null)).toHaveLength(1);
+  });
+});
+
+describe("entity layouts of older formats", () => {
+  /** A synthetic world whose chest and sign sections are both `00 00`; the other six sections stay malformed. */
+  function worldWithEmptyLists(version: number): Uint8Array {
+    const layout = version === 279 ? "1.4.4" : version === 315 ? "1.4.5" : "1.4.5-lightning";
+    const metadata = buildMetadata({ layout, width: 2, height: 4 });
+    const tiles = Uint8Array.from([0x42, 2, 3, 0x48, 255, 3]);
+    const bytes = wrapMetadata(metadata.bytes, tiles.length, version);
+    bytes.set(tiles, METADATA_START + metadata.bytes.length);
+    const { sections } = readWorldHeader(bytes);
+    bytes.fill(0, sections.chests.start, sections.signs.end);
+    return bytes;
+  }
+
+  it.each([315, 325, 326])("format %i reads `00 00` as an empty chest list", (version) => {
+    const entities = readWorldEntities(worldWithEmptyLists(version));
+    expect(entities.Chests.data?.entries).toEqual([]);
+    expect(entities.Signs.data?.entries).toEqual([]);
+  });
+
+  it("format 279 expects the shared Int16 slot count after the chest count", () => {
+    const bytes = worldWithEmptyLists(279);
+    const entities = readWorldEntities(bytes);
+    expect(entities.Chests.error).toMatchObject({ field: "slotCount", offset: readWorldHeader(bytes).sections.chests.start + 2 });
+    expect(entities.Signs.data?.entries).toEqual([]);
+  });
+
+  it.each([279, 315, 326])("readWorldTiles exposes entities for format %i", (version) => {
+    expect(readWorldTiles(worldWithEmptyLists(version)).entities?.Signs.data?.entries).toEqual([]);
+  });
+
+  it("rejects a format without a known entity layout", () => {
+    const vector = document.vectors.find(({ id }) => id === "E01");
+    if (!vector) throw new Error("E01 missing");
+    const bytes = new Uint8Array(vector.start + vector.hex.length / 2);
+    bytes.set(Buffer.from(vector.hex, "hex"), vector.start);
+    expect(() => readEntitySection(bytes, "Chests", { start: vector.start, end: vector.end }, 300)).toThrow(expect.objectContaining({ kind: "UnsupportedVersion" }));
   });
 });

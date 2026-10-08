@@ -47,7 +47,8 @@ describe("world Worker", () => {
     expect(actual.details.generation.lastPlayed === undefined).toBe(version === 279);
     expect(actual.details.generation.specialSeeds.moreLightning === undefined).toBe(version !== 326);
     expect(structuredClone(actual.details)).toEqual(expected);
-    expect("entities" in actual).toBe(version === 326);
+    expect(actual.entities).toEqual(readWorldTiles(bytes).entities);
+    expect(actual.entities?.Chests.boundary).toBeDefined();
   });
 
   it.each([279, 315, 325])("parse_File_ResolvesVanillaFormat%iInsideTheWorker", async (version) => {

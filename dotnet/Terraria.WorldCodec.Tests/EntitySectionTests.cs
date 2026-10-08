@@ -27,9 +27,10 @@ public sealed class EntitySectionTests
         using var stream = new MemoryStream(new byte[start].Concat(bytes).ToArray());
         var boundary = new WorldSectionBoundary(start, vector.GetProperty("end").GetInt32());
         var section = vector.GetProperty("section").GetString()!;
+        var version = vector.TryGetProperty("version", out var versionProperty) ? versionProperty.GetInt32() : 326;
         if (vector.TryGetProperty("error", out var expectedError))
         {
-            var error = Assert.Throws<WorldFormatException>(() => EntitySectionReader.Read(stream, section, boundary));
+            var error = Assert.Throws<WorldFormatException>(() => EntitySectionReader.Read(stream, section, boundary, version));
             Assert.Equal("MalformedSection", error.Error.ToString());
             Assert.Equal(section, error.Section);
             Assert.Equal(expectedError.GetProperty("field").GetString(), error.Field);
@@ -38,7 +39,7 @@ public sealed class EntitySectionTests
         }
         else
         {
-            var actual = EntitySectionReader.Read(stream, section, boundary);
+            var actual = EntitySectionReader.Read(stream, section, boundary, version);
             var actualJson = JsonSerializer.SerializeToNode(actual, actual.GetType(), JsonOptions);
             Assert.True(JsonNode.DeepEquals(JsonNode.Parse(vector.GetProperty("result").GetRawText()), actualJson), $"{id}: {actualJson}");
         }
