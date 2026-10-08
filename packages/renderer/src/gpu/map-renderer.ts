@@ -31,7 +31,7 @@ export interface RenderableWorld {
 }
 
 export interface MapRendererOptions {
-  /** Upper bound of uncached visible chunks uploaded per scheduled animation frame. */
+  /** Upper bound of uncached visible chunks uploaded per scheduled animation frame. Default 32. */
   readonly maxChunkUploadsPerFrame?: number;
   /** Upper bound of chunk textures kept on the GPU (LRU). Default 1536, enough for a whole Large world. */
   readonly maxCachedChunks?: number;
@@ -45,9 +45,9 @@ export interface MapRendererStats {
    * background (once per world).
    */
   readonly textureUploads: number;
-  /** Draw calls issued by the last `render()`. */
+  /** Draw calls issued by the last synchronous or scheduled frame. */
   readonly drawCalls: number;
-  /** Chunks drawn by the last `render()`. */
+  /** Chunks drawn by the last synchronous or scheduled frame. */
   readonly visibleChunks: readonly ChunkCoord[];
   /** Chunk textures currently held by the cache. */
   readonly residentChunks: number;
@@ -60,7 +60,7 @@ export interface MapRenderer {
   readonly setLayers: (layers: ChunkLayers) => void;
   /** Integer tile under a canvas pixel, or null outside the world. */
   readonly tileAt: (screenX: number, screenY: number) => { readonly x: number; readonly y: number } | null;
-  /** Draws synchronously (what the animation frame calls). Setters schedule a frame via requestAnimationFrame. */
+  /** Uploads and draws all visible chunks synchronously. Setters schedule frames with bounded chunk uploads. */
   readonly render: () => void;
   readonly stats: () => MapRendererStats;
   readonly dispose: () => void;
@@ -79,6 +79,7 @@ const PALETTE_WIDTH = PALETTE_ROW * 2;
 const PALETTE_CAPACITY = 0xffff;
 const PALETTE_HEIGHT = PALETTE_ROW;
 const DEFAULT_MAX_CACHED_CHUNKS = 1536;
+const DEFAULT_MAX_CHUNK_UPLOADS_PER_FRAME = 32;
 const UNIFORM_NAMES = [
   "uBlock", "uWall", "uLiquid", "uAmount", "uPaint", "uWallPaint", "uPalette", "uBackground", "uCamera", "uZoom",
   "uViewport", "uOrigin", "uSize", "uPaletteLength", "uLayers", "uLiquids", "uPaintRow", "uPaintCount",
@@ -150,6 +151,10 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   if (context === null) throw new WebGl2UnavailableError();
   const gl: WebGL2RenderingContext = context;
   const maxCachedChunks = Math.max(1, options?.maxCachedChunks ?? DEFAULT_MAX_CACHED_CHUNKS);
+  const requestedUploadBudget = options?.maxChunkUploadsPerFrame ?? DEFAULT_MAX_CHUNK_UPLOADS_PER_FRAME;
+  const maxChunkUploadsPerFrame = Number.isFinite(requestedUploadBudget)
+    ? Math.max(1, Math.floor(requestedUploadBudget))
+    : DEFAULT_MAX_CHUNK_UPLOADS_PER_FRAME;
   const mapPalette = options?.mapPalette;
   // The four liquid kinds (CWM kinds 1–4) as the shader's ivec3 array.
   const liquidUniform = new Int32Array(liquidColors(mapPalette).slice(1).flatMap(([red, green, blue]) => [red, green, blue]));
@@ -299,7 +304,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     return textures;
   };
 
-  const render = (): void => {
+  const drawFrame = (uploadBudget: number): void => {
     if (disposed || gl.isContextLost()) return;
     const viewport = { width: canvas.width, height: canvas.height };
     gl.viewport(0, 0, viewport.width, viewport.height);
@@ -338,7 +343,17 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
 
     const chunksX = Math.ceil(world.width / CHUNK_SIZE);
     const visible = visibleChunks(camera, viewport, world);
+    const drawnChunks: ChunkCoord[] = [];
+    let uploads = 0;
+    let pending = false;
     for (const chunk of visible) {
+      if (!chunks.has(chunk.y * chunksX + chunk.x)) {
+        if (uploads >= uploadBudget) {
+          pending = true;
+          continue;
+        }
+        uploads++;
+      }
       const textures = chunkTextures(world, chunk, chunksX);
       [textures.block, textures.wall, textures.liquid, textures.amount, textures.paint, textures.wallPaint].forEach((texture, unit) => {
         gl.activeTexture(gl.TEXTURE0 + unit);
@@ -350,15 +365,17 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       gl.uniform2i(uniforms.uSize, Math.min(CHUNK_SIZE, world.width - originX), Math.min(CHUNK_SIZE, world.height - originY));
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
       drawCalls++;
+      drawnChunks.push(chunk);
     }
-    drawn = visible;
+    drawn = drawnChunks;
+    if (pending) schedule();
   };
 
   const schedule = (): void => {
     if (frame !== 0 || disposed) return;
     frame = requestAnimationFrame(() => {
       frame = 0;
-      render();
+      drawFrame(maxChunkUploadsPerFrame);
     });
   };
 
@@ -406,7 +423,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       const y = Math.floor(camera.y + screenY / camera.zoom);
       return x < 0 || y < 0 || x >= world.width || y >= world.height ? null : { x, y };
     },
-    render,
+    render: () => { drawFrame(Infinity); },
     stats: () => ({ textureUploads, drawCalls, visibleChunks: drawn, residentChunks: chunks.size }),
     dispose: () => {
       if (disposed) return;
