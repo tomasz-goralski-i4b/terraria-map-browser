@@ -98,9 +98,18 @@ function syntheticAtlas(): SpriteAtlasSource {
 const ALL: ChunkLayers = { background: true, walls: true, blocks: true, liquids: true };
 const ZOOM = 16;
 
+/** renderChunk's colours of the whole world, chunk by chunk, row-major (y · width + x). */
 function mapColors(world: CanonicalWorld, layers: ChunkLayers): Uint8Array {
-  const { pixels } = renderChunk(world, 0, 0, { surfaceY: 2, layers });
-  return new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength);
+  const out = new Uint8Array(world.width * world.height * 4);
+  for (let cx = 0; cx * CHUNK_SIZE < world.width; cx++) {
+    for (let cy = 0; cy * CHUNK_SIZE < world.height; cy++) {
+      const { pixels, width, height } = renderChunk(world, cx, cy, { surfaceY: 2, layers });
+      for (let y = 0; y < height; y++) {
+        out.set(pixels.subarray(y * width * 4, (y + 1) * width * 4), ((cy * CHUNK_SIZE + y) * world.width + cx * CHUNK_SIZE) * 4);
+      }
+    }
+  }
+  return out;
 }
 
 /**

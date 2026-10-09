@@ -9,12 +9,14 @@ import { filterTilesPerPixel } from "../chunk/box-filter.js";
 import { WIRE_ALPHA, WIRE_COLORS, WIRE_LAYER, type ChunkLayers } from "../chunk/render.js";
 import { createChunkCellCache } from "../framing/chunk-cells.js";
 import type { ChunkCellCache } from "../framing/chunk-cells.js";
+import { createChunkWallCellCache } from "../framing/chunk-wall-cells.js";
+import type { ChunkWallCellCache } from "../framing/chunk-wall-cells.js";
 import type { BlockFraming } from "../framing/frame-block.js";
 import { backgroundColor, contentColor, liquidColors } from "../palette/map-palette.js";
 import type { MapPalette } from "../palette/map-palette.js";
 import {
   CELLS_INSTANCE_BIT, LAYER_ATTRIBUTE, PAGE_APRON, PLANES_16, PLANES_8, PLANE_COUNT_16, PLANE_COUNT_8, PRESENT, RECT_ATTRIBUTE,
-  RULE_HEADER_ROWS, RULE_ROW, SPRITE_MIN_ZOOM, SPRITE_SHEET_ROW, spriteSampling, SPRITE_STATE, chunkFragmentSource, chunkVertexSource, overviewBuildFragmentSource,
+  RULE_HEADER_ROWS, RULE_ROW, SPRITE_MIN_ZOOM, SPRITE_SHEET_ROW, SPRITE_SHEET_TEXELS, spriteSampling, SPRITE_STATE, chunkFragmentSource, chunkVertexSource, overviewBuildFragmentSource,
   overviewBuildVertexSource, overviewFragmentSource, overviewVertexSource,
 } from "./shaders.js";
 
@@ -85,7 +87,7 @@ export interface MapRendererOptions {
    */
   readonly maxUploadMillisecondsPerFrame?: number;
   /**
-   * Baseline chunk texture cache capacity (LRU). Default 512 (about 150 MiB of chunk pages).
+   * Baseline chunk texture cache capacity (LRU). Default 512 (about 160 MiB of chunk pages).
    * Grows to fit the largest set drawn chunk by chunk (at half a pixel per tile and above, so bounded by the
    * viewport) for the current world; resets when the world changes. Zoomed-out views come from the overview and do
    * not grow it.
@@ -116,6 +118,11 @@ export interface MapRendererStats {
    * sprite zoom, and the cached tiles of the areas `invalidateTiles` recomputes.
    */
   readonly framedTiles: number;
+  /**
+   * Wall cells framed since creation: every tile of a chunk and its apron inside the world once on its first upload at
+   * a sprite zoom, and the cached cells of the 3 × 3 areas `invalidateTiles` recomputes.
+   */
+  readonly framedWalls: number;
 }
 
 export interface MapRenderer {
@@ -130,20 +137,23 @@ export interface MapRenderer {
   readonly setAtlas: (atlas: SpriteAtlasSource | null) => void;
   /**
    * Sprite mode: from `SPRITE_MIN_ZOOM` pixels per tile, frame-important blocks show their sprite (and, with a framing,
-   * self-framed blocks their framed cell). A uniform switch: turning it on or off, or crossing the zoom threshold,
+   * self-framed blocks and walls their framed cells). A uniform switch: turning it on or off, or crossing the zoom threshold,
    * uploads no chunk planes and no atlas. The one exception is a resident chunk's first draw at a sprite zoom with a
    * framing, which frames it and uploads its cells once (`setFraming`).
    */
   readonly setSpriteMode: (enabled: boolean) => void;
   /**
    * The block framing (`createBlockFraming`): with it, sprite mode also draws self-framed blocks (dirt, stone, ores,
-   * grass, …) with the cell their neighbours give them, half blocks and slopes cut by their shape. A chunk is framed
-   * on its first upload at a sprite zoom and keeps its cells while it stays resident; null draws them in map colours.
+   * grass, …) with the cell their neighbours give them, half blocks and slopes cut by their shape, and (with its
+   * `walls`) walls with theirs: a 32 × 32 cell centred on the tile, overhanging 8 pixels, below the blocks. A chunk is
+   * framed on its first upload at a sprite zoom and keeps its cells while it stays resident; null draws them in map
+   * colours.
    */
   readonly setFraming: (framing: BlockFraming | null) => void;
   /**
    * After the world's planes changed at `tiles`: recomputes the framed cells around them (docs/assets.md, "Inputs
-   * beyond 3 × 3": up to d + 1 tiles away, d the deepest framing depth there) and uploads the touched chunks again.
+   * beyond 3 × 3": up to d + 1 tiles away, d the deepest framing depth there; walls within 3 × 3) and uploads the
+   * touched chunks again.
    */
   readonly invalidateTiles: (tiles: readonly { readonly x: number; readonly y: number }[]) => void;
   /** Integer tile under a canvas pixel, or null outside the world. */
@@ -170,9 +180,9 @@ const DEFAULT_MAX_CACHED_CHUNKS = 512;
 const DEFAULT_MAX_CHUNK_UPLOADS_PER_FRAME = 256;
 const DEFAULT_MAX_UPLOAD_MILLISECONDS_PER_FRAME = 8;
 /**
- * Chunks per page. A page holds one layer per plane and chunk: 32 × 6 = 192 layers of the 16-bit texture and
- * 32 × 5 = 160 of the 8-bit one, within the 256 array layers WebGL2 guarantees, with room for two more 16-bit
- * planes (32 × 8 = 256). A page of both textures is about 9.2 MiB.
+ * Chunks per page. A page holds one layer per plane and chunk: 32 × 7 = 224 layers of the 16-bit texture and
+ * 32 × 5 = 160 of the 8-bit one, within the 256 array layers WebGL2 guarantees, with room for one more 16-bit
+ * plane (32 × 8 = 256). A page of both textures is about 9.8 MiB.
  */
 const CHUNKS_PER_PAGE = 32;
 /** Texels per side of a page layer: the chunk and its apron of neighbouring tiles on every side. */
@@ -200,8 +210,8 @@ const TEXTURE_UNITS = 8;
  * palm tree's frame is not a sheet offset (docs/assets.md, "Special handling": trees are deferred).
  */
 export const SPRITE_DEFERRED_TILES: ReadonlySet<number> = new Set([5, 72, 323, 583, 584, 585, 586, 587, 588, 589, 596, 616, 634]);
-/** Texels per row of the sprite sheet lookup: two per palette index (SPRITE_SHEET_ROW in shaders.ts). */
-const SPRITE_SHEET_WIDTH = SPRITE_SHEET_ROW * 2;
+/** Texels per row of the sprite sheet lookup: four per palette index (SPRITE_SHEET_ROW in shaders.ts). */
+const SPRITE_SHEET_WIDTH = SPRITE_SHEET_ROW * SPRITE_SHEET_TEXELS;
 
 const TILE_UNIFORMS = [
   "uPlanes16", "uPlanes8", "uPresent", "uPalette", "uBackground", "uRules", "uPaintRow", "uPaintCount", "uPaletteLength",
@@ -219,7 +229,7 @@ interface Program<Name extends string> {
 
 /** One array texture per plane format, holding up to CHUNKS_PER_PAGE chunks with their aprons, a layer per plane. */
 interface Page {
-  /** R16UI, PLANES_16 per chunk: block, wall, flags, frameX, frameY, framed cell. */
+  /** R16UI, PLANES_16 per chunk: block, wall, flags, frameX, frameY, framed block cell, framed wall cell. */
   readonly planes16: WebGLTexture;
   /** R8UI, PLANES_8 per chunk: liquid kind, liquid amount, block paint, wall paint, block shape. */
   readonly planes8: WebGLTexture;
@@ -265,7 +275,7 @@ interface GpuResources {
   readonly palette: WebGLTexture;
   /** Map option rules: headers by palette index, then the ranges (see RULE_ROW in shaders.ts). */
   readonly rules: WebGLTexture;
-  /** The sheet of each palette index (SPRITE_SHEET_ROW in shaders.ts); all zero (no sheet) without an atlas. */
+  /** The tile and wall sheets of each palette index (SPRITE_SHEET_ROW in shaders.ts); all zero without an atlas. */
   readonly spriteSheets: WebGLTexture;
 }
 
@@ -468,14 +478,18 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   let atlas: SpriteAtlasSource | null = null;
   let atlasTexture: WebGLTexture | null = null;
   let tileSheets = new Map<number, SpriteSheetEntry>();
+  let wallSheets = new Map<number, SpriteSheetEntry>();
   const sheetMirror = new Int32Array(SPRITE_SHEET_WIDTH * PALETTE_HEIGHT * 4);
   let spriteMode = false;
   let atlasUploads = 0;
-  // Self-framed blocks: the framing, the framed cells of the current world's resident chunks, and the slots whose cell
-  // layer holds their chunk's current cells. Tiles framed by caches already let go are kept in framedBefore.
+  // Self-framed blocks and walls: the framing, the framed cells of the current world's resident chunks, and the slots
+  // whose cell layers hold their chunk's current cells. Tiles framed by caches already let go are kept in the
+  // framed…Before counts.
   let framing: BlockFraming | null = null;
   let cellCache: ChunkCellCache | null = null;
+  let wallCache: ChunkWallCellCache | null = null;
   let framedBefore = 0;
+  let framedWallsBefore = 0;
   const framedSlots = new Set<number>();
   // Resident chunks whose planes changed (invalidateTiles): uploaded again on their next draw.
   const dirtyChunks = new Set<number>();
@@ -501,7 +515,9 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   /** Lets go of the framed cells (the next sprite-mode upload frames chunks again); the slots' cell layers are stale. */
   const releaseCells = (): void => {
     framedBefore += cellCache?.framedTiles ?? 0;
+    framedWallsBefore += wallCache?.framedTiles ?? 0;
     cellCache = null;
+    wallCache = null;
     framedSlots.clear();
   };
 
@@ -592,10 +608,11 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   };
 
   /**
-   * Writes the sheet of palette indices `from` … `to` - 1 into the lookup (whole rows). With an atlas, an index whose
+   * Writes the sheets of palette indices `from` … `to` - 1 into the lookup (whole rows). With an atlas, an index whose
    * content has a tile sheet gets its place and frame size, deferred content (trees) the map colour, and any other
    * (newer than the install, mod, unknown) the missing-texture state; the shader only uses it for blocks with a
-   * stored frame. Without an atlas every index has the map colour.
+   * stored frame or a framed cell. Its wall sheet likewise, for walls with a framed cell. Without an atlas every index
+   * has the map colour.
    */
   const uploadSheets = (palette: readonly ContentRef[], from: number, to: number): void => {
     if (to <= from) return;
@@ -603,12 +620,21 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       const ref = palette[index];
       const vanilla = ref?.kind === "vanilla" ? ref.id : undefined;
       const sheet = vanilla === undefined ? undefined : tileSheets.get(vanilla);
-      const at = ((Math.floor(index / SPRITE_SHEET_ROW) * SPRITE_SHEET_WIDTH) + (index % SPRITE_SHEET_ROW) * 2) * 4;
+      const at = ((Math.floor(index / SPRITE_SHEET_ROW) * SPRITE_SHEET_WIDTH) + (index % SPRITE_SHEET_ROW) * SPRITE_SHEET_TEXELS) * 4;
       if (sheet !== undefined) {
         sheetMirror.set([sheet.page, sheet.x, sheet.y, SPRITE_STATE.sheet, sheet.width, sheet.height, sheet.frameWidth, sheet.frameHeight], at);
       } else {
         const deferred = atlasTexture === null || (vanilla !== undefined && SPRITE_DEFERRED_TILES.has(vanilla));
         sheetMirror.set([0, 0, 0, deferred ? SPRITE_STATE.mapColor : SPRITE_STATE.missing, 0, 0, 0, 0], at);
+      }
+      const wallSheet = vanilla === undefined ? undefined : wallSheets.get(vanilla);
+      if (wallSheet !== undefined) {
+        sheetMirror.set([
+          wallSheet.page, wallSheet.x, wallSheet.y, SPRITE_STATE.sheet, wallSheet.width, wallSheet.height,
+          wallSheet.frameWidth, wallSheet.frameHeight,
+        ], at + 8);
+      } else {
+        sheetMirror.set([0, 0, 0, atlasTexture === null ? SPRITE_STATE.mapColor : SPRITE_STATE.missing, 0, 0, 0, 0], at + 8);
       }
     }
     const firstRow = Math.floor(from / SPRITE_SHEET_ROW);
@@ -654,6 +680,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     tileSheets = new Map(source?.index.entries
       .filter((entry) => entry.kind === "tile" && !SPRITE_DEFERRED_TILES.has(entry.id))
       .map((entry) => [entry.id, entry]));
+    wallSheets = new Map(source?.index.entries.filter((entry) => entry.kind === "wall").map((entry) => [entry.id, entry]));
     if (source !== null) uploadAtlas(source);
     if (world !== null) uploadSheets(world.palette, 0, paletteUploaded);
   };
@@ -746,35 +773,46 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     framedSlots.delete(slot);
   };
 
-  /** The framed cells of `source`'s chunks; null without a framing. */
-  const cellsOf = (source: RenderableWorld): ChunkCellCache | null => {
+  /** The framed cells of `source`'s chunks: blocks, and walls with a wall framing; null without a framing. */
+  const cellsOf = (source: RenderableWorld): { blocks: ChunkCellCache; walls: ChunkWallCellCache | null } | null => {
     if (framing === null) return null;
     if (cellCache?.world !== source) {
       releaseCells();
       cellCache = createChunkCellCache(source, framing);
+      wallCache = framing.walls === undefined ? null : createChunkWallCellCache(source, framing.walls, CHUNK_SIZE, PAGE_APRON);
     }
-    return cellCache;
+    return { blocks: cellCache, walls: wallCache };
   };
 
   /**
-   * Uploads the framed cells of `chunk` (framing it on first use) into the cell layer of its slot: the chunk's cells
-   * without the apron, which the sprite pass never reads.
+   * Uploads the framed cells of `chunk` (framing it on first use) into the cell layers of its slot: the chunk's block
+   * cells without the apron, which the sprite pass never reads for blocks, and its wall cells with the apron, whose
+   * overhang reaches into the chunk (the whole layer: NO_CELL past the world's edges). One texture upload.
    */
   const uploadCells = (source: RenderableWorld, chunk: ChunkCoord, slot: number): void => {
-    const cells = cellsOf(source)?.cells(chunk);
+    const caches = cellsOf(source);
     const page = pages[Math.floor(slot / CHUNKS_PER_PAGE)];
-    if (cells === undefined || page === undefined) return;
+    if (caches === null || page === undefined) return;
+    const cells = caches.blocks.cells(chunk);
     const columns = Math.min(CHUNK_SIZE, source.width - chunk.x * CHUNK_SIZE);
     const rows = Math.min(CHUNK_SIZE, source.height - chunk.y * CHUNK_SIZE);
+    const layer = (slot % CHUNKS_PER_PAGE) * PLANE_COUNT_16;
     resetUnpack();
     // Column-major cells are the transposed layer's rows: `rows` cells each, 2-byte aligned.
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 2);
     gl.activeTexture(gl.TEXTURE0 + UNIT_PLANES_16);
     gl.bindTexture(gl.TEXTURE_2D_ARRAY, page.planes16);
     gl.texSubImage3D(
-      gl.TEXTURE_2D_ARRAY, 0, PAGE_APRON, PAGE_APRON, (slot % CHUNKS_PER_PAGE) * PLANE_COUNT_16 + PLANES_16.cell,
+      gl.TEXTURE_2D_ARRAY, 0, PAGE_APRON, PAGE_APRON, layer + PLANES_16.cell,
       rows, columns, 1, gl.RED_INTEGER, gl.UNSIGNED_SHORT, cells,
     );
+    const walls = caches.walls?.cells(chunk);
+    if (walls !== undefined) {
+      gl.texSubImage3D(
+        gl.TEXTURE_2D_ARRAY, 0, 0, 0, layer + PLANES_16.wallCell, PAGE_SIZE, PAGE_SIZE, 1, gl.RED_INTEGER,
+        gl.UNSIGNED_SHORT, walls,
+      );
+    }
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
     textureUploads++;
     framedSlots.add(slot);
@@ -1019,6 +1057,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
         evictedChunks++;
         dirtyChunks.delete(key);
         cellCache?.drop({ x: key % chunksX, y: Math.floor(key / chunksX) });
+        wallCache?.drop({ x: key % chunksX, y: Math.floor(key / chunksX) });
       }
     };
     /**
@@ -1246,6 +1285,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       if (world === null || tiles.length === 0) return;
       const source = world;
       const regions = cellCache?.world === source ? cellCache.invalidate(tiles) : [];
+      const wallRegions = wallCache?.world === source ? wallCache.invalidate(tiles) : [];
       const chunksX = Math.ceil(source.width / CHUNK_SIZE);
       const touched = new Set<number>();
       const touch = (left: number, top: number, right: number, bottom: number): void => {
@@ -1259,6 +1299,10 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       // recomputed area in the chunks the area covers.
       for (const { x, y } of tiles) touch(x - PAGE_APRON, y - PAGE_APRON, x + PAGE_APRON, y + PAGE_APRON);
       for (const area of regions) touch(area.left, area.top, area.left + area.width - 1, area.top + area.height - 1);
+      // Wall cells are uploaded with the apron: a recomputed wall cell lies in the layers of the chunks around it too.
+      for (const area of wallRegions) {
+        touch(area.left - PAGE_APRON, area.top - PAGE_APRON, area.left + area.width - 1 + PAGE_APRON, area.top + area.height - 1 + PAGE_APRON);
+      }
       for (const key of touched) {
         if (chunks.has(key)) dirtyChunks.add(key);
         if (overview?.world === source && overview.built[key] === 1) {
@@ -1284,6 +1328,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     stats: () => ({
       textureUploads, drawCalls, visibleChunks: drawn, residentChunks: chunks.size, evictedChunks, atlasUploads,
       framedTiles: framedBefore + (cellCache?.framedTiles ?? 0),
+      framedWalls: framedWallsBefore + (wallCache?.framedTiles ?? 0),
     }),
     dispose: () => {
       if (disposed) return;

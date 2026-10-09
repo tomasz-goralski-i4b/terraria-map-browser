@@ -1,6 +1,8 @@
 import type { ContentRef } from "@studio/world-model";
 import { AIR, OWN, PARTNER, cellSide, chooseBlockCell } from "./block-rules.js";
 import type { FramingDatabase } from "./framing-database.js";
+import { createWallFraming } from "./frame-wall.js";
+import type { WallFraming } from "./frame-wall.js";
 
 /** A cell of a tile sheet: column and row of 18-pixel cells. */
 export interface SheetCell {
@@ -78,6 +80,8 @@ export interface BlockFraming {
    * the types without relatives, then each type once its relatives (whose cells its edge check reads) are framed.
    */
   readonly frameRegion: (world: FramingWorld, region: BlockRegion, out: Uint16Array) => void;
+  /** The wall framing of the same database (frame-wall.ts); without it sprite mode draws walls in map colours. */
+  readonly walls?: WallFraming;
 }
 
 const KIND_AIR = 0;
@@ -486,6 +490,7 @@ export function createBlockFraming(database: FramingDatabase): BlockFraming {
   }
 
   return {
+    walls: createWallFraming(database),
     frameBlock,
     kind: (centre, other) => {
       const index = typeIndex(centre);

@@ -93,7 +93,9 @@ describe("wall framing", () => {
   });
 
   test("ordinary walls interior by (x mod 3, y mod 3) at variant 0 (docs/assets.md, \"Walls\")", () => {
-    const table = [[[6, 2], [1, 1], [1, 1]], [[1, 1], [6, 1], [10, 0]], [[1, 1], [11, 0], [1, 1]]];
+    const table: readonly (readonly (readonly [number, number])[])[] = [
+      [[6, 2], [1, 1], [1, 1]], [[1, 1], [6, 1], [10, 0]], [[1, 1], [11, 0], [1, 1]],
+    ];
     for (let y = 0; y < 6; y++) {
       for (let x = 0; x < 6; x++) {
         const cell = table[y % 3]?.[x % 3] ?? [0, 0];

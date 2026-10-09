@@ -23,12 +23,13 @@ exactly the pixels `filterTiles` (below) makes of them. The browser tests assert
 
 - **Chunk pages.** Chunks are cached in pages of 32. A page is two array textures, one per plane format, with one
   layer per plane and chunk: layer `slot × planes + plane`, where `slot` is the chunk's place in the page.
-  - `R16UI`, 5 planes: block, wall, flags, frameX, frameY (`PLANES_16` in `src/gpu/shaders.ts`). The shader masks the
-    wire and actuator bits of `flags` and sign-extends the frames from their 16-bit pattern.
-  - `R8UI`, 4 planes: liquid kind, liquid amount, block paint, wall paint (`PLANES_8`).
+  - `R16UI`, 7 planes: block, wall, flags, frameX, frameY, and the framed block and wall cells of sprite mode
+    (`PLANES_16` in `src/gpu/shaders.ts`). The shader masks the wire and actuator bits of `flags` and sign-extends the
+    frames from their 16-bit pattern.
+  - `R8UI`, 5 planes: liquid kind, liquid amount, block paint, wall paint, block shape (`PLANES_8`).
 
-  32 chunks × 5 planes = 160 layers, within the 256 that WebGL2 guarantees (`MAX_ARRAY_TEXTURE_LAYERS`), with room
-  for three more 16-bit planes. A page is about 7.6 MiB. A layer holds its chunk plus an apron of one tile of each
+  32 chunks × 7 planes = 224 layers, within the 256 that WebGL2 guarantees (`MAX_ARRAY_TEXTURE_LAYERS`), with room
+  for one more 16-bit plane. A page is about 9.8 MiB. A layer holds its chunk plus an apron of one tile of each
   neighbouring chunk (130 × 130 texels), stored transposed (texel (s, t) = tile (y, x)), so the box filter below can
   cross chunk edges. Absent optional planes (`flags`, `frameX`, `frameY`) are never uploaded: a uniform (`uPresent`)
   tells the shader to read them as 0. Switching the wire overlay is a uniform change.
@@ -92,14 +93,14 @@ exactly the pixels `filterTiles` (below) makes of them. The browser tests assert
   per tile and above (`uFilter` 0) the pass reads one tile per pixel, bit-exact with `renderChunk`. The canvas is not
   multisampled, so a pixel the world's edge crosses is not blended by coverage.
 - **Chunk cache.** A chunk is needed in overview mode only until its texels are built, so zoomed-out views keep the
-  baseline cache (512 chunks, about 150 MiB) however large the world is. At half a pixel per tile and above the
+  baseline cache (512 chunks, about 160 MiB) however large the world is. At half a pixel per tile and above the
   cache grows to the visible set, which the viewport bounds. While chunks are still loading there, the overview is
   drawn under them instead of a hole; a complete frame is exact.
 - **Sprite mode (#91).** `setAtlas(atlas)` uploads a sprite atlas (`@studio/assets`' `SpriteAtlas`, square RGBA8 pages)
   once, as one `RGBA8` array texture with a layer per page; `stats().atlasUploads` counts it. A lookup texture
   (`RGBA32I`, `SPRITE_SHEET_ROW` in `src/gpu/shaders.ts`) holds per palette index the tile sheet of its content ID
-  (page, place, size, frame size), written with the palette, so it grows when the palette is appended; walls, mod and
-  unknown content and IDs without a sheet are *missing*, trees (`SPRITE_DEFERRED_TILES`: tree trunks, tops and
+  (page, place, size, frame size) and the wall sheet of its wall ID (four texels per index), written with the palette,
+  so it grows when the palette is appended; mod and unknown content and IDs without a sheet are *missing*, trees (`SPRITE_DEFERRED_TILES`: tree trunks, tops and
   branches are deferred, docs/assets.md) keep their map colour. A missing block with a stored frame is drawn as a
   generated missing-texture checkerboard (`MISSING_SPRITE_COLORS`, magenta and black, 2 × 2 squares per tile; not a
   game asset), so content without a sprite stands out; the web app lists it under the Sprites row. `setSpriteMode(true)` makes the chunk pass, from
@@ -143,6 +144,21 @@ exactly the pixels `filterTiles` (below) makes of them. The browser tests assert
   entry point: it recomputes the cached cells of the `(2d + 3)²` area around each tile (`d` the deepest
   `BlockFraming.depth` within 6 tiles, so at most 13 × 13) and uploads the touched resident chunks again on their next
   draw.
+- **Walls in sprite mode (#147).** The `.wld` stores no wall frame either. `createBlockFraming` also builds
+  `walls` (`createWallFraming`, `src/framing/frame-wall.ts`): a wall's cell comes from its four side neighbours (any
+  wall, or an active block of 54, 328, 459 or 748; a neighbour outside the world is absent), four counting sides take
+  the interior cell of the position `(x mod 12, y mod 12)`, ordinary walls then vary by `(7x + 11y) mod 3` through the
+  database's variant map, and the 22 large-frame walls (identity variant maps) ignore it. `createChunkWallCellCache`
+  (`src/framing/chunk-wall-cells.ts`) frames each chunk *with its one-tile apron* (130 × 130 cells, `NO_CELL` past the
+  world's edges, about 0.6 ms per chunk in Node, 33 KiB per resident chunk), framed and uploaded together with the
+  block cells as the 16-bit `wallCell` plane (the whole layer); `stats().framedWalls` counts it. The chunk pass draws
+  a wall's 32 × 32 cell from sheet pixels `(36c, 36r)` centred on its tile, so it overhangs 8 pixels on every side: a
+  sprite pixel is covered by its own wall and the three neighbours on its quadrant's side, drawn row by row from the
+  top, left to right within a row, each over the ones before (a chosen order), then over the background. Blocks draw
+  over the wall layer. A wall that is not vanilla content keeps its map colour on its own tile, a vanilla wall without
+  a sheet the missing-texture checkerboard; wall paint is not applied to sprites. The wall layer fades in over the
+  walls' map colours like blocks do (`SPRITE_FULL_ZOOM`) and is sampled like them below 16 pixels per tile.
+  `invalidateTiles` recomputes the 3 × 3 cells around each changed tile in every cached chunk whose apron holds them.
 - `tileAt` and anything that reads tile data (names, coordinates) use the camera and the CWM planes, never GPU
   textures, so neither path changes them.
 

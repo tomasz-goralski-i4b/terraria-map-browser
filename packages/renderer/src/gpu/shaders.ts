@@ -3,6 +3,7 @@
 import { FILTER_SUBTILE } from "../chunk/box-filter.js";
 import { BLOCK_CELL_STRIDE } from "../framing/chunk-cells.js";
 import { NO_CELL } from "../framing/frame-block.js";
+import { WALL_CELL_STRIDE, WALL_OVERHANG } from "../framing/frame-wall.js";
 
 /** Tiles of neighbouring chunks stored around each chunk's page layer, so the box filter can cross chunk edges. */
 export const PAGE_APRON = 1;
@@ -12,15 +13,15 @@ export const PAGE_APRON = 1;
  * place in its page. Each layer is stored transposed (planes are column-major): texel (s, t) = (y, x) of the chunk,
  * offset by the apron. A new plane is one more entry here (and in the renderer's upload table), not a new texture.
  */
-export const PLANES_16 = { block: 0, wall: 1, flags: 2, frameX: 3, frameY: 4, cell: 5 } as const;
+export const PLANES_16 = { block: 0, wall: 1, flags: 2, frameX: 3, frameY: 4, cell: 5, wallCell: 6 } as const;
 export const PLANES_8 = { liquid: 0, liquidAmount: 1, paint: 2, wallPaint: 3, shape: 4 } as const;
 export const PLANE_COUNT_16: number = Object.keys(PLANES_16).length;
 export const PLANE_COUNT_8: number = Object.keys(PLANES_8).length;
 
 /**
  * Bits of `uPresent`: optional planes the world has. An absent plane reads as 0 and is never uploaded. `cells` is set
- * for a chunk pass that draws framed cells (the cell plane, computed by the renderer, not read from the world); each
- * instance then says whether its chunk's cells are uploaded (CELLS_INSTANCE_BIT).
+ * for a chunk pass that draws framed cells (the cell planes of blocks and walls, computed by the renderer, not read
+ * from the world); each instance then says whether its chunk's cells are uploaded (CELLS_INSTANCE_BIT).
  */
 export const PRESENT = { flags: 1, frameX: 2, frameY: 4, shape: 8, cells: 16 } as const;
 
@@ -33,10 +34,13 @@ export const RULE_ROW = 256;
 export const RULE_HEADER_ROWS = 256;
 
 /**
- * Sprite sheet lookup texture (RGBA32I): two texels per palette index, at (index % 256 × 2 + k, index / 256):
- * k = 0 (atlas page, x, y, state: SPRITE_STATE), k = 1 (sheet width, height, frame width, frame height).
+ * Sprite sheet lookup texture (RGBA32I): four texels per palette index, at (index % 256 × 4 + k, index / 256): the
+ * index's tile sheet in k = 0 (atlas page, x, y, state: SPRITE_STATE) and k = 1 (sheet width, height, frame width,
+ * frame height), its wall sheet likewise in k = 2 and 3.
  */
 export const SPRITE_SHEET_ROW = 256;
+/** Texels per palette index in the sprite sheet lookup. */
+export const SPRITE_SHEET_TEXELS = 4;
 
 /** The state of a palette index in the sprite sheet lookup. */
 export const SPRITE_STATE = {
@@ -108,8 +112,9 @@ precision highp sampler2DArray;
 // Chunk pages, uploaded straight from the world's planes: uPlanes16 holds the 16-bit planes (block, wall, flags,
 // frameX, frameY as their 16-bit pattern), uPlanes8 the 8-bit ones (liquid kind, liquid amount, block paint, wall
 // paint, block shape). The cell plane of uPlanes16 holds the framed sheet cell of self-framed blocks (column · 64 + row,
-// NO_CELL without one), framed by the renderer. A chunk's plane p is layer vLayer * planes + p, holding the chunk and an apron of PAGE_APRON tiles of its
-// neighbours, transposed: texel (s, t) = (y in chunk + PAGE_APRON, x in chunk + PAGE_APRON).
+// NO_CELL without one), the wall cell plane that of walls, apron included and NO_CELL past the world's edges; both are
+// framed by the renderer. A chunk's plane p is layer vLayer * planes + p, holding the chunk and an apron of PAGE_APRON
+// tiles of its neighbours, transposed: texel (s, t) = (y in chunk + PAGE_APRON, x in chunk + PAGE_APRON).
 uniform usampler2DArray uPlanes16;
 uniform usampler2DArray uPlanes8;
 uniform int uPresent; // optional planes: bit 0 flags, 1 frameX, 2 frameY, 3 shape, 4 framed cells
@@ -129,7 +134,8 @@ uniform ivec3 uWireColors[5];
 uniform int uWireBits[5];
 uniform int uWireAlpha;
 uniform ivec3 uLiquids[4]; // colours of CWM liquid kinds 1–4
-// Sprite mode (#91): the atlas pages (RGBA8, straight alpha) and the sheet of each palette index (SPRITE_SHEET_ROW).
+// Sprite mode (#91): the atlas pages (RGBA8, straight alpha) and the tile and wall sheets of each palette index
+// (SPRITE_SHEET_ROW).
 // uSprites is 1 only in the chunk pass at SPRITE_MIN_ZOOM pixels per tile and above, with an atlas.
 uniform sampler2DArray uAtlas;
 uniform isampler2D uSpriteSheets;
@@ -188,10 +194,27 @@ ivec3 painted(ivec3 base, int paint, bool wall) {
   return tint * max(base.r, max(base.g, base.b)) / 255;
 }
 
+// Straight-alpha top over below, in integers. Over an opaque pixel it is renderChunk's rounded blend (map mode only ever
+// has opaque or empty pixels, so it stays bit-exact); over a partly transparent one (a half-transparent sprite pixel
+// with nothing behind it) the general rule, alpha and colour rounded to nearest.
+ivec4 over(ivec4 top, ivec4 below) {
+  if (top.a == 0) return below;
+  if (below.a == 0 || top.a == 255) return top;
+  if (below.a == 255) return ivec4((2 * (top.rgb * top.a + below.rgb * (255 - top.a)) + 255) / 510, 255);
+  int weight = below.a * (255 - top.a);
+  int alpha = top.a + (weight + 127) / 255;
+  return ivec4((top.rgb * top.a * 255 + below.rgb * weight + alpha * 255 / 2) / (alpha * 255), alpha);
+}
+
 // The missing-texture checkerboard at sprite pixel sub.
 ivec4 missingPixel(ivec2 sub) {
   bool first = ((sub.x / ${String(SPRITE_TILE_PIXELS / 2)} + sub.y / ${String(SPRITE_TILE_PIXELS / 2)}) & 1) == 0;
   return ivec4(first ? ivec3(${MISSING_SPRITE_COLORS[0]?.join(", ") ?? "0"}) : ivec3(${MISSING_SPRITE_COLORS[1]?.join(", ") ?? "0"}), 255);
+}
+
+// Where the sheets of palette index index start in the sprite sheet lookup: its tile sheet, then (+2) its wall sheet.
+ivec2 sheetAt(uint index) {
+  return ivec2(int(index) % ${String(SPRITE_SHEET_ROW)} * ${String(SPRITE_SHEET_TEXELS)}, int(index) / ${String(SPRITE_SHEET_ROW)});
 }
 
 // The atlas pixel of a self-framed block at sprite pixel sub: its framed cell (the cell plane), cut by its shape into
@@ -231,7 +254,7 @@ bool cellPixel(ivec4 place, ivec2 at, ivec2 texel, ivec2 sub, out ivec4 color) {
 // into the tile, or the missing-texture checkerboard for content without a sheet; a block without one (frames of -1)
 // shows its framed cell (cellPixel). False for content sprite mode leaves in map colours, or past the sheet's edge.
 bool spritePixel(uint index, ivec2 texel, ivec2 sub, out ivec4 color) {
-  ivec2 at = ivec2(int(index) % ${String(SPRITE_SHEET_ROW)} * 2, int(index) / ${String(SPRITE_SHEET_ROW)});
+  ivec2 at = sheetAt(index);
   ivec4 place = texelFetch(uSpriteSheets, at, 0);
   bool frames = (uPresent & ${String(PRESENT.frameX | PRESENT.frameY)}) == ${String(PRESENT.frameX | PRESENT.frameY)};
   ivec2 stored = frames
@@ -274,29 +297,76 @@ bool spriteSample(uint index, ivec2 texel, vec2 centre, out ivec4 color) {
   return true;
 }
 
+// The wall layer at sprite pixel sub of the tile at texel, straight alpha: the 32 × 32 cells (the wall cell plane) of
+// the tile's wall and of the neighbours whose overhang reaches sub, drawn row by row from the top and left to right
+// within a row, each over the ones before. A wall without a cell (not vanilla content) shows ownMapped, its map colour,
+// on its own tile; a wall without a sheet the missing-texture checkerboard there.
+ivec4 wallPixel(ivec2 texel, ivec2 sub, ivec4 ownMapped) {
+  // The neighbours' side: west or east, north or south of the tile (texel is transposed: (y, x)).
+  ivec2 side = ivec2(sub.x < ${String(SPRITE_TILE_PIXELS / 2)} ? -1 : 1, sub.y < ${String(SPRITE_TILE_PIXELS / 2)} ? -1 : 1);
+  ivec4 color = ivec4(0);
+  for (int j = 0; j < 2; j++) {
+    int dy = j == 0 ? min(0, side.y) : max(0, side.y);
+    for (int i = 0; i < 2; i++) {
+      int dx = i == 0 ? min(0, side.x) : max(0, side.x);
+      bool own = dx == 0 && dy == 0;
+      ivec2 at = texel + ivec2(dy, dx);
+      uint cell = plane16(at, ${String(PLANES_16.wallCell)});
+      if (cell == ${String(NO_CELL)}u) {
+        if (own) color = over(ownMapped, color);
+        continue;
+      }
+      ivec2 sheet = sheetAt(plane16(at, ${String(PLANES_16.wall)})) + ivec2(2, 0);
+      ivec4 place = texelFetch(uSpriteSheets, sheet, 0);
+      if (place.w == ${String(SPRITE_STATE.sheet)}) {
+        ivec4 size = texelFetch(uSpriteSheets, sheet + ivec2(1, 0), 0);
+        // The cell's top-left lies WALL_OVERHANG pixels up and left of its tile's.
+        ivec2 pixel = ivec2(int(cell >> 6u), int(cell & 63u)) * ${String(WALL_CELL_STRIDE)} + sub
+          + ${String(WALL_OVERHANG)} - ${String(SPRITE_TILE_PIXELS)} * ivec2(dx, dy);
+        if (all(lessThan(pixel, size.xy))) {
+          color = over(ivec4(round(texelFetch(uAtlas, ivec3(place.yz + pixel, place.x), 0) * 255.0)), color);
+        }
+      } else if (own) {
+        color = over(place.w == ${String(SPRITE_STATE.missing)} ? missingPixel(sub) : ownMapped, color);
+      }
+    }
+  }
+  return color;
+}
+
+// The wall layer over the footprint of a screen pixel centred on sprite pixel position centre, sampled like
+// spriteSample: the straight-alpha mean of uSpriteSamples² wallPixel samples.
+ivec4 wallSample(ivec2 texel, vec2 centre, ivec4 ownMapped) {
+  int count = uSpriteSamples;
+  ivec4 sum = ivec4(0);
+  for (int y = 0; y < ${String(MAX_SPRITE_SAMPLES)}; y++) {
+    if (y >= count) break;
+    for (int x = 0; x < ${String(MAX_SPRITE_SAMPLES)}; x++) {
+      if (x >= count) break;
+      vec2 at = centre + ((vec2(x, y) + 0.5) / float(count) - 0.5) * uSpriteStep;
+      ivec2 sub = clamp(ivec2(floor(at)), ivec2(0), ivec2(${String(SPRITE_TILE_PIXELS - 1)}));
+      ivec4 sampled = wallPixel(texel, sub, ownMapped);
+      sum += ivec4(sampled.rgb * sampled.a, sampled.a);
+    }
+  }
+  int samples = count * count;
+  return sum.a == 0
+    ? ivec4(0)
+    : ivec4((2 * sum.rgb + sum.a) / (2 * sum.a), (2 * sum.a + samples) / (2 * samples));
+}
+
 bool paletteColor(uint index, int xOffset, out ivec3 color) {
   if (index == ABSENT || int(index) >= uPaletteLength) return false;
   color = ivec3(texelFetch(uPalette, ivec2(int(index) % 256 + xOffset, int(index) / 256), 0).rgb);
   return true;
 }
 
-// Straight-alpha top over below, in integers. Over an opaque pixel it is renderChunk's rounded blend (map mode only ever
-// has opaque or empty pixels, so it stays bit-exact); over a partly transparent one (a half-transparent sprite pixel
-// with nothing behind it) the general rule, alpha and colour rounded to nearest.
-ivec4 over(ivec4 top, ivec4 below) {
-  if (top.a == 0) return below;
-  if (below.a == 0 || top.a == 255) return top;
-  if (below.a == 255) return ivec4((2 * (top.rgb * top.a + below.rgb * (255 - top.a)) + 255) / 510, 255);
-  int weight = below.a * (255 - top.a);
-  int alpha = top.a + (weight + 127) / 255;
-  return ivec4((top.rgb * top.a * 255 + below.rgb * weight + alpha * 255 / 2) / (alpha * 255), alpha);
-}
-
 // Straight-alpha RGBA (0–255) of a tile relative to the instance's chunk origin, apron included (-1 to the chunk size).
 // Only the planes the enabled layers need are read. With uSprites, sub is the sprite pixel position (0–16 per axis)
 // within the tile of the screen pixel's centre: a block with a stored frame or a framed cell, and a sheet, shows that
-// sheet's pixels there (spriteSample), over the wall or background behind it, faded in over its map colour by
-// uSpriteWeight.
+// sheet's pixels there (spriteSample), over the wall layer or background behind it, faded in over its map colour by
+// uSpriteWeight. With framed cells the wall layer is the walls' sprites (wallSample) over the background, faded in over
+// the walls' map colours likewise.
 ivec4 localColorAt(ivec2 local, vec2 sub) {
   ivec2 texel = ivec2(local.y + ${String(PAGE_APRON)}, local.x + ${String(PAGE_APRON)});
   int tileY = vRect.y + local.y;
@@ -316,8 +386,14 @@ ivec4 localColorAt(ivec2 local, vec2 sub) {
   if (blockShown && !hasSprite) {
     color = mapped;
   } else {
-    if (paletteColor(wall, 256, content)) {
-      color = ivec4(painted(content, int(plane8(texel, ${String(PLANES_8.wallPaint)})), true), 255);
+    ivec4 behind = color;
+    bool wallShown = paletteColor(wall, 256, content);
+    if (wallShown) color = ivec4(painted(content, int(plane8(texel, ${String(PLANES_8.wallPaint)})), true), 255);
+    // Wall sprites are drawn wherever the wall layer is shown, also on tiles without a wall of their own: the
+    // overhang of the walls around them reaches in. Paint is not applied to sprites.
+    if (uSprites != 0 && (uLayers & 2) != 0 && (uPresent & ${String(PRESENT.cells)}) != 0 && vCells != 0) {
+      ivec4 walls = over(wallSample(texel, sub, wallShown ? color : ivec4(0)), behind);
+      color = uSpriteWeight < 256 ? (color * (256 - uSpriteWeight) + walls * uSpriteWeight + 128) / 256 : walls;
     }
     // A sprite over what lies behind it (paint is not applied to sprites).
     if (hasSprite) {

@@ -110,12 +110,13 @@ function offsetViews(world: RenderableWorld): RenderableWorld {
 type PlaneName = keyof RenderableWorld["planes"];
 
 /**
- * Plane order in the page layers (packages/renderer/README.md, chunk pages). The 16-bit page holds one more layer per
- * chunk after the world's planes: the framed cells, computed by the renderer and uploaded only in sprite mode.
+ * Plane order in the page layers (packages/renderer/README.md, chunk pages). The 16-bit page holds two more layers per
+ * chunk after the world's planes: the framed block and wall cells, computed by the renderer and uploaded only in sprite
+ * mode.
  */
 const PLANES_16: readonly PlaneName[] = ["block", "wall", "flags", "frameX", "frameY"];
 const PLANES_8: readonly PlaneName[] = ["liquid", "liquidAmount", "paint", "wallPaint", "shape"];
-const LAYERS_16 = PLANES_16.length + 1;
+const LAYERS_16 = PLANES_16.length + 2;
 const LAYERS_8 = PLANES_8.length;
 
 interface Upload {

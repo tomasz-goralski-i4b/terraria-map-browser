@@ -9,7 +9,7 @@ beforeAll(async () => {
   walls = createWallFraming(await loadFramingDatabase(terrariaFramingData));
 });
 
-/** A world with a deterministic mix of walls 1–3 and gaps, `size` tiles square. */
+/** A world with a deterministic mix of walls 1–3 and gaps. */
 function mixedWorld(width: number, height: number): CanonicalWorld {
   const world = createWorld(width, height);
   for (let x = 0; x < width; x++) {
@@ -98,10 +98,10 @@ describe("chunk wall cell cache", () => {
   });
 
   test("an area on a chunk border is recomputed in every cached chunk whose apron holds it", () => {
-    // (8, 12) lies on the left edge of chunk (1, 1): its 3 × 3 area covers 2 columns of chunk (1, 1) plus 1 of its
-    // apron, and 1 column of chunk (0, 1) plus 2 of its apron.
+    // (8, 12) lies on the left edge of chunk (1, 1): its 3 × 3 area (columns 7–9) is held whole by chunk (1, 1), whose
+    // apron is column 7, and in columns 7 and 8 by chunk (0, 1), whose apron is column 8.
     expect(invalidate([[8, 12]], [[0, 1], [1, 1]])).toEqual({
-      recomputed: 18, framed: 18, regions: [{ left: 7, top: 11, width: 3, height: 3 }],
+      recomputed: 15, framed: 15, regions: [{ left: 7, top: 11, width: 3, height: 3 }],
     });
   });
 

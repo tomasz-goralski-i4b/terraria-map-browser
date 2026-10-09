@@ -239,6 +239,19 @@ The `.wld` stores no wall frame; the game computes it from the neighbours (R, [A
 The framing database holds every wall's cell for all 6 561 neighbourhoods, its interior cells at 12 × 12 positions
 and its variant map, so these rules can be checked against it.
 
+How the viewer applies them (#147; `packages/renderer/src/framing/frame-wall.ts`):
+
+- A neighbour outside the world counts as absent (not observed: the observer frames walls inside a world only).
+- The interior cell comes from the database's interior table at `(x mod 12, y mod 12)`, which covers both
+  large-frame periods; ordinary walls then take their variant through the variant map. The map records the variants
+  of the cells the 6 561-neighbourhood table uses, so of the interior cells only (6, 2) varies; the others keep their
+  variant-0 cell, as an unobserved block variant does (chosen; observing every interior cell's variants is a
+  follow-up).
+- Large-frame walls take their non-interior cells from their 6 561-neighbourhood table, observed at the reference
+  position (30, 30) only (chosen: the edges at other positions are not observed).
+- Overlapping overhangs are drawn row by row from the top, left to right within a row, each over the ones before
+  (chosen); blocks are drawn over walls.
+
 ```text
 source = (x = 36 × column, y = 36 × row, w = 32, h = 32)
 dest   = top-left at (16 × tileX − 8, 16 × tileY − 8)        // a 32×32 sprite centred on the 16×16 tile (A8)
@@ -265,7 +278,7 @@ Expected sheet sizes (consistent with the size arithmetic, confirmed only by the
 | Frame-important tiles with a 16×16 grid (most furniture, multi-tile objects) | draw each tile's own cell at `(frameX, frameY)`; multi-tile objects need nothing extra because every tile carries its own frame | — |
 | Frame-important tiles with other grids (torches, plants, …) | draw with the tile's `textureGrid` size | exact per-id draw offsets |
 | Non-frame-important blocks | the cell framed by "Tile framing" and its database (#141, #146), grass and moss included; half blocks and slopes cut per "Slopes and half blocks"; falling blocks with nothing below them in map colours | paint, lighting |
-| Walls | map colours | framing by "Walls" and the framing database (#147) |
+| Walls | the cell framed by "Walls" and the framing database (#147), a 32 × 32 cell centred on the tile, below the blocks | paint, lighting |
 | Animated tiles (173 ids flagged `isAnimated` in A12, all frame-important) | draw the stored frame (static) | animation |
 | Trees (5, 323, …), tree tops/branches, variant sheets (`Tiles_5_N`, `Tiles_2_Beach`, `Tiles_59_2`, …) | placeholder | yes |
 | Paint, actuated/inactive tint, illumination, liquids, wires | — | yes |
