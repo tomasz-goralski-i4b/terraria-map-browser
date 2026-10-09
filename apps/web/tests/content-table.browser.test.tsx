@@ -99,6 +99,20 @@ test("filtering by text and by kind", async () => {
   await expect.poll(() => bodyRows().map((row) => row[1])).toEqual(["Liquid", "Liquid", "Liquid", "Liquid"]);
 });
 
+test("vegetation is named and searchable by name, hidden key and kind", async () => {
+  const vegetation: ContentWorld = {
+    planes: { block: Uint16Array.from([0, 1]), wall: new Uint16Array(2).fill(NONE), liquid: new Uint8Array(2) },
+    palette: [{ kind: "vanilla", id: 2 }, { kind: "vanilla", id: 3 }],
+  };
+  await render(<ContentPanel world={vegetation} />);
+  expect(headers()).not.toContain("ID");
+  await expect.poll(() => bodyRows().map((row) => row[0])).toEqual(["Grass", "Plants"]);
+  for (const [query, names] of [["grass", ["Grass"]], ["plants", ["Plants"]], ["vanilla:2", ["Grass"]], ["vanilla:3", ["Plants"]], ["block", ["Grass", "Plants"]]] as const) {
+    await page.getByRole("searchbox", { name: "Filter Content" }).fill(query);
+    await expect.poll(() => bodyRows().map((row) => row[0])).toEqual(names);
+  }
+});
+
 test("kind text finds modded walls even when their internal name has no wall suffix", async () => {
   const moddedWorld: ContentWorld = {
     planes: {
@@ -184,9 +198,9 @@ test("the keyboard moves a controlled selection row by row, keeps it in view and
   await userEvent.keyboard("{ArrowDown}");
   await expect.poll(selectedRow).toBe("Dirt Block");
   await userEvent.keyboard("{ArrowDown}{ArrowDown}{ArrowDown}");
-  await expect.poll(selectedRow).toBe("vanilla:3");
+  await expect.poll(selectedRow).toBe("Plants");
   await userEvent.keyboard("{ArrowUp}");
-  await expect.poll(selectedRow).toBe("vanilla:2");
+  await expect.poll(selectedRow).toBe("Grass");
   expect(grid.element().getAttribute("aria-activedescendant")).toBe(document.querySelector(".table-body [aria-selected=true]")?.id);
   await userEvent.keyboard("{Enter}");
   expect(activated).toEqual(["block:2"]);

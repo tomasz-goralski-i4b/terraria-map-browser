@@ -106,6 +106,14 @@ test("the Inspector shows only a pinned tile: hovering changes nothing, and Unpi
   await expect.element(page.getByText("Click a tile with the Inspect tool (I) to inspect it.")).toBeVisible();
 });
 
+test.each([[2, "Grass"], [3, "Plants"]] as const)("the Inspector names vegetation %i as %s", async (id, name) => {
+  const world = createWorld(4, 3);
+  world.setTile(2, 1, { block: { kind: "vanilla", id }, wires: 0, actuator: false });
+  await render(<InspectorPanel world={inspectorWorld(world)} />);
+  useViewStore.getState().setPinnedTile({ x: 2, y: 1 });
+  await expect.poll(rows).toContainEqual(["Block", name]);
+});
+
 test("the Inspector names the frame-selected altar and its paint", async () => {
   const world = createWorld(4, 3);
   world.setTile(2, 1, {

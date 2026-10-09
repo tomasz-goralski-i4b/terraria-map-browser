@@ -47,13 +47,43 @@ test("exports every map option of each content ID as a TypeScript module", { ski
     const names = (await import(pathToFileURL(file).href)).terrariaMapNames;
     assert.deepEqual(names, {
       gameVersion: "1.4.5.8",
-      tiles: [["Dirt Block"], ["Demon Altar", "Crimson Altar"], [""], []],
+      tiles: [["Dirt Block"], ["Demon Altar", "Crimson Altar"], ["Grass"], ["Plants"]],
+      tileMetadata: [
+        { symbols: ["Dirt"], mapOptionCount: 1, nameSources: ["placement"] },
+        { symbols: ["DemonAltar"], mapOptionCount: 2, nameSources: ["legend", "legend"] },
+        { symbols: ["Grass"], mapOptionCount: 1, nameSources: ["symbol"] },
+        { symbols: ["Plants"], mapOptionCount: 0, nameSources: ["symbol"] },
+      ],
       walls: [[], ["Stone Wall", "Aether \"Crystal\"\nWall"]],
       liquids: ["Water", "Lava", "Honey", "Shimmer"],
       paints: ["", "Red Paint", "Blue Paint"],
     });
+    const coverage = readFileSync(join(directory, "name-coverage.md"), "utf8");
+    assert.match(coverage, /\| 2 \| Grass \| terrain \|/);
+    assert.match(coverage, /\| 3 \| Plants \| vegetation \|/);
+    assert.match(coverage, /Named block IDs: 4\/4/);
   });
 });
+
+for (const [scenario, expected, symbols] of [
+  ["missing-symbols", [[""], []], [[], []]],
+  ["ambiguous-symbols", [[""], ["Plants"]], [["Grass", "MeadowGrass"], ["Plants"]]],
+  ["symbol-casing", [["Hallowed Plants 2"], ["UFO Anchor"]], [["HallowedPlants2"], ["UFOAnchor"]]],
+]) {
+  test(`symbolic naming handles ${scenario} without altering resolved labels`, { skip: !available && "PowerShell is not installed" }, async () => {
+    await withTempDirectory(async (directory) => {
+      const result = runPowerShell("scripts/map-palette/fixture-export.ps1", ["-Directory", directory, "-Scenario", scenario]);
+      assert.equal(result.status, 0, result.stderr);
+      const names = (await import(pathToFileURL(join(directory, "synthetic-map-palette.ts")).href)).terrariaMapNames;
+      assert.deepEqual(names.tiles.slice(0, 2), [["Dirt Block"], ["Demon Altar", "Crimson Altar"]]);
+      assert.deepEqual(names.tiles.slice(2), expected);
+      assert.deepEqual(names.tileMetadata.slice(2).map((entry) => entry.symbols), symbols);
+      const coverage = readFileSync(join(directory, "name-coverage.md"), "utf8");
+      if (scenario === "missing-symbols") assert.match(coverage, /unavailable symbolic metadata/);
+      if (scenario === "ambiguous-symbols") assert.match(coverage, /ambiguous symbolic aliases/);
+    });
+  });
+}
 
 for (const scenario of ["invalid-range", "missing-member", "missing-legend", "missing-localization", "item-failure"]) {
   test(`refuses an unsupported contract (${scenario}) without writing output`, { skip: !available && "PowerShell is not installed" }, async () => {
@@ -82,6 +112,9 @@ test("exports the palette of a local Terraria installation", {
     const names = (await import(pathToFileURL(file).href)).terrariaMapNames;
     assert.equal(names.gameVersion, palette.gameVersion);
     assert.equal(names.tiles[0][0], "Dirt Block");
+    assert.equal(names.tiles[2][0], "Grass");
+    assert.equal(names.tiles[3][0], "Plants");
+    assert.ok(names.tiles.every((options) => options[0]?.length > 0));
     assert.equal(names.walls[1][0], "Stone Wall");
     assert.equal(names.walls[2][0], "Natural Dirt Wall");
     assert.deepEqual(names.tiles[26], ["Demon Altar", "Crimson Altar"]);
@@ -90,7 +123,8 @@ test("exports the palette of a local Terraria installation", {
     assert.equal(names.paints[29], "Shadow Paint");
     assert.equal(names.paints[30], "Negative Paint");
     assert.equal(names.paints.length, palette.paints.length);
-    assert.deepEqual(names.tiles.map((options) => options.length), palette.tiles.map((options) => options.length));
+    assert.deepEqual(names.tiles.map((options) => options.length), palette.tiles.map((options) => Math.max(1, options.length)));
+    assert.deepEqual(names.tileMetadata.map((entry) => entry.mapOptionCount), palette.tiles.map((options) => options.length));
     assert.deepEqual(names.walls.map((options) => options.length), palette.walls.map((options) => options.length));
   });
 });
