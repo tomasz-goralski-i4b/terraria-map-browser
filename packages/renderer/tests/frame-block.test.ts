@@ -259,6 +259,9 @@ describe("types framed by position", () => {
   test("large-frame and grass-like types take the database's cells at all 24 positions", () => {
     const positional = data.blockTypes.filter((type) => block(type).byPosition !== undefined);
     expect(positional.length).toBeGreaterThanOrEqual(24);
+    // The same air/self neighbourhoods apply to every type and position; decode each ternary code only once.
+    const neighbourhoods = Array.from({ length: 6561 }, (_, code) => ({ code, digits: digitsOf(code) }))
+      .filter(({ digits }) => !digits.includes(2));
     for (const type of positional) {
       const byPosition = block(type).byPosition ?? [];
       for (let b = 0; b < 4; b++) {
@@ -268,9 +271,7 @@ describe("types framed by position", () => {
           // Same position class, variant 0: the database's tables by position were framed with variant 0.
           while ((7 * x + 11 * y) % 3 !== 0) y += 4;
           const table = byPosition[b * 6 + a] ?? -1;
-          for (let code = 0; code < 6561; code++) {
-            const digits = digitsOf(code);
-            if (digits.includes(2)) continue;
+          for (const { code, digits } of neighbourhoods) {
             const expected = tableCell(table, code);
             if (expected === null) continue;
             expect(asTuple(frameDigits(type, -1, digits, x, y)), `${String(type)} at ${String(a)},${String(b)}`)
