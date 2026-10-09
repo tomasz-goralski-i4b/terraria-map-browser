@@ -106,8 +106,9 @@ never imports it. It reads `manifest.json` and writes one `<world-name>.cwm` per
 supplied existing output directory. Source fixtures and their goldens are protected destinations, including
 directory aliases; existing output files or links are never overwritten. It stages the entire corpus before
 publishing files and removes its staging directory on success or failure. Output contains no source paths,
-timestamps or other environment fields. Exit codes are 0 (success), 2 (arguments/manifest or existing
-output), and 1 (format/I/O failure); diagnostics go to stderr. No .NET process is invoked, and these
+timestamps or other environment fields. Exit codes are 0 (success), 2 (arguments, invalid manifest
+structure/schema or existing output), and 1 (format/I/O failure, including malformed manifest JSON);
+diagnostics go to stderr. No .NET process is invoked, and these
 temporary CWM outputs are never fixtures or committed goldens.
 
 ## TypeScript model API
