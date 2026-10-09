@@ -497,8 +497,10 @@ implementations frame in **passes by depth**: a type of depth 0 has no relatives
 relatives, all of depth below `k`. Stone and the ores have depth 0; dirt has depth 5, because sand is one of its
 relatives. What a tile actually reads is the chain present around it: dirt beside stone needs one step (two passes),
 dirt beside sand beside hardened sand needs more. A tile whose chain around it is `k` steps long depends on the tiles up
-to `k + 1` away, so an edit invalidates the `(2k + 3)²` area around the changed tile: 5 × 5 for dirt beside stone, at
-most 13 × 13 along the sand chain. R:
+to `k + 1` away. An edit therefore invalidates the tiles up to `d + 1` around the changed tile, where `d` is the
+deepest type's depth there (`BlockFraming.depth`; dirt has 5 because of sand): 3 × 3 among stone and ores, 13 × 13
+wherever dirt or the sand chain is. Re-framing 13 × 13 tiles costs microseconds, so an editor may simply always
+invalidate 13 × 13. R:
 framing in two passes, in one pass and with the game's own range framing gives identical cells (for the observed
 pairs).
 
@@ -527,6 +529,11 @@ database, never from a list of types:
   other type, other cells in their pair tables than in their tables alone: the game's result there depends on more
   than the 3 × 3. `frameBlock` uses the table alone for them.
 - `frameBlock` returns no cell for a falling block with nothing below it (the database's unstable neighbourhoods).
+- A centre that reads a table still applies the edge check to a relative that is not the table's other type: its
+  edge connects only where the relative keeps its rim (only mud beside dirt and chlorophyte meets this case).
+- `frameRegion` writes one `Uint16` per tile, the packed cell `column · 64 + row` or `NO_CELL` (0xFFFF), column-major
+  like the CWM planes, so a renderer can keep it as a per-chunk plane. It frames about 120–160 ns per tile in Node
+  (1024 × 1024 mixed terrain), with no per-tile allocations.
 
 ### Variant
 
