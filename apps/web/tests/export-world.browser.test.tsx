@@ -7,6 +7,7 @@ import { exportWorld } from "../src/world/export-world.js";
 import { getDefaultWorldSession } from "../src/world/world-session.js";
 import { writerSource } from "./support/export-source.js";
 import "./support/commands.js";
+import "../src/styles.css";
 
 afterEach(() => { vi.unstubAllGlobals(); });
 
@@ -53,8 +54,8 @@ test("the Export world command is available after opening a world", async () => 
 
 test("writer rejection shows its reason and never creates a writable destination", async () => {
   await render(<App />);
-  // Unknown runtime block 900 is readable, but the vanilla writer refuses it.
-  await open(writerSource(2, 4, [0x62, 0x84, 0x03, 3, 0x40, 3]));
+  // Block 700 fits the source bitset, but exceeds format 279's vanilla range.
+  await open(writerSource(2, 4, [0x62, 0xbc, 0x02, 3, 0x40, 3], 279));
   const saved = destination();
   await exportWorld();
   expect(saved.createWritable).not.toHaveBeenCalled();
