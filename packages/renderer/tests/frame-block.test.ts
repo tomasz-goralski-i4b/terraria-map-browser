@@ -3,7 +3,7 @@ import { beforeAll, describe, expect, test, vi } from "vitest";
 import { createWorld, viewWorld, type CanonicalWorld, type ContentRef, type WorldPlanes } from "@studio/world-model";
 import { loadFramingDatabase, type FramingDatabase } from "../src/framing/framing-database.js";
 import { terrariaFramingData as data } from "../src/framing/terraria-framing.generated.js";
-import { createBlockFraming, type BlockFraming, type SheetCell } from "../src/framing/frame-block.js";
+import { NO_CELL, createBlockFraming, type BlockFraming, type SheetCell } from "../src/framing/frame-block.js";
 import { allocationCount } from "./allocation-count.js";
 
 let database: FramingDatabase;
@@ -61,6 +61,9 @@ function tableCell(table: number, code: number): readonly [number, number] | nul
 /** A falling block (sand and the like): alone, with nothing around it, it has no cell. */
 const isFalling = (type: number): boolean => database.blockCell(type, null, 0) === null;
 
+/** A packed region cell (column · 64 + row) as a tuple; null for NO_CELL. */
+const unpack = (cell: number): readonly [number, number] | null => (cell === NO_CELL ? null : [cell >> 6, cell & 63]);
+
 const asTuple = (cell: SheetCell | null): readonly [number, number] | null => (cell === null ? null : [cell.column, cell.row]);
 
 /** frameBlock for a centre whose neighbours are `digits` (0 air, 1 the centre's type, 2 `other`), all full. */
@@ -116,8 +119,7 @@ describe("frameBlock against the framing database", () => {
     // for grass, gemspark and the large-frame blocks the database's pair tables record other cells there than its
     // table of the type alone (the game's result there is not a function of the 3 × 3).
     const { world, clear, put } = observerWorld();
-    const columns = new Int16Array(1);
-    const rows = new Int16Array(1);
+    const cells = new Uint16Array(1);
     const keys = new Set<string>();
     let pairs = 0;
     let checked = 0;
@@ -154,8 +156,8 @@ describe("frameBlock against the framing database", () => {
               if (digit !== 0) put(cx + dx, cy + dy, digit === 1 ? centre : other);
             });
             if (floor) for (let dx = -1; dx <= 1; dx++) if (digits[6 + dx] !== 0) put(cx + dx, cy + 2, STONE);
-            framing.frameRegion(world, { left: cx, top: cy, width: 1, height: 1 }, { columns, rows });
-            actual = columns[0] === -1 ? null : [columns[0] ?? -1, rows[0] ?? -1];
+            framing.frameRegion(world, { left: cx, top: cy, width: 1, height: 1 }, cells);
+            actual = unpack(cells[0] ?? NO_CELL);
           }
           if (actual?.[0] !== expected[0] || actual[1] !== expected[1]) {
             expect(actual, `centre ${String(centre)} other ${String(other)} code ${String(code)}`).toEqual(expected);
@@ -334,10 +336,9 @@ describe("the two-pass helper over a tile region", () => {
 
   /** The cell the helper gives the tile at (2 + x, 2 + y), framing only that one tile's region. */
   function cellAt(world: CanonicalWorld, x: number, y: number): readonly [number, number] | null {
-    const columns = new Int16Array(1);
-    const rows = new Int16Array(1);
-    framing.frameRegion(world, { left: 2 + x, top: 2 + y, width: 1, height: 1 }, { columns, rows });
-    return columns[0] === -1 ? null : [columns[0] ?? -1, rows[0] ?? -1];
+    const cells = new Uint16Array(1);
+    framing.frameRegion(world, { left: 2 + x, top: 2 + y, width: 1, height: 1 }, cells);
+    return unpack(cells[0] ?? NO_CELL);
   }
 
   /** Of a look's cells v0 / v1 / v2, the one of the tile at (2 + x, 2 + y): variant (7x + 11y) mod 3. */
@@ -391,13 +392,12 @@ describe("the two-pass helper over a tile region", () => {
 
   test("a region's cells equal framing each tile on its own, and absent tiles stay −1", () => {
     const world = worldOf(["......", "..dd..", "..sdd.", ".ddss.", "......"]);
-    const columns = new Int16Array(6 * 5);
-    const rows = new Int16Array(6 * 5);
-    framing.frameRegion(world, { left: 2, top: 2, width: 6, height: 5 }, { columns, rows });
+    const cells = new Uint16Array(6 * 5);
+    framing.frameRegion(world, { left: 2, top: 2, width: 6, height: 5 }, cells);
     for (let x = 0; x < 6; x++) {
       for (let y = 0; y < 5; y++) {
         const alone = cellAt(world, x, y);
-        expect([columns[x * 5 + y], rows[x * 5 + y]]).toEqual(alone ?? [-1, -1]);
+        expect(unpack(cells[x * 5 + y] ?? NO_CELL)).toEqual(alone);
       }
     }
   });
@@ -435,17 +435,67 @@ describe("the two-pass helper over a tile region", () => {
     expect(cellAt(world, 2, 2)).not.toBeNull();
   });
 
+  test("relatives chain at most five steps deep and never in a cycle", () => {
+    let deepest = 0;
+    for (const centre of data.blockTypes) {
+      const depth = framing.depth(centre);
+      deepest = Math.max(deepest, depth);
+      for (const other of data.blockTypes) {
+        // A type frames after its relatives: a relative is always shallower, so the relation has no cycle.
+        if (other !== centre && framing.kind(centre, other) === "relative") expect(framing.depth(other)).toBeLessThan(depth);
+      }
+    }
+    expect(deepest).toBe(5);
+    expect(framing.depth(STONE)).toBe(0);
+    expect(framing.depth(21)).toBe(-1);
+  });
+
+  test("a five-step relative chain frames the same through a one-tile window as through the whole strip", () => {
+    // Dirt, sand, hardened sand, sandstone, desert fossil, 407 in two rows on a stone floor, each type two wide.
+    const chain = [DIRT, 53, 397, 396, 404, 407];
+    for (let k = 0; k + 1 < chain.length; k++) expect(framing.kind(chain[k] ?? -1, chain[k + 1] ?? -1)).toBe("relative");
+    const world = createWorld(24, 8);
+    for (let x = 1; x <= 12; x++) {
+      for (const y of [2, 3]) {
+        world.setTile(x, y, { block: { kind: "vanilla", id: chain[Math.floor((x - 1) / 2)] ?? DIRT }, wires: 0, actuator: false });
+      }
+      world.setTile(x, 4, { block: { kind: "vanilla", id: STONE }, wires: 0, actuator: false });
+    }
+    const whole = new Uint16Array(24 * 8);
+    framing.frameRegion(world, { left: 0, top: 0, width: 24, height: 8 }, whole);
+    const window = new Uint16Array(1);
+    for (let x = 1; x <= 12; x++) {
+      for (const y of [2, 3]) {
+        framing.frameRegion(world, { left: x, top: y, width: 1, height: 1 }, window);
+        expect(window[0], `${String(x)},${String(y)}`).toBe(whole[x * 8 + y]);
+      }
+    }
+  });
+
+  test("a centre that reads a table still applies the edge check to its relatives", () => {
+    const MUD = 59;
+    const CHLOROPHYTE = 211;
+    // Mud, dirt at E (the table's other type), chlorophyte at N: it connects only where its cell keeps its rim.
+    const neighbours = [MUD, CHLOROPHYTE, MUD, MUD, DIRT, MUD, MUD, MUD];
+    for (const [rims, north] of [[1, 1], [0, 0]] as const) {
+      const code = [1, north, 1, 1, 2, 1, 1, 1].reduce((sum, digit, k) => sum + digit * 3 ** k, 0);
+      const actual = framing.frameBlock({
+        type: MUD, shape: 0, x: REFERENCE[0], y: REFERENCE[1], neighbours, rimsTowardCentre: rims,
+      });
+      expect(asTuple(actual), `rims ${String(rims)}`).toEqual(database.blockCell(MUD, DIRT, code));
+    }
+  });
+
   test("frame-important, modded and unknown blocks get no cell; neighbours outside the world are absent", () => {
     const world = createWorld(3, 3);
     world.setTile(0, 0, { block: { kind: "vanilla", id: DIRT }, wires: 0, actuator: false });
     world.setTile(1, 0, { block: { kind: "vanilla", id: 21 }, wires: 0, actuator: false });
     world.setTile(2, 0, { block: { kind: "mod", mod: "ExampleMod", internalName: "ExampleBlock" }, wires: 0, actuator: false });
-    const columns = new Int16Array(9);
-    const rows = new Int16Array(9);
-    framing.frameRegion(world, { left: 0, top: 0, width: 3, height: 3 }, { columns, rows });
-    expect([columns[0], rows[0]]).toEqual([9, 3]);
-    expect(columns[3]).toBe(-1);
-    expect(columns[6]).toBe(-1);
+    const cells = new Uint16Array(9);
+    framing.frameRegion(world, { left: 0, top: 0, width: 3, height: 3 }, cells);
+    expect(unpack(cells[0] ?? NO_CELL)).toEqual([9, 3]);
+    expect(cells[3]).toBe(NO_CELL);
+    expect(cells[6]).toBe(NO_CELL);
   });
 
   test("is deterministic and allocates per call, not per tile", async () => {
@@ -460,12 +510,12 @@ describe("the two-pass helper over a tile region", () => {
       world.planes.block[index] = noise % 7 === 0 ? 0xffff : noise % 5 === 0 ? 2 : noise % 2;
     }
     const region = { left: 0, top: 0, width: size, height: size };
-    const first = { columns: new Int16Array(size * size), rows: new Int16Array(size * size) };
-    const second = { columns: new Int16Array(size * size), rows: new Int16Array(size * size) };
+    const first = new Uint16Array(size * size);
+    const second = new Uint16Array(size * size);
     framing.frameRegion(world, region, first);
     const objects = await allocationCount(() => { framing.frameRegion(world, region, second); }, "frameRegion");
     expect(second).toEqual(first);
-    expect(first.columns.filter((column) => column !== -1).length).toBeGreaterThan(size * size / 2);
+    expect(first.filter((cell) => cell !== NO_CELL).length).toBeGreaterThan(size * size / 2);
     expect(objects).toBeLessThanOrEqual(64);
     expect(random).not.toHaveBeenCalled();
     random.mockRestore();

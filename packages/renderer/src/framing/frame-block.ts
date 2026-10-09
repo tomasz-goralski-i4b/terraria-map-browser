@@ -45,11 +45,8 @@ export interface BlockRegion {
   readonly height: number;
 }
 
-/** Per tile of a region, column-major like the CWM planes (index (x − left) · height + (y − top)); −1: no cell. */
-export interface BlockRegionCells {
-  readonly columns: Int16Array;
-  readonly rows: Int16Array;
-}
+/** A region cell with no sheet cell (no block, not self-framed, or a falling block with nothing below). */
+export const NO_CELL = 0xffff;
 
 export interface BlockFraming {
   /** The sheet cell of a self-framed block; null when its type is not one, or it is a falling block with nothing below. */
@@ -57,10 +54,17 @@ export interface BlockFraming {
   /** How `centre` treats `other`; null when either is not a self-framed block type. */
   readonly kind: (centre: number, other: number) => BlockKind | null;
   /**
-   * Frames every block of `region` of `world` into `out`, reading the tiles around it. Tiles frame in passes: first
+   * The pass a type frames in: 0 without relatives, else one more than its deepest relative (at most 5); −1 when it
+   * is not a self-framed block type. An edit invalidates the cells up to depth + 1 tiles around it.
+   */
+  readonly depth: (type: number) => number;
+  /**
+   * Frames every block of `region` of `world` into `out`: per tile, column-major like the CWM planes (index
+   * (x − left) · height + (y − top)), the packed cell column · 64 + row, or NO_CELL. It reads the tiles around the
+   * region. Tiles frame in passes: first
    * the types without relatives, then each type once its relatives (whose cells its edge check reads) are framed.
    */
-  readonly frameRegion: (world: CanonicalWorld, region: BlockRegion, out: BlockRegionCells) => void;
+  readonly frameRegion: (world: CanonicalWorld, region: BlockRegion, out: Uint16Array) => void;
 }
 
 const KIND_AIR = 0;
@@ -319,10 +323,9 @@ export function createBlockFraming(database: FramingDatabase): BlockFraming {
   const neighbourShapes = new Uint8Array(8);
   let references = new Int16Array(0);
 
-  function frameRegion(world: CanonicalWorld, region: BlockRegion, out: BlockRegionCells): void {
+  function frameRegion(world: CanonicalWorld, region: BlockRegion, out: Uint16Array): void {
+    out.fill(NO_CELL);
     const { width, height, planes, palette } = world;
-    out.columns.fill(-1);
-    out.rows.fill(-1);
     const vanilla = new Int32Array(palette.length);
     palette.forEach((ref, index) => { vanilla[index] = ref.kind === "vanilla" ? ref.id : NOT_VANILLA; });
     const typeAt = (x: number, y: number): number => {
@@ -376,8 +379,7 @@ export function createBlockFraming(database: FramingDatabase): BlockFraming {
           const rx = x - region.left;
           const ry = y - region.top;
           if (rx >= 0 && ry >= 0 && rx < region.width && ry < region.height) {
-            out.columns[rx * region.height + ry] = resultCell >> 6;
-            out.rows[rx * region.height + ry] = resultCell & 63;
+            out[rx * region.height + ry] = resultCell;
           }
         }
       }
@@ -391,6 +393,7 @@ export function createBlockFraming(database: FramingDatabase): BlockFraming {
       if (index === -1 || typeIndex(other) === -1) return null;
       return other === centre ? "self" : KIND_NAMES[kindOf(index, other)] ?? null;
     },
+    depth: () => -1,
     frameRegion,
   };
 }
