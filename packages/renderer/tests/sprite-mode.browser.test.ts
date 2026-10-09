@@ -29,15 +29,16 @@ function readCanvas(canvas: HTMLCanvasElement): Uint8Array {
 
 const ABSENT = 0xffff;
 // Palette indices: 0 chest-like (16 × 16 cells), 1 torch-like (20 × 20 cells), 2 a block without frames, 3 a wall,
-// 4 frame-important content with no sheet in the atlas.
+// 4 frame-important content with no sheet in the atlas, 5 a tree (frame-important, has a sheet, but trees are deferred).
 const CHEST = 0;
 const TORCH = 1;
 const STONE = 2;
 const WALL = 3;
 const NO_SHEET = 4;
+const TREE = 5;
 const palette = [
   { kind: "vanilla", id: 21 }, { kind: "vanilla", id: 4 }, { kind: "vanilla", id: 1 }, { kind: "vanilla", id: 2 },
-  { kind: "vanilla", id: 600 },
+  { kind: "vanilla", id: 600 }, { kind: "vanilla", id: 5 },
 ] as const;
 
 /** Tiles of the test world: (x, y, block, frameX, frameY); every other tile has the wall only. */
@@ -48,6 +49,7 @@ const TILES: readonly (readonly [number, number, number, number, number])[] = [
   [3, 0, TORCH, 22, 44],
   [0, 1, STONE, -1, -1],
   [2, 1, NO_SHEET, 0, 0],
+  [3, 1, TREE, 22, 0],
 ];
 const WIDTH = 4;
 const HEIGHT = 3;
@@ -79,6 +81,7 @@ const PAGE = 128;
 const SHEETS = [
   { kind: "tile", id: 21, page: 0, x: 2, y: 2, width: 72, height: 40, frameWidth: 16, frameHeight: 16, gapX: 2, gapY: 2 },
   { kind: "tile", id: 4, page: 1, x: 2, y: 2, width: 66, height: 66, frameWidth: 20, frameHeight: 20, gapX: 2, gapY: 2 },
+  { kind: "tile", id: 5, page: 0, x: 2, y: 60, width: 44, height: 44, frameWidth: 20, frameHeight: 20, gapX: 2, gapY: 2 },
 ] as const;
 
 /** A sheet pixel: distinct per position and sheet, fully transparent on every seventh diagonal. */

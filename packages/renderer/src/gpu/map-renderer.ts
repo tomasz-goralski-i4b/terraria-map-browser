@@ -170,6 +170,13 @@ const UNIT_OVERVIEW = 5;
 const UNIT_ATLAS = 6;
 const UNIT_SPRITE_SHEETS = 7;
 const TEXTURE_UNITS = 8;
+/**
+ * Tile IDs sprite mode leaves in map colours although they store frames: trees and the giant mushroom (5 Tree,
+ * 72 Giant Mushroom, 323 Palm Tree, 583–589 gem trees, 596, 616 and 634 vanity and ash trees, by the shipped content
+ * names). Their trunk cells are wider than a tile and overlap, their tops and branches come from other sheets, and the
+ * palm tree's frame is not a sheet offset (docs/assets.md, "Special handling": trees are deferred).
+ */
+const SPRITE_DEFERRED_TILES: ReadonlySet<number> = new Set([5, 72, 323, 583, 584, 585, 586, 587, 588, 589, 596, 616, 634]);
 /** Texels per row of the sprite sheet lookup: two per palette index (SPRITE_SHEET_ROW in shaders.ts). */
 const SPRITE_SHEET_WIDTH = SPRITE_SHEET_ROW * 2;
 
@@ -597,7 +604,9 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   /** Puts `source` on the GPU and rewrites the sheet of every palette index uploaded so far. */
   const applyAtlas = (source: SpriteAtlasSource | null): void => {
     releaseAtlas();
-    tileSheets = new Map(source?.index.entries.filter((entry) => entry.kind === "tile").map((entry) => [entry.id, entry]));
+    tileSheets = new Map(source?.index.entries
+      .filter((entry) => entry.kind === "tile" && !SPRITE_DEFERRED_TILES.has(entry.id))
+      .map((entry) => [entry.id, entry]));
     if (source !== null) uploadAtlas(source);
     if (world !== null) uploadSheets(world.palette, 0, paletteUploaded);
   };
