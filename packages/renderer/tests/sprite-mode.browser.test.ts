@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import {
-  MISSING_SPRITE_COLORS, SPRITE_MIN_ZOOM, createMapRenderer, liquidColors, renderChunk, spriteSampling,
+  MISSING_SPRITE_COLORS, SPRITE_MIN_ZOOM, createMapRenderer, liquidColors, renderChunk,
 } from "../src/index.js";
 import type { ChunkLayers, MapRenderer, RenderableWorld, SpriteAtlasSource } from "../src/index.js";
 import { halfTexel, meanOf, samplePositions } from "./wall-sprites.fixture.js";
@@ -259,8 +259,11 @@ describe("sprite mode", () => {
     const COMPLETION_STATUS = 0x91b1;
     let linked = false;
     const prototype = WebGL2RenderingContext.prototype;
-    const realExtension = prototype.getExtension;
-    const realParameter = prototype.getProgramParameter;
+    // The real methods, called with the context as `this`.
+    const realExtension = Object.getOwnPropertyDescriptor(prototype, "getExtension")?.value as
+      (this: WebGL2RenderingContext, name: string) => unknown;
+    const realParameter = Object.getOwnPropertyDescriptor(prototype, "getProgramParameter")?.value as
+      (this: WebGL2RenderingContext, program: WebGLProgram, name: number) => unknown;
     const extension = vi.spyOn(prototype, "getExtension").mockImplementation(
       function (this: WebGL2RenderingContext, name: string): unknown {
         return name === "KHR_parallel_shader_compile" ? { COMPLETION_STATUS_KHR: COMPLETION_STATUS } : realExtension.call(this, name);

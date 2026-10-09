@@ -63,20 +63,25 @@ const SPRITE_TILE_PIXELS = 16;
 export const SPRITE_MIN_ZOOM = 5;
 /** Pixels per tile from which sprites are drawn whole, without the map colour. */
 export const SPRITE_FULL_ZOOM = 7.5;
-/** At most this many sprite samples per axis and screen pixel (4 × 4 at SPRITE_MIN_ZOOM). */
-const MAX_SPRITE_SAMPLES = 4;
+/** At most this many sprite samples per axis and screen pixel. */
+const MAX_SPRITE_SAMPLES = 2;
 
 /**
  * How the chunk pass samples sprites at `zoom` pixels per tile: `samples` × `samples` sprite samples per screen pixel,
  * `step` sprite pixels apart in total per axis (the pixel's footprint, 16 / zoom), averaged within the tile, so a sprite
  * shown smaller than its 16 × 16 pixels is downscaled rather than point-sampled; and the sprite's `weight` (0–256)
- * over the map colour, rising linearly from SPRITE_MIN_ZOOM to SPRITE_FULL_ZOOM.
+ * over the map colour, rising linearly from SPRITE_MIN_ZOOM to SPRITE_FULL_ZOOM. From 2 sprite pixels per screen pixel
+ * (8 pixels per tile) down, the samples read `level` 1, the half-resolution atlas (halfAtlasFragmentSource): a sample
+ * stands for the 2 × 2 sprite pixels around it, so 2 × 2 samples cover the footprint down to SPRITE_MIN_ZOOM.
  */
-export function spriteSampling(zoom: number): { readonly samples: number; readonly step: number; readonly weight: number } {
+export function spriteSampling(zoom: number): {
+  readonly samples: number; readonly step: number; readonly level: number; readonly weight: number;
+} {
   const step = SPRITE_TILE_PIXELS / zoom;
-  const samples = Math.min(MAX_SPRITE_SAMPLES, Math.max(1, Math.ceil(step - 1e-9)));
+  const level = step >= 2 - 1e-9 ? 1 : 0;
+  const samples = Math.min(MAX_SPRITE_SAMPLES, Math.max(1, Math.ceil(step / 2 ** level - 1e-9)));
   const fade = (zoom - SPRITE_MIN_ZOOM) / (SPRITE_FULL_ZOOM - SPRITE_MIN_ZOOM);
-  return { samples, step, weight: Math.round(256 * Math.min(1, Math.max(0, fade))) };
+  return { samples, step, level, weight: Math.round(256 * Math.min(1, Math.max(0, fade))) };
 }
 
 
@@ -143,13 +148,16 @@ uniform int uWireAlpha;
 uniform ivec3 uLiquids[4]; // colours of CWM liquid kinds 1–4
 #ifdef SPRITES
 // Sprite mode (#91), compiled only into the chunk pass's sprite program (chunkSpriteFragmentSource), which draws from
-// SPRITE_MIN_ZOOM pixels per tile with an atlas: the atlas pages (RGBA8, straight alpha) and the tile and wall sheets
-// of each palette index (SPRITE_SHEET_ROW).
+// SPRITE_MIN_ZOOM pixels per tile with an atlas: the atlas pages (RGBA8, straight alpha), their half-resolution copy
+// (halfAtlasFragmentSource) and the tile and wall sheets of each palette index (SPRITE_SHEET_ROW).
 uniform sampler2DArray uAtlas;
+uniform highp usampler2DArray uAtlasHalf;
 uniform isampler2D uSpriteSheets;
-// spriteSampling(): samples per axis, their footprint in sprite pixels, and the sprite's weight over the map colour.
+// spriteSampling(): samples per axis, their footprint in sprite pixels, the atlas level they read, and the sprite's
+// weight over the map colour.
 uniform int uSpriteSamples;
 uniform float uSpriteStep;
+uniform int uSpriteLevel;
 uniform int uSpriteWeight;
 #endif
 flat in ivec4 vRect;
@@ -223,9 +231,28 @@ ivec4 missingPixel(ivec2 sub) {
   return ivec4(first ? ivec3(${MISSING_SPRITE_COLORS[0]?.join(", ") ?? "0"}) : ivec3(${MISSING_SPRITE_COLORS[1]?.join(", ") ?? "0"}), 255);
 }
 
+// The atlas pixel at (atlas x, y) at of page page, in 0–1, of a sheet whose top-left is at origin: at level 1 the
+// half-resolution texel holding it, the mean of its 2 × 2 sprite pixels. A sheet at an odd position (not packed for
+// the half-resolution atlas) is read at full resolution.
+vec4 atlasTexel(ivec2 origin, ivec2 at, int page) {
+  if (uSpriteLevel == 1 && ((origin.x | origin.y) & 1) == 0) {
+    return vec4(texelFetch(uAtlasHalf, ivec3(at >> 1, page), 0)) / 255.0;
+  }
+  return texelFetch(uAtlas, ivec3(at, page), 0);
+}
+
 // Where the sheets of palette index index start in the sprite sheet lookup: its tile sheet, then (+2) its wall sheet.
 ivec2 sheetAt(uint index) {
   return ivec2(int(index) % ${String(SPRITE_SHEET_ROW)} * ${String(SPRITE_SHEET_TEXELS)}, int(index) / ${String(SPRITE_SHEET_ROW)});
+}
+
+// Sample (x, y) of uSpriteSamples² spread over the footprint (uSpriteStep sprite pixels) of a screen pixel centred on
+// sprite pixel position centre, kept inside the tile: the sprite pixel it reads, at level 1 the even top-left of the
+// 2 × 2 sprite pixels around it (one half-resolution texel).
+ivec2 samplePixel(vec2 centre, int x, int y) {
+  vec2 at = centre + ((vec2(x, y) + 0.5) / float(uSpriteSamples) - 0.5) * uSpriteStep;
+  ivec2 sub = clamp(ivec2(floor(at)), ivec2(0), ivec2(${String(SPRITE_TILE_PIXELS - 1)}));
+  return uSpriteLevel == 1 ? sub & ivec2(~1) : sub;
 }
 
 // The atlas pixel of a self-framed block at sprite pixel sub: its framed cell (the cell plane), cut by its shape into
@@ -257,7 +284,7 @@ bool cellPixel(ivec4 place, ivec2 at, ivec2 texel, ivec2 sub, out ivec4 color) {
   ivec2 origin = ivec2(int(cell >> 6u), int(cell & 63u)) * ${String(BLOCK_CELL_STRIDE)};
   ivec2 pixel = origin + ivec2(sub.x, rows.x + sub.y - rows.y);
   if (any(greaterThanEqual(pixel, size.xy))) return false;
-  color = ivec4(round(texelFetch(uAtlas, ivec3(place.yz + pixel, place.x), 0) * 255.0));
+  color = ivec4(round(atlasTexel(place.yz, place.yz + pixel, place.x) * 255.0));
   return true;
 }
 
@@ -290,7 +317,7 @@ bool spritePixel(uint index, ivec2 texel, ivec2 sub, out ivec4 color) {
   ivec4 size = texelFetch(uSpriteSheets, at + ivec2(1, 0), 0);
   ivec2 pixel = stored + sub * size.zw / ${String(SPRITE_TILE_PIXELS)};
   if (any(greaterThanEqual(pixel, size.xy))) return false;
-  color = ivec4(round(texelFetch(uAtlas, ivec3(place.yz + pixel, place.x), 0) * 255.0));
+  color = ivec4(round(atlasTexel(place.yz, place.yz + pixel, place.x) * 255.0));
   return true;
 }
 
@@ -304,10 +331,8 @@ bool spriteSample(uint index, ivec2 texel, vec2 centre, out ivec4 color) {
     if (y >= count) break;
     for (int x = 0; x < ${String(MAX_SPRITE_SAMPLES)}; x++) {
       if (x >= count) break;
-      vec2 at = centre + ((vec2(x, y) + 0.5) / float(count) - 0.5) * uSpriteStep;
-      ivec2 sub = clamp(ivec2(floor(at)), ivec2(0), ivec2(${String(SPRITE_TILE_PIXELS - 1)}));
       ivec4 sampled;
-      if (!spritePixel(index, texel, sub, sampled)) return false;
+      if (!spritePixel(index, texel, samplePixel(centre, x, y), sampled)) return false;
       sum += ivec4(sampled.rgb * sampled.a, sampled.a);
     }
   }
@@ -316,13 +341,6 @@ bool spriteSample(uint index, ivec2 texel, vec2 centre, out ivec4 color) {
     ? ivec4(0)
     : ivec4((2 * sum.rgb + sum.a) / (2 * sum.a), (2 * sum.a + samples) / (2 * samples));
   return true;
-}
-
-// Sample (x, y) of uSpriteSamples² spread over the footprint (uSpriteStep sprite pixels) of a screen pixel centred on
-// sprite pixel position centre, kept inside the tile: the sprite pixel it reads (as spriteSample places them).
-ivec2 samplePixel(vec2 centre, int x, int y) {
-  vec2 at = centre + ((vec2(x, y) + 0.5) / float(uSpriteSamples) - 0.5) * uSpriteStep;
-  return clamp(ivec2(floor(at)), ivec2(0), ivec2(${String(SPRITE_TILE_PIXELS - 1)}));
 }
 
 // The walls of the 3 × 3 tiles around the tile being drawn, looked up once per screen pixel by wallSample. Plain
@@ -407,7 +425,7 @@ vec4 drawWall(vec4 below, int dx, int dy, ivec2 sub) {
   if (a.w == WALL_SHEET) {
     ivec2 pixel = a.xy + sub + ${String(WALL_OVERHANG)} - ${String(SPRITE_TILE_PIXELS)} * ivec2(dx, dy);
     if (any(greaterThanEqual(pixel, wallB(dx, dy)))) return below;
-    vec4 sampled = texelFetch(uAtlas, ivec3(pixel, a.z), 0);
+    vec4 sampled = atlasTexel(a.xy, pixel, a.z);
     top = vec4(sampled.rgb * sampled.a, sampled.a);
   } else {
     top = a.w == WALL_MISSING ? vec4(vec3(missingPixel(sub).rgb) / 255.0, 1.0) : wallOwn;
@@ -707,6 +725,34 @@ void main() {
     }
   }
   outColor = count == 0.0 ? vec4(0.0) : sum / (255.0 * count);
+}
+`;
+
+/**
+ * Half-resolution atlas pass: one RGBA8UI texel per 2 × 2 atlas pixels of page uPage, their straight-alpha mean as the
+ * chunk pass averages sprite samples (colour weighted by alpha, both rounded to nearest, in integers). Sheets packed
+ * at even positions keep their cells apart: every cell, gutter and shape column starts at an even pixel.
+ */
+export const halfAtlasVertexSource: string = header + `
+void main() {
+  // One triangle over the whole target.
+  gl_Position = vec4(float((gl_VertexID & 1) * 4 - 1), float((gl_VertexID >> 1) * 4 - 1), 0.0, 1.0);
+}
+`;
+
+export const halfAtlasFragmentSource: string = header + `
+precision highp sampler2DArray;
+uniform sampler2DArray uAtlas;
+uniform int uPage;
+out uvec4 outColor;
+void main() {
+  ivec2 at = ivec2(gl_FragCoord.xy) * 2;
+  ivec4 sum = ivec4(0);
+  for (int k = 0; k < 4; k++) {
+    ivec4 color = ivec4(round(texelFetch(uAtlas, ivec3(at + ivec2(k & 1, k >> 1), uPage), 0) * 255.0));
+    sum += ivec4(color.rgb * color.a, color.a);
+  }
+  outColor = sum.a == 0 ? uvec4(0u) : uvec4(uvec3((2 * sum.rgb + sum.a) / (2 * sum.a)), uint((2 * sum.a + 4) / 8));
 }
 `;
 
