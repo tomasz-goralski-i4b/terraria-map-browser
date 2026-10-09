@@ -185,8 +185,8 @@ test("exporting a generated Small world causes no main-thread task over 100 ms",
   const tasks: PerformanceEntry[] = [];
   const observer = new PerformanceObserver((list) => { tasks.push(...list.getEntries()); });
   observer.observe({ type: "longtask" });
-  await new Promise((resolve) => setTimeout(resolve, 0));
   const start = performance.now();
+  await new Promise((resolve) => setTimeout(resolve, 0));
   await exportWorld();
   const end = performance.now();
   await new Promise((resolve) => setTimeout(resolve, 0));
