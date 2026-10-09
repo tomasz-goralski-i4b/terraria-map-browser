@@ -5,7 +5,7 @@ import {
   terrariaFramingData,
 } from "../src/index.js";
 import type { BlockFraming, ChunkLayers, MapRenderer, RenderableWorld, SpriteAtlasSource, SpriteSheetEntry } from "../src/index.js";
-import { pixelAt, wallLayerPixel, type Rgba } from "./wall-sprites.fixture.js";
+import { over, pixelAt, wallLayerPixel, wallScreenPixel, type Rgba } from "./wall-sprites.fixture.js";
 
 let framing: BlockFraming;
 beforeAll(async () => {
@@ -116,15 +116,16 @@ function mapColors(world: CanonicalWorld, layers: ChunkLayers): Uint8Array {
  * The expected canvas of world tiles [left, left + columns) × [top, top + rows) at ZOOM: a block (modded, without a
  * sprite) shows its map colour over everything; elsewhere the wall layer of wallLayerPixel.
  */
-function expectedCanvas(world: CanonicalWorld, left = 0, top = 0, columns = world.width, rows = world.height): Uint8Array {
-  const walls = framing.walls;
-  if (walls === undefined) throw new Error("the framing has no wall framing");
-  const cache = createChunkWallCellCache(world, walls);
-  const input = {
-    world, cellAt: cache.cellAt, sheets: SHEETS, sheetPixel,
+function layerInput(world: CanonicalWorld): Parameters<typeof wallLayerPixel>[0] {
+  return {
+    world, cellAt: createChunkWallCellCache(world, framing.walls).cellAt, sheets: SHEETS, sheetPixel,
     mapWalls: mapColors(world, { ...ALL, blocks: false, liquids: false }),
     background: mapColors(world, { background: true, walls: false, blocks: false, liquids: false }),
   };
+}
+
+function expectedCanvas(world: CanonicalWorld, left = 0, top = 0, columns = world.width, rows = world.height): Uint8Array {
+  const input = layerInput(world);
   const map = mapColors(world, ALL);
   const out = new Uint8Array(columns * ZOOM * rows * ZOOM * 4);
   for (let py = 0; py < rows * ZOOM; py++) {
@@ -141,14 +142,14 @@ function expectedCanvas(world: CanonicalWorld, left = 0, top = 0, columns = worl
   return out;
 }
 
-function draw(world: CanonicalWorld, layers: ChunkLayers = ALL): { canvas: HTMLCanvasElement; renderer: MapRenderer } {
-  const { canvas, renderer } = makeRenderer(world.width * ZOOM, world.height * ZOOM);
+function draw(world: CanonicalWorld, layers: ChunkLayers = ALL, zoom = ZOOM): { canvas: HTMLCanvasElement; renderer: MapRenderer } {
+  const { canvas, renderer } = makeRenderer(Math.floor(world.width * zoom), Math.floor(world.height * zoom));
   renderer.setWorld(renderable(world));
   renderer.setLayers(layers);
   renderer.setAtlas(syntheticAtlas());
   renderer.setFraming(framing);
   renderer.setSpriteMode(true);
-  renderer.setCamera({ x: 0, y: 0, zoom: ZOOM });
+  renderer.setCamera({ x: 0, y: 0, zoom });
   renderer.render();
   expect(canvas.getContext("webgl2")?.getError()).toBe(0);
   return { canvas, renderer };
@@ -186,6 +187,56 @@ describe("walls in sprite mode", () => {
         expect(at(tx * ZOOM + (s % ZOOM), ty * ZOOM + Math.floor(s / ZOOM))).toEqual(pixelAt(map, (ty * world.width + tx) * 4));
       }
     }
+  });
+
+  test("pinned pixels: a lone wall's overhang, and two half-transparent overhangs drawn upper row first", () => {
+    const world = createWorld(12, 8);
+    stamp(world, 0, 0, SCENE);
+    const pixels = readCanvas(draw(world).canvas);
+    const at = (x: number, y: number): Rgba => pixelAt(pixels, (y * world.width * ZOOM + x) * 4);
+    // The lone stone wall at (10, 2) takes variant (70 + 22) mod 3 = 2 of its lone cell: (11, 3). Sprite pixel (15, 10)
+    // of the empty tile west of it is its cell pixel (15 + 8 − 16, 10 + 8) = (7, 18), sheet pixel (403, 126), opaque.
+    expect(sheetPixel(0, 403, 126)[3]).toBe(255);
+    expect(at(9 * ZOOM + 15, 2 * ZOOM + 10)).toEqual(sheetPixel(0, 403, 126));
+
+    // An empty tile (1, 1) between a stone wall east of it at (2, 1) and a dirt wall south of it at (1, 2):
+    // sprite pixel (12, 12) lies in both overhangs. Stone (2, 1) is lone at variant 1, cell (10, 3): pixel
+    // (12 + 8 − 16, 12 + 8) of it, sheet (364, 128). Dirt (1, 2) is lone at variant 2, cell (11, 3): pixel
+    // (12 + 8, 12 + 8 − 16), sheet (416, 112). Both are half transparent; row 1 is drawn first, then row 2 over it.
+    const small = createWorld(4, 4);
+    stamp(small, 0, 0, ["....", "..1.", ".2..", "...."]);
+    const stone = sheetPixel(0, 364, 128);
+    const dirt = sheetPixel(1, 416, 112);
+    expect([stone[3], dirt[3]]).toEqual([128, 128]);
+    const background = pixelAt(mapColors(small, { background: true, walls: false, blocks: false, liquids: false }), (1 * 4 + 1) * 4);
+    const expected = over(over(dirt, stone), background);
+    expect(expected).not.toEqual(over(over(stone, dirt), background));
+    const drawn = readCanvas(draw(small).canvas);
+    expect(pixelAt(drawn, ((ZOOM + 12) * small.width * ZOOM + ZOOM + 12) * 4)).toEqual(expected);
+  });
+
+  test.each([
+    ["8 pixels per tile: 2 × 2 samples, sprites whole", 8],
+    ["6.4 pixels per tile: 3 × 3 samples, faded in over the map colours", 6.4],
+  ])("below 16 pixels per tile the wall layer is sampled and faded like block sprites (%s)", (_name, zoom) => {
+    const world = createWorld(12, 8);
+    stamp(world, 0, 0, SCENE);
+    const { canvas } = draw(world, ALL, zoom);
+    const pixels = readCanvas(canvas);
+    const input = layerInput(world);
+    const map = mapColors(world, ALL);
+    const mismatches: string[] = [];
+    for (let py = 0; py < canvas.height; py++) {
+      for (let px = 0; px < canvas.width; px++) {
+        const tx = Math.floor((px + 0.5) / zoom);
+        const ty = Math.floor((py + 0.5) / zoom);
+        const block = world.planes.block[tx * world.height + ty] ?? 0xffff;
+        const expected = block !== 0xffff ? pixelAt(map, (ty * world.width + tx) * 4) : wallScreenPixel(input, zoom, px, py);
+        const actual = pixelAt(pixels, (py * canvas.width + px) * 4);
+        if (actual.join() !== expected.join()) mismatches.push(`(${String(px)}, ${String(py)}): ${actual.join()} ≠ ${expected.join()}`);
+      }
+    }
+    expect(mismatches.slice(0, 5), `${String(mismatches.length)} pixels differ`).toEqual([]);
   });
 
   test("a wall's overhang crosses chunk borders: the chunk beside it draws it from its apron", () => {

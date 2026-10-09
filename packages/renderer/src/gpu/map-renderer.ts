@@ -144,8 +144,8 @@ export interface MapRenderer {
   readonly setSpriteMode: (enabled: boolean) => void;
   /**
    * The block framing (`createBlockFraming`): with it, sprite mode also draws self-framed blocks (dirt, stone, ores,
-   * grass, …) with the cell their neighbours give them, half blocks and slopes cut by their shape, and (with its
-   * `walls`) walls with theirs: a 32 × 32 cell centred on the tile, overhanging 8 pixels, below the blocks. A chunk is
+   * grass, …) with the cell their neighbours give them, half blocks and slopes cut by their shape, and
+   * (through its `walls`) walls with theirs: a 32 × 32 cell centred on the tile, overhanging 8 pixels, below the blocks. A chunk is
    * framed on its first upload at a sprite zoom and keeps its cells while it stays resident; null draws them in map
    * colours.
    */
@@ -620,7 +620,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       const ref = palette[index];
       const vanilla = ref?.kind === "vanilla" ? ref.id : undefined;
       const sheet = vanilla === undefined ? undefined : tileSheets.get(vanilla);
-      const at = ((Math.floor(index / SPRITE_SHEET_ROW) * SPRITE_SHEET_WIDTH) + (index % SPRITE_SHEET_ROW) * SPRITE_SHEET_TEXELS) * 4;
+      const at = (Math.floor(index / SPRITE_SHEET_ROW) * SPRITE_SHEET_WIDTH + (index % SPRITE_SHEET_ROW) * SPRITE_SHEET_TEXELS) * 4;
       if (sheet !== undefined) {
         sheetMirror.set([sheet.page, sheet.x, sheet.y, SPRITE_STATE.sheet, sheet.width, sheet.height, sheet.frameWidth, sheet.frameHeight], at);
       } else {
@@ -634,7 +634,8 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
           wallSheet.frameWidth, wallSheet.frameHeight,
         ], at + 8);
       } else {
-        sheetMirror.set([0, 0, 0, atlasTexture === null ? SPRITE_STATE.mapColor : SPRITE_STATE.missing, 0, 0, 0, 0], at + 8);
+        const state = atlasTexture === null ? SPRITE_STATE.mapColor : SPRITE_STATE.missing;
+        sheetMirror.set([0, 0, 0, state, 0, 0, 0, 0], at + 8);
       }
     }
     const firstRow = Math.floor(from / SPRITE_SHEET_ROW);
@@ -773,13 +774,13 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     framedSlots.delete(slot);
   };
 
-  /** The framed cells of `source`'s chunks: blocks, and walls with a wall framing; null without a framing. */
-  const cellsOf = (source: RenderableWorld): { blocks: ChunkCellCache; walls: ChunkWallCellCache | null } | null => {
+  /** The framed cells of `source`'s chunks, blocks and walls; null without a framing. */
+  const cellsOf = (source: RenderableWorld): { blocks: ChunkCellCache; walls: ChunkWallCellCache } | null => {
     if (framing === null) return null;
-    if (cellCache?.world !== source) {
+    if (cellCache === null || wallCache === null || cellCache.world !== source) {
       releaseCells();
       cellCache = createChunkCellCache(source, framing);
-      wallCache = framing.walls === undefined ? null : createChunkWallCellCache(source, framing.walls, CHUNK_SIZE, PAGE_APRON);
+      wallCache = createChunkWallCellCache(source, framing.walls, CHUNK_SIZE, PAGE_APRON);
     }
     return { blocks: cellCache, walls: wallCache };
   };
@@ -806,13 +807,10 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       gl.TEXTURE_2D_ARRAY, 0, PAGE_APRON, PAGE_APRON, layer + PLANES_16.cell,
       rows, columns, 1, gl.RED_INTEGER, gl.UNSIGNED_SHORT, cells,
     );
-    const walls = caches.walls?.cells(chunk);
-    if (walls !== undefined) {
-      gl.texSubImage3D(
-        gl.TEXTURE_2D_ARRAY, 0, 0, 0, layer + PLANES_16.wallCell, PAGE_SIZE, PAGE_SIZE, 1, gl.RED_INTEGER,
-        gl.UNSIGNED_SHORT, walls,
-      );
-    }
+    gl.texSubImage3D(
+      gl.TEXTURE_2D_ARRAY, 0, 0, 0, layer + PLANES_16.wallCell, PAGE_SIZE, PAGE_SIZE, 1, gl.RED_INTEGER,
+      gl.UNSIGNED_SHORT, caches.walls.cells(chunk),
+    );
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
     textureUploads++;
     framedSlots.add(slot);
@@ -1301,7 +1299,9 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       for (const area of regions) touch(area.left, area.top, area.left + area.width - 1, area.top + area.height - 1);
       // Wall cells are uploaded with the apron: a recomputed wall cell lies in the layers of the chunks around it too.
       for (const area of wallRegions) {
-        touch(area.left - PAGE_APRON, area.top - PAGE_APRON, area.left + area.width - 1 + PAGE_APRON, area.top + area.height - 1 + PAGE_APRON);
+        const right = area.left + area.width - 1;
+        const bottom = area.top + area.height - 1;
+        touch(area.left - PAGE_APRON, area.top - PAGE_APRON, right + PAGE_APRON, bottom + PAGE_APRON);
       }
       for (const key of touched) {
         if (chunks.has(key)) dirtyChunks.add(key);

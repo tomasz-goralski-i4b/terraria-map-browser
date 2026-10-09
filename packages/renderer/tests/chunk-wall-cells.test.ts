@@ -47,6 +47,7 @@ describe("chunk wall cell cache", () => {
       }
     }
     expect(cache.cellAt(17, 12)).toBe(whole[17 * world.height + 12]);
+    for (const [x, y] of [[-1, 0], [0, -1], [20, 0], [0, 13]] as const) expect(cache.cellAt(x, y)).toBe(NO_CELL);
   });
 
   test("cells are framed once per chunk: its in-world tiles and apron; reading it again frames nothing", () => {

@@ -1,7 +1,7 @@
 import { CHUNK_SIZE } from "../camera/camera.js";
 import type { ChunkCoord } from "../camera/camera.js";
-import { NO_CELL } from "./frame-block.js";
-import type { BlockRegion } from "./frame-block.js";
+import { NO_CELL } from "./cells.js";
+import type { BlockRegion } from "./cells.js";
 import type { WallFraming, WallFramingWorld } from "./frame-wall.js";
 
 /**
@@ -13,7 +13,7 @@ export interface ChunkWallCellCache {
   /** Cells per side of a chunk's array: the chunk size and the apron on both sides. */
   readonly side: number;
   /**
-   * The cells of `chunk` and its apron, framed on first use: `side` × `side`, column-major (index
+   * The cells of `chunk` (inside the world's chunk grid) and its apron, framed on first use: `side` × `side`, column-major (index
    * (x − left + apron) · side + (y − top + apron)), the packed cell or NO_CELL (also past the world's edges). The
    * array is the cache's own.
    */
@@ -21,7 +21,7 @@ export interface ChunkWallCellCache {
   readonly has: (chunk: ChunkCoord) => boolean;
   /** Forgets the cells of `chunk` (its next `cells` frames it again). */
   readonly drop: (chunk: ChunkCoord) => void;
-  /** The cell of tile (x, y), framing its chunk on first use. */
+  /** The cell of tile (x, y), framing its chunk on first use; NO_CELL outside the world. */
   readonly cellAt: (x: number, y: number) => number;
   /**
    * Recomputes the cached cells around changed tiles, after the world's planes changed: per tile its 3 × 3 area (a
@@ -110,6 +110,7 @@ export function createChunkWallCellCache(
     has: (chunk) => chunks.has(keyOf(chunk)),
     drop: (chunk) => { chunks.delete(keyOf(chunk)); },
     cellAt: (x, y) => {
+      if (x < 0 || y < 0 || x >= width || y >= height) return NO_CELL;
       const chunk = { x: Math.floor(x / chunkSize), y: Math.floor(y / chunkSize) };
       return cells(chunk)[(x - chunk.x * chunkSize + apron) * side + (y - chunk.y * chunkSize + apron)] ?? NO_CELL;
     },

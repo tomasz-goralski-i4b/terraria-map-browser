@@ -117,8 +117,7 @@ function mapColors(world: CanonicalWorld, layers: ChunkLayers): Uint8Array {
 
 /** The wall layer of `world` in sprite mode (wall-sprites.fixture.ts), at sprite pixel (sx, sy) of tile (tx, ty). */
 function wallLayer(world: CanonicalWorld): (tx: number, ty: number, sx: number, sy: number) => Rgba {
-  const walls = framing.walls;
-  if (walls === undefined) throw new Error("the framing has no wall framing");
+  const { walls } = framing;
   const input = {
     world, cellAt: createChunkWallCellCache(world, walls).cellAt, sheets: SHEETS, sheetPixel,
     mapWalls: mapColors(world, { ...ALL, blocks: false, liquids: false }),

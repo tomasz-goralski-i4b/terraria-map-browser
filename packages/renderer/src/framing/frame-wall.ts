@@ -1,7 +1,7 @@
 import type { ContentRef } from "@studio/world-model";
 import type { SourceRect } from "./chunk-cells.js";
-import { NO_CELL } from "./frame-block.js";
-import type { BlockRegion } from "./frame-block.js";
+import { NO_CELL } from "./cells.js";
+import type { BlockRegion } from "./cells.js";
 import type { FramingDatabase } from "./framing-database.js";
 
 /** Side bits of a wall's neighbourhood: set where that side neighbour counts (docs/assets.md, "Walls"). */

@@ -157,7 +157,8 @@ exactly the pixels `filterTiles` (below) makes of them. The browser tests assert
   top, left to right within a row, each over the ones before (a chosen order), then over the background. Blocks draw
   over the wall layer. A wall that is not vanilla content keeps its map colour on its own tile, a vanilla wall without
   a sheet the missing-texture checkerboard; wall paint is not applied to sprites. The wall layer fades in over the
-  walls' map colours like blocks do (`SPRITE_FULL_ZOOM`) and is sampled like them below 16 pixels per tile.
+  walls' map colours like blocks do (`SPRITE_FULL_ZOOM`) and is sampled like them below 16 pixels per tile; the walls
+  the samples can reach are looked up once per pixel, and under an opaque block sprite the layer is skipped.
   `invalidateTiles` recomputes the 3 × 3 cells around each changed tile in every cached chunk whose apron holds them.
 - `tileAt` and anything that reads tile data (names, coordinates) use the camera and the CWM planes, never GPU
   textures, so neither path changes them.
