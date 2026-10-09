@@ -3,8 +3,10 @@
 import { afterEach, expect, test } from "vitest";
 import { commands } from "vitest/browser";
 import { MISSING_SPRITE_COLORS, createMapRenderer, terrariaMapPalette } from "@studio/renderer";
+import type { BlockFraming } from "@studio/renderer";
 import type { MapRenderer, SpriteAtlasSource, SpriteSheetEntry } from "@studio/renderer";
 import { readWorldTiles } from "@studio/world-codec";
+import { getBlockFraming } from "../src/world/block-framing.js";
 import { toRenderableWorld } from "../src/world/renderable-world.js";
 import "./support/commands.js";
 
@@ -24,7 +26,9 @@ function decodeBase64(text: string): Uint8Array {
   return bytes;
 }
 
-function draw(world: ReturnType<typeof toRenderableWorld>, x: number, y: number, atlas: SpriteAtlasSource | null): Uint8Array {
+function draw(
+  world: ReturnType<typeof toRenderableWorld>, x: number, y: number, atlas: SpriteAtlasSource | null, framing: BlockFraming | null = null,
+): Uint8Array {
   const canvas = document.createElement("canvas");
   canvas.width = AREA.width * ZOOM;
   canvas.height = AREA.height * ZOOM;
@@ -33,6 +37,7 @@ function draw(world: ReturnType<typeof toRenderableWorld>, x: number, y: number,
   renderer.setWorld(world);
   renderer.setAtlas(atlas);
   renderer.setSpriteMode(atlas !== null);
+  renderer.setFraming(framing);
   renderer.setCamera({ x, y, zoom: ZOOM });
   renderer.render();
   const gl = canvas.getContext("webgl2");
@@ -85,5 +90,51 @@ test("TERRARIA_CONTENT: the spawn area of SCCO1.wld draws its frame-important ti
   for (let i = 0; i < sprites.length; i += 4) {
     if (sprites[i] === magenta?.[0] && sprites[i + 1] === magenta?.[1] && sprites[i + 2] === magenta?.[2]) checkerboard++;
   }
+  expect(checkerboard).toBe(0);
+}, 120_000);
+
+test("TERRARIA_CONTENT: with the block framing, the spawn area's self-framed blocks draw sprites too", async (context) => {
+  const loaded = readWorldTiles(decodeBase64(await commands.readWorldFixture("SCCO1.wld")));
+  const world = toRenderableWorld(loaded);
+  const { spawn } = loaded.details.spawnAndLandmarks;
+  const left = Math.max(0, spawn.x - AREA.width / 2);
+  const top = Math.max(0, spawn.y - AREA.height / 2);
+  const framing = await getBlockFraming();
+
+  // Every vanilla block of the area, and how many of them are self-framed (no stored frame, depth ≥ 0).
+  const { block, frameX } = loaded.planes;
+  const ids = new Set<number>();
+  let selfFramed = 0;
+  for (let x = left; x < left + AREA.width; x++) {
+    for (let y = top; y < top + AREA.height; y++) {
+      const index = x * world.height + y;
+      const ref = loaded.palette[block[index] ?? 0xffff];
+      if (ref?.kind !== "vanilla") continue;
+      ids.add(ref.id);
+      if ((frameX[index] ?? -1) < 0 && framing.depth(ref.id) >= 0) selfFramed++;
+    }
+  }
+  expect(selfFramed, "the spawn area has self-framed blocks").toBeGreaterThan(0);
+
+  const local = await commands.buildLocalAtlas([...ids]);
+  if (local === null) {
+    context.skip("TERRARIA_CONTENT is not set");
+    return;
+  }
+  const atlas: SpriteAtlasSource = {
+    pages: local.pages.map(decodeBase64),
+    index: { pageSize: local.pageSize, entries: local.entries as SpriteSheetEntry[] },
+  };
+  const framed = draw(world, left, top, atlas, framing);
+  const unframed = draw(world, left, top, atlas);
+  // Framing changed the self-framed blocks' pixels, and none of them is the missing-texture checkerboard.
+  let changed = 0;
+  let checkerboard = 0;
+  const [magenta] = MISSING_SPRITE_COLORS;
+  for (let i = 0; i < framed.length; i += 4) {
+    if (framed[i] !== unframed[i] || framed[i + 1] !== unframed[i + 1] || framed[i + 2] !== unframed[i + 2]) changed++;
+    if (framed[i] === magenta?.[0] && framed[i + 1] === magenta?.[1] && framed[i + 2] === magenta?.[2]) checkerboard++;
+  }
+  expect(changed).toBeGreaterThan(selfFramed * ZOOM);
   expect(checkerboard).toBe(0);
 }, 120_000);

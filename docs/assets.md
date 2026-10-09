@@ -264,7 +264,7 @@ Expected sheet sizes (consistent with the size arithmetic, confirmed only by the
 |---|---|---|
 | Frame-important tiles with a 16×16 grid (most furniture, multi-tile objects) | draw each tile's own cell at `(frameX, frameY)`; multi-tile objects need nothing extra because every tile carries its own frame | — |
 | Frame-important tiles with other grids (torches, plants, …) | draw with the tile's `textureGrid` size | exact per-id draw offsets |
-| Non-frame-important blocks | map colours | framing by "Tile framing" and its database (#141, #146), grass and moss included |
+| Non-frame-important blocks | the cell framed by "Tile framing" and its database (#141, #146), grass and moss included; half blocks and slopes cut per "Slopes and half blocks"; falling blocks with nothing below them in map colours | paint, lighting |
 | Walls | map colours | framing by "Walls" and the framing database (#147) |
 | Animated tiles (173 ids flagged `isAnimated` in A12, all frame-important) | draw the stored frame (static) | animation |
 | Trees (5, 323, …), tree tops/branches, variant sheets (`Tiles_5_N`, `Tiles_2_Beach`, `Tiles_59_2`, …) | placeholder | yes |
@@ -586,9 +586,10 @@ are air or a block in every shape: **460 992** for dirt and **5 483 712** for st
 predicted**. So a shape only matters through the faces of the centre and of its side neighbours.
 
 **Drawing** a shaped tile (how the chosen 16 × 16 cell is cut and moved into the tile) is not framing, and the runtime
-observation does not cover it. Until the sprite-mode follow-up (#146) checks it against in-game renders, it is cited
-from TEdit's drawing code (A8 5909–5949), which draws each shape as eight 2-pixel columns `i = 0…7` of the chosen
-cell:
+observation does not cover it. It is cited from TEdit's drawing code (A8 5909–5949), which draws each shape as eight
+2-pixel columns `i = 0…7` of the chosen cell. Sprite mode draws it so (`shapedColumns`,
+`packages/renderer/src/framing/chunk-cells.ts`, and the chunk shader). It has **not** been compared with in-game
+renders yet; that comparison is the manual test of #146:
 
 | Shape | Cut corner | Column `i` draws | Whole faces |
 |---|---|---|---|

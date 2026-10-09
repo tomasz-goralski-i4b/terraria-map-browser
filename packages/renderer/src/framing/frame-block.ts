@@ -1,4 +1,4 @@
-import type { CanonicalWorld, ContentRef } from "@studio/world-model";
+import type { ContentRef } from "@studio/world-model";
 import { AIR, OWN, PARTNER, cellSide, chooseBlockCell } from "./block-rules.js";
 import type { FramingDatabase } from "./framing-database.js";
 
@@ -38,6 +38,18 @@ export interface BlockFramingInput {
  */
 export type BlockKind = "air" | "self" | "partner" | "relative" | "table";
 
+/** What the framer reads of a world: a CanonicalWorld satisfies it. Planes are column-major (`x * height + y`). */
+export interface FramingWorld {
+  readonly width: number;
+  readonly height: number;
+  readonly planes: {
+    readonly block: Uint16Array;
+    /** Block shapes (0 full, 1 half, 2–5 slopes); absent means every block is full. */
+    readonly shape?: Uint8Array;
+  };
+  readonly palette: readonly ContentRef[];
+}
+
 export interface BlockRegion {
   readonly left: number;
   readonly top: number;
@@ -65,7 +77,7 @@ export interface BlockFraming {
    * region. Tiles frame in passes: first
    * the types without relatives, then each type once its relatives (whose cells its edge check reads) are framed.
    */
-  readonly frameRegion: (world: CanonicalWorld, region: BlockRegion, out: Uint16Array) => void;
+  readonly frameRegion: (world: FramingWorld, region: BlockRegion, out: Uint16Array) => void;
 }
 
 const KIND_AIR = 0;
@@ -379,7 +391,7 @@ export function createBlockFraming(database: FramingDatabase): BlockFraming {
     return ids;
   }
 
-  function frameRegion(world: CanonicalWorld, region: BlockRegion, out: Uint16Array): void {
+  function frameRegion(world: FramingWorld, region: BlockRegion, out: Uint16Array): void {
     out.fill(NO_CELL);
     const { width, height, planes, palette } = world;
     const vanilla = vanillaIds(palette);
@@ -425,7 +437,7 @@ export function createBlockFraming(database: FramingDatabase): BlockFraming {
         const at = i * stride + j;
         const block = x < 0 || y < 0 || x >= width || y >= height ? 0xffff : planes.block[x * height + y] ?? 0xffff;
         const type = block === 0xffff ? -1 : vanilla[block] ?? NOT_VANILLA;
-        const shape = type === -1 ? 0 : planes.shape[x * height + y] ?? 0;
+        const shape = type === -1 ? 0 : planes.shape?.[x * height + y] ?? 0;
         const index = typeIndex(type);
         const ring = i === 0 || j === 0 || i === columns - 1 || j === stride - 1;
         areaTypes[at] = type;

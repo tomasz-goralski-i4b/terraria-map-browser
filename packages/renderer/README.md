@@ -47,7 +47,7 @@ exactly the pixels `filterTiles` (below) makes of them. The browser tests assert
 - **Texture units.** The chunk pass binds the two page textures, the palette, the background and paint colours, the
   rules and the overview: 6 of the 16 that WebGL2 guarantees. With sprite mode's atlas pages and lookup the map uses 8. Creating the renderer fails with a clear error if the GPU offers fewer
   units or array layers than needed.
-- **Adding a plane** (for example a computed sprite cell, 16-bit): add it to `PLANES_16` (or `PLANES_8`) in
+- **Adding a plane** (16-bit like the framed `cell`, or 8-bit like `shape`): add it to `PLANES_16` (or `PLANES_8`) in
   `src/gpu/shaders.ts`, add its source to `planesOf` in `src/gpu/map-renderer.ts` (with a `PRESENT` bit if it is
   optional), and read it in the shader with `plane16(texel, PLANES_16.<name>)`. It costs one more layer per chunk and
   one more `texSubImage3D` per chunk upload, not a new texture or texture unit. Check that `CHUNKS_PER_PAGE` × planes
@@ -92,7 +92,7 @@ exactly the pixels `filterTiles` (below) makes of them. The browser tests assert
   per tile and above (`uFilter` 0) the pass reads one tile per pixel, bit-exact with `renderChunk`. The canvas is not
   multisampled, so a pixel the world's edge crosses is not blended by coverage.
 - **Chunk cache.** A chunk is needed in overview mode only until its texels are built, so zoomed-out views keep the
-  baseline cache (512 chunks, about 100 MiB) however large the world is. At half a pixel per tile and above the
+  baseline cache (512 chunks, about 150 MiB) however large the world is. At half a pixel per tile and above the
   cache grows to the visible set, which the viewport bounds. While chunks are still loading there, the overview is
   drawn under them instead of a hole; a complete frame is exact.
 - **Sprite mode (#91).** `setAtlas(atlas)` uploads a sprite atlas (`@studio/assets`' `SpriteAtlas`, square RGBA8 pages)
@@ -103,15 +103,46 @@ exactly the pixels `filterTiles` (below) makes of them. The browser tests assert
   branches are deferred, docs/assets.md) keep their map colour. A missing block with a stored frame is drawn as a
   generated missing-texture checkerboard (`MISSING_SPRITE_COLORS`, magenta and black, 2 × 2 squares per tile; not a
   game asset), so content without a sprite stands out; the web app lists it under the Sprites row. `setSpriteMode(true)` makes the chunk pass, from
-  `SPRITE_MIN_ZOOM` (8) pixels per tile, draw a block that has a stored frame (`frameX`, `frameY` ≥ 0: frame-important
+  `SPRITE_MIN_ZOOM` (5) pixels per tile, draw a block that has a stored frame (`frameX`, `frameY` ≥ 0: frame-important
   tiles; the codec stores −1 for the others) and a sheet from that sheet: sprite pixel `sub` (0–15 per axis) of the tile
   reads sheet pixel `frame + sub × cell / 16`, so a cell larger than 16 × 16 is scaled into the tile (the game's exact
-  draw offsets are deferred, docs/assets.md). Transparent sprite pixels show the wall, else the background, behind
+  draw offsets are deferred, docs/assets.md).
+  - **Zoom (#146).** Sprites start at `SPRITE_MIN_ZOOM` (5 pixels per tile, 500 %) and fade in over the block's map
+    colour until `SPRITE_FULL_ZOOM` (7.5, 750 %), by `spriteSampling(zoom).weight`, so crossing the threshold is not
+    a jump. Below 16 pixels per tile a screen pixel covers more than one sprite pixel: it is the straight-alpha mean
+    of `samples × samples` sprite pixels spread over its footprint (`16 / zoom` sprite pixels; 2 × 2 at 8–15, up to
+    4 × 4 at 5), kept inside the tile's own cell so neighbouring cells never bleed in; from 16 pixels per tile it is
+    one sprite pixel, as before. This is what keeps non-integer zooms (1377 %) from shimmering.
+  - **Chunk borders.** Each chunk is its own quad; a pixel on the border can compute the tile just across it (the
+    quad's edge and the pixel's position round apart). The pass then keeps the chunk's own tile and moves the sprite
+    position to that tile's near edge, so the border never shows the far edge of a tile.
+
+  Transparent sprite pixels show the wall, else the background, behind
   them; paint is not applied to sprites; liquids and wires still draw over them. A half-transparent sprite pixel with
   nothing behind it is the one partly transparent pixel liquids can land on outside map mode: there they use the
   general straight-alpha rule (`over` in `src/gpu/shaders.ts`, rounded to nearest); map mode stays bit-exact. Everything else, the box filter and
-  the overview keep map colours. The mode is a uniform: switching it or crossing the threshold uploads nothing. The
+  the overview keep map colours. The mode is a uniform: switching it or crossing the threshold uploads no chunk planes and no atlas (the
+  one exception is a resident chunk's cells, uploaded once on its first draw at a sprite zoom with a framing; see
+  below). The
   atlas pages use 2 more texture units (8 in all).
+- **Self-framed blocks in sprite mode (#146).** Blocks the `.wld` stores no frame for (dirt, stone, ores, sand, grass,
+  moss, gemspark, large-frame blocks, …) take their cell from their neighbours. With `setFraming(createBlockFraming(db))`
+  each chunk is framed by `frameRegion` (`src/framing/frame-block.ts`) on its first upload at a sprite zoom, never at
+  map-colour zooms, reading its neighbours' tiles across the chunk border. `createChunkCellCache`
+  (`src/framing/chunk-cells.ts`) keeps the result per chunk (one `Uint16Array`, `column · 64 + row` or `NO_CELL`,
+  column-major) while the chunk stays resident, and the renderer uploads it as the 16-bit `cell` plane of the chunk's
+  page; panning over resident chunks frames nothing (`stats().framedTiles`). A chunk uploaded at a map zoom gets its
+  cells, one more upload, when sprites appear. Framing runs on the main thread, where the planes are, at about 5 ms
+  per 128 × 128 chunk of mixed terrain (Node), so it counts against the upload time budget: a frame frames about one
+  chunk, and a chunk whose cells did not fit yet still draws, its self-framed blocks in map colours (its instance
+  lacks `CELLS_INSTANCE_BIT`). The CPU keeps 32 KiB of cells per framed resident chunk (16 MiB at the 512-chunk
+  baseline). The chunk pass draws cell `(c, r)` from sheet pixels `(18c, 18r)`, cut
+  by the tile's shape (the 8-bit `shape` plane) into the eight 2-pixel columns of `shapedColumns` (docs/assets.md,
+  "Slopes and half blocks"); the cut-away part shows what lies behind. A block without a cell (a falling block with
+  nothing below it, which the database marks unstable) keeps its map colour. `invalidateTiles(tiles)` is the editing
+  entry point: it recomputes the cached cells of the `(2d + 3)²` area around each tile (`d` the deepest
+  `BlockFraming.depth` within 6 tiles, so at most 13 × 13) and uploads the touched resident chunks again on their next
+  draw.
 - `tileAt` and anything that reads tile data (names, coordinates) use the camera and the CWM planes, never GPU
   textures, so neither path changes them.
 
