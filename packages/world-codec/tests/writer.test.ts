@@ -79,6 +79,24 @@ describe("format-326 writer vectors", () => {
 });
 
 describe("world save", () => {
+  describe.each([writeWorldTiles, writeWorld])("$name missing palette references", (write) => {
+    it.each(["block", "wall"] as const)("rejects a sparse %s entry at its coordinate", (plane) => {
+      const palette = [{ kind: "vanilla", id: 1 }] as WorldTilesResult["palette"][number][];
+      const world = { ...writerWorld(1, 2), palette };
+      world.planes[plane][0] = 0;
+      Reflect.deleteProperty(palette, "0");
+      expectFailure(() => write(world), "UnencodableTile", { x: 0, y: 0 });
+    });
+
+    it.each([
+      ["block", 0], ["block", 1], ["wall", 0], ["wall", 1],
+    ] as const)("reports a missing %s reference on tile %i", (plane, index) => {
+      const world = writerWorld(1, 2);
+      world.planes[plane][index] = world.palette.length;
+      expectFailure(() => write(world), "UnencodableTile", { x: 0, y: index });
+    });
+  });
+
   it.each(manifest.worlds)("saves $file byte-identically and round-trips all planes and metadata", ({ file }) => {
     const bytes = Uint8Array.from(readFileSync(new URL(file, corpus)));
     const parsed = readWorldTiles(bytes);
