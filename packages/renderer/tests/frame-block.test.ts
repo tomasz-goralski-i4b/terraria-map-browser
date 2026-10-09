@@ -33,7 +33,7 @@ function digitsOf(code: number): number[] {
   return digits;
 }
 
-const inflate = (base64: string): string => inflateRawSync(Buffer.from(base64, "base64")).toString("latin1");
+const inflate = (base64: string): string => inflateRawSync(Buffer.from(base64, "base64")).toString("utf8");
 const tables = data.tables.map(inflate);
 const relationRows = inflate(data.relations).split("\n");
 const typeIndex = new Map(data.blockTypes.map((type, index) => [type, index]));
@@ -362,9 +362,9 @@ describe("the two-pass helper over a tile region", () => {
   });
 
   test("worked examples 16a and 16b: copper beside iron is a seam on both sides", () => {
-    const world = worldOf([".....", ".ci..", "....."]);
-    expect(cellAt(world, 1, 1)).toEqual(ofVariant(1, 1, [[12, 0], [12, 1], [12, 2]]));
-    expect(cellAt(world, 2, 1)).toEqual(ofVariant(2, 1, [[9, 0], [9, 1], [9, 2]]));
+    const world = worldOf(["......", ".ccii.", "......"]);
+    expect(cellAt(world, 2, 1)).toEqual(ofVariant(2, 1, [[12, 0], [12, 1], [12, 2]]));
+    expect(cellAt(world, 3, 1)).toEqual(ofVariant(3, 1, [[9, 0], [9, 1], [9, 2]]));
   });
 
   test("a region's cells equal framing each tile on its own, and absent tiles stay −1", () => {
