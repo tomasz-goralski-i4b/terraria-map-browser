@@ -1057,8 +1057,8 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
    */
   const spriteProgramOf = (wait: boolean): Program<(typeof SPRITE_CHUNK_UNIFORMS)[number]> | null => {
     if (spriteProgram !== null) return spriteProgram;
+    // Without KHR_parallel_shader_compile this links it at once (finishSpriteLink then returns it).
     startSpriteLink();
-    if (spriteProgram !== null) return spriteProgram;
     return wait || spriteLinkDone() ? finishSpriteLink() : null;
   };
 
