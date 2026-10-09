@@ -4,8 +4,9 @@ import { readWorldEntities } from "./entities.js";
 import { OPAQUE_SECTION_NAMES, type WorldEnvelope } from "./envelope.js";
 import { WorldFormatError } from "./world-format-error.js";
 import type { TilePlanes, WorldTilesResult } from "./tiles.js";
+import { resolveWorldFormat, type WorldFormatProfile } from "./world-format.js";
 
-type TileInput = Pick<WorldTilesResult, "metadata" | "sections" | "planes" | "palette">;
+type TileInput = Pick<WorldTilesResult, "header" | "metadata" | "sections" | "planes" | "palette">;
 type WorldWriteInput = Omit<WorldTilesResult, "envelope"> & { readonly envelope?: WorldEnvelope };
 const NO_CONTENT = 0xffff;
 const MAX_FILE_LENGTH = 0x80000000;
@@ -18,6 +19,12 @@ const PLANE_NAMES = Object.keys(PLANE_TYPES) as (keyof TilePlanes)[];
 
 function unsupported(reason: string, offset = 0): never {
   throw new WorldFormatError("UnsupportedWrite", offset, reason);
+}
+
+function writeProfile(version: number): WorldFormatProfile {
+  const profile = resolveWorldFormat(version);
+  if (profile === null) unsupported(`format version ${String(version)} cannot be written`);
+  return profile;
 }
 
 /** Small decoded records only; never used to compare a tile grid or source buffer. */
@@ -45,6 +52,7 @@ function validatePlanes(world: TileInput): void {
 class TileEncoder {
   private readonly world: TileInput;
   private readonly ids: Int32Array;
+  private readonly profile: WorldFormatProfile;
   private output: Uint8Array | undefined;
   private position = 0;
   private tile = 0;
@@ -52,6 +60,7 @@ class TileEncoder {
   constructor(world: TileInput) {
     validatePlanes(world);
     this.world = world;
+    this.profile = writeProfile(world.header.version);
     if (world.palette.length > NO_CONTENT) unsupported("palette exceeds 65535 entries");
     this.ids = new Int32Array(world.palette.length);
     this.ids.fill(-1); // Sparse palette entries must never default to vanilla dirt.
@@ -132,8 +141,8 @@ class TileEncoder {
     const shape = planes.shape[index] ?? 0;
     const flags = planes.flags[index] ?? 0;
     const framed = block >= 0 && isFrameImportant(sections, block);
-    if (block > 753 || block >= sections.frameImportantCount) this.fail("no supported frame-important entry for block");
-    if (wall === 0 || wall > 366) this.fail("unsupported wall id");
+    if (block > this.profile.maxTileId || block >= sections.frameImportantCount) this.fail("no supported frame-important entry for block");
+    if (wall === 0 || wall > this.profile.maxWallId) this.fail("unsupported wall id");
     if (!framed && (frameX !== -1 || frameY !== -1)) this.fail("frames without a frame-important block");
     if ((block < 0 && paint !== 0) || (wall < 0 && wallPaint !== 0)) this.fail("paint without owner");
     if (liquid > 4 || (liquid === 0 && amount !== 0)) this.fail("unsupported liquid kind or unowned amount");
@@ -163,7 +172,7 @@ class TileEncoder {
   }
 }
 
-/** Canonical format-326 tile bytes from CWM planes, without allocating per-tile objects. */
+/** Canonical tile bytes for the admitted header version, without allocating per-tile objects. */
 export function writeWorldTiles(world: TileInput): Uint8Array {
   return new TileEncoder(world).encode(MAX_FILE_LENGTH - 1);
 }
@@ -171,14 +180,14 @@ export function writeWorldTiles(world: TileInput): Uint8Array {
 function validateEnvelope(world: WorldWriteInput): asserts world is WorldTilesResult {
   const envelope = world.envelope;
   if (envelope === undefined || !(envelope.source instanceof Uint8Array) || envelope.source.length === 0) unsupported("a preserved source envelope is required");
-  if (world.header.version !== 326 || envelope.original.header.version !== 326) unsupported("only format 326 can be written");
+  const profile = writeProfile(world.header.version);
   let source;
   try { source = readWorldMetadata(envelope.source); }
   catch (error) {
     if (!(error instanceof WorldFormatError)) throw error;
     unsupported(`invalid preserved source: ${error.reason}`, error.offset);
   }
-  if (source.header.version !== 326 || !sameValue(source.header, world.header) || !sameValue(source.header, envelope.original.header) ||
+  if (!sameValue(source.header, world.header) || !sameValue(source.header, envelope.original.header) ||
     !sameValue(source.metadata, world.metadata) || !sameValue(source.metadata, envelope.original.metadata) ||
     !sameValue(source.details, world.details) || !sameValue(source.details, envelope.original.details)) {
     unsupported("metadata, dimensions and header must match the preserved source");
@@ -203,7 +212,7 @@ function validateEnvelope(world: WorldWriteInput): asserts world is WorldTilesRe
     checkSpan(section.bytes, source.sections[name]);
   });
   if (!sameValue(world.entities, readWorldEntities(envelope.source, source))) unsupported("entity editing is unsupported");
-  if (world.palette.some((ref) => ref.kind !== "vanilla" || !Number.isInteger(ref.id) || ref.id < 0 || ref.id > 753)) {
+  if (world.palette.some((ref) => ref.kind !== "vanilla" || !Number.isInteger(ref.id) || ref.id < 0 || ref.id > Math.max(profile.maxTileId, profile.maxWallId))) {
     unsupported("unknown, modded or out-of-range content references cannot be written");
   }
 }

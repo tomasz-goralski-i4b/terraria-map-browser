@@ -127,15 +127,18 @@ save:
 
 ### TypeScript supported-write subset (#57)
 
-`writeWorld` accepts a parsed format-326 world with its preserved envelope and returns a fresh `ArrayBuffer`.
+`writeWorld` accepts a parsed world in any [reader-admitted format](compatibility.md#reading-versus-writing)
+(269–279, 315–319, 325–326) with its preserved envelope and returns a fresh `ArrayBuffer` in the **same format**.
+Format 326 has generated-world fixture evidence; older-format writes are experimental and synthetic-tested.
 The dimensions, decoded metadata/details, header/revision/flags, section layout, frame-important data and decoded
 entity sections must still match the source and original snapshots. Envelope byte views must keep their source
 buffer, offsets, order and lengths. The source footer must pass the footer contract above. Metadata and entity
-editing, other formats, worlds without an envelope, and unknown or modded content references are refused with
+editing, unadmitted formats, version conversion, worlds without an envelope, and unknown or modded content references are refused with
 `UnsupportedWrite`; this API makes no claim to save modded worlds. The caller must keep the source bytes intact.
 
 The editable subset is the ten correctly typed CWM planes at the original dimensions, with vanilla block ids
-0–753 (also below the source frame-important count), vanilla wall ids 1–366 or the no-content sentinel, and every
+within the [source profile's limits](compatibility.md#vanilla-id-ranges) (also below the source frame-important
+count), vanilla wall ids 1 through that profile's maximum or the no-content sentinel, and every
 contract-representable tile field. All palette entries must be vanilla and within the format's content range,
 including unused entries; the plane's role determines its narrower block or wall bound. Missing palette indices,
 paint without its owner, frames on unframed/absent blocks, undefined shapes/liquids, liquid amounts without a
@@ -143,11 +146,17 @@ kind and reserved flag bits raise `UnencodableTile` with the coordinate. Framed 
 values as held, including `-1`; frame presence is implied by the source bitset, since CWM has no separate presence
 plane. Defined residual shapes, paint bytes 0–255, all wires/coatings, and zero-amount liquid kinds are preserved.
 
-`writeWorldTiles` exposes the same direct-plane encoder for format-326 tile sections. It measures and validates
+`writeWorldTiles` requires the input `header` to select the admitted version and its content limits, and exposes
+the same direct-plane encoder for its tile section. Every admitted profile uses the four-header-byte RLE layout.
+It measures and validates
 before allocating the output, emits the canonical W-T1–W-T9 records with greedy column-local RLE, and compares
 palette aliases by content value. It allocates no per-tile objects. Whole-file saves copy the untouched spans and
 regenerate pointers 2–10 by the tile-length delta; revision is not incremented. Outputs of 2 GiB or more are
 refused before allocation. Full output cross-checking against .NET and an in-game load are separate proof tasks.
+Metadata, frame-important data and entity sections are copied in their original physical layout, including the
+older chest/NPC/display-doll layouts; none is regenerated using format-326 field emission. Independent tests
+cover byte-identical synthetic saves, all tile-field edits, content bounds, tile-span growth/shrinkage and
+opaque-section preservation for every admitted version, plus parse/save through a real Worker.
 
 `WorldWorkerClient.save(world, { signal })` sends a structured clone with **no input transfer list**. This copies
 the source and planes into the Worker and keeps all caller buffers attached and unchanged, including on failure
