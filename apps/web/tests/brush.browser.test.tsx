@@ -69,17 +69,17 @@ test("pointer strokes update only their chunk; controls, keyboard history and ca
   getMapController()?.renderNow();
   expect((getMapController()?.stats().textureUploads ?? 0) - uploads).toBe(1);
   await expect.poll(() => document.querySelector(".inspector-panel dl")?.textContent).toContain("Stone Block");
-  await expect.element(page.getByRole("row").filter({ hasText: "Stone Block" })).toMatchTextContent("6");
+  await expect.element(page.getByRole("row").filter({ hasText: "Stone Block" }).getByRole("gridcell").nth(2)).toHaveTextContent(/^6$/);
   await expect.element(page.getByRole("button", { name: "Undo", exact: true })).toBeEnabled();
   act(() => { window.dispatchEvent(new KeyboardEvent("keydown", { key: "z", ctrlKey: true, bubbles: true })); });
   expect(view.tileAt(40, 3).block).toBeUndefined();
   expect(useAppStore.getState().unsavedChanges).toBe(false);
   await expect.poll(() => document.querySelector(".inspector-panel dl")?.textContent).not.toContain("Stone Block");
-  await expect.element(page.getByRole("row").filter({ hasText: "Stone Block" })).toMatchTextContent("1");
+  await expect.element(page.getByRole("row").filter({ hasText: "Stone Block" }).getByRole("gridcell").nth(2)).toHaveTextContent(/^1$/);
   act(() => { window.dispatchEvent(new KeyboardEvent("keydown", { key: "z", ctrlKey: true, shiftKey: true, bubbles: true })); });
   expect(view.tileAt(40, 3).block).toEqual({ kind: "vanilla", id: 1 });
   await expect.poll(() => document.querySelector(".inspector-panel dl")?.textContent).toContain("Stone Block");
-  await expect.element(page.getByRole("row").filter({ hasText: "Stone Block" })).toMatchTextContent("6");
+  await expect.element(page.getByRole("row").filter({ hasText: "Stone Block" }).getByRole("gridcell").nth(2)).toHaveTextContent(/^6$/);
   act(() => {
     pointer("pointerdown", 50, 3);
     pointer("pointercancel", 50, 3);
