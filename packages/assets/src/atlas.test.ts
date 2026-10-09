@@ -84,6 +84,18 @@ describe("packSheets", () => {
     }
   });
 
+  it("packSheets_OddSizesAndPadding_PlacesEverySheetAtEvenPixels", () => {
+    // The renderer's half-resolution atlas averages 2 × 2 pixels from even positions: a sheet at an odd position would
+    // mix its cells with their gutters (packages/renderer, "Atlas").
+    const odd = [sheet("tile", 1, 33, 17), sheet("tile", 2, 15, 15), sheet("wall", 1, 37, 9), sheet("tile", 3, 7, 31)];
+    for (const padding of [1, 2, 3]) {
+      const { index } = packSheets([...odd, ...MIXED], { pageSize: 512, padding });
+      for (const entry of index.entries) {
+        expect([entry.x % 2, entry.y % 2], `${entry.kind}${String(entry.id)}, padding ${String(padding)}`).toEqual([0, 0]);
+      }
+    }
+  });
+
   it("packSheets_Pages_AreFullSizeRgbaAndMatchPageCount", () => {
     const atlas = packSheets(MIXED, { pageSize: 512, padding: 2 });
     expect(atlas.pages).toHaveLength(atlas.index.pageCount);
