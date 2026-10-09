@@ -24,3 +24,14 @@ export function contentWithoutSprite(planes: FramedPlanes, palette: readonly Con
   return palette.filter((ref, index) =>
     framed[index] === 1 && !(ref.kind === "vanilla" && (tileSheets.has(ref.id) || SPRITE_DEFERRED_TILES.has(ref.id))));
 }
+
+/**
+ * The walls sprite mode draws as the missing-texture checkerboard: vanilla walls placed in the world whose wall has no
+ * sheet in the atlas (newer than the install), once each, in palette order. Walls that are not vanilla content keep
+ * their map colour (nothing frames them) and are not listed. One pass over the wall plane.
+ */
+export function wallsWithoutSprite(wall: Uint16Array, palette: readonly ContentRef[], wallSheets: ReadonlySet<number>): ContentRef[] {
+  const placed = new Uint8Array(palette.length);
+  for (const content of wall) if (content < placed.length) placed[content] = 1;
+  return palette.filter((ref, index) => placed[index] === 1 && ref.kind === "vanilla" && !wallSheets.has(ref.id));
+}

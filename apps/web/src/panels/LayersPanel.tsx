@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import type { MissingSheet } from "@studio/assets";
 import { WIRE_COLORS, WIRE_LAYER } from "@studio/renderer";
 import { buildFraction, getDefaultAssetSession, useAssetStore, type AssetStatus } from "../assets/asset-session.js";
-import { contentWithoutSprite } from "../assets/sprite-coverage.js";
+import { contentWithoutSprite, wallsWithoutSprite } from "../assets/sprite-coverage.js";
 import { useAppStore } from "../store.js";
 import { contentKey, contentName } from "../world/content-names.js";
 import { getDefaultWorldSession } from "../world/world-session.js";
@@ -29,7 +29,7 @@ function swatch(bit: number): React.CSSProperties {
 function missingText(missing: readonly MissingSheet[]): string {
   const listed = missing.slice(0, 12).map((sheet) => `${sheet.name}: ${sheet.reason}`);
   const more = missing.length > listed.length ? [`… and ${String(missing.length - listed.length)} more`] : [];
-  return [`${String(missing.length)} sheets could not be read; those tiles keep their map colour.`, ...listed, ...more].join("\n");
+  return [`${String(missing.length)} sheets could not be read; their tiles and walls show the magenta checkerboard.`, ...listed, ...more].join("\n");
 }
 
 /** What the Sprites row says on its right: why it is off, the build's progress, or a problem. */
@@ -81,8 +81,8 @@ function spritesMenu(status: AssetStatus): MenuItem[] {
 }
 
 /**
- * The open world's content drawn as the missing-texture checkerboard (placed with a frame, no sheet in the atlas),
- * listed once under the Sprites row. Nothing while the list is empty, without assets or without a world.
+ * The open world's content drawn as the missing-texture checkerboard (blocks placed with a frame and vanilla walls,
+ * without a sheet in the atlas), listed once under the Sprites row. Nothing while the list is empty, without assets or without a world.
  */
 function SpritelessContent(): React.JSX.Element | null {
   const status = useAssetStore((state) => state.status);
@@ -91,8 +91,12 @@ function SpritelessContent(): React.JSX.Element | null {
     const world = summary === null ? null : getDefaultWorldSession().getLoadedWorld();
     const atlas = status.kind === "ready" ? getDefaultAssetSession().getAtlas() : null;
     if (world === null || atlas === null) return [];
-    const sheets = new Set(atlas.index.entries.filter((entry) => entry.kind === "tile").map((entry) => entry.id));
-    return contentWithoutSprite(world.planes, world.palette, sheets);
+    const sheets = (kind: "tile" | "wall"): Set<number> =>
+      new Set(atlas.index.entries.filter((entry) => entry.kind === kind).map((entry) => entry.id));
+    return [
+      ...contentWithoutSprite(world.planes, world.palette, sheets("tile")).map((ref) => ({ ref, layer: "block" as const })),
+      ...wallsWithoutSprite(world.planes.wall, world.palette, sheets("wall")).map((ref) => ({ ref, layer: "wall" as const })),
+    ];
   }, [status, summary]);
   if (missing.length === 0) return null;
   return (
@@ -101,7 +105,9 @@ function SpritelessContent(): React.JSX.Element | null {
         {missing.length} {missing.length === 1 ? "type has" : "types have"} no sprite (shown as a magenta checkerboard)
       </summary>
       <ul>
-        {missing.map((ref) => <li key={contentKey(ref)}>{contentName(ref, "block")} <code>{contentKey(ref)}</code></li>)}
+        {missing.map(({ ref, layer }) => (
+          <li key={`${layer}:${contentKey(ref)}`}>{contentName(ref, layer)} <code>{contentKey(ref)}</code></li>
+        ))}
       </ul>
     </details>
   );
