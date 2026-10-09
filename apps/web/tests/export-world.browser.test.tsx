@@ -6,6 +6,7 @@ import { App } from "../src/App.js";
 import { exportWorld } from "../src/world/export-world.js";
 import { resetWorldExport, useExportStore } from "../src/world/export-world.js";
 import { getDefaultWorldSession } from "../src/world/world-session.js";
+import { readWorldTiles, writeWorld } from "@studio/world-codec";
 import { writerSource } from "./support/export-source.js";
 import "./support/commands.js";
 import "../src/styles.css";
@@ -30,7 +31,7 @@ function destination(): { writes: ArrayBuffer[]; createWritable: ReturnType<type
 }
 
 test.each([269, 270, 271, 272, 273, 274, 275, 276, 277, 278, 279, 315, 316, 317, 318, 319, 325, 326])(
-  "exports format %i byte-identically including noncanonical tile runs", async (version) => {
+  "exports format %i through the writer and preserves every world field", async (version) => {
     await render(<App />);
     // Four separate empty records per column: valid source encoding which the writer combines.
     const bytes = writerSource(2, 4, [0, 0, 0, 0, 0, 0, 0, 0], version);
@@ -38,9 +39,41 @@ test.each([269, 270, 271, 272, 273, 274, 275, 276, 277, 278, 279, 315, 316, 317,
     const saved = destination();
     await exportWorld();
     expect(saved.writes).toHaveLength(1);
-    expect(new Uint8Array(saved.writes[0] ?? new ArrayBuffer(0))).toEqual(bytes);
+    const output = new Uint8Array(saved.writes[0] ?? new ArrayBuffer(0));
+    expect(output).toEqual(new Uint8Array(writeWorld(readWorldTiles(bytes))));
+    expect(readWorldTiles(output).planes).toEqual(readWorldTiles(bytes).planes);
+    expect(readWorldTiles(output).header.version).toBe(version);
     expect(saved.close).toHaveBeenCalledOnce();
     expect(vi.mocked(Reflect.get(window, "showSaveFilePicker"))).toHaveBeenCalledWith(expect.objectContaining({ suggestedName: "SCCO1.copy.wld" }));
+  },
+);
+
+test.each([269, 270, 271, 272, 273, 274, 275, 276, 277, 278, 279, 315, 316, 317, 318, 319, 325, 326])(
+  "exports current CWM edits in format %i without detaching the loaded world", async (version) => {
+    await render(<App />);
+    await open(writerSource(2, 4, undefined, version));
+    const world = getDefaultWorldSession().getLoadedWorld();
+    if (world === null) throw new Error("No loaded world");
+    Object.assign(world, { palette: [{ kind: "vanilla", id: 1 }, { kind: "vanilla", id: 2 }] });
+    world.planes.block[5] = 0;
+    world.planes.wall[5] = 1;
+    world.planes.shape[5] = 3;
+    world.planes.paint[5] = 29;
+    world.planes.wallPaint[5] = 12;
+    world.planes.liquid[5] = 4;
+    world.planes.liquidAmount[5] = 80;
+    world.planes.flags[5] = 0x3ff;
+    const before = structuredClone(world);
+    const saved = destination();
+    await exportWorld();
+    const restored = readWorldTiles(new Uint8Array(saved.writes[0] ?? new ArrayBuffer(0)));
+    expect(restored.header).toEqual(world.header);
+    expect(restored.metadata).toEqual(world.metadata);
+    expect(restored.details).toEqual(world.details);
+    expect(restored.entities).toEqual(world.entities);
+    expect(restored.planes).toEqual(world.planes);
+    expect(restored.palette).toEqual(world.palette);
+    expect(world).toEqual(before);
   },
 );
 
