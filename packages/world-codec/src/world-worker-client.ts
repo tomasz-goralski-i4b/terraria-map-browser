@@ -1,11 +1,13 @@
 import type { WorldTilesResult } from "./tiles.js";
 import type { WorldWorkerFailure, WorldWorkerRequest, WorldWorkerResponse } from "./worker-protocol.js";
 
-/** A codec request failed in the Worker; carries the structured code/offset and the request ID. */
+/** A codec request failed in the Worker; carries code/offset, optional tile coordinates and the request ID. */
 export class WorldWorkerError extends Error {
   readonly code: WorldWorkerFailure["code"];
   readonly offset: number;
   readonly requestId: number;
+  readonly x: number | undefined;
+  readonly y: number | undefined;
 
   constructor(requestId: number, failure: WorldWorkerFailure) {
     super(failure.message);
@@ -13,6 +15,8 @@ export class WorldWorkerError extends Error {
     this.code = failure.code;
     this.offset = failure.offset;
     this.requestId = requestId;
+    this.x = failure.x;
+    this.y = failure.y;
   }
 }
 

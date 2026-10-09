@@ -16,7 +16,11 @@ interface WorkerScope {
 const scope = globalThis as unknown as WorkerScope;
 
 function toFailure(error: unknown): WorldWorkerFailure {
-  if (error instanceof WorldFormatError) return { code: error.kind, offset: error.offset, message: error.message };
+  if (error instanceof WorldFormatError) return {
+    code: error.kind, offset: error.offset, message: error.message,
+    ...(error.x === undefined ? {} : { x: error.x }),
+    ...(error.y === undefined ? {} : { y: error.y }),
+  };
   return { code: "Internal", offset: 0, message: error instanceof Error ? error.message : String(error) };
 }
 

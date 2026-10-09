@@ -154,6 +154,8 @@ the source and planes into the Worker and keeps all caller buffers attached and 
 or cancellation. The Worker transfers only its new output buffer back in a `saved` response; no source path or
 filesystem overwrite operation is exposed. Save errors use the same typed failure protocol as parse errors, and
 aborting a request terminates the busy Worker, cancels its pending requests and creates a replacement.
+Worker failures retain the format error code and byte offset; `WorldWorkerError` also exposes `x` and `y` when
+the codec supplies tile coordinates, so an unencodable edit can be located in the caller.
 
 ### Tile encoding
 The tile section is always re-encoded from the semantic model, column by column (`x = 0 … width−1`), each column

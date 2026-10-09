@@ -15,6 +15,8 @@ export interface WorldWorkerFailure {
   readonly code: WorldFormatErrorKind | "Cancelled" | "Internal";
   readonly offset: number;
   readonly message: string;
+  readonly x?: number;
+  readonly y?: number;
 }
 
 /** Worker → main thread. Planes and the retained source buffer travel in the transfer list. */
