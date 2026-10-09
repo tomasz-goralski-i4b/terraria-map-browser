@@ -213,6 +213,53 @@ function draw(world: RenderableWorld, zoom: number, layers: ChunkLayers, sprites
   return readCanvas(canvas);
 }
 
+/**
+ * Stubs KHR_parallel_shader_compile (software GL lacks it): COMPLETION_STATUS_KHR says a program is done once
+ * `state.linked`, and with `state.failLink` every link from then on reports failure (LINK_STATUS false).
+ */
+function stubParallelCompile(): { readonly state: { linked: boolean; failLink: boolean }; readonly restore: () => void } {
+  const COMPLETION_STATUS = 0x91b1;
+  const state = { linked: false, failLink: false };
+  const prototype = WebGL2RenderingContext.prototype;
+  // The real methods, called with the context as `this`.
+  const realExtension = Object.getOwnPropertyDescriptor(prototype, "getExtension")?.value as
+    (this: WebGL2RenderingContext, name: string) => unknown;
+  const realParameter = Object.getOwnPropertyDescriptor(prototype, "getProgramParameter")?.value as
+    (this: WebGL2RenderingContext, program: WebGLProgram, name: number) => unknown;
+  const extension = vi.spyOn(prototype, "getExtension").mockImplementation(
+    function (this: WebGL2RenderingContext, name: string): unknown {
+      return name === "KHR_parallel_shader_compile" ? { COMPLETION_STATUS_KHR: COMPLETION_STATUS } : realExtension.call(this, name);
+    },
+  );
+  const parameter = vi.spyOn(prototype, "getProgramParameter").mockImplementation(
+    function (this: WebGL2RenderingContext, program: WebGLProgram, name: number): unknown {
+      if (name === COMPLETION_STATUS) return state.linked;
+      if (name === this.LINK_STATUS && state.failLink) return false;
+      return realParameter.call(this, program, name);
+    },
+  );
+  return {
+    state,
+    restore: () => {
+      extension.mockRestore();
+      parameter.mockRestore();
+    },
+  };
+}
+
+/** A renderer on a small canvas at a map-colour zoom, reporting onSpritesPreparing into `heard`. */
+function preparingRenderer(heard: boolean[]): { readonly canvas: HTMLCanvasElement; readonly renderer: MapRenderer } {
+  const canvas = document.createElement("canvas");
+  canvas.width = 8;
+  canvas.height = 8;
+  const renderer = createMapRenderer(canvas, { onSpritesPreparing: (preparing) => heard.push(preparing) });
+  created.push(renderer);
+  renderer.setWorld(spriteWorld());
+  // A map-colour zoom: no frame asks for the sprite program.
+  renderer.setCamera({ x: 0, y: 0, zoom: 1 });
+  return { canvas, renderer };
+}
+
 describe("sprite mode", () => {
   // At 8 pixels per tile a canvas pixel reads the half-resolution atlas once: the mean of 2 × 2 sprite pixels.
   test.each([ZOOM, 8])(
@@ -254,26 +301,8 @@ describe("sprite mode", () => {
   });
 
   test("animation frames drawn while the sprite program is still being linked show map colours, then sprites", async () => {
-    // KHR_parallel_shader_compile: the renderer links the sprite program without waiting for it and asks whether it is
-    // done (COMPLETION_STATUS_KHR) before each frame. Stubbed (software GL lacks it) and held back until `linked`.
-    const COMPLETION_STATUS = 0x91b1;
-    let linked = false;
-    const prototype = WebGL2RenderingContext.prototype;
-    // The real methods, called with the context as `this`.
-    const realExtension = Object.getOwnPropertyDescriptor(prototype, "getExtension")?.value as
-      (this: WebGL2RenderingContext, name: string) => unknown;
-    const realParameter = Object.getOwnPropertyDescriptor(prototype, "getProgramParameter")?.value as
-      (this: WebGL2RenderingContext, program: WebGLProgram, name: number) => unknown;
-    const extension = vi.spyOn(prototype, "getExtension").mockImplementation(
-      function (this: WebGL2RenderingContext, name: string): unknown {
-        return name === "KHR_parallel_shader_compile" ? { COMPLETION_STATUS_KHR: COMPLETION_STATUS } : realExtension.call(this, name);
-      },
-    );
-    const parameter = vi.spyOn(prototype, "getProgramParameter").mockImplementation(
-      function (this: WebGL2RenderingContext, program: WebGLProgram, name: number): unknown {
-        return name === COMPLETION_STATUS ? linked : realParameter.call(this, program, name);
-      },
-    );
+    // The renderer links the sprite program without waiting for it and asks whether it is done (COMPLETION_STATUS_KHR).
+    const stub = stubParallelCompile();
     try {
       const world = spriteWorld();
       const { canvas, renderer } = makeRenderer(WIDTH * ZOOM, HEIGHT * ZOOM);
@@ -289,53 +318,89 @@ describe("sprite mode", () => {
       await nextFrame();
       expect(await nextFrame()).toEqual(expectedCanvas(world, ALL, ZOOM, false));
       expect(renderer.stats().spritesPreparing).toBe(true);
-      linked = true;
-      await nextFrame();
+      // The next frame comes when the link is done (polled).
+      stub.state.linked = true;
+      await vi.waitFor(() => { expect(renderer.stats().spritesPreparing).toBe(false); }, { timeout: 2000 });
       expect(await nextFrame()).toEqual(expectedCanvas(world, ALL, ZOOM, true));
-      expect(renderer.stats().spritesPreparing).toBe(false);
     } finally {
-      extension.mockRestore();
-      parameter.mockRestore();
+      stub.restore();
+    }
+  });
+
+  test("while the sprite program links no frame is drawn unless something changes", async () => {
+    const stub = stubParallelCompile();
+    try {
+      const { canvas, renderer } = makeRenderer(WIDTH * ZOOM, HEIGHT * ZOOM);
+      const draws = vi.spyOn(canvas.getContext("webgl2") as WebGL2RenderingContext, "drawArraysInstanced");
+      renderer.setWorld(spriteWorld());
+      renderer.setSpriteMode(true);
+      renderer.setCamera({ x: 0, y: 0, zoom: ZOOM });
+      renderer.setAtlas(syntheticAtlas());
+      for (let frame = 0; frame < 3; frame++) await new Promise((resolve) => requestAnimationFrame(resolve));
+      const drawn = draws.mock.calls.length;
+      expect(drawn).toBeGreaterThan(0);
+      for (let frame = 0; frame < 5; frame++) await new Promise((resolve) => requestAnimationFrame(resolve));
+      expect(draws.mock.calls.length).toBe(drawn);
+    } finally {
+      stub.restore();
     }
   });
 
   test("the renderer reports while it prepares the sprite program, also when no frame is at a sprite zoom", async () => {
-    const COMPLETION_STATUS = 0x91b1;
-    let linked = false;
-    const prototype = WebGL2RenderingContext.prototype;
-    const realExtension = Object.getOwnPropertyDescriptor(prototype, "getExtension")?.value as
-      (this: WebGL2RenderingContext, name: string) => unknown;
-    const realParameter = Object.getOwnPropertyDescriptor(prototype, "getProgramParameter")?.value as
-      (this: WebGL2RenderingContext, program: WebGLProgram, name: number) => unknown;
-    const extension = vi.spyOn(prototype, "getExtension").mockImplementation(
-      function (this: WebGL2RenderingContext, name: string): unknown {
-        return name === "KHR_parallel_shader_compile" ? { COMPLETION_STATUS_KHR: COMPLETION_STATUS } : realExtension.call(this, name);
-      },
-    );
-    const parameter = vi.spyOn(prototype, "getProgramParameter").mockImplementation(
-      function (this: WebGL2RenderingContext, program: WebGLProgram, name: number): unknown {
-        return name === COMPLETION_STATUS ? linked : realParameter.call(this, program, name);
-      },
-    );
+    const stub = stubParallelCompile();
     try {
       const heard: boolean[] = [];
-      const canvas = document.createElement("canvas");
-      canvas.width = 8;
-      canvas.height = 8;
-      const renderer = createMapRenderer(canvas, { onSpritesPreparing: (preparing) => heard.push(preparing) });
-      created.push(renderer);
-      renderer.setWorld(spriteWorld());
-      // A map-colour zoom: no frame asks for the sprite program.
-      renderer.setCamera({ x: 0, y: 0, zoom: 1 });
+      const { renderer } = preparingRenderer(heard);
       renderer.setAtlas(syntheticAtlas());
       expect(heard).toEqual([true]);
       expect(renderer.stats().spritesPreparing).toBe(true);
-      linked = true;
+      stub.state.linked = true;
       await vi.waitFor(() => { expect(heard).toEqual([true, false]); }, { timeout: 2000 });
       expect(renderer.stats().spritesPreparing).toBe(false);
     } finally {
-      extension.mockRestore();
-      parameter.mockRestore();
+      stub.restore();
+    }
+  });
+
+  test("a lost context and dispose end the preparation; nothing is reported afterwards", async () => {
+    const stub = stubParallelCompile();
+    try {
+      const lost: boolean[] = [];
+      const first = preparingRenderer(lost);
+      first.renderer.setAtlas(syntheticAtlas());
+      first.canvas.getContext("webgl2")?.getExtension("WEBGL_lose_context")?.loseContext();
+      await vi.waitFor(() => { expect(lost).toEqual([true, false]); }, { timeout: 2000 });
+
+      const disposed: boolean[] = [];
+      const second = preparingRenderer(disposed);
+      second.renderer.setAtlas(syntheticAtlas());
+      second.renderer.dispose();
+      expect(disposed).toEqual([true, false]);
+      stub.state.linked = true;
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      expect(disposed).toEqual([true, false]);
+    } finally {
+      stub.restore();
+    }
+  });
+
+  test("a sprite program that fails to link ends the preparation, keeps map colours and fails render() with the log", async () => {
+    const stub = stubParallelCompile();
+    try {
+      const heard: boolean[] = [];
+      const { renderer } = preparingRenderer(heard);
+      renderer.setAtlas(syntheticAtlas());
+      stub.state.failLink = true;
+      stub.state.linked = true;
+      await vi.waitFor(() => { expect(heard).toEqual([true, false]); }, { timeout: 2000 });
+      expect(renderer.stats().spritesPreparing).toBe(false);
+      renderer.setSpriteMode(true);
+      renderer.setCamera({ x: 0, y: 0, zoom: ZOOM });
+      // Animation frames keep the map colours instead of throwing on every frame.
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      expect(() => { renderer.render(); }).toThrow(/Shader/);
+    } finally {
+      stub.restore();
     }
   });
 

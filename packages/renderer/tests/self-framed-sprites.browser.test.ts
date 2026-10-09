@@ -111,8 +111,16 @@ const ALL: ChunkLayers = { background: true, walls: true, blocks: true, liquids:
 const ZOOM = 16;
 
 function mapColors(world: CanonicalWorld, layers: ChunkLayers): Uint8Array {
-  const { pixels } = renderChunk(world, 0, 0, { surfaceY: 2, layers });
-  return new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength);
+  const out = new Uint8Array(world.width * world.height * 4);
+  for (let cx = 0; cx * CHUNK_SIZE < world.width; cx++) {
+    for (let cy = 0; cy * CHUNK_SIZE < world.height; cy++) {
+      const { pixels, width, height } = renderChunk(world, cx, cy, { surfaceY: 2, layers });
+      for (let y = 0; y < height; y++) {
+        out.set(pixels.subarray(y * width * 4, (y + 1) * width * 4), ((cy * CHUNK_SIZE + y) * world.width + cx * CHUNK_SIZE) * 4);
+      }
+    }
+  }
+  return out;
 }
 
 /** The wall layer of `world` in sprite mode (wall-sprites.fixture.ts), at sprite pixel (sx, sy) of tile (tx, ty). */
@@ -330,6 +338,7 @@ describe("uploads after an edit", () => {
         realTexSubImage3D.apply(this, args);
       },
     );
+    const uploads = renderer.stats().textureUploads;
     try {
       world.setTile(14, 9, { block: { kind: "vanilla", id: IRON }, wall: { kind: "vanilla", id: WALL }, wires: 0, actuator: false });
       renderer.invalidateTiles([{ x: 14, y: 9 }]);
@@ -341,7 +350,38 @@ describe("uploads after an edit", () => {
     // within the apron (5 × 5): never the whole chunk (30 × 20 tiles and its apron).
     expect(sizes.length).toBeGreaterThan(0);
     expect(Math.max(...sizes)).toBeLessThanOrEqual(25);
+    // The palette's new entry (iron), the chunk's planes and its cells.
+    expect(renderer.stats().textureUploads - uploads).toBe(3);
     expectClose(readCanvas(canvas), expectedCanvas(world), world.width * ZOOM);
+  });
+
+  test.each([
+    ["the world's corner", 0, 0],
+    ["a chunk border", CHUNK_SIZE - 1, 5],
+    ["the first column of the next chunk", CHUNK_SIZE, 9],
+  ])("an edit at %s is drawn in every chunk whose layers hold it", (_name, x, y) => {
+    const world = createWorld(CHUNK_SIZE + 12, 14);
+    stamp(world, 0, 0, Array.from({ length: 14 }, () => "s".repeat(CHUNK_SIZE + 12)));
+    const columns = 16;
+    const left = Math.max(0, Math.min(x - 8, world.width - columns));
+    const { canvas, renderer } = makeRenderer(columns * ZOOM, world.height * ZOOM);
+    renderer.setWorld(renderable(world));
+    renderer.setLayers(ALL);
+    renderer.setAtlas(syntheticAtlas());
+    renderer.setFraming(framing);
+    renderer.setSpriteMode(true);
+    renderer.setCamera({ x: left, y: 0, zoom: ZOOM });
+    renderer.render();
+    world.setTile(x, y, { block: { kind: "vanilla", id: IRON }, wall: { kind: "vanilla", id: WALL }, wires: 0, actuator: false });
+    renderer.invalidateTiles([{ x, y }]);
+    renderer.render();
+    const whole = expectedCanvas(world);
+    const expected = new Uint8Array(columns * ZOOM * world.height * ZOOM * 4);
+    for (let py = 0; py < world.height * ZOOM; py++) {
+      const from = (py * world.width * ZOOM + left * ZOOM) * 4;
+      expected.set(whole.subarray(from, from + columns * ZOOM * 4), py * columns * ZOOM * 4);
+    }
+    expectClose(readCanvas(canvas), expected, columns * ZOOM);
   });
 });
 
