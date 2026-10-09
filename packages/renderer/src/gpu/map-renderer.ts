@@ -16,7 +16,7 @@ import { backgroundColor, contentColor, liquidColors } from "../palette/map-pale
 import type { MapPalette } from "../palette/map-palette.js";
 import {
   CELLS_INSTANCE_BIT, LAYER_ATTRIBUTE, PAGE_APRON, PLANES_16, PLANES_8, PLANE_COUNT_16, PLANE_COUNT_8, PRESENT, RECT_ATTRIBUTE,
-  RULE_HEADER_ROWS, RULE_ROW, SPRITE_MIN_ZOOM, SPRITE_SHEET_ROW, SPRITE_SHEET_TEXELS, spriteSampling, SPRITE_STATE, chunkFragmentSource, chunkVertexSource, overviewBuildFragmentSource,
+  RULE_HEADER_ROWS, RULE_ROW, SPRITE_MIN_ZOOM, SPRITE_SHEET_ROW, SPRITE_SHEET_TEXELS, spriteSampling, SPRITE_STATE, chunkFragmentSource, chunkSpriteFragmentSource, chunkVertexSource, overviewBuildFragmentSource,
   overviewBuildVertexSource, overviewFragmentSource, overviewVertexSource,
 } from "./shaders.js";
 
@@ -215,10 +215,12 @@ const SPRITE_SHEET_WIDTH = SPRITE_SHEET_ROW * SPRITE_SHEET_TEXELS;
 
 const TILE_UNIFORMS = [
   "uPlanes16", "uPlanes8", "uPresent", "uPalette", "uBackground", "uRules", "uPaintRow", "uPaintCount", "uPaletteLength",
-  "uLayers", "uLiquids", "uWireColors", "uWireBits", "uWireAlpha", "uAtlas", "uSpriteSheets", "uSprites",
-  "uSpriteSamples", "uSpriteStep", "uSpriteWeight",
+  "uLayers", "uLiquids", "uWireColors", "uWireBits", "uWireAlpha",
 ] as const;
 const CHUNK_UNIFORMS = [...TILE_UNIFORMS, "uCamera", "uZoom", "uViewport", "uFilter", "uStep", "uWorldSize"] as const;
+/** The sprite program's own uniforms (chunkSpriteFragmentSource), besides CHUNK_UNIFORMS. */
+const SPRITE_UNIFORMS = ["uAtlas", "uSpriteSheets", "uSpriteSamples", "uSpriteStep", "uSpriteWeight"] as const;
+const SPRITE_CHUNK_UNIFORMS = [...CHUNK_UNIFORMS, ...SPRITE_UNIFORMS] as const;
 const BUILD_UNIFORMS = [...TILE_UNIFORMS, "uFactor", "uTarget"] as const;
 const OVERVIEW_UNIFORMS = ["uCamera", "uZoom", "uViewport", "uWorld", "uExtent", "uOverview"] as const;
 
@@ -263,6 +265,7 @@ interface RuleTable {
 
 /** Everything owned by one GL context; rebuilt after a context loss. */
 interface GpuResources {
+  /** The chunk pass in map colours. Sprite frames use the sprite program, linked on first use (spriteProgramOf). */
   readonly chunk: Program<(typeof CHUNK_UNIFORMS)[number]>;
   readonly build: Program<(typeof BUILD_UNIFORMS)[number]>;
   readonly overview: Program<(typeof OVERVIEW_UNIFORMS)[number]>;
@@ -458,6 +461,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   // Looked up once: getExtension returns null while the context is lost. Used only to restore a forced loss.
   const loseContext = gl.getExtension("WEBGL_lose_context");
   let resources = createResources(gl, rules);
+  let spriteProgram: Program<(typeof SPRITE_CHUNK_UNIFORMS)[number]> | null = null;
   let world: RenderableWorld | null = null;
   let cacheCapacity = maxCachedChunks;
   let camera: Camera = { x: 0, y: 0, zoom: 1 };
@@ -871,9 +875,19 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     return overview;
   };
 
-  /** Uniforms of the tile colour function shared by both chunk passes. */
+  /**
+   * The chunk pass's sprite program, linked on the first sprite frame: map mode and the overview never compile the
+   * sprite code (blocks' and walls' sprites), which would make every map-only renderer compile about twice as long.
+   */
+  const spriteProgramOf = (): Program<(typeof SPRITE_CHUNK_UNIFORMS)[number]> => {
+    spriteProgram ??= link(gl, chunkVertexSource, chunkSpriteFragmentSource, SPRITE_CHUNK_UNIFORMS);
+    return spriteProgram;
+  };
+
+  /** Uniforms of the tile colour function shared by both chunk passes; `sprites` those of the sprite program. */
   const setTileUniforms = (
-    uniforms: Readonly<Record<(typeof TILE_UNIFORMS)[number], WebGLUniformLocation>>, sprites = false, cells = false,
+    uniforms: Readonly<Record<(typeof TILE_UNIFORMS)[number], WebGLUniformLocation>>, cells = false,
+    sprites: Readonly<Record<(typeof SPRITE_UNIFORMS)[number], WebGLUniformLocation>> | null = null,
   ): void => {
     gl.uniform1i(uniforms.uPlanes16, UNIT_PLANES_16);
     gl.uniform1i(uniforms.uPlanes8, UNIT_PLANES_8);
@@ -889,13 +903,13 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     gl.uniform3iv(uniforms.uLiquids, liquidUniform);
     gl.uniform1i(uniforms.uPaintRow, background?.paintRow ?? 0);
     gl.uniform1i(uniforms.uPaintCount, paintCount);
-    gl.uniform1i(uniforms.uAtlas, UNIT_ATLAS);
-    gl.uniform1i(uniforms.uSpriteSheets, UNIT_SPRITE_SHEETS);
-    gl.uniform1i(uniforms.uSprites, sprites ? 1 : 0);
+    if (sprites === null) return;
+    gl.uniform1i(sprites.uAtlas, UNIT_ATLAS);
+    gl.uniform1i(sprites.uSpriteSheets, UNIT_SPRITE_SHEETS);
     const sampling = spriteSampling(camera.zoom);
-    gl.uniform1i(uniforms.uSpriteSamples, sampling.samples);
-    gl.uniform1f(uniforms.uSpriteStep, sampling.step);
-    gl.uniform1i(uniforms.uSpriteWeight, sampling.weight);
+    gl.uniform1i(sprites.uSpriteSamples, sampling.samples);
+    gl.uniform1f(sprites.uSpriteStep, sampling.step);
+    gl.uniform1i(sprites.uSpriteWeight, sampling.weight);
   };
 
   /**
@@ -1171,11 +1185,12 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       // Chunks still loading show the overview (built when the area was seen zoomed out, possibly with other layers)
       // instead of a hole; drawn chunks overwrite it completely, so a complete frame stays exact.
       if (loading.pending && candidate?.filled === true) drawCalls += drawOverview(source, candidate);
-      const { chunk: program } = resources;
-      gl.useProgram(program.program);
-      // Sprites are a uniform switch: crossing the threshold or toggling the mode uploads no planes and no atlas (only a
+      // Sprites switch programs: crossing the threshold or toggling the mode uploads no planes and no atlas (only a
       // resident chunk's cells, once, on its first draw at a sprite zoom with a framing).
-      setTileUniforms(program.uniforms, sprites, framed);
+      const spriteChunk = sprites ? spriteProgramOf() : null;
+      const program = spriteChunk ?? resources.chunk;
+      gl.useProgram(program.program);
+      setTileUniforms(program.uniforms, framed, spriteChunk?.uniforms ?? null);
       gl.uniform2f(program.uniforms.uCamera, camera.x, camera.y);
       gl.uniform1f(program.uniforms.uZoom, camera.zoom);
       gl.uniform2f(program.uniforms.uViewport, viewport.width, viewport.height);
@@ -1232,6 +1247,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     background = null;
     overview = null;
     resources = createResources(gl, rules);
+    spriteProgram = null;
     // The atlas died with the context too: upload it again (its sheets follow the palette's next upload).
     atlasTexture = null;
     if (atlas !== null) applyAtlas(atlas);
@@ -1266,7 +1282,11 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     setAtlas: (next) => {
       if (next === atlas) return;
       atlas = next;
-      if (!gl.isContextLost()) applyAtlas(next);
+      if (!gl.isContextLost()) {
+        applyAtlas(next);
+        // Linked now, while the assets arrive, rather than on the first sprite frame.
+        if (next !== null) spriteProgramOf();
+      }
       schedule();
     },
     setSpriteMode: (enabled) => {
@@ -1342,6 +1362,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
         clearChunks();
         releaseOverview();
         for (const program of [resources.chunk, resources.build, resources.overview]) gl.deleteProgram(program.program);
+        if (spriteProgram !== null) gl.deleteProgram(spriteProgram.program);
         gl.deleteTexture(resources.palette);
         gl.deleteTexture(resources.rules);
         gl.deleteTexture(resources.spriteSheets);

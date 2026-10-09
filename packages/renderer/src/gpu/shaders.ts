@@ -134,16 +134,17 @@ uniform ivec3 uWireColors[5];
 uniform int uWireBits[5];
 uniform int uWireAlpha;
 uniform ivec3 uLiquids[4]; // colours of CWM liquid kinds 1–4
-// Sprite mode (#91): the atlas pages (RGBA8, straight alpha) and the tile and wall sheets of each palette index
-// (SPRITE_SHEET_ROW).
-// uSprites is 1 only in the chunk pass at SPRITE_MIN_ZOOM pixels per tile and above, with an atlas.
+#ifdef SPRITES
+// Sprite mode (#91), compiled only into the chunk pass's sprite program (chunkSpriteFragmentSource), which draws from
+// SPRITE_MIN_ZOOM pixels per tile with an atlas: the atlas pages (RGBA8, straight alpha) and the tile and wall sheets
+// of each palette index (SPRITE_SHEET_ROW).
 uniform sampler2DArray uAtlas;
 uniform isampler2D uSpriteSheets;
-uniform int uSprites;
 // spriteSampling(): samples per axis, their footprint in sprite pixels, and the sprite's weight over the map colour.
 uniform int uSpriteSamples;
 uniform float uSpriteStep;
 uniform int uSpriteWeight;
+#endif
 flat in ivec4 vRect;
 flat in int vLayer;
 flat in int vCells; // 1 when this chunk's cell plane holds its framed cells (CELLS_INSTANCE_BIT)
@@ -206,6 +207,7 @@ ivec4 over(ivec4 top, ivec4 below) {
   return ivec4((top.rgb * top.a * 255 + below.rgb * weight + alpha * 255 / 2) / (alpha * 255), alpha);
 }
 
+#ifdef SPRITES
 // The missing-texture checkerboard at sprite pixel sub.
 ivec4 missingPixel(ivec2 sub) {
   bool first = ((sub.x / ${String(SPRITE_TILE_PIXELS / 2)} + sub.y / ${String(SPRITE_TILE_PIXELS / 2)}) & 1) == 0;
@@ -364,6 +366,19 @@ ivec2 wallB(int dx, int dy) {
   return dx < 0 ? wallSWB : dx == 0 ? wallSB : wallSEB;
 }
 
+// Stores the wall at (dx, dy) loaded by wallSample into its variable.
+void storeWall(int dx, int dy, ivec4 a, ivec2 b) {
+  if (dx == -1 && dy == -1) { wallNWA = a; wallNWB = b; }
+  else if (dx == 0 && dy == -1) { wallNA = a; wallNB = b; }
+  else if (dx == 1 && dy == -1) { wallNEA = a; wallNEB = b; }
+  else if (dx == -1 && dy == 0) { wallWA = a; wallWB = b; }
+  else if (dx == 0 && dy == 0) { wallCA = a; wallCB = b; }
+  else if (dx == 1 && dy == 0) { wallEA = a; wallEB = b; }
+  else if (dx == -1 && dy == 1) { wallSWA = a; wallSWB = b; }
+  else if (dx == 0 && dy == 1) { wallSA = a; wallSB = b; }
+  else if (dx == 1 && dy == 1) { wallSEA = a; wallSEB = b; }
+}
+
 // The wall at (dx, dy) from the tile drawn over below (premultiplied) at sprite pixel sub of the tile, which its cell
 // covers: the cell's top-left lies WALL_OVERHANG pixels up and left of its own tile's.
 vec4 drawWall(vec4 below, int dx, int dy, ivec2 sub) {
@@ -401,48 +416,50 @@ ivec4 wallSample(ivec2 texel, vec2 centre, ivec4 ownMapped) {
   bool south = high.y >= ${String(SPRITE_TILE_PIXELS / 2)};
   wallNWA = ivec4(0);
   wallNWB = ivec2(0);
-  if (west && north) loadWall(texel + ivec2(-1, -1), false, wallNWA, wallNWB);
   wallNA = ivec4(0);
   wallNB = ivec2(0);
-  if (north) loadWall(texel + ivec2(-1, 0), false, wallNA, wallNB);
   wallNEA = ivec4(0);
   wallNEB = ivec2(0);
-  if (east && north) loadWall(texel + ivec2(-1, 1), false, wallNEA, wallNEB);
   wallWA = ivec4(0);
   wallWB = ivec2(0);
-  if (west) loadWall(texel + ivec2(0, -1), false, wallWA, wallWB);
-  loadWall(texel + ivec2(0, 0), true, wallCA, wallCB);
+  wallCA = ivec4(0);
+  wallCB = ivec2(0);
   wallEA = ivec4(0);
   wallEB = ivec2(0);
-  if (east) loadWall(texel + ivec2(0, 1), false, wallEA, wallEB);
   wallSWA = ivec4(0);
   wallSWB = ivec2(0);
-  if (west && south) loadWall(texel + ivec2(1, -1), false, wallSWA, wallSWB);
   wallSA = ivec4(0);
   wallSB = ivec2(0);
-  if (south) loadWall(texel + ivec2(1, 0), false, wallSA, wallSB);
   wallSEA = ivec4(0);
   wallSEB = ivec2(0);
-  if (east && south) loadWall(texel + ivec2(1, 1), false, wallSEA, wallSEB);
+  // Runtime bounds: one copy of loadWall, not one per neighbour.
+  for (int dy = north ? -1 : 0; dy <= (south ? 1 : 0); dy++) {
+    for (int dx = west ? -1 : 0; dx <= (east ? 1 : 0); dx++) {
+      ivec4 a;
+      ivec2 b;
+      loadWall(texel + ivec2(dy, dx), dx == 0 && dy == 0, a, b);
+      storeWall(dx, dy, a, b);
+    }
+  }
   vec4 sum = vec4(0.0);
-  for (int y = 0; y < ${String(MAX_SPRITE_SAMPLES)}; y++) {
-    if (y >= count) break;
-    for (int x = 0; x < ${String(MAX_SPRITE_SAMPLES)}; x++) {
-      if (x >= count) break;
+  // Runtime bounds (uSpriteSamples is at most MAX_SPRITE_SAMPLES): the loops stay loops, so the shader stays small.
+  for (int y = 0; y < count; y++) {
+    for (int x = 0; x < count; x++) {
       ivec2 sub = samplePixel(centre, x, y);
       // The four walls covering the sample, in drawing order: the upper row, then the lower, each left to right.
       int left = sub.x < ${String(SPRITE_TILE_PIXELS / 2)} ? -1 : 0;
       int upper = sub.y < ${String(SPRITE_TILE_PIXELS / 2)} ? -1 : 0;
-      vec4 layer = drawWall(vec4(0.0), left, upper, sub);
-      layer = drawWall(layer, left + 1, upper, sub);
-      layer = drawWall(layer, left, upper + 1, sub);
-      sum += drawWall(layer, left + 1, upper + 1, sub);
+      vec4 layer = vec4(0.0);
+      for (int k = 0; k < 4; k++) layer = drawWall(layer, left + (k & 1), upper + (k >> 1), sub);
+      sum += layer;
     }
   }
   vec4 mean = sum / float(count * count);
   if (mean.a <= 0.0) return ivec4(0);
   return ivec4(round(vec4(mean.rgb / mean.a, mean.a) * 255.0));
 }
+
+#endif
 
 bool paletteColor(uint index, int xOffset, out ivec3 color) {
   if (index == ABSENT || int(index) >= uPaletteLength) return false;
@@ -451,7 +468,7 @@ bool paletteColor(uint index, int xOffset, out ivec3 color) {
 }
 
 // Straight-alpha RGBA (0–255) of a tile relative to the instance's chunk origin, apron included (-1 to the chunk size).
-// Only the planes the enabled layers need are read. With uSprites, sub is the sprite pixel position (0–16 per axis)
+// Only the planes the enabled layers need are read. In the sprite program (SPRITES), sub is the sprite pixel position (0–16 per axis)
 // within the tile of the screen pixel's centre: a block with a stored frame or a framed cell, and a sheet, shows that
 // sheet's pixels there (spriteSample), over the wall layer or background behind it, faded in over its map colour by
 // uSpriteWeight. With framed cells the wall layer is the walls' sprites (wallSample) over the background, faded in over
@@ -467,7 +484,10 @@ ivec4 localColorAt(ivec2 local, vec2 sub) {
   uint wall = (uLayers & 2) != 0 ? plane16(texel, ${String(PLANES_16.wall)}) : ABSENT;
   ivec4 sprite = ivec4(0);
   bool blockShown = paletteColor(block, 0, content);
-  bool hasSprite = blockShown && uSprites != 0 && spriteSample(block, texel, sub, sprite);
+  bool hasSprite = false;
+#ifdef SPRITES
+  hasSprite = blockShown && spriteSample(block, texel, sub, sprite);
+#endif
   // The block's map colour: shown without a sprite, and faded out under a sprite below SPRITE_FULL_ZOOM.
   ivec4 mapped = blockShown
     ? ivec4(painted(blockColor(block, content, texel), int(plane8(texel, ${String(PLANES_8.paint)})), false), 255)
@@ -483,16 +503,20 @@ ivec4 localColorAt(ivec2 local, vec2 sub) {
     // opaque block sprite, also while it fades in (it is mixed with the block's map colour, not with what lies behind
     // it), so they are skipped there. Like the block fade below, the fade mixes straight-alpha colours, so over a
     // hidden background a fading overhang darkens slightly.
+#ifdef SPRITES
     bool covered = hasSprite && sprite.a == 255;
-    if (uSprites != 0 && !covered && (uLayers & 2) != 0 && (uPresent & ${String(PRESENT.cells)}) != 0 && vCells != 0) {
+    if (!covered && (uLayers & 2) != 0 && (uPresent & ${String(PRESENT.cells)}) != 0 && vCells != 0) {
       ivec4 walls = over(wallSample(texel, sub, wallShown ? color : ivec4(0)), behind);
       color = uSpriteWeight < 256 ? (color * (256 - uSpriteWeight) + walls * uSpriteWeight + 128) / 256 : walls;
     }
+#endif
     // A sprite over what lies behind it (paint is not applied to sprites).
+#ifdef SPRITES
     if (hasSprite) {
       color = over(sprite, color);
       if (uSpriteWeight < 256) color = (mapped * (256 - uSpriteWeight) + color * uSpriteWeight + 128) / 256;
     }
+#endif
   }
 
   if ((uLayers & 8) != 0) {
@@ -552,7 +576,7 @@ void main() {
  * unsigned integers so that it equals the CPU reference. A footprint of at most MAX_FILTER_TILES tiles around a
  * centre inside the chunk covers at most three tiles per axis and stays within the page apron.
  */
-export const chunkFragmentSource: string = header + `
+const chunkFragmentBody = `
 uniform vec2 uCamera;
 uniform float uZoom;
 uniform vec2 uViewport;
@@ -614,6 +638,12 @@ void main() {
   outColor = vec4(uFilter != 0 ? filtered(ivec2(floor(screen))) : pointColor(screen)) / 255.0;
 }
 `;
+export const chunkFragmentSource: string = header + chunkFragmentBody;
+/**
+ * The chunk pass with sprites (SPRITES): the same pass, plus the blocks' and walls' sprites. A separate program, so
+ * map mode and the overview build pass never run (or compile) the sprite code; the renderer links it on first use.
+ */
+export const chunkSpriteFragmentSource: string = header + "#define SPRITES\n" + chunkFragmentBody;
 
 /**
  * Overview build pass: every instance is one chunk drawn into the overview texture, one texel per uFactor × uFactor

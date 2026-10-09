@@ -89,7 +89,7 @@ describe("sprite sampling by zoom", () => {
     expect(spriteSampling(64)).toEqual({ samples: 1, step: 0.25, weight: 256 });
   });
 
-  test("between the two zooms a sprite fades in over its map colour by the zoom", { tags: ["perf"] }, () => {
+  test("between the two zooms a sprite fades in over its map colour by the zoom", { tags: ["perf"], timeout: 60_000 }, () => {
     const world = chestWorld(3, 3, [[1, 1, 0]]);
     const layers: ChunkLayers = { background: true, walls: true, blocks: true, liquids: true };
     const { pixels } = renderChunk(world as never, 0, 0, { surfaceY: 1, layers });

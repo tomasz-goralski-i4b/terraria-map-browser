@@ -237,7 +237,7 @@ describe("sprite mode", () => {
     },
   );
 
-  test("layer toggles remove exactly their pixels in sprite mode, and liquids cover sprites, half-transparent ones too", { tags: ["perf"] }, () => {
+  test("layer toggles remove exactly their pixels in sprite mode, and liquids cover sprites, half-transparent ones too", { tags: ["perf"], timeout: 60_000 }, () => {
     const world = spriteWorld();
     for (const layers of [
       { ...ALL, blocks: false }, { ...ALL, walls: false }, { ...ALL, background: false }, { ...ALL, liquids: false },
