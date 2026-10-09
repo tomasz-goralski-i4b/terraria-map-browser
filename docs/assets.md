@@ -261,20 +261,36 @@ dest   = top-left at (16 × tileX − 8, 16 × tileY − 8)        // a 32×32 s
 
 Some frame-important tiles store frames past their sheet's edge: they have more styles than fit one row of the sheet,
 and the styles that do not fit continue at the sheet's start in a second block, further along the other axis. Measured
-(S) in the art of L against the frames six local worlds store (every wrapped object assembled from its tiles looks
-whole, #147); the sheets are 1–4 pixels short of the period where the last gap is trimmed:
+(S) in the art of L: the first block's styles end where its art ends (the period, rounded up to the next style), and
+the second block starts where the art resumes along the other axis. Six local worlds store such frames for 87–89, 93,
+101, 185 and 187, and every wrapped object assembled from its tiles looks whole (#147); the other rows rest on the art
+alone. The sheets are a few pixels short of the period where the last gap is trimmed, or padded past it:
 
 | Tile id | Content | Sheet | Wraps past | Second block |
 |---|---|---|---|---|
+| 14 | tables (3 × 2) | 1928 × 74 | x = 1890 | y + 38 |
+| 15, 497 | chairs, toilets (1 × 2, 40-pixel rows) | 72 × 2038 | y = 2040 | x + 36 |
+| 18 | work benches (2 × 1) | 2048 × 40 | x = 2016 | y + 20 |
+| 34 | chandeliers (3 × 3, on and off) | 214 × 2000 | y = 1998 | x + 108 |
+| 42 | lanterns (1 × 2, on and off) | 70 × 2016 | y = 2016 | x + 36 |
+| 79, 90 | beds, bathtubs (4 × 2, both directions) | 286–288 × 2016–2048 | y = 2016 | x + 144 |
 | 87, 88, 89 | pianos, dressers, sofas (3 × 2) | 1996–1998 × 72 | x = 1998 | y + 36 |
-| 93 | lamps (1 × 3) | 70 × 2048 | y = 2052 | x + 36 |
+| 91 | banners (1 × 3, three blocks) | 1998 × 162 | x = 1998 | y + 54 |
+| 93 | lamps (1 × 3, on and off) | 70 × 2048 | y = 1998 | x + 36 |
+| 100, 139 | candelabras, music boxes (2 × 2) | 142–144 × 2016 | y = 2016 | x + 72 |
 | 101 | bookcases (3 × 4) | 1996 × 142 | x = 1998 | y + 72 |
-| 185 | small piles (the 2 × 1 row) | 1908 × 54 | x = 1908 | y + 18 |
-| 187 | large piles 2 (3 × 2) | 1890 × 72 | x = 1890 | y + 36 |
+| 104 | clocks (2 × 5) | 2016 × 180 | x = 2016 | y + 90 |
+| 105 | statues (2 × 3, both directions in bands below each other) | 1980 × 272 | x = 1980 | y + 54 |
+| 172 | sinks (2 × 2, 38-pixel rows) | 72 × 2014 | y = 2014 | x + 36 |
+| 185, 649 | small piles, the 2 × 1 row (y = 18; 649 holds it alone) | 1908 × 54, 1908 × 36 | x = 1908 | y + 18 |
+| 187, 648 | large piles 2 (3 × 2) | 1890 × 72 | x = 1890 | y + 36 |
 
 So a stored frame `f` past the period `p` reads the cell at `f − k·p`, shifted by `k` times the second block's offset,
-`k = ⌊f / p⌋` (`wrappedFrame` in `packages/renderer/src/gpu/frame-wrap.ts`). Ids not in the table were not seen past
-their sheet's edge in those worlds; a frame past the edge of any other sheet keeps its map colour.
+`k = ⌊f / p⌋` (`wrappedFrame` in `packages/renderer/src/gpu/frame-wrap.ts`). Lamps wrap at style 37 (y = 1998): the
+first block's art ends there, although 2048 rows would hold one more partial style. Small piles' 1 × 1 row ends at
+x = 1474, far short of the period. Any other sheet with a side of 1800 pixels or more either holds its styles within
+the sheet or uses its other blocks for something else (doors, chests, paintings 240 and 242, piles 186 and 647); a
+frame past the edge of a sheet not in the table keeps its map colour.
 
 ### Worked examples
 
