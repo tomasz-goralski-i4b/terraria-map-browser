@@ -297,94 +297,151 @@ bool spriteSample(uint index, ivec2 texel, vec2 centre, out ivec4 color) {
   return true;
 }
 
-// One wall of the 3 × 3 tiles around a tile, looked up once per screen pixel: its packed cell (-1 without one: no wall,
-// or not vanilla content) and its sheet in the sprite sheet lookup (place: page, x, y, state; size: width, height).
-struct Wall {
-  int cell;
-  ivec4 place;
-  ivec2 size;
-};
+// Sample (x, y) of uSpriteSamples² spread over the footprint (uSpriteStep sprite pixels) of a screen pixel centred on
+// sprite pixel position centre, kept inside the tile: the sprite pixel it reads (as spriteSample places them).
+ivec2 samplePixel(vec2 centre, int x, int y) {
+  vec2 at = centre + ((vec2(x, y) + 0.5) / float(uSpriteSamples) - 0.5) * uSpriteStep;
+  return clamp(ivec2(floor(at)), ivec2(0), ivec2(${String(SPRITE_TILE_PIXELS - 1)}));
+}
 
-Wall wallAt(ivec2 texel) {
-  Wall wall = Wall(-1, ivec4(0), ivec2(0));
+// The walls of the 3 × 3 tiles around the tile being drawn, looked up once per screen pixel by wallSample. Plain
+// variables rather than an array: an array indexed by a computed index is slow on some GPUs. Per wall, A = (atlas x,
+// atlas y of its cell's top-left, atlas page, kind) and B = the end of its sheet in the atlas. Kind: WALL_NONE (no
+// wall, or not reached by the samples), WALL_SHEET, WALL_MAPPED (its map colour on its own tile: not vanilla
+// content), WALL_MISSING (no sheet: the checkerboard on its own tile).
+const int WALL_NONE = 0;
+const int WALL_SHEET = 1;
+const int WALL_MAPPED = 2;
+const int WALL_MISSING = 3;
+ivec4 wallNWA;
+ivec2 wallNWB;
+ivec4 wallNA;
+ivec2 wallNB;
+ivec4 wallNEA;
+ivec2 wallNEB;
+ivec4 wallWA;
+ivec2 wallWB;
+ivec4 wallCA;
+ivec2 wallCB;
+ivec4 wallEA;
+ivec2 wallEB;
+ivec4 wallSWA;
+ivec2 wallSWB;
+ivec4 wallSA;
+ivec2 wallSB;
+ivec4 wallSEA;
+ivec2 wallSEB;
+// The map colour of the tile's own wall, premultiplied (zero without one).
+vec4 wallOwn;
+
+void loadWall(ivec2 texel, bool own, out ivec4 a, out ivec2 b) {
+  a = ivec4(0);
+  b = ivec2(0);
   uint cell = plane16(texel, ${String(PLANES_16.wallCell)});
-  if (cell == ${String(NO_CELL)}u) return wall;
-  ivec2 sheet = sheetAt(plane16(texel, ${String(PLANES_16.wall)})) + ivec2(2, 0);
-  wall.cell = int(cell);
-  wall.place = texelFetch(uSpriteSheets, sheet, 0);
-  wall.size = texelFetch(uSpriteSheets, sheet + ivec2(1, 0), 0).xy;
-  return wall;
-}
-
-// The wall layer at sprite pixel sub of a tile, straight alpha, from the walls around it (index (dy + 1) · 3 + dx + 1):
-// the 32 × 32 cells of the tile's wall and of the neighbours whose overhang reaches sub, drawn row by row from the top
-// and left to right within a row, each over the ones before. A wall without a cell (not vanilla content) shows
-// ownMapped, its map colour, on its own tile; a wall without a sheet the missing-texture checkerboard there.
-ivec4 wallPixel(Wall walls[9], ivec2 sub, ivec4 ownMapped) {
-  // The neighbours' side: west or east, north or south of the tile.
-  ivec2 side = ivec2(sub.x < ${String(SPRITE_TILE_PIXELS / 2)} ? -1 : 1, sub.y < ${String(SPRITE_TILE_PIXELS / 2)} ? -1 : 1);
-  ivec4 color = ivec4(0);
-  for (int j = 0; j < 2; j++) {
-    int dy = j == 0 ? min(0, side.y) : max(0, side.y);
-    for (int i = 0; i < 2; i++) {
-      int dx = i == 0 ? min(0, side.x) : max(0, side.x);
-      bool own = dx == 0 && dy == 0;
-      Wall wall = walls[(dy + 1) * 3 + dx + 1];
-      if (wall.cell < 0) {
-        if (own) color = over(ownMapped, color);
-        continue;
-      }
-      if (wall.place.w == ${String(SPRITE_STATE.sheet)}) {
-        // The cell's top-left lies WALL_OVERHANG pixels up and left of its tile's.
-        ivec2 pixel = ivec2(wall.cell >> 6, wall.cell & 63) * ${String(WALL_CELL_STRIDE)} + sub
-          + ${String(WALL_OVERHANG)} - ${String(SPRITE_TILE_PIXELS)} * ivec2(dx, dy);
-        if (all(lessThan(pixel, wall.size))) {
-          color = over(ivec4(round(texelFetch(uAtlas, ivec3(wall.place.yz + pixel, wall.place.x), 0) * 255.0)), color);
-        }
-      } else if (own) {
-        color = over(wall.place.w == ${String(SPRITE_STATE.missing)} ? missingPixel(sub) : ownMapped, color);
-      }
-    }
+  if (cell == ${String(NO_CELL)}u) {
+    if (own && wallOwn.a > 0.0) a.w = WALL_MAPPED;
+    return;
   }
-  return color;
+  ivec2 sheet = sheetAt(plane16(texel, ${String(PLANES_16.wall)})) + ivec2(2, 0);
+  ivec4 place = texelFetch(uSpriteSheets, sheet, 0);
+  if (place.w == ${String(SPRITE_STATE.sheet)}) {
+    a = ivec4(place.yz + ivec2(int(cell >> 6u), int(cell & 63u)) * ${String(WALL_CELL_STRIDE)}, place.x, WALL_SHEET);
+    b = place.yz + texelFetch(uSpriteSheets, sheet + ivec2(1, 0), 0).xy;
+  } else if (own) {
+    a.w = place.w == ${String(SPRITE_STATE.missing)} ? WALL_MISSING : WALL_MAPPED;
+  }
 }
 
-// The wall layer over the footprint of a screen pixel centred on sprite pixel position centre, sampled like
-// spriteSample: the straight-alpha mean of uSpriteSamples² wallPixel samples. The walls the samples can reach are looked
-// up once (texel is transposed: (y, x)); the others stay without a cell and are never read.
+ivec4 wallA(int dx, int dy) {
+  if (dy < 0) return dx < 0 ? wallNWA : dx == 0 ? wallNA : wallNEA;
+  if (dy == 0) return dx < 0 ? wallWA : dx == 0 ? wallCA : wallEA;
+  return dx < 0 ? wallSWA : dx == 0 ? wallSA : wallSEA;
+}
+
+ivec2 wallB(int dx, int dy) {
+  if (dy < 0) return dx < 0 ? wallNWB : dx == 0 ? wallNB : wallNEB;
+  if (dy == 0) return dx < 0 ? wallWB : dx == 0 ? wallCB : wallEB;
+  return dx < 0 ? wallSWB : dx == 0 ? wallSB : wallSEB;
+}
+
+// The wall at (dx, dy) from the tile drawn over below (premultiplied) at sprite pixel sub of the tile, which its cell
+// covers: the cell's top-left lies WALL_OVERHANG pixels up and left of its own tile's.
+vec4 drawWall(vec4 below, int dx, int dy, ivec2 sub) {
+  ivec4 a = wallA(dx, dy);
+  if (a.w == WALL_NONE) return below;
+  vec4 top;
+  if (a.w == WALL_SHEET) {
+    ivec2 pixel = a.xy + sub + ${String(WALL_OVERHANG)} - ${String(SPRITE_TILE_PIXELS)} * ivec2(dx, dy);
+    if (any(greaterThanEqual(pixel, wallB(dx, dy)))) return below;
+    vec4 sampled = texelFetch(uAtlas, ivec3(pixel, a.z), 0);
+    top = vec4(sampled.rgb * sampled.a, sampled.a);
+  } else {
+    top = a.w == WALL_MISSING ? vec4(vec3(missingPixel(sub).rgb) / 255.0, 1.0) : wallOwn;
+  }
+  return top + below * (1.0 - top.a);
+}
+
+// The wall layer over the footprint of a screen pixel centred on sprite pixel position centre (0–16 per axis) of the
+// tile at texel, straight alpha: per sample, the 32 × 32 cells (the wall cell plane) of the tile's wall and of the
+// three neighbours whose ${String(WALL_OVERHANG)}-pixel overhang reaches it, drawn row by row from the top and left to right
+// within a row, each over the ones before; then the mean of the samples. A wall without a cell (not vanilla content)
+// shows ownMapped, its map colour, on its own tile; a wall without a sheet the missing-texture checkerboard there.
+// Only the walls the samples can reach are looked up, once (texel is transposed: (y, x)); samples composite in
+// premultiplied floats, which needs no division, within one unit of exact integer compositing.
 ivec4 wallSample(ivec2 texel, vec2 centre, ivec4 ownMapped) {
   int count = uSpriteSamples;
+  wallOwn = ownMapped.a == 0 ? vec4(0.0) : vec4(vec3(ownMapped.rgb) / 255.0, 1.0);
   // The outermost samples lie this far from the centre; the margin only widens the walls looked up.
   vec2 reach = vec2(0.5 * uSpriteStep * (1.0 - 1.0 / float(count)) + 0.01);
   ivec2 low = clamp(ivec2(floor(centre - reach)), ivec2(0), ivec2(${String(SPRITE_TILE_PIXELS - 1)}));
   ivec2 high = clamp(ivec2(floor(centre + reach)), ivec2(0), ivec2(${String(SPRITE_TILE_PIXELS - 1)}));
-  ivec2 first = ivec2(low.x < ${String(SPRITE_TILE_PIXELS / 2)} ? -1 : 0, low.y < ${String(SPRITE_TILE_PIXELS / 2)} ? -1 : 0);
-  ivec2 last = ivec2(high.x >= ${String(SPRITE_TILE_PIXELS / 2)} ? 1 : 0, high.y >= ${String(SPRITE_TILE_PIXELS / 2)} ? 1 : 0);
-  Wall walls[9];
-  for (int dy = -1; dy <= 1; dy++) {
-    for (int dx = -1; dx <= 1; dx++) {
-      bool reached = dx >= first.x && dx <= last.x && dy >= first.y && dy <= last.y;
-      // No ternary: WebGL does not allow one on structures.
-      Wall wall = Wall(-1, ivec4(0), ivec2(0));
-      if (reached) wall = wallAt(texel + ivec2(dy, dx));
-      walls[(dy + 1) * 3 + dx + 1] = wall;
-    }
-  }
-  ivec4 sum = ivec4(0);
+  bool west = low.x < ${String(SPRITE_TILE_PIXELS / 2)};
+  bool east = high.x >= ${String(SPRITE_TILE_PIXELS / 2)};
+  bool north = low.y < ${String(SPRITE_TILE_PIXELS / 2)};
+  bool south = high.y >= ${String(SPRITE_TILE_PIXELS / 2)};
+  wallNWA = ivec4(0);
+  wallNWB = ivec2(0);
+  if (west && north) loadWall(texel + ivec2(-1, -1), false, wallNWA, wallNWB);
+  wallNA = ivec4(0);
+  wallNB = ivec2(0);
+  if (north) loadWall(texel + ivec2(-1, 0), false, wallNA, wallNB);
+  wallNEA = ivec4(0);
+  wallNEB = ivec2(0);
+  if (east && north) loadWall(texel + ivec2(-1, 1), false, wallNEA, wallNEB);
+  wallWA = ivec4(0);
+  wallWB = ivec2(0);
+  if (west) loadWall(texel + ivec2(0, -1), false, wallWA, wallWB);
+  loadWall(texel + ivec2(0, 0), true, wallCA, wallCB);
+  wallEA = ivec4(0);
+  wallEB = ivec2(0);
+  if (east) loadWall(texel + ivec2(0, 1), false, wallEA, wallEB);
+  wallSWA = ivec4(0);
+  wallSWB = ivec2(0);
+  if (west && south) loadWall(texel + ivec2(1, -1), false, wallSWA, wallSWB);
+  wallSA = ivec4(0);
+  wallSB = ivec2(0);
+  if (south) loadWall(texel + ivec2(1, 0), false, wallSA, wallSB);
+  wallSEA = ivec4(0);
+  wallSEB = ivec2(0);
+  if (east && south) loadWall(texel + ivec2(1, 1), false, wallSEA, wallSEB);
+  vec4 sum = vec4(0.0);
   for (int y = 0; y < ${String(MAX_SPRITE_SAMPLES)}; y++) {
     if (y >= count) break;
     for (int x = 0; x < ${String(MAX_SPRITE_SAMPLES)}; x++) {
       if (x >= count) break;
-      vec2 at = centre + ((vec2(x, y) + 0.5) / float(count) - 0.5) * uSpriteStep;
-      ivec2 sub = clamp(ivec2(floor(at)), ivec2(0), ivec2(${String(SPRITE_TILE_PIXELS - 1)}));
-      ivec4 sampled = wallPixel(walls, sub, ownMapped);
-      sum += ivec4(sampled.rgb * sampled.a, sampled.a);
+      ivec2 sub = samplePixel(centre, x, y);
+      // The four walls covering the sample, in drawing order: the upper row, then the lower, each left to right.
+      int left = sub.x < ${String(SPRITE_TILE_PIXELS / 2)} ? -1 : 0;
+      int upper = sub.y < ${String(SPRITE_TILE_PIXELS / 2)} ? -1 : 0;
+      vec4 layer = drawWall(vec4(0.0), left, upper, sub);
+      layer = drawWall(layer, left + 1, upper, sub);
+      layer = drawWall(layer, left, upper + 1, sub);
+      sum += drawWall(layer, left + 1, upper + 1, sub);
     }
   }
-  int samples = count * count;
-  return sum.a == 0
-    ? ivec4(0)
-    : ivec4((2 * sum.rgb + sum.a) / (2 * sum.a), (2 * sum.a + samples) / (2 * samples));
+  vec4 mean = sum / float(count * count);
+  if (mean.a <= 0.0) return ivec4(0);
+  return ivec4(round(vec4(mean.rgb / mean.a, mean.a) * 255.0));
 }
 
 bool paletteColor(uint index, int xOffset, out ivec3 color) {
@@ -422,10 +479,11 @@ ivec4 localColorAt(ivec2 local, vec2 sub) {
     bool wallShown = paletteColor(wall, 256, content);
     if (wallShown) color = ivec4(painted(content, int(plane8(texel, ${String(PLANES_8.wallPaint)})), true), 255);
     // Wall sprites are drawn wherever the wall layer is shown, also on tiles without a wall of their own: the
-    // overhang of the walls around them reaches in. Paint is not applied to sprites. Under an opaque block sprite shown
-    // whole nothing of them is seen, so they are skipped. Like the block fade below, the fade mixes straight-alpha
-    // colours, so over a hidden background a fading overhang darkens slightly.
-    bool covered = hasSprite && sprite.a == 255 && uSpriteWeight >= 256;
+    // overhang of the walls around them reaches in. Paint is not applied to sprites. Nothing of them is seen under an
+    // opaque block sprite, also while it fades in (it is mixed with the block's map colour, not with what lies behind
+    // it), so they are skipped there. Like the block fade below, the fade mixes straight-alpha colours, so over a
+    // hidden background a fading overhang darkens slightly.
+    bool covered = hasSprite && sprite.a == 255;
     if (uSprites != 0 && !covered && (uLayers & 2) != 0 && (uPresent & ${String(PRESENT.cells)}) != 0 && vCells != 0) {
       ivec4 walls = over(wallSample(texel, sub, wallShown ? color : ivec4(0)), behind);
       color = uSpriteWeight < 256 ? (color * (256 - uSpriteWeight) + walls * uSpriteWeight + 128) / 256 : walls;

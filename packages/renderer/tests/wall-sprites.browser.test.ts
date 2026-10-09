@@ -5,7 +5,9 @@ import {
   terrariaFramingData,
 } from "../src/index.js";
 import type { BlockFraming, ChunkLayers, MapRenderer, RenderableWorld, SpriteAtlasSource, SpriteSheetEntry } from "../src/index.js";
-import { over, pixelAt, wallLayerPixel, wallScreenPixel, type Rgba } from "./wall-sprites.fixture.js";
+import {
+  expectClose, onTop, over, pixelAt, premultiply, straight, wallLayerPixel, wallScreenPixel, type Rgba,
+} from "./wall-sprites.fixture.js";
 
 let framing: BlockFraming;
 beforeAll(async () => {
@@ -173,7 +175,7 @@ describe("walls in sprite mode", () => {
     stamp(world, 0, 0, SCENE);
     const { canvas } = draw(world);
     const pixels = readCanvas(canvas);
-    expect(pixels).toEqual(expectedCanvas(world));
+    expectClose(pixels, expectedCanvas(world), world.width * ZOOM);
     const at = (x: number, y: number): Rgba => pixelAt(pixels, (y * world.width * ZOOM + x) * 4);
     const background = mapColors(world, { background: true, walls: false, blocks: false, liquids: false });
     // The lone wall at (10, 2) reaches into the empty tiles beside it: the wall layer differs from the background
@@ -209,10 +211,14 @@ describe("walls in sprite mode", () => {
     const dirt = sheetPixel(1, 416, 112);
     expect([stone[3], dirt[3]]).toEqual([128, 128]);
     const background = pixelAt(mapColors(small, { background: true, walls: false, blocks: false, liquids: false }), (1 * 4 + 1) * 4);
-    const expected = over(over(dirt, stone), background);
-    expect(expected).not.toEqual(over(over(stone, dirt), background));
+    const composite = (top: Rgba, below: Rgba): Rgba =>
+      over(straight(onTop(premultiply(top), onTop(premultiply(below), [0, 0, 0, 0]))), background);
+    const expected = composite(dirt, stone);
+    const reversed = composite(stone, dirt);
+    expect(expected.some((value, k) => Math.abs(value - (reversed[k] ?? 0)) > 1)).toBe(true);
     const drawn = readCanvas(draw(small).canvas);
-    expect(pixelAt(drawn, ((ZOOM + 12) * small.width * ZOOM + ZOOM + 12) * 4)).toEqual(expected);
+    const actual = pixelAt(drawn, ((ZOOM + 12) * small.width * ZOOM + ZOOM + 12) * 4);
+    expect(actual.every((value, k) => Math.abs(value - (expected[k] ?? 0)) <= 1), `${actual.join()} ≠ ${expected.join()}`).toBe(true);
   });
 
   test.each([
@@ -225,18 +231,17 @@ describe("walls in sprite mode", () => {
     const pixels = readCanvas(canvas);
     const input = layerInput(world);
     const map = mapColors(world, ALL);
-    const mismatches: string[] = [];
+    const expected = new Uint8Array(pixels.length);
     for (let py = 0; py < canvas.height; py++) {
       for (let px = 0; px < canvas.width; px++) {
         const tx = Math.floor((px + 0.5) / zoom);
         const ty = Math.floor((py + 0.5) / zoom);
         const block = world.planes.block[tx * world.height + ty] ?? 0xffff;
-        const expected = block !== 0xffff ? pixelAt(map, (ty * world.width + tx) * 4) : wallScreenPixel(input, zoom, px, py);
-        const actual = pixelAt(pixels, (py * canvas.width + px) * 4);
-        if (actual.join() !== expected.join()) mismatches.push(`(${String(px)}, ${String(py)}): ${actual.join()} ≠ ${expected.join()}`);
+        const color = block !== 0xffff ? pixelAt(map, (ty * world.width + tx) * 4) : wallScreenPixel(input, zoom, px, py);
+        expected.set(color, (py * canvas.width + px) * 4);
       }
     }
-    expect(mismatches.slice(0, 5), `${String(mismatches.length)} pixels differ`).toEqual([]);
+    expectClose(pixels, expected, canvas.width);
   });
 
   test("a wall's overhang crosses chunk borders: the chunk beside it draws it from its apron", () => {
@@ -252,7 +257,7 @@ describe("walls in sprite mode", () => {
     renderer.setCamera({ x: CHUNK_SIZE - 4, y: 0, zoom: ZOOM });
     renderer.render();
     expect(renderer.stats().visibleChunks).toHaveLength(2);
-    expect(readCanvas(canvas)).toEqual(expectedCanvas(world, CHUNK_SIZE - 4, 0, columns, world.height));
+    expectClose(readCanvas(canvas), expectedCanvas(world, CHUNK_SIZE - 4, 0, columns, world.height), columns * ZOOM);
   });
 
   test("invalidating one changed wall recomputes exactly its 3 × 3 area and redraws it", () => {
@@ -264,7 +269,7 @@ describe("walls in sprite mode", () => {
     renderer.invalidateTiles([{ x: 2, y: 2 }]);
     renderer.render();
     expect(renderer.stats().framedWalls - before).toBe(9);
-    expect(readCanvas(canvas)).toEqual(expectedCanvas(world));
+    expectClose(readCanvas(canvas), expectedCanvas(world), world.width * ZOOM);
   });
 
   test("with the wall layer hidden no wall and no overhang is drawn; without sprite mode walls keep their map colours", () => {

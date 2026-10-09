@@ -7,7 +7,7 @@ import {
 import type {
   BlockFraming, ChunkLayers, MapRenderer, RenderableWorld, SpriteAtlasSource, SpriteSheetEntry,
 } from "../src/index.js";
-import { pixelAt, wallLayerPixel, type Rgba } from "./wall-sprites.fixture.js";
+import { expectClose, pixelAt, wallLayerPixel, type Rgba } from "./wall-sprites.fixture.js";
 
 let framing: BlockFraming;
 beforeAll(async () => {
@@ -184,7 +184,7 @@ describe("self-framed blocks in sprite mode", () => {
     const world = createWorld(10, 6);
     stamp(world, 0, 0, ["..........", "..dHddTN..", ".dddddddd.", ".ssssssss.", ".RddddddL.", ".........."]);
     const { pixels } = draw(world);
-    expect(pixels).toEqual(expectedCanvas(world));
+    expectClose(pixels, expectedCanvas(world), world.width * ZOOM);
     // Sanity: the half block's top half is the wall layer, its bottom half the sheet.
     const at = (x: number, y: number): Rgba => pixelAt(pixels, (y * world.width * ZOOM + x) * 4);
     const wall = wallLayer(world);
@@ -196,7 +196,7 @@ describe("self-framed blocks in sprite mode", () => {
     const world = createWorld(8, 5);
     stamp(world, 0, 0, ["........", ".S...S..", ".....s..", "........", "........"]);
     const { pixels } = draw(world);
-    expect(pixels).toEqual(expectedCanvas(world));
+    expectClose(pixels, expectedCanvas(world), world.width * ZOOM);
     const map = mapColors(world, ALL);
     const at = (x: number, y: number): Rgba => pixelAt(pixels, (y * world.width * ZOOM + x) * 4);
     for (let sy = 0; sy < ZOOM; sy++) for (let sx = 0; sx < ZOOM; sx++) {
@@ -305,7 +305,7 @@ describe("cell caching per chunk", () => {
     renderer.invalidateTiles([{ x: 5, y: 3 }]);
     renderer.render();
     expect(renderer.stats().framedTiles - before).toBe(9);
-    expect(readCanvas(canvas)).toEqual(expectedCanvas(world));
+    expectClose(readCanvas(canvas), expectedCanvas(world), world.width * ZOOM);
   });
 });
 
