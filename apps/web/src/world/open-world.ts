@@ -1,6 +1,6 @@
 import { getDefaultWorldSession } from "./world-session.js";
 import { WORLD_PICKER_LOCATION, type OpenedWorldFile, type OpenWorldHandle } from "./world-file.js";
-import { folderForWorld } from "./world-folder.js";
+import { folderForWorld } from "./world-library.js";
 import { useAppStore } from "../store.js";
 
 interface FilePickerWindow {

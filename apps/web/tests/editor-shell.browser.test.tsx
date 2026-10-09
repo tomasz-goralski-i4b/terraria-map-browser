@@ -12,6 +12,7 @@ import { StatusBar, type StatusWorld } from "../src/shell/StatusBar.js";
 import { useViewStore } from "../src/shell/view-store.js";
 import "../src/styles.css";
 import "./support/commands.js";
+import { dockTab, menu } from "./support/shell.js";
 
 class MemoryStorage implements LayoutStorage {
   readonly items = new Map<string, string>();
@@ -127,6 +128,7 @@ test("Collapse all and Expand all toggle every World group", async () => {
 
 test("collapsed sections, a resized and a hidden dock persist across a reload", async () => {
   const first = await render(<App layoutStorage={storage} />);
+  await dockTab("View");
   sectionToggle("Layers").click();
   await expect.element(sectionToggle("Layers")).toHaveAttribute("aria-expanded", "false");
   const splitter = page.getByRole("separator", { name: "Resize panels" });
@@ -143,7 +145,10 @@ test("collapsed sections, a resized and a hidden dock persist across a reload", 
   await userEvent.keyboard("p");
   await expect.element(page.getByRole("complementary", { name: "Panels" })).toBeVisible();
   await expect.element(page.getByRole("separator", { name: "Resize panels" })).toHaveAttribute("aria-valuenow", String(DEFAULT_LAYOUT.dockWidth + 32));
+  // The chosen tab is remembered too.
+  await expect.element(page.getByRole("tab", { name: "View" })).toHaveAttribute("aria-selected", "true");
   expect(sectionToggle("Layers").getAttribute("aria-expanded")).toBe("false");
+  await dockTab("World");
   expect(sectionToggle("World").getAttribute("aria-expanded")).toBe("true");
 });
 
@@ -165,8 +170,7 @@ test("Reset layout restores the default sections and dock", async () => {
   await render(<App layoutStorage={storage} />);
   sectionToggle("World").click();
   await expect.element(sectionToggle("World")).toHaveAttribute("aria-expanded", "false");
-  await page.getByRole("button", { name: "App menu" }).click();
-  await page.getByRole("menuitem", { name: "Reset layout" }).click();
+  await menu("View", "Reset layout");
   await expect.element(sectionToggle("World")).toHaveAttribute("aria-expanded", "true");
   expect(storage.items.size).toBe(0);
 });
@@ -240,9 +244,54 @@ test("the tool rail is one Tab stop; arrows move it and a tool change moves it t
   expect(page.getByRole("toolbar", { name: "Tools" }).element().getAttribute("aria-orientation")).toBe("vertical");
 });
 
+test("the menu bar works from the keyboard: Alt+letter, arrows between menus and into submenus, Escape", async () => {
+  await render(<App layoutStorage={storage} />);
+  await userEvent.keyboard("{Alt>}f{/Alt}");
+  await expect.element(page.getByRole("menuitem", { name: "Open World…" })).toHaveFocus();
+  await userEvent.keyboard("{ArrowRight}");
+  await expect.element(page.getByRole("menuitemcheckbox", { name: "Show panels" })).toHaveFocus();
+  await userEvent.keyboard("{ArrowLeft}");
+  await expect.element(page.getByRole("menuitem", { name: "Open World…" })).toHaveFocus();
+  // Open World…, Open Folder…, Worlds, Open Recent.
+  await userEvent.keyboard("{ArrowDown}{ArrowDown}{ArrowDown}");
+  await expect.element(page.getByRole("menuitem", { name: "Open Recent" })).toHaveFocus();
+  await userEvent.keyboard("{ArrowRight}");
+  await expect.element(page.getByRole("menu", { name: "Open Recent" }).getByRole("menuitem", { name: "No recent worlds" })).toHaveFocus();
+  await userEvent.keyboard("{ArrowLeft}");
+  await expect.element(page.getByRole("menuitem", { name: "Open Recent" })).toHaveFocus();
+  await expect.element(page.getByRole("menu", { name: "Open Recent" })).not.toBeInTheDocument();
+  await userEvent.keyboard("{Escape}");
+  await expect.element(page.getByRole("menubar").getByRole("menuitem", { name: "File" })).toHaveFocus();
+  await expect.element(page.getByRole("menu")).not.toBeInTheDocument();
+
+  // A modal dialog owns the keyboard: Alt+letter opens no menu behind it.
+  await userEvent.keyboard("{Shift>}?{/Shift}");
+  await expect.element(page.getByRole("dialog", { name: "Keyboard shortcuts" })).toBeVisible();
+  await userEvent.keyboard("{Alt>}f{/Alt}");
+  expect(document.querySelector("[role=menu]")).toBeNull();
+});
+
+test("the dock tabs follow the arrow keys, Home and End", async () => {
+  await render(<App layoutStorage={storage} />);
+  const world = page.getByRole("tab", { name: "World" });
+  const view = page.getByRole("tab", { name: "View" });
+  (world.element() as HTMLElement).focus();
+  await userEvent.keyboard("{ArrowRight}");
+  await expect.element(view).toHaveFocus();
+  await expect.element(view).toHaveAttribute("aria-selected", "true");
+  await expect.element(page.getByRole("tabpanel")).toMatchTextContent("Layers");
+  await userEvent.keyboard("{Home}");
+  await expect.element(world).toHaveAttribute("aria-selected", "true");
+  await userEvent.keyboard("{End}");
+  await expect.element(view).toHaveAttribute("aria-selected", "true");
+  // The Inspector stays visible with either tab.
+  await expect.element(page.getByRole("region", { name: "Inspector" })).toBeVisible();
+});
+
 test("every dock section opens and closes from the keyboard", async () => {
   await render(<App layoutStorage={storage} />);
-  for (const name of ["World", "Layers", "Inspector", "Content", "Entities"]) {
+  for (const [tab, name] of [["World", "World"], ["World", "Content"], ["World", "Entities"], ["World", "Inspector"], ["View", "Layers"], ["View", "Inspector"]] as const) {
+    await dockTab(tab);
     const toggle = sectionToggle(name);
     const before = toggle.getAttribute("aria-expanded");
     toggle.focus();
@@ -279,7 +328,7 @@ test("the command palette keeps the active option in view and closes without run
   await expect.element(page.getByRole("dialog", { name: "Command palette" })).not.toBeInTheDocument();
 });
 
-test("at 320 px nothing overflows: secondary actions move to the app menu", async () => {
+test("at 320 px nothing overflows: secondary actions stay in the menus", async () => {
   await page.viewport(320, 568);
   await render(<App layoutStorage={storage} />);
   await openFixture("SCCO1.wld");
@@ -291,10 +340,14 @@ test("at 320 px nothing overflows: secondary actions move to the app menu", asyn
     expect(box.right).toBeLessThanOrEqual(320);
   }
   await expect.element(page.getByRole("button", { name: "Show panels" })).toBeVisible();
-  await expect.element(page.getByRole("button", { name: "Open .wld world" })).toBeVisible();
-  await page.getByRole("button", { name: "App menu" }).click();
-  await expect.element(page.getByRole("menuitemcheckbox", { name: "Theme: dark" })).toBeVisible();
-  await expect.element(page.getByRole("menuitem", { name: /Keyboard shortcuts/ })).toBeVisible();
+  await expect.element(page.getByRole("menubar", { name: "Main menu" }).getByRole("menuitem", { name: "File" })).toBeVisible();
+  await menu("View", "Theme");
+  const dark = page.getByRole("menuitemcheckbox", { name: "Theme: dark" });
+  await expect.element(dark).toBeVisible();
+  // On a phone the submenu opens under its item, inside the screen.
+  expect(dark.element().getBoundingClientRect().right).toBeLessThanOrEqual(320);
+  await menu("Help");
+  await expect.element(page.getByRole("menuitem", { name: "Keyboard shortcuts" })).toBeVisible();
   expect(page.getByRole("toolbar", { name: "Tools" }).element().getAttribute("aria-orientation")).toBe("horizontal");
 });
 

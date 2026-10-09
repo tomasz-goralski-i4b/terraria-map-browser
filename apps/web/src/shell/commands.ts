@@ -3,13 +3,14 @@ import type { IconName } from "../ui/Icon.js";
 import { getDefaultAssetSession, useAssetStore } from "../assets/asset-session.js";
 import { useAppStore } from "../store.js";
 import { chooseWorldFile } from "../world/open-world.js";
-import { chooseWorldFolder } from "../world/world-folder.js";
-import { exportWorld, saveWorldCopy, useExportStore } from "../world/export-world.js";
+import { openSaveAs, useSaveStore } from "../world/save-world.js";
+import { chooseWorldsFolder, hasFolderPicker } from "../world/world-library.js";
+import { closeWorld } from "../world/world-session.js";
 import { WORLD_GROUP_IDS } from "../panels/world-fields.js";
 import { resetLayout, useLayoutStore, type ThemeChoice } from "./layout-store.js";
 import { getMapController, useViewStore, type MapLayers, type ToolId } from "./view-store.js";
 
-export type CommandGroup = "File" | "View" | "Layers" | "Tools" | "Help";
+export type CommandGroup = "File" | "View" | "Layers" | "Tools" | "Assets" | "Help";
 
 /**
  * One user action. Menus, the tool rail, tooltips, the shortcut help and the command palette are all built from this
@@ -92,7 +93,7 @@ const THEME_LABELS: Readonly<Record<ThemeChoice, string>> = { system: "Theme: fo
 export function useCommands(): Command[] {
   const hasWorld = useAppStore((state) => state.summary !== null);
   const loadingWorld = useAppStore((state) => state.phase === "loading");
-  const exporting = useExportStore((state) => state.busy);
+  const saving = useSaveStore((state) => state.open);
   const dockHidden = useLayoutStore((state) => state.dockHidden);
   const setDockHidden = useLayoutStore((state) => state.setDockHidden);
   const theme = useLayoutStore((state) => state.theme);
@@ -114,39 +115,43 @@ export function useCommands(): Command[] {
   const setSpritePreviewOpen = useViewStore((state) => state.setSpritePreviewOpen);
 
   return [
-    { id: "file.open", group: "File", label: "Open world…", icon: "open", shortcut: "Control+O", enabled: true, run: chooseWorldFile },
+    { id: "file.open", group: "File", label: "Open World…", icon: "file", shortcut: "Control+O", enabled: true, run: chooseWorldFile },
     {
-      id: "file.openFolder", group: "File", label: "Open folder…", icon: "open",
-      enabled: "showDirectoryPicker" in window && typeof window.showDirectoryPicker === "function",
-      ...("showDirectoryPicker" in window && typeof window.showDirectoryPicker === "function" ? {} : { disabledReason: "Folder access is unavailable in this browser" }),
-      run: () => { void chooseWorldFolder(); },
+      id: "file.openFolder", group: "File", label: "Open Folder…", icon: "folder", enabled: hasFolderPicker(),
+      ...(hasFolderPicker() ? {} : { disabledReason: "This browser cannot open folders" }),
+      run: () => {
+        void chooseWorldsFolder();
+      },
+    },
+    { id: "file.save", group: "File", label: "Save", icon: "save", shortcut: "Control+S", enabled: false, disabledReason: "Editing is not available yet", run: () => undefined },
+    {
+      id: "file.saveAs", group: "File", label: "Save As…", shortcut: "Control+Shift+S", enabled: hasWorld && !loadingWorld && !saving,
+      ...(!hasWorld ? noWorld : loadingWorld ? { disabledReason: "A world is loading" } : {}),
+      run: () => {
+        void openSaveAs();
+      },
     },
     {
-      id: "file.export", group: "File", label: "Export world…", enabled: hasWorld && !loadingWorld && !exporting,
-      ...(!hasWorld ? noWorld : loadingWorld ? { disabledReason: "A world is loading" } : exporting ? { disabledReason: "Export in progress" } : {}),
-      run: () => { void exportWorld(); },
+      id: "file.close", group: "File", label: "Close World", enabled: hasWorld && !loadingWorld,
+      ...(!hasWorld ? noWorld : loadingWorld ? { disabledReason: "A world is loading" } : {}),
+      run: closeWorld,
     },
     {
-      id: "file.saveCopy", group: "File", label: "Save world copy…", enabled: hasWorld && !loadingWorld && !exporting,
-      ...(!hasWorld ? noWorld : loadingWorld ? { disabledReason: "A world is loading" } : exporting ? { disabledReason: "Save in progress" } : {}),
-      run: () => { void saveWorldCopy(); },
-    },
-    {
-      id: "file.assets", group: "File", label: "Connect Terraria assets…", enabled: !assetsBuilding,
+      id: "file.assets", group: "Assets", label: "Connect Terraria assets…", enabled: !assetsBuilding,
       ...(assetsBuilding ? { disabledReason: "The sprite atlas is being built" } : {}),
       run: () => {
         void getDefaultAssetSession().connect();
       },
     },
     {
-      id: "file.disconnectAssets", group: "File", label: "Disconnect Terraria assets", enabled: assetsReady,
+      id: "file.disconnectAssets", group: "Assets", label: "Disconnect Terraria assets", enabled: assetsReady,
       ...(assetsReady ? {} : { disabledReason: "No Terraria assets are connected" }),
       run: () => {
         void getDefaultAssetSession().disconnect();
       },
     },
     {
-      id: "file.sprites", group: "File", label: "Preview sprite sheets…", enabled: assetsReady,
+      id: "file.sprites", group: "Assets", label: "Preview sprite sheets…", enabled: assetsReady,
       ...(assetsReady ? {} : { disabledReason: "Connect Terraria assets first" }),
       run: () => {
         setSpritePreviewOpen(true);
@@ -262,7 +267,7 @@ function isTextEntry(target: EventTarget | null): boolean {
 
 /**
  * Runs a command when its shortcut is pressed anywhere in the app, except while typing in a field or inside an open
- * menu or dialog (their keys belong to them). Disabled commands swallow nothing.
+ * menu or dialog (their keys belong to them). Disabled commands swallow only Ctrl shortcuts (browser actions).
  */
 export function useGlobalShortcuts(commands: readonly Command[]): void {
   useEffect(() => {
@@ -270,7 +275,12 @@ export function useGlobalShortcuts(commands: readonly Command[]): void {
       if (event.defaultPrevented || event.repeat || isTextEntry(event.target)) return;
       if (event.target instanceof Element && event.target.closest("[role=menu], dialog[open]") !== null) return;
       const command = commands.find((candidate) => candidate.shortcut !== undefined && matchesShortcut(event, candidate.shortcut));
-      if (!command?.enabled) return;
+      if (command === undefined) return;
+      // A disabled Ctrl shortcut is still ours: Ctrl+S must not open the browser's "Save page" instead.
+      if (!command.enabled) {
+        if (event.ctrlKey || event.metaKey) event.preventDefault();
+        return;
+      }
       event.preventDefault();
       command.run();
     };

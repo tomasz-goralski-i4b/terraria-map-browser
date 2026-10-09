@@ -3,19 +3,19 @@ import { RENDERER_PACKAGE } from "@studio/renderer";
 import { getDefaultAssetSession, useAssetStore } from "./assets/asset-session.js";
 import { SpritePreviewDialog } from "./panels/SpritePreviewDialog.js";
 import { MapView } from "./components/MapView.js";
-import { WorldFolderDialog } from "./components/WorldFolderDialog.js";
-import { resetWorldFolder } from "./world/world-folder.js";
-import { WorldFolderHint } from "./components/WorldFolderHint.js";
-import { closeFolderHint } from "./world/world-directory-picker.js";
+import { SaveAsDialog } from "./components/SaveAsDialog.js";
 import { useCommands, useGlobalShortcuts } from "./shell/commands.js";
 import { CommandPalette, HelpOverlay } from "./shell/dialogs.js";
 import { Dock } from "./shell/Dock.js";
 import { hydrateLayout, useLayoutStore, type LayoutStorage } from "./shell/layout-store.js";
+import { clearNotifications } from "./shell/notification-store.js";
+import { Notifications } from "./shell/Notifications.js";
 import { StatusBar } from "./shell/StatusBar.js";
 import { ToolOptions } from "./shell/ToolOptions.js";
 import { ToolRail } from "./shell/ToolRail.js";
 import { TopBar } from "./shell/TopBar.js";
 import { useViewStore } from "./shell/view-store.js";
+import { resetWorldLibrary, startWorldLibrary } from "./world/world-library.js";
 import { resetDefaultWorldSession } from "./world/world-session.js";
 
 /** The sprite-sheet preview, while it is open and an atlas is loaded. */
@@ -53,8 +53,12 @@ export function App({ layoutStorage }: AppProps = {}): React.JSX.Element {
   // A freshly mounted app starts with no world: the session and store are module-level singletons.
   useEffect(() => {
     resetDefaultWorldSession();
-    resetWorldFolder();
-    closeFolderHint();
+    clearNotifications();
+  }, []);
+  // The worlds folder and recent worlds of earlier visits; opened worlds are added to Open Recent.
+  useEffect(() => {
+    resetWorldLibrary();
+    return startWorldLibrary();
   }, []);
   // The Content folder of an earlier visit is reconnected without a prompt where the browser still allows it.
   useEffect(() => {
@@ -77,8 +81,8 @@ export function App({ layoutStorage }: AppProps = {}): React.JSX.Element {
       <HelpOverlay commands={commands} />
       <CommandPalette commands={commands} />
       <SpritePreview />
-      <WorldFolderDialog />
-      <WorldFolderHint />
+      <Notifications />
+      <SaveAsDialog />
     </div>
   );
 }

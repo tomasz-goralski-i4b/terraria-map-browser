@@ -5,9 +5,9 @@ import { useAppStore } from "../store.js";
 import { Icon } from "../ui/Icon.js";
 import { toRenderableWorld } from "../world/renderable-world.js";
 import { getDefaultWorldSession } from "../world/world-session.js";
-import { resetWorldExport, useExportStore } from "../world/export-world.js";
 import type { Command } from "../shell/commands.js";
 import { MapCanvas } from "./MapCanvas.js";
+import { StartScreen } from "./StartScreen.js";
 
 /**
  * Session messages stay above the canvas of a previously loaded world (which fills the view) and keep receiving
@@ -33,8 +33,6 @@ export function MapView({ renderer, world, commands }: MapViewProps): React.JSX.
   const summary = useAppStore((state) => state.summary);
   const error = useAppStore((state) => state.error);
   const assetNotice = useAssetStore((state) => state.notice);
-  const exported = useExportStore();
-  const saveCopy = commands?.find((command) => command.id === "file.saveCopy");
   // A new summary means a newly loaded world; the session is not reactive, the store is.
   const sessionWorld = useMemo(() => (summary === null ? null : loadedRenderableWorld()), [summary]);
   const drawn = world === undefined ? sessionWorld : world;
@@ -72,20 +70,6 @@ export function MapView({ renderer, world, commands }: MapViewProps): React.JSX.
           Could not open {error.fileName}: {error.code} at offset {error.offset}. {error.message}
         </p>
       )}
-      {exported.error !== null && (
-        <p role="alert" className="map-message map-message-error" style={MESSAGE_STYLE}>
-          Could not export world: {exported.error}
-          <button type="button" className="icon-button" aria-label="Close export" onClick={resetWorldExport}><Icon name="close" /></button>
-        </p>
-      )}
-      {(exported.message !== null || exported.download !== null) && (
-        <p role="status" className="map-message" style={MESSAGE_STYLE}>
-          {exported.message}{" "}
-          {exported.canSave && saveCopy !== undefined && <button type="button" className="button" disabled={!saveCopy.enabled} onClick={saveCopy.run}>{saveCopy.label}</button>}{" "}
-          {exported.download !== null && <a className="button" href={exported.download.url} download={exported.download.name}>Download {exported.download.name}</a>}
-          {exported.error === null && <button type="button" className="icon-button" aria-label="Close export" onClick={resetWorldExport}><Icon name="close" /></button>}
-        </p>
-      )}
       {assetNotice !== null && (
         <p role="alert" className="map-message map-message-error" style={MESSAGE_STYLE}>
           <Icon name="warning" />
@@ -94,11 +78,8 @@ export function MapView({ renderer, world, commands }: MapViewProps): React.JSX.
         </p>
       )}
       {drawn !== null && <MapCanvas world={drawn} />}
-      {summary === null && phase === "idle" && (
-        <div className="map-empty">
-          <p className="map-empty-title">No world open</p>
-          <p>Open a .wld file or drop it here.</p>
-        </div>
+      {drawn === null && phase === "idle" && (
+        <StartScreen commands={commands} />
       )}
     </main>
   );

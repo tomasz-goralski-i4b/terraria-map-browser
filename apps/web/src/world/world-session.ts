@@ -1,6 +1,6 @@
 import { WorldWorkerClient, WorldWorkerError, type WorldTilesResult } from "@studio/world-codec";
 import { useAppStore, type LoadError } from "../store.js";
-import { resetWorldExport } from "./export-world.js";
+import { resetWorldSave } from "./save-world.js";
 import type { OpenedWorldFile, OpenWorldHandle, WorldSaveDirectory } from "./world-file.js";
 
 /** Small display facts about the loaded world; the planes and palette themselves stay outside React and the store. */
@@ -66,7 +66,7 @@ export function createWorldSession(parser: WorldParser): WorldSession {
   };
 
   const open = async (file: File, handle?: OpenWorldHandle, directory?: WorldSaveDirectory): Promise<void> => {
-    resetWorldExport();
+    resetWorldSave();
     current?.abort();
     const controller = new AbortController();
     current = controller;
@@ -89,7 +89,7 @@ export function createWorldSession(parser: WorldParser): WorldSession {
   };
 
   const reset = (): void => {
-    resetWorldExport();
+    resetWorldSave();
     cancel();
     current = null;
     loaded = null;
@@ -113,4 +113,9 @@ export function getDefaultWorldSession(): WorldSession {
     WorldWorkerClient.create(() => new Worker(new URL("./world.worker.ts", import.meta.url), { type: "module" })),
   );
   return defaultSession;
+}
+
+/** File ▸ Close World: back to the start screen. */
+export function closeWorld(): void {
+  resetDefaultWorldSession();
 }

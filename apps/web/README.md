@@ -29,32 +29,33 @@ the renderer (`@studio/renderer`, framework-free) draws from them.
 
 The service worker precaches the built app shell only. User files (worlds, game assets) are never cached by it.
 
-## Exporting a world copy
+## Opening and saving worlds
 
-**Open world…** picks a `.wld` file; **Open folder…** lists the `.wld` worlds in a selected writable folder.
-The first folder selection explains Windows' default `Documents\My Games\Terraria\Worlds` location and offers
-**Don't show again**. The explanation and world chooser close with their close button, Escape or backdrop.
-Both native open pickers start in Documents on first use and share a remembered world-folder location.
-The file picker uses a world-specific MIME filter and excludes the generic all-files option.
+The **File** menu works like an editor's:
 
-App menu → **Save world copy…** works immediately after either opening flow. A world opened from a folder saves
-its copy there; a separately opened file asks for a writable folder. Sources without a handle use download.
-Every save serializes the current decoded CWM, including edits made after an earlier export.
-**Export world…** prepares a downloadable copy using the same writer in a separate Worker.
-The same writer path handles unchanged and edited tile planes. All 18 reader-admitted formats (269–279, 315–319,
-325–326) retain their source version; older-format write validation remains experimental and synthetic-tested.
-Unsupported content and invalid footers show the writer's reason and produce no writable output.
+- **Open World…** (`Ctrl+O`) picks a `.wld` file; dropping one on the map does the same.
+- **Open Folder…** picks the worlds folder *read-only* and remembers it (IndexedDB) for later visits. Its worlds,
+  newest first, are listed in **File ▸ Worlds** (a submenu that flies out on hover) and on the start screen. After a
+  browser restart the folder may need one click (**Allow Access**) before it is listed again.
+- **Open Recent** keeps the last eight worlds opened from a file handle.
+- **Save As…** (`Ctrl+Shift+S`) is the one way to write a world. Its dialog names the file (the opened name, or the
+  first free `name (n).wld` in the same folder), shows the destination folder (the folder the world came from, else
+  the worlds folder, else one chosen with **Choose Folder…**) and offers **Download** instead.
+- **Save** (`Ctrl+S`, writing back to the opened file) stays disabled until editing exists; `Ctrl+S` is still kept
+  from the browser.
 
-**Save world copy…** creates `<file-name>.copy.wld` only after successful encoding. Existing files
-are refused; the source identity is checked before any writable stream is created, including after a raced creation.
-The directory picker replaces `showSaveFilePicker`, which can truncate a selected file before returning its handle
-([File System Access §3.4](https://wicg.github.io/file-system-access/#api-showsavefilepicker)). This satisfies the
-original-file protection requirement; a save picker followed by `isSameEntry` cannot satisfy it.
-Download is always available; worlds opened through the file input or drag-and-drop without a source handle, or
-browsers without directory selection, use this fallback. Save and Download use the same button styling.
-The export message has a close button which cancels pending work and releases its download URL without closing
-the loaded world. Opening another world or resetting also cancels work and releases
-download URLs. A snapshot of the current CWM and preserved envelope is copied in yielding 1 MiB slices and transferred
-to the Worker, preserving byte-view aliases and leaving the live world's buffers attached. Tile runs may be combined
-into canonical RLE, changing file bytes, lengths and section offsets while preserving all decoded tile values,
-metadata and opaque sections. The generated format-326 fixture also remains byte-identical in the browser test.
+Saving encodes the current CWM with the TypeScript `writeWorld` in a Worker (the same path for unchanged and edited
+tiles; all 18 reader-admitted formats keep their version), then reads the bytes back with the codec and compares
+format, size, name and every tile plane (blocks and walls by the content they name). Only bytes that pass reach the
+disk or the downloads, so the dialog can promise "read back before anything is written". Write access is asked for on
+the Save click, never when a folder or world is opened. The opened world's own file is never overwritten (checked
+with `isSameEntry` before and after the file is created); another existing file is replaced only after **Replace** is
+confirmed, and never for a world dropped without a file handle (its identity cannot be checked). The browser writes
+through a temporary file and swaps it in on close, so a failed save leaves the old file intact.
+
+`showSaveFilePicker` is not used: it can create or truncate the chosen file before returning its handle, too early for
+the identity check ([File System Access §3.4](https://wicg.github.io/file-system-access/#api-showsavefilepicker)).
+A snapshot of the CWM is copied to the Worker in yielding 1 MiB slices, leaving the live world's buffers attached;
+canonical RLE may change file bytes and section offsets while preserving every decoded value. Opening another world,
+closing the world or cancelling the dialog cancels a save in progress. Results show as notifications in the map's
+bottom-right corner.

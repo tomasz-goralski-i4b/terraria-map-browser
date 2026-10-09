@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { useLayoutStore } from "../shell/layout-store.js";
+import { deleteStored, readStored, writeStored } from "../handle-db.js";
 import type { AtlasWorkerRequest, AtlasWorkerResponse, BuildProgress, BuildResult, MissingSheet, SpriteAtlas } from "@studio/assets";
 
 /** A picked `Content` folder with the permission calls of the File System Access API. */
@@ -442,51 +443,13 @@ export function createWorkerAtlasBuilder(createWorker: () => Worker, cacheName =
   };
 }
 
-const DB_NAME = "terraria-map-studio";
-const STORE = "handles";
 const KEY = "content-source";
-
-function openDb(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, 1);
-    request.onupgradeneeded = () => {
-      request.result.createObjectStore(STORE);
-    };
-    request.onsuccess = () => {
-      resolve(request.result);
-    };
-    request.onerror = () => {
-      reject(request.error ?? new Error("IndexedDB is not available"));
-    };
-  });
-}
-
-async function transact<T>(mode: IDBTransactionMode, run: (store: IDBObjectStore) => IDBRequest): Promise<T> {
-  const db = await openDb();
-  try {
-    return await new Promise<T>((resolve, reject) => {
-      const request = run(db.transaction(STORE, mode).objectStore(STORE));
-      request.onsuccess = () => {
-        resolve(request.result as T);
-      };
-      request.onerror = () => {
-        reject(request.error ?? new Error("IndexedDB request failed"));
-      };
-    });
-  } finally {
-    db.close();
-  }
-}
 
 /** Keeps the remembered source in IndexedDB, the only storage that can hold a directory handle. */
 export const indexedDbRememberedContent: RememberedContent = {
-  load: async () => (await transact<RememberedSource | undefined>("readonly", (store) => store.get(KEY))) ?? null,
-  save: async (source) => {
-    await transact("readwrite", (store) => store.put(source, KEY));
-  },
-  forget: async () => {
-    await transact("readwrite", (store) => store.delete(KEY));
-  },
+  load: () => readStored<RememberedSource>(KEY),
+  save: (source) => writeStored(KEY, source),
+  forget: () => deleteStored(KEY),
 };
 
 /**
@@ -499,9 +462,10 @@ function openFolderDialog(session: () => AssetSession): void {
   input.webkitdirectory = true;
   input.addEventListener("change", () => {
     const files = [...(input.files ?? [])];
-    // The Sprites row in the Layers panel shows the build, so make sure it is in view.
+    // The Sprites row in the Layers panel (View tab) shows the build, so make sure it is in view.
     const layout = useLayoutStore.getState();
     layout.setDockHidden(false);
+    layout.setDockTab("view");
     layout.setSectionOpen("layers", true);
     void session().connectFiles(files);
   });
