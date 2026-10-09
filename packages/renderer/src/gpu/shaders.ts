@@ -26,6 +26,18 @@ export const PRESENT = { flags: 1, frameX: 2, frameY: 4 } as const;
 export const RULE_ROW = 256;
 export const RULE_HEADER_ROWS = 256;
 
+/**
+ * Sprite sheet lookup texture (RGBA32I): two texels per palette index, at (index % 256 × 2 + k, index / 256):
+ * k = 0 (atlas page, x, y, 1 when the entry has a sheet), k = 1 (sheet width, height, frame width, frame height).
+ */
+export const SPRITE_SHEET_ROW = 256;
+
+/** Pixels per tile from which sprite mode samples the atlas instead of the map colour. */
+export const SPRITE_MIN_ZOOM = 8;
+
+/** Sprite pixels across one tile: a frame's cell is scaled into these. */
+const SPRITE_TILE_PIXELS = 16;
+
 /** Vertex attribute locations of the per-chunk instance data, bound before linking. */
 export const RECT_ATTRIBUTE = 0;
 export const LAYER_ATTRIBUTE = 1;
@@ -48,6 +60,7 @@ const tileColorSource = `
 precision highp usampler2DArray;
 precision highp usampler2D;
 precision highp isampler2D;
+precision highp sampler2DArray;
 // Chunk pages, uploaded straight from the world's planes: uPlanes16 holds the 16-bit planes (block, wall, flags,
 // frameX, frameY as their 16-bit pattern), uPlanes8 the 8-bit ones (liquid kind, liquid amount, block paint, wall
 // paint). A chunk's plane p is layer vLayer * planes + p, holding the chunk and an apron of PAGE_APRON tiles of its
@@ -71,6 +84,11 @@ uniform ivec3 uWireColors[5];
 uniform int uWireBits[5];
 uniform int uWireAlpha;
 uniform ivec3 uLiquids[4]; // colours of CWM liquid kinds 1–4
+// Sprite mode (#91): the atlas pages (RGBA8, straight alpha) and the sheet of each palette index (SPRITE_SHEET_ROW).
+// uSprites is 1 only in the chunk pass at SPRITE_MIN_ZOOM pixels per tile and above, with an atlas.
+uniform sampler2DArray uAtlas;
+uniform isampler2D uSpriteSheets;
+uniform int uSprites;
 flat in ivec4 vRect;
 flat in int vLayer;
 
@@ -120,6 +138,24 @@ ivec3 painted(ivec3 base, int paint, bool wall) {
   return tint * max(base.r, max(base.g, base.b)) / 255;
 }
 
+// The atlas pixel of a block with a stored frame at sprite pixel sub (0–15 per axis) of its tile: the frame's cell,
+// scaled into the tile. False without a stored frame (frames of -1), a sheet, or past the sheet's edge.
+bool spritePixel(uint index, ivec2 texel, ivec2 sub, out ivec4 color) {
+  if ((uPresent & ${String(PRESENT.frameX | PRESENT.frameY)}) != ${String(PRESENT.frameX | PRESENT.frameY)}) return false;
+  ivec2 stored = ivec2(
+    frame(texel, ${String(PLANES_16.frameX)}, ${String(PRESENT.frameX)}),
+    frame(texel, ${String(PLANES_16.frameY)}, ${String(PRESENT.frameY)}));
+  if (stored.x < 0 || stored.y < 0) return false;
+  ivec2 at = ivec2(int(index) % ${String(SPRITE_SHEET_ROW)} * 2, int(index) / ${String(SPRITE_SHEET_ROW)});
+  ivec4 place = texelFetch(uSpriteSheets, at, 0);
+  if (place.w == 0) return false;
+  ivec4 size = texelFetch(uSpriteSheets, at + ivec2(1, 0), 0);
+  ivec2 pixel = stored + sub * size.zw / ${String(SPRITE_TILE_PIXELS)};
+  if (any(greaterThanEqual(pixel, size.xy))) return false;
+  color = ivec4(round(texelFetch(uAtlas, ivec3(place.yz + pixel, place.x), 0) * 255.0));
+  return true;
+}
+
 bool paletteColor(uint index, int xOffset, out ivec3 color) {
   if (index == ABSENT || int(index) >= uPaletteLength) return false;
   color = ivec3(texelFetch(uPalette, ivec2(int(index) % 256 + xOffset, int(index) / 256), 0).rgb);
@@ -127,8 +163,9 @@ bool paletteColor(uint index, int xOffset, out ivec3 color) {
 }
 
 // Straight-alpha RGBA (0–255) of a tile relative to the instance's chunk origin, apron included (-1 to the chunk size).
-// Only the planes the enabled layers need are read.
-ivec4 localColor(ivec2 local) {
+// Only the planes the enabled layers need are read. With uSprites, sub is the sprite pixel (0–15 per axis) within the
+// tile: a block with a stored frame and a sheet shows that sheet's pixel, over the wall or background behind it.
+ivec4 localColorAt(ivec2 local, ivec2 sub) {
   ivec2 texel = ivec2(local.y + ${String(PAGE_APRON)}, local.x + ${String(PAGE_APRON)});
   int tileY = vRect.y + local.y;
 
@@ -137,11 +174,21 @@ ivec4 localColor(ivec2 local) {
   ivec3 content;
   uint block = (uLayers & 4) != 0 ? plane16(texel, ${String(PLANES_16.block)}) : ABSENT;
   uint wall = (uLayers & 2) != 0 ? plane16(texel, ${String(PLANES_16.wall)}) : ABSENT;
-  if (paletteColor(block, 0, content)) {
+  ivec4 sprite = ivec4(0);
+  bool blockShown = paletteColor(block, 0, content);
+  bool hasSprite = blockShown && uSprites != 0 && spritePixel(block, texel, sub, sprite);
+  if (blockShown && !hasSprite) {
     content = blockColor(block, content, texel);
     color = ivec4(painted(content, int(plane8(texel, ${String(PLANES_8.paint)})), false), 255);
-  } else if (paletteColor(wall, 256, content)) {
-    color = ivec4(painted(content, int(plane8(texel, ${String(PLANES_8.wallPaint)})), true), 255);
+  } else {
+    if (paletteColor(wall, 256, content)) {
+      color = ivec4(painted(content, int(plane8(texel, ${String(PLANES_8.wallPaint)})), true), 255);
+    }
+    // A sprite pixel over what lies behind it (paint is not applied to sprites). Behind is opaque or empty.
+    if (hasSprite && sprite.a != 0) {
+      if (sprite.a == 255 || color.a == 0) color = sprite;
+      else color.rgb = (2 * (sprite.rgb * sprite.a + color.rgb * (255 - sprite.a)) + 255) / 510;
+    }
   }
 
   if ((uLayers & 8) != 0) {
@@ -173,6 +220,10 @@ ivec4 localColor(ivec2 local) {
     }
   }
   return color;
+}
+
+ivec4 localColor(ivec2 local) {
+  return localColorAt(local, ivec2(0));
 }
 
 // Straight-alpha RGBA (0–255) of a tile inside the instance's chunk; tiles outside it are clamped to its edge.
@@ -250,9 +301,17 @@ ivec4 filtered(ivec2 pixel) {
   return ivec4(ivec3((2u * sum + alpha) / (2u * alpha)), int((2u * alpha + area) / (2u * area)));
 }
 
+// The tile under a pixel, and with sprites the sprite pixel within it.
+ivec4 pointColor(vec2 screen) {
+  vec2 world = uCamera + screen / uZoom;
+  ivec2 tile = ivec2(floor(world));
+  ivec2 sub = clamp(ivec2(floor(fract(world) * ${String(SPRITE_TILE_PIXELS)}.0)), ivec2(0), ivec2(${String(SPRITE_TILE_PIXELS - 1)}));
+  return localColorAt(clamp(tile - vRect.xy, ivec2(0), vRect.zw - 1), sub);
+}
+
 void main() {
   vec2 screen = vec2(gl_FragCoord.x, uViewport.y - gl_FragCoord.y);
-  outColor = vec4(uFilter != 0 ? filtered(ivec2(floor(screen))) : tileColor(ivec2(floor(uCamera + screen / uZoom)))) / 255.0;
+  outColor = vec4(uFilter != 0 ? filtered(ivec2(floor(screen))) : pointColor(screen)) / 255.0;
 }
 `;
 

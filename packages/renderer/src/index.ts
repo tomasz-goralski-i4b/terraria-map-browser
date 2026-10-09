@@ -15,4 +15,7 @@ export type { Camera, ChunkCoord, Size } from "./camera/camera.js";
 export { CameraAnimator, wheelPixels } from "./camera/animator.js";
 export type { CameraStep } from "./camera/animator.js";
 export { WebGl2UnavailableError, createMapRenderer } from "./gpu/map-renderer.js";
-export type { MapRenderer, MapRendererOptions, MapRendererStats, RenderableWorld } from "./gpu/map-renderer.js";
+export type {
+  MapRenderer, MapRendererOptions, MapRendererStats, RenderableWorld, SpriteAtlasSource, SpriteSheetEntry,
+} from "./gpu/map-renderer.js";
+export { SPRITE_MIN_ZOOM } from "./gpu/shaders.js";

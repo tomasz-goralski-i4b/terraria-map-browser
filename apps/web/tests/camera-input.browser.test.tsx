@@ -46,14 +46,15 @@ beforeEach(() => {
   Object.defineProperty(media, "matches", { configurable: true, value: false });
   vi.spyOn(window, "matchMedia").mockReturnValue(media);
   renderer = {
-    setWorld: vi.fn(), setCamera: vi.fn((camera: Camera) => { drawn = camera; }), setLayers: vi.fn(),
+    setWorld: vi.fn(), setCamera: vi.fn((camera: Camera) => { drawn = camera; }), setLayers: vi.fn(), setAtlas: vi.fn(),
+    setSpriteMode: vi.fn(),
     tileAt: (x, y) => {
       const tile = screenToTile(drawn, x, y);
       return tile.x < 0 || tile.y < 0 || tile.x >= world.width || tile.y >= world.height
         ? null : { x: Math.floor(tile.x), y: Math.floor(tile.y) };
     },
     render: vi.fn(), dispose: vi.fn(),
-    stats: () => ({ textureUploads: 0, drawCalls: 0, visibleChunks: [], residentChunks: 0, evictedChunks: 0 }),
+    stats: () => ({ textureUploads: 0, drawCalls: 0, visibleChunks: [], residentChunks: 0, evictedChunks: 0, atlasUploads: 0 }),
   };
   vi.mocked(createMapRenderer).mockReturnValue(renderer);
 });
