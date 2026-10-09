@@ -111,6 +111,27 @@ structure/schema or existing output), and 1 (format/I/O failure, including malfo
 diagnostics go to stderr. No .NET process is invoked, and these
 temporary CWM outputs are never fixtures or committed goldens.
 
+## Differential compatibility check
+
+After `bash scripts/build.sh`, run `node scripts/compatibility/cwm.mjs`. It validates the nonempty v1
+fixture manifest, requires every listed source, invokes the .NET inspector separately for each entry,
+then invokes the independent TS corpus exporter. Every corresponding CWM file must exist, have valid
+v1 framing and complete planes, and agree byte for byte. Identical truncated exports also fail.
+No golden is modified and neither runtime package acquires a dependency on the other implementation.
+
+Exports and `report.txt` live in a fresh ignored `.tdd/cwm-*` directory. To choose the location, pass
+`<fixture-directory> <new-artifact-directory>`; the latter must be inside `.tdd` or the system temporary
+directory. Existing directories are rejected to prevent stale exports from satisfying a missing output.
+Exit 0 means every manifest entry agrees; any failure exits 1. The always-run CI job `cwm-compatibility`
+has no path filters or allowed failures; it uploads bounded text reports on failure, never full grids.
+Repository branch protection must select that job as a required status check to enforce it on merges.
+
+A mismatch reports the fixture and first differing byte offset. Header differences name the prefix,
+metadata, dimensions, palette or encoding region. Plane differences name the plane, chunk `(cx, cy)`
+and coordinate `(x, y)`, using column-major indexing and 128 × 128 chunks. Reports never dump tile grids
+or the full JSON header. To inspect existing artifacts (including a deliberate local byte mutation), run
+`node scripts/compatibility/cwm.mjs --compare <dotnet.cwm> <typescript.cwm> <fixture-name>`.
+
 ## TypeScript model API
 
 `packages/world-model` exports `createWorld(width, height, { maxBytes? })`. Dimensions must be positive

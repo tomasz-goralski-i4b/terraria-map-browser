@@ -5,6 +5,46 @@ on:
     branches: [main]
 
 jobs:
+  cwm-compatibility:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: List LFS objects
+        run: git lfs ls-files --long | cut -d' ' -f1 | sort > "$RUNNER_TEMP/lfs-ids"
+      - uses: actions/cache@v4
+        with:
+          path: .git/lfs/objects
+          key: lfs-${{ hashFiles(format('{0}/lfs-ids', runner.temp)) }}
+          restore-keys: lfs-
+      - run: git lfs pull
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: dotnet/**/packages.lock.json
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: node --test scripts/compatibility/cwm.test.mjs
+      - name: Build independent exporters
+        run: |
+          dotnet restore dotnet/Terraria.WorldInspector --locked-mode
+          dotnet build dotnet/Terraria.WorldInspector --no-restore -warnaserror
+          pnpm -s typecheck
+      - name: Compare every manifest fixture
+        run: node scripts/compatibility/cwm.mjs
+      - name: Upload mismatch reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cwm-mismatch-reports
+          path: .tdd/cwm-*/report.txt
+          include-hidden-files: true
+          if-no-files-found: ignore
+  # Runs in parallel with cwm-compatibility: a `needs` dependency would add that job's time to every CI run.
   verify:
     runs-on: ubuntu-latest
     steps:
