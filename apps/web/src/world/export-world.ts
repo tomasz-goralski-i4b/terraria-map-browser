@@ -36,6 +36,8 @@ interface SavePickerWindow {
 
 let current: AbortController | null = null;
 
+export async function saveWorldCopy(): Promise<void> {}
+
 /** Cancels pending work and releases the previous download when the opened world changes. */
 export function resetWorldExport(): void {
   current?.abort();
