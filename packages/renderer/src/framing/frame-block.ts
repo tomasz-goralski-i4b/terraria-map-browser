@@ -90,6 +90,8 @@ const DY = [-1, -1, -1, 0, 0, 1, 1, 1] as const;
 const CUT_FACES = [0, 1, 3, 9, 6, 12] as const;
 const POWERS = [1, 3, 9, 27, 81, 243, 729, 2187] as const;
 const CODES = 6561;
+/** The largest area (tiles, ring included) whose frameRegion scratch is kept for the next call: 4 × 4 chunks. */
+const KEPT_AREA = 520 * 520;
 
 const pack = (column: number, row: number): number => column * 64 + row;
 const digitAt = (code: number, slot: number): number => Math.floor(code / (POWERS[slot] ?? 1)) % 3;
@@ -230,8 +232,9 @@ export function createBlockFraming(database: FramingDatabase): BlockFraming {
   const aloneReference = new Int32Array(count).fill(-1);
   const positional = new Int8Array(count).fill(-1);
   const variantless = new Int8Array(count).fill(-1);
-  /** Per type: packed cell → its variant-1 and variant-2 packed cells (−1 not observed), built on first use. */
+  /** Per type: packed cell → its variant-1 and variant-2 packed cells (−1 not observed), shared by variant map. */
   const variantCells: (Int16Array | undefined)[] = [];
+  const variantTables = new Map<number, Int16Array>();
   function deriveType(index: number): void {
     const type = types[index] ?? -1;
     const reference = database.aloneTable(type, 10, 10) ?? -1;
@@ -242,14 +245,21 @@ export function createBlockFraming(database: FramingDatabase): BlockFraming {
     }
     positional[index] = byPosition ? 1 : 0;
     variantless[index] = database.ignoresVariant(type) ? 1 : 0;
-    const variants = new Int16Array(64 * 64 * 2).fill(-1);
-    database.cells.forEach((_, cell) => {
-      const packed = packedOfCell[cell] ?? 0;
-      for (const variant of [1, 2]) {
-        const varied = database.variantCell(type, cell, variant);
-        if (varied !== -1) variants[packed * 2 + variant - 1] = packedOfCell[varied] ?? -1;
-      }
-    });
+    if (variantless[index] === 1) return;
+    const map = database.variantMap(type);
+    let variants = variantTables.get(map);
+    if (variants === undefined) {
+      const table = new Int16Array(64 * 64 * 2).fill(-1);
+      database.cells.forEach((_, cell) => {
+        const packed = packedOfCell[cell] ?? 0;
+        for (const variant of [1, 2]) {
+          const varied = database.variantCell(type, cell, variant);
+          if (varied !== -1) table[packed * 2 + variant - 1] = packedOfCell[varied] ?? -1;
+        }
+      });
+      variants = table;
+      variantTables.set(map, variants);
+    }
     variantCells[index] = variants;
   }
 
@@ -347,14 +357,15 @@ export function createBlockFraming(database: FramingDatabase): BlockFraming {
   }
 
   // Scratch of frameRegion, reused across calls and grown when a larger area comes: the area's tile ids with a ring of
-  // one tile around it (−1 none), their shapes, their passes (−1 not framed here) and their reference cells.
+  // one tile around it (−1 none), their shapes, their passes (−1 not framed here) and their reference cells. Areas
+  // above KEPT_AREA tiles (8 bytes each) get scratch of their own, so one whole-world call does not pin it.
   const neighbourTypes = new Int32Array(8);
   const neighbourShapes = new Uint8Array(8);
   const offsets = new Int32Array(8);
-  let areaTypes = new Int32Array(0);
-  let areaShapes = new Uint8Array(0);
-  let areaPasses = new Int8Array(0);
-  let references = new Int16Array(0);
+  let keptTypes = new Int32Array(0);
+  let keptShapes = new Uint8Array(0);
+  let keptPasses = new Int8Array(0);
+  let keptReferences = new Int16Array(0);
 
   function frameRegion(world: CanonicalWorld, region: BlockRegion, out: Uint16Array): void {
     out.fill(NO_CELL);
@@ -379,11 +390,21 @@ export function createBlockFraming(database: FramingDatabase): BlockFraming {
     // The padded area: column i, row j holds tile (left − 1 + i, top − 1 + j); the outer ring is read, never framed.
     const columns = right - left + 2;
     const stride = bottom - top + 2;
+    let areaTypes = keptTypes;
+    let areaShapes = keptShapes;
+    let areaPasses = keptPasses;
+    let references = keptReferences;
     if (areaTypes.length < columns * stride) {
       areaTypes = new Int32Array(columns * stride);
       areaShapes = new Uint8Array(columns * stride);
       areaPasses = new Int8Array(columns * stride);
       references = new Int16Array(columns * stride);
+      if (columns * stride <= KEPT_AREA) {
+        keptTypes = areaTypes;
+        keptShapes = areaShapes;
+        keptPasses = areaPasses;
+        keptReferences = references;
+      }
     }
     let shaped = false;
     for (let i = 0; i < columns; i++) {

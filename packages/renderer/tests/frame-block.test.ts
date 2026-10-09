@@ -503,17 +503,28 @@ describe("the two-pass helper over a tile region", () => {
     expect(reused).toEqual(fresh);
   });
 
-  test("a centre that reads a table still applies the edge check to its relatives", () => {
+  test("a centre that reads a table still applies the edge check to its relatives, on every side", () => {
     const MUD = 59;
     const CHLOROPHYTE = 211;
-    // Mud, dirt at E (the table's other type), chlorophyte at N: it connects only where its cell keeps its rim.
-    const neighbours = [MUD, CHLOROPHYTE, MUD, MUD, DIRT, MUD, MUD, MUD];
-    for (const [rims, north] of [[1, 1], [0, 0]] as const) {
-      const code = [1, north, 1, 1, 2, 1, 1, 1].reduce((sum, digit, k) => sum + digit * 3 ** k, 0);
-      const actual = framing.frameBlock({
-        type: MUD, shape: 0, x: REFERENCE[0], y: REFERENCE[1], neighbours, rimsTowardCentre: rims,
-      });
-      expect(asTuple(actual), `rims ${String(rims)}`).toEqual(database.blockCell(MUD, DIRT, code));
+    expect(framing.kind(MUD, 668)).toBe("table");
+    // Mud, the table's other type at NW, chlorophyte on one side or corner: a side connects only where the
+    // chlorophyte keeps its rim, a corner always.
+    for (const other of [DIRT, 668]) {
+      for (const slot of [1, 4, 6, 3, 2]) {
+        const side = [-1, 0, -1, 3, 1, -1, 2, -1][slot] ?? -1;
+        for (const rims of [0, 15]) {
+          const neighbours = [other, MUD, MUD, MUD, MUD, MUD, MUD, MUD];
+          neighbours[slot] = CHLOROPHYTE;
+          const digits = [2, 1, 1, 1, 1, 1, 1, 1];
+          digits[slot] = side === -1 || rims === 15 ? 1 : 0;
+          const code = digits.reduce((sum, digit, k) => sum + digit * 3 ** k, 0);
+          const actual = framing.frameBlock({
+            type: MUD, shape: 0, x: REFERENCE[0], y: REFERENCE[1], neighbours, rimsTowardCentre: rims,
+          });
+          expect(asTuple(actual), `other ${String(other)} slot ${String(slot)} rims ${String(rims)}`)
+            .toEqual(database.blockCell(MUD, other, code));
+        }
+      }
     }
   });
 

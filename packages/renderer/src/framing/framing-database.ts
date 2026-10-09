@@ -122,6 +122,8 @@ export interface FramingDatabase {
   readonly pairTable: (centre: number, other: number) => number | null;
   /** The cell index of variant `variant` of a block whose variant-0 cell index is `cell`; −1 when not observed. */
   readonly variantCell: (centre: number, cell: number, variant: number) => number;
+  /** The index of `centre`'s variant map (types share maps); −1 when it is not a self-framed block type. */
+  readonly variantMap: (centre: number) => number;
   /** Whether `centre` frames by position and ignores the variant (the large-frame types). */
   readonly ignoresVariant: (centre: number) => boolean;
 }
@@ -216,6 +218,7 @@ export async function loadFramingDatabase(data: FramingDatabaseData): Promise<Fr
       const entry = block === undefined ? undefined : variantMaps[block.variants]?.get(cell);
       return entry === undefined ? -1 : variant === 1 ? entry[0] : entry[1];
     },
+    variantMap: (centre) => blockOf.get(centre)?.variants ?? -1,
     ignoresVariant: (centre) => blockOf.get(centre)?.variantIgnoredByPosition === true,
   };
 }
