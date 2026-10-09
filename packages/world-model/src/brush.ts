@@ -2,11 +2,11 @@ import type { CanonicalWorld, WorldPlanes } from "./index.js";
 
 export const BRUSH_BLOCKS = [0, 1, 30, 38] as const;
 export const BRUSH_WALLS = [2, 1, 4, 5] as const;
-export interface BrushOptions {
-  readonly layer: "block" | "wall";
-  readonly id: number | null;
-  readonly size: number;
-}
+export const BRUSH_LAYER = { block: "block", wall: "wall", both: "both" } as const;
+export type BrushLayer = (typeof BRUSH_LAYER)[keyof typeof BRUSH_LAYER];
+export type BrushOptions =
+  | { readonly layer: typeof BRUSH_LAYER.block | typeof BRUSH_LAYER.wall; readonly id: number | null; readonly size: number }
+  | { readonly layer: typeof BRUSH_LAYER.both; readonly blockId: number | null; readonly wallId: number | null; readonly size: number };
 export interface TileCoordinate { readonly x: number; readonly y: number }
 export interface PlaneChange { readonly plane: keyof WorldPlanes; readonly before: number; readonly after: number }
 export interface TileDiff extends TileCoordinate { readonly changes: readonly PlaneChange[] }
@@ -36,6 +36,9 @@ export function createBrushHistory(
     return diff;
   };
   const stamp = (cx: number, cy: number, selected: BrushOptions, changed: TileDiff[]): void => {
+    const targets = selected.layer === BRUSH_LAYER.both
+      ? [{ layer: BRUSH_LAYER.block, id: selected.blockId }, { layer: BRUSH_LAYER.wall, id: selected.wallId }]
+      : [{ layer: selected.layer, id: selected.id }];
     const offset = Math.floor(selected.size / 2);
     for (let x = Math.max(0, cx - offset); x < Math.min(world.width, cx - offset + selected.size); x++) {
       for (let y = Math.max(0, cy - offset); y < Math.min(world.height, cy - offset + selected.size); y++) {
@@ -45,30 +48,37 @@ export function createBrushHistory(
         // Whole coordinates containing objects or unknown content are protected, even for a wall stroke.
         const block = tile.block;
         if (block !== undefined && (block.kind !== "vanilla" || !BRUSH_BLOCKS.some((id) => id === block.id))) continue;
-        const content = tile[selected.layer];
-        const allowed = selected.layer === "block" ? BRUSH_BLOCKS : BRUSH_WALLS;
-        if (content !== undefined && (content.kind !== "vanilla" || !allowed.some((id) => id === content.id))) continue;
-        if ((content?.kind === "vanilla" ? content.id : null) === selected.id) continue;
+        if (targets.some(({ layer }) => {
+          const content = tile[layer];
+          const allowed = layer === BRUSH_LAYER.block ? BRUSH_BLOCKS : BRUSH_WALLS;
+          return content !== undefined && (content.kind !== "vanilla" || !allowed.some((id) => id === content.id));
+        })) continue;
+        if (targets.every(({ layer, id }) => {
+          const content = tile[layer];
+          return (content?.kind === "vanilla" ? content.id : null) === id;
+        })) continue;
         const before = planeNames.map((name) => world.planes[name][index] ?? 0);
-        if (selected.id === null) {
-          if (selected.layer === "block") delete tile.block;
-          else delete tile.wall;
-        }
-        else tile[selected.layer] = { kind: "vanilla", id: selected.id };
-        if (selected.layer === "block") {
-          delete tile.frameX;
-          delete tile.frameY;
-          if (selected.id === null) {
-            delete tile.paint;
-            delete tile.shape;
-            delete tile.inactive;
-            delete tile.invisibleBlock;
-            delete tile.fullBrightBlock;
+        for (const { layer, id } of targets) {
+          if (id === null) {
+            if (layer === BRUSH_LAYER.block) delete tile.block;
+            else delete tile.wall;
           }
-        } else if (selected.id === null) {
-          delete tile.wallPaint;
-          delete tile.invisibleWall;
-          delete tile.fullBrightWall;
+          else tile[layer] = { kind: "vanilla", id };
+          if (layer === BRUSH_LAYER.block) {
+            delete tile.frameX;
+            delete tile.frameY;
+            if (id === null) {
+              delete tile.paint;
+              delete tile.shape;
+              delete tile.inactive;
+              delete tile.invisibleBlock;
+              delete tile.fullBrightBlock;
+            }
+          } else if (id === null) {
+            delete tile.wallPaint;
+            delete tile.invisibleWall;
+            delete tile.fullBrightWall;
+          }
         }
         world.setTile(x, y, tile);
         const changes: PlaneChange[] = [];
@@ -89,9 +99,12 @@ export function createBrushHistory(
   return {
     begin: (selected) => {
       assertIdle();
-      const allowed = selected.layer === "block" ? BRUSH_BLOCKS : BRUSH_WALLS;
-      if (!Number.isInteger(selected.size) || selected.size < 1 || selected.size > 9 ||
-        (selected.id !== null && !allowed.some((id) => id === selected.id))) throw new RangeError("Brush needs size 1–9 and whitelisted vanilla content");
+      const allowed = selected.layer === BRUSH_LAYER.block ? BRUSH_BLOCKS : BRUSH_WALLS;
+      const validContent = selected.layer === BRUSH_LAYER.both
+        ? (selected.blockId === null || BRUSH_BLOCKS.some((id) => id === selected.blockId)) &&
+          (selected.wallId === null || BRUSH_WALLS.some((id) => id === selected.wallId))
+        : selected.id === null || allowed.some((id) => id === selected.id);
+      if (!Number.isInteger(selected.size) || selected.size < 1 || selected.size > 9 || !validContent) throw new RangeError("Brush needs size 1–9 and whitelisted vanilla content");
       options = { ...selected };
       previous = null;
       stroke.clear();

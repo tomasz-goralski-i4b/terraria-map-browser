@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { WIRE_LAYER, type Camera, type ChunkLayers, type MapRendererStats } from "@studio/renderer";
 
-/** Tools of the left rail. Only the navigation tools work today; the rest mark where editing will go (docs/ui.md). */
+/** Tools of the left rail. Navigation and the first safe brush/erase slice are available (docs/ui.md). */
 export type ToolId = "pan" | "inspect" | "brush" | "erase" | "fill" | "select" | "picker" | "object";
 
 export interface TilePoint {

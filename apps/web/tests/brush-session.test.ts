@@ -21,6 +21,14 @@ test.each(SUPPORTED_VANILLA_FORMATS)("brush edits export current state and reloa
   expect(canonicalWorldOf(reloaded).tileAt(1, 2).wall).toEqual({ kind: "vanilla", id: 1 });
   history?.undo();
   expect(Object.values(world.planes)).toEqual(original);
+  history?.begin({ layer: "both", blockId: 38, wallId: 4, size: 1 });
+  history?.move(1, 2);
+  history?.commit();
+  const both = writeWorld(world);
+  expect(verifyWrittenWorld(world, both)).toBeNull();
+  const bothReloaded = canonicalWorldOf(readWorldTiles(new Uint8Array(both)));
+  expect(bothReloaded.tileAt(1, 2).block).toEqual({ kind: "vanilla", id: 38 });
+  expect(bothReloaded.tileAt(1, 2).wall).toEqual({ kind: "vanilla", id: 4 });
 });
 
 test("protects chest footprints including air and refuses unknown content or undecoded entity sections", () => {

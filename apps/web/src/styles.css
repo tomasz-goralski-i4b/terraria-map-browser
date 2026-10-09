@@ -634,10 +634,25 @@ kbd {
   font-weight: 600;
 }
 
-.tool-options { overflow-x: auto; }
-.tool-options label { display: inline-flex; align-items: center; gap: var(--space-1); }
-.tool-options input[type="number"] { width: 3.5rem; }
+.tool-options { overflow-x: auto; overflow-y: hidden; }
 .tool-options > * { flex-shrink: 0; }
+.tool-options-identity { display: inline-flex; align-items: center; gap: var(--space-2); min-width: 68px; }
+.tool-options-hint, .tool-options-notice, .brush-option-label, .brush-size-unit { color: var(--text-2); }
+.brush-option-group { display: inline-flex; align-items: center; gap: var(--space-2); padding-left: var(--space-3); border-left: 1px solid var(--border); }
+.brush-field { display: inline-flex; align-items: center; gap: var(--space-1); }
+.brush-segments { display: inline-flex; border: 1px solid var(--border-strong); border-radius: var(--radius); overflow: hidden; }
+.brush-segments button { height: 22px; padding: 0 var(--space-2); background: var(--surface-2); color: var(--text-2); border: 0; font: inherit; }
+.brush-segments button + button { border-left: 1px solid var(--border); }
+.brush-segments button:hover:not(:disabled) { background: var(--surface-3); color: var(--text-1); }
+.brush-segments button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent-text); box-shadow: inset 0 -2px var(--accent-text); }
+.brush-segments button:disabled { opacity: .5; }
+.brush-segments button:focus-visible { outline-offset: -2px; }
+.brush-material { width: 104px; height: 24px; padding: 0 var(--space-1); font: inherit; color: var(--text-1); }
+.brush-size.text-input { width: 46px; height: 24px; padding: 0 var(--space-1); font-variant-numeric: tabular-nums; }
+.brush-shape-preview { display: grid; place-items: center; width: 18px; height: 18px; border: 1px solid var(--border); }
+.brush-shape-preview span { width: 14px; height: 14px; background: var(--text-2); }
+.tool-options-history { display: inline-flex; gap: 2px; margin-left: auto; padding-left: var(--space-3); border-left: 1px solid var(--border); }
+.tool-options-history .icon-button { width: 26px; height: 26px; }
 
 /* ---------- Map ---------- */
 .map-view {
@@ -651,6 +666,8 @@ kbd {
   overflow: hidden;
   background: var(--surface-0);
 }
+
+.brush-footprint { box-sizing: border-box; border: 1px solid var(--text-1); outline: 1px solid var(--surface-0); z-index: 1; }
 
 .map-message {
   display: flex;
@@ -1531,6 +1548,17 @@ kbd {
     grid-area: options;
     height: 28px;
   }
+
+  .tool-options[data-editing="true"] { height: auto; min-height: 32px; flex-wrap: wrap; gap: 6px; padding-block: var(--space-1); overflow: visible; }
+  .tool-options[data-editing="true"] .tool-options-identity { min-width: 52px; }
+  .tool-options[data-editing="true"] .brush-option-group { padding-left: var(--space-2); }
+  .brush-layer-options { order: 1; }
+  .brush-layer-options > .brush-option-label { display: none; }
+  .brush-option-size { order: 2; }
+  .brush-option-size .brush-size-unit, .brush-option-size .brush-shape-preview { display: none; }
+  .brush-option-materials { order: 3; }
+  .brush-material { width: 96px; }
+  .tool-options-history { order: 4; }
 
   .tool-rail {
     padding: var(--space-1) var(--space-2);

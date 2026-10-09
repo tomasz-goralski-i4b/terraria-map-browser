@@ -1,6 +1,10 @@
 # First vanilla brush
 
-Open a supported vanilla `.wld`, choose Brush (`B`) or Erase (`E`), then choose Blocks or Walls and a square size from 1 to 9. Brush offers dirt, stone, wood and gray brick; Erase removes only the selected layer. The square is centered on the cursor, with even sizes extending one extra tile toward the top and left. Fast drags interpolate between sampled tile coordinates. Leaving the world breaks the interpolated path.
+Open a supported vanilla `.wld`, choose Brush (`B`) or Erase (`E`), then choose Blocks, Walls or Both and a square size from 1 to 9. The compact options bar keeps the target, material fields, size and history actions visible above the map. Brush offers dirt, stone, wood and gray brick; Both has independent block and wall materials. Erase removes the selected layer or both layers together. The footprint outline previews the square, clipped at world edges. The square is centered on the cursor, with even sizes extending one extra tile toward the top and left. Fast drags interpolate between sampled tile coordinates. Leaving the world breaks the interpolated path.
+
+The primary mouse button runs the selected tool: Pan drags the view, Inspect pins a tile, Brush paints and Erase removes content. Right-button and middle-button drags pan with every tool, without changing the world. The map suppresses the browser image context menu. Wheel zoom and camera navigation cancel an in-progress paint gesture before changing the view.
+
+Both edits a coordinate atomically: if either selected layer is protected, neither changes. A complete stroke, including both layers, is one undo entry.
 
 Undo (`Ctrl+Z`) and redo (`Ctrl+Shift+Z`, also Command on macOS) apply one complete stroke. Cancelled pointer gestures, lost capture and window blur restore the in-progress stroke. Save As exports the current planes using the existing writer; editing and history actions are locked while its dialog is open or another world is loading. Opening another world clears history; a failed or cancelled open retains the previous committed history.
 

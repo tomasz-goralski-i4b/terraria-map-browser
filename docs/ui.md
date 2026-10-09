@@ -55,6 +55,7 @@ Code: `apps/web/src/ui/` (primitives), `apps/web/src/shell/` (layout, commands, 
     and age; the submenu flies out on hover or `→`), **Open Recent ▸**, Save `Ctrl+S` (disabled until editing),
     Save As… `Ctrl+Shift+S`, Close World.
   - *View*: Show panels, Fit world, Actual size, Show render stats, **Theme ▸**, Reset layout.
+  - *Edit*: Undo `Ctrl+Z`, Redo `Ctrl+Shift+Z` (Command on macOS), with availability shared by the options bar.
   - *Assets*: Connect, Preview sprite sheets, Disconnect.
   - *Help*: Command palette, Keyboard shortcuts.
 
@@ -65,15 +66,20 @@ Code: `apps/web/src/ui/` (primitives), `apps/web/src/shell/` (layout, commands, 
   - *Edit*: Brush `B`, Erase `E`, Fill `G`, Select `M`, Pick content `K`.
   - *Objects*: Place object `O`.
 
-  The rail is one Tab stop; the arrow keys move inside it. The active tool shows as pressed. Edit tools are
-  disabled until editing exists.
+  The rail is one Tab stop; the arrow keys move inside it. The active tool shows as pressed. Brush and Erase
+  are available for supported vanilla worlds; the remaining edit tools show their unavailable reason.
 - **Tool options bar** (`shell/ToolOptions.tsx`) shows the active tool's name and settings. Edit tools put their
   settings here: brush size and shape, and the layer mask, i.e. which of block, wall, paint, liquid and wires a stroke
-  writes (as TEdit does). A tool never opens a dialog to change a setting.
+  writes (as TEdit does). A tool never opens a dialog to change a setting. The first brush uses a compact
+  Blocks / Walls / Both target control, independent material fields for Both, square size 1–9 and Undo/Redo
+  from the shared command registry. Erase keeps the same target and size controls without material fields.
+  On narrow screens the fields wrap into two rows; controls remain visible rather than moving into a menu.
 - **Map** (`components/MapView.tsx`, `MapCanvas.tsx`) holds the zoom controls (Fit world `F`, 1:1 `1`) in its top
   right corner. The minimap (#145) and transient messages (loading, errors) also go over the map. With no world it shows the **start screen** (`components/StartScreen.tsx`),
   as an editor's start page: Open World, Open Worlds Folder, Connect assets, the folder's worlds and the recent ones,
   where Terraria keeps worlds, and that files stay on this computer.
+  The primary mouse button uses the active tool; right-button and middle-button drags pan with every tool.
+  The canvas suppresses the browser image context menu and previews the clipped brush/erase footprint.
 - **Notifications** (`shell/Notifications.tsx`, `notify()` in `shell/notification-store.ts`) report finished
   background actions (a saved world, a listed folder) in the map's bottom-right corner, never over its middle.
   Successes close themselves after 6 s; errors stay until closed.

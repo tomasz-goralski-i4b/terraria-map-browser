@@ -6,7 +6,7 @@ import type { Camera, MapRenderer, RenderableWorld, Size } from "@studio/rendere
 import { getDefaultAssetSession, useAssetStore } from "../assets/asset-session.js";
 import { registerMapController, rendererLayers, useViewStore, type ToolId } from "../shell/view-store.js";
 import { getBlockFraming } from "../world/block-framing.js";
-import { beginBrush, finishBrush, moveBrush, subscribeBrushChanges } from "../world/brush-session.js";
+import { beginBrush, finishBrush, moveBrush, subscribeBrushChanges, useBrushStore } from "../world/brush-session.js";
 
 const KEY_PAN_PIXELS_PER_MS = 0.384;
 const KEY_ZOOM_FACTOR = 1.25;
@@ -71,6 +71,7 @@ function applySprites(renderer: MapRenderer, shown: boolean): void {
  */
 export function MapCanvas({ world }: { readonly world: RenderableWorld }): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const footprintRef = useRef<HTMLDivElement>(null);
   const sessionRef = useRef<MapSession | null>(null);
   const worldRef = useRef(world);
   const [error, setError] = useState<string | null>(null);
@@ -101,6 +102,27 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
   const refreshHover = useCallback((session: MapSession): void => {
     const hover = session.hover === null ? null : toBacking(session.hover);
     const tile = hover === null ? null : session.renderer.tileAt(hover.x, hover.y);
+    const footprint = footprintRef.current;
+    const selected = useViewStore.getState().tool;
+    const brush = useBrushStore.getState();
+    if (footprint !== null) {
+      const show = tile !== null && (selected === "brush" || selected === "erase") && brush.reason === null && session.pointers.size === 0;
+      footprint.hidden = !show;
+      const canvas = canvasRef.current;
+      if (show && canvas !== null) {
+        const offset = Math.floor(brush.size / 2);
+        const left = Math.max(0, tile.x - offset);
+        const top = Math.max(0, tile.y - offset);
+        const right = Math.min(session.world.width, tile.x - offset + brush.size);
+        const bottom = Math.min(session.world.height, tile.y - offset + brush.size);
+        const scaleX = session.camera.zoom * canvas.clientWidth / canvas.width;
+        const scaleY = session.camera.zoom * canvas.clientHeight / canvas.height;
+        footprint.style.left = `${String((left - session.camera.x) * scaleX)}px`;
+        footprint.style.top = `${String((top - session.camera.y) * scaleY)}px`;
+        footprint.style.width = `${String((right - left) * scaleX)}px`;
+        footprint.style.height = `${String((bottom - top) * scaleY)}px`;
+      }
+    }
     const previous = session.hoverTile;
     if (previous?.x === tile?.x && previous?.y === tile?.y) return;
     session.hoverTile = tile;
@@ -172,6 +194,10 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
       },
     };
     sessionRef.current = session;
+    const unsubscribeBrushOptions = useBrushStore.subscribe(() => { session.requestFrame(); });
+    const unsubscribeTool = useViewStore.subscribe((state, previous) => {
+      if (state.tool !== previous.tool) session.requestFrame();
+    });
     renderer.setWorld(session.world);
     const unsubscribeEdits = subscribeBrushChanges((edited, tiles) => {
       if (edited.planes === session.world.planes) renderer.invalidateTiles(tiles);
@@ -274,6 +300,8 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
       finishBrush(true);
       brushPointer.current = null;
       unsubscribeEdits();
+      unsubscribeBrushOptions();
+      unsubscribeTool();
       registerMapController(null);
       useViewStore.getState().setHoverTile(null);
       useViewStore.getState().setZoom(null);
@@ -374,6 +402,7 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
       }
       session.keys.clear();
       session.animator.beginDrag();
+      event.currentTarget.style.cursor = "grabbing";
       session.pointers.set(event.pointerId, localPoint(event.clientX, event.clientY));
       // Only a lone primary-button press can pin; a second finger, or another button, makes it a gesture.
       pressRef.current = session.pointers.size === 1 && event.isPrimary && event.button === 0
@@ -449,6 +478,7 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
       if (session.pointers.size === 0) session.animator.endDrag(event.type !== "pointerup");
       else session.animator.beginDrag();
       session.requestFrame();
+      event.currentTarget.style.cursor = TOOL_CURSORS[useViewStore.getState().tool] ?? "grab";
     });
   };
 
@@ -500,6 +530,7 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
         tabIndex={0}
         aria-label="World map"
         data-map-palette={terrariaMapPalette.gameVersion}
+        onContextMenu={(event) => { event.preventDefault(); }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerEnd}
@@ -526,6 +557,7 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
           });
         }}
       />
+      <div ref={footprintRef} className="brush-footprint" aria-hidden="true" hidden style={{ position: "absolute", pointerEvents: "none" }} />
       <div className="map-controls" style={CONTROLS_STYLE}>
         <button
           type="button"

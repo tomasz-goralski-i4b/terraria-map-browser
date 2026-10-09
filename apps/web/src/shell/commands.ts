@@ -124,8 +124,10 @@ export function useCommands(): Command[] {
   const setSpritePreviewOpen = useViewStore((state) => state.setSpritePreviewOpen);
 
   return [
-    { id: "edit.undo", group: "Edit", label: "Undo", shortcut: "Control+Z", enabled: canUndo && editReason === null, run: undoBrush },
-    { id: "edit.redo", group: "Edit", label: "Redo", shortcut: "Control+Shift+Z", enabled: canRedo && editReason === null, run: redoBrush },
+    { id: "edit.undo", group: "Edit", label: "Undo", icon: "undo", shortcut: "Control+Z", enabled: canUndo && editReason === null,
+      ...(editReason !== null ? { disabledReason: editReason } : !canUndo ? { disabledReason: "No stroke to undo" } : {}), run: undoBrush },
+    { id: "edit.redo", group: "Edit", label: "Redo", icon: "redo", shortcut: "Control+Shift+Z", enabled: canRedo && editReason === null,
+      ...(editReason !== null ? { disabledReason: editReason } : !canRedo ? { disabledReason: "No stroke to redo" } : {}), run: redoBrush },
     { id: "file.open", group: "File", label: "Open World…", icon: "file", shortcut: "Control+O", enabled: true, run: chooseWorldFile },
     {
       id: "file.openFolder", group: "File", label: "Open Folder…", icon: "folder", enabled: hasFolderPicker(),

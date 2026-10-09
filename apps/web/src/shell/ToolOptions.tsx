@@ -1,45 +1,62 @@
-import { TOOLS } from "./commands.js";
+import { BRUSH_LAYER } from "@studio/world-model";
+import { Icon } from "../ui/Icon.js";
+import { IconButton } from "../ui/IconButton.js";
+import { finishBrush, useBrushStore } from "../world/brush-session.js";
+import { BRUSH_LAYER_OPTIONS, BRUSH_MATERIAL_FIELDS, BRUSH_MATERIALS, BRUSH_SIZE } from "./brush-settings.js";
+import { commandById, TOOLS, useCommands, type Command } from "./commands.js";
 import { useViewStore } from "./view-store.js";
-import { BRUSH_BLOCKS, BRUSH_WALLS } from "@studio/world-model";
-import { finishBrush, redoBrush, undoBrush, useBrushStore } from "../world/brush-session.js";
-import { useAppStore } from "../store.js";
-import { useSaveStore } from "../world/save-world.js";
 
-const MATERIAL_NAMES = ["Dirt", "Stone", "Wood", "Gray brick"];
-
-/**
- * The tool options bar: the active tool's name and settings, above the map (as in image and level editors). Edit
- * tools will put their settings here — brush size and shape, which layers they write (block, wall, paint, liquid,
- * wires) — so the map never needs a modal to change them.
- */
-export function ToolOptions(): React.JSX.Element {
+/** Compact editor options: target mask, independent materials, square footprint and shared history commands. */
+export function ToolOptions({ commands: supplied }: { readonly commands?: readonly Command[] }): React.JSX.Element {
+  const currentCommands = useCommands();
+  const commands = supplied ?? currentCommands;
   const tool = useViewStore((state) => state.tool);
   const definition = TOOLS.find((candidate) => candidate.id === tool);
   const brush = useBrushStore();
   const editing = tool === "brush" || tool === "erase";
-  const loading = useAppStore((state) => state.phase === "loading");
-  const saving = useSaveStore((state) => state.open);
-  const locked = loading || saving || brush.reason !== null;
+  const undo = commandById(commands, "edit.undo");
+  const redo = commandById(commands, "edit.redo");
+  const locked = brush.active || !commandById(commands, `tool.${tool}`).enabled;
+  const materials = brush.layer === BRUSH_LAYER.both ? [BRUSH_LAYER.block, BRUSH_LAYER.wall] : [brush.layer];
   return (
-    <div className="tool-options" role="region" aria-label="Tool options">
-      <span className="tool-options-name">{definition?.label}</span>
-      <span className="muted">{definition?.hint}</span>
-      {editing && <>
-        <label>Layer <select aria-label="Brush layer" value={brush.layer} disabled={brush.active} onChange={(event) => {
-          finishBrush(true);
-          useBrushStore.setState({ layer: event.target.value === "wall" ? "wall" : "block" });
-        }}><option value="block">Blocks</option><option value="wall">Walls</option></select></label>
-        {tool === "brush" && <label>Material <select aria-label="Brush material" value={brush.layer === "block" ? brush.blockId : brush.wallId} disabled={brush.active} onChange={(event) => {
-          useBrushStore.setState(brush.layer === "block" ? { blockId: Number(event.target.value) } : { wallId: Number(event.target.value) });
-        }}>{(brush.layer === "block" ? BRUSH_BLOCKS : BRUSH_WALLS).map((id, index) => <option key={id} value={id}>{MATERIAL_NAMES[index]}</option>)}</select></label>}
-        <label>Size <input aria-label="Brush size" type="number" min={1} max={9} step={1} value={brush.size} disabled={brush.active} onChange={(event) => {
-          const size = Number(event.target.value);
-          if (Number.isInteger(size) && size >= 1 && size <= 9) useBrushStore.setState({ size });
-        }} /></label>
-        {brush.reason !== null && <span className="muted">{brush.reason}</span>}
-      </>}
-      <button type="button" className="button" disabled={!brush.canUndo || locked} onClick={undoBrush}>Undo</button>
-      <button type="button" className="button" disabled={!brush.canRedo || locked} onClick={redoBrush}>Redo</button>
+    <div className="tool-options" role="region" aria-label="Tool options" data-editing={editing}>
+      <span className="tool-options-identity">
+        {definition !== undefined && <Icon name={definition.icon} />}
+        <span className="tool-options-name">{definition?.label}</span>
+      </span>
+      {editing ? <>
+        <div className="brush-option-group brush-layer-options" role="group" aria-label="Brush layer">
+          <span className="brush-option-label">Target</span>
+          <div className="brush-segments">
+            {BRUSH_LAYER_OPTIONS.map(({ id, label }) => <button key={id} type="button" aria-pressed={brush.layer === id} disabled={locked} onClick={() => {
+              finishBrush(true);
+              useBrushStore.setState({ layer: id });
+            }}>{label}</button>)}
+          </div>
+        </div>
+        {tool === "brush" && <div className="brush-option-group brush-option-materials" role="group" aria-label="Brush materials">
+          {materials.map((layer) => <label className="brush-field" key={layer}>
+            <span className="brush-option-label">{BRUSH_MATERIAL_FIELDS[layer].label}</span>
+            <select className="select brush-material" aria-label={BRUSH_MATERIAL_FIELDS[layer].accessibleName} value={brush[BRUSH_MATERIAL_FIELDS[layer].idKey]} disabled={locked} onChange={(event) => {
+              useBrushStore.setState(layer === BRUSH_LAYER.block ? { blockId: Number(event.target.value) } : { wallId: Number(event.target.value) });
+            }}>{BRUSH_MATERIALS.map((material) => <option key={material.label} value={layer === BRUSH_LAYER.block ? material.blockId : material.wallId}>{material.label}</option>)}</select>
+          </label>)}
+        </div>}
+        <div className="brush-option-group brush-option-size">
+          <label className="brush-field"><span className="brush-option-label">Size</span>
+            <input className="text-input brush-size" aria-label="Brush size" type="number" min={BRUSH_SIZE.minimum} max={BRUSH_SIZE.maximum} step={1} value={brush.size} disabled={locked} onChange={(event) => {
+              const size = Number(event.target.value);
+              if (Number.isInteger(size) && size >= BRUSH_SIZE.minimum && size <= BRUSH_SIZE.maximum) useBrushStore.setState({ size });
+            }} />
+          </label>
+          <span className="brush-size-unit">tiles</span>
+          <span className="brush-shape-preview" aria-hidden="true"><span style={{ transform: `scale(${String(brush.size / BRUSH_SIZE.maximum)})` }} /></span>
+        </div>
+        {brush.reason !== null && <span className="tool-options-notice">{brush.reason}</span>}
+      </> : <span className="tool-options-hint">{definition?.hint}</span>}
+      <div className="tool-options-history" role="group" aria-label="History">
+        {[undo, redo].map((command) => <IconButton key={command.id} icon={command.id === undo.id ? "undo" : "redo"} label={command.label} shortcut={command.shortcut} disabled={!command.enabled} disabledReason={command.disabledReason} onClick={command.run} />)}
+      </div>
     </div>
   );
 }

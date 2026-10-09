@@ -94,7 +94,7 @@ export function App({ layoutStorage }: AppProps = {}): React.JSX.Element {
     <div className="app" data-dock={dockHidden ? "hidden" : "shown"} style={{ "--dock-width": `${String(dockWidth)}px` } as React.CSSProperties}>
       <TopBar commands={commands} />
       <ToolRail commands={commands} />
-      <ToolOptions />
+      <ToolOptions commands={commands} />
       <MapView renderer={RENDERER_PACKAGE} commands={commands} />
       <Dock commands={commands} />
       <StatusBar />

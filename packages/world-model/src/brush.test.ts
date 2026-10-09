@@ -1,8 +1,40 @@
 import { describe, expect, it } from "vitest";
 import { createWorld } from "./index.js";
-import { createBrushHistory } from "./brush.js";
+import { BRUSH_LAYER, createBrushHistory } from "./brush.js";
 
 describe("simple vanilla brush", () => {
+  it("paints and erases both layers as one atomic stroke and one byte-exact undo entry", () => {
+    const world = createWorld(5, 5);
+    world.setTile(2, 2, { block: { kind: "vanilla", id: 0 }, wall: { kind: "vanilla", id: 2 }, wires: 9, actuator: true });
+    const original = Object.values(world.planes).map((plane) => new Uint8Array(plane.buffer).slice());
+    const history = createBrushHistory(world);
+    history.begin({ layer: BRUSH_LAYER.both, blockId: 1, wallId: 4, size: 1 });
+    history.move(2, 2);
+    expect(history.commit()).toHaveLength(1);
+    expect(world.tileAt(2, 2)).toEqual({ block: { kind: "vanilla", id: 1 }, wall: { kind: "vanilla", id: 4 }, wires: 9, actuator: true });
+    history.undo();
+    expect(Object.values(world.planes).map((plane) => new Uint8Array(plane.buffer))).toEqual(original);
+    history.redo();
+    history.begin({ layer: BRUSH_LAYER.both, blockId: null, wallId: null, size: 1 });
+    history.move(2, 2);
+    history.commit();
+    expect(world.tileAt(2, 2)).toEqual({ wires: 9, actuator: true });
+    history.undo();
+    expect(world.tileAt(2, 2).block).toEqual({ kind: "vanilla", id: 1 });
+    expect(world.tileAt(2, 2).wall).toEqual({ kind: "vanilla", id: 4 });
+  });
+
+  it("Both skips a protected wall atomically and validates both material selections before mutation", () => {
+    const world = createWorld(5, 5);
+    world.setTile(2, 2, { block: { kind: "vanilla", id: 0 }, wall: { kind: "vanilla", id: 87 }, wires: 0, actuator: false });
+    const history = createBrushHistory(world);
+    history.begin({ layer: BRUSH_LAYER.both, blockId: 1, wallId: 4, size: 1 });
+    history.move(2, 2);
+    expect(history.commit()).toEqual([]);
+    expect(world.tileAt(2, 2).block).toEqual({ kind: "vanilla", id: 0 });
+    expect(() => { history.begin({ layer: BRUSH_LAYER.both, blockId: 21, wallId: 4, size: 1 }); }).toThrow(RangeError);
+    expect(() => { history.begin({ layer: BRUSH_LAYER.both, blockId: 1, wallId: 87, size: 1 }); }).toThrow(RangeError);
+  });
   it("clips the square footprint and preserves protected objects and non-target planes", () => {
     const world = createWorld(8, 8);
     world.setTile(1, 1, { block: { kind: "vanilla", id: 21 }, frameX: 18, frameY: 0, wires: 0, actuator: false });

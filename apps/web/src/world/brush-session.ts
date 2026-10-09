@@ -1,5 +1,5 @@
 import { isFrameImportant, SUPPORTED_VANILLA_FORMATS, type WorldTilesResult } from "@studio/world-codec";
-import { BRUSH_BLOCKS, createBrushHistory, type BrushHistory, type BrushOptions, type TileDiff } from "@studio/world-model";
+import { BRUSH_BLOCKS, BRUSH_LAYER, createBrushHistory, type BrushLayer, type BrushHistory, type BrushOptions, type TileDiff } from "@studio/world-model";
 import { create } from "zustand";
 import { canonicalWorldOf } from "./canonical-world.js";
 import { useAppStore } from "../store.js";
@@ -42,7 +42,7 @@ export function createWorldBrush(world: WorldTilesResult): BrushHistory | null {
 }
 
 interface BrushState {
-  readonly layer: "block" | "wall";
+  readonly layer: BrushLayer;
   readonly blockId: number;
   readonly wallId: number;
   readonly size: number;
@@ -53,7 +53,7 @@ interface BrushState {
   readonly revision: number;
 }
 export const useBrushStore = create<BrushState>()(() => ({
-  layer: "block", blockId: 1, wallId: 1, size: 1, reason: "Open a vanilla world first",
+  layer: BRUSH_LAYER.block, blockId: 1, wallId: 1, size: 1, reason: "Open a vanilla world first",
   canUndo: false, canRedo: false, active: false, revision: 0,
 }));
 let loaded: WorldTilesResult | null = null;
@@ -90,7 +90,9 @@ export function beginBrush(erase: boolean): boolean {
   history ??= createWorldBrush(loaded);
   if (history === null) return false;
   const { layer, blockId, wallId, size } = useBrushStore.getState();
-  const options: BrushOptions = { layer, id: erase ? null : layer === "block" ? blockId : wallId, size };
+  const options: BrushOptions = layer === BRUSH_LAYER.both
+    ? { layer, blockId: erase ? null : blockId, wallId: erase ? null : wallId, size }
+    : { layer, id: erase ? null : layer === BRUSH_LAYER.block ? blockId : wallId, size };
   history.begin(options);
   dirtyBeforeStroke = useAppStore.getState().unsavedChanges;
   useBrushStore.setState({ active: true, canUndo: false, canRedo: false });
