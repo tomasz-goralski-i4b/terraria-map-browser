@@ -7,6 +7,9 @@ if runs_part web; then
   run_logged backlog-tests node --test scripts/backlog/automation-routing.test.mjs scripts/backlog/baseline.test.mjs scripts/backlog/resume.test.mjs scripts/backlog/usage-probe.test.mjs scripts/backlog/security.test.mjs || rc=1
   echo "== map palette exporter"
   run_logged map-palette-tests node --test scripts/map-palette/export.test.mjs scripts/map-palette/observe.test.mjs || rc=1
+  # Skipped without TERRARIA_ASSEMBLY (never set in CI), so it needs no .NET in the web half.
+  echo "== tile framing observer (opt-in: TERRARIA_ASSEMBLY)"
+  run_logged framing-tests node --test scripts/framing/observe.test.mjs || rc=1
 fi
 if runs_part dotnet; then
   # Microsoft.Testing.Platform mode (opted in via global.json "test.runner").
