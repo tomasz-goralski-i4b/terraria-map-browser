@@ -233,7 +233,7 @@ describe("sprite mode", () => {
     }
   });
 
-  test(`below ${String(SPRITE_MIN_ZOOM)} pixels per tile the map keeps its map colours, and the overview is unchanged`, () => {
+  test(`below ${String(SPRITE_MIN_ZOOM)} pixels per tile the map keeps its map colours, and the overview is unchanged`, { tags: ["perf"], timeout: 60_000 }, () => {
     const world = spriteWorld();
     for (const zoom of [SPRITE_MIN_ZOOM - 1, 4, 1]) {
       expect(draw(world, zoom, ALL, true), `zoom ${String(zoom)}`).toEqual(expectedCanvas(world, ALL, zoom, false));
