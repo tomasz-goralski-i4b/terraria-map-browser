@@ -112,12 +112,15 @@ describe("frameBlock against the framing database", () => {
     expect(checked).toBeGreaterThan(333 * 200);
   });
 
-  test("every type with every other type: all neighbourhoods that hold the other type", () => {
-    // Pairs that frame alike share a key built from the database alone: how the centre treats the other type and,
-    // when both see each other by a table (partner and relative), how the other type frames itself. One pair per key
-    // is checked over all 6 561 neighbourhoods. Neighbourhoods without the other type are the type's own (above):
-    // for grass, gemspark and the large-frame blocks the database's pair tables record other cells there than its
-    // table of the type alone (the game's result there is not a function of the 3 × 3).
+  /**
+   * Checks every type with every other type on the neighbourhoods that hold the other type: every `stride`-th code
+   * (offset per key, so the keys together still cover every code). Pairs that frame alike share a key built from the
+   * database alone: how the centre treats the other type and, when both see each other by a table (partner and
+   * relative), how the other type frames itself; one pair per key is checked. Neighbourhoods without the other type
+   * are the type's own (above): for grass, gemspark and the large-frame blocks the database's pair tables record other
+   * cells there than its table of the type alone (the game's result there is not a function of the 3 × 3).
+   */
+  function checkPairs(stride: number): { pairs: number; checked: number } {
     const { world, clear, put } = observerWorld();
     const cells = new Uint16Array(1);
     const keys = new Set<string>();
@@ -137,7 +140,7 @@ describe("frameBlock against the framing database", () => {
         if (keys.has(key)) continue;
         keys.add(key);
         const floor = isFalling(centre) || isFalling(other);
-        for (let code = 0; code < 6561; code++) {
+        for (let code = keys.size % stride; code < 6561; code += stride) {
           const digits = digitsOf(code);
           if (!digits.includes(2)) continue;
           const expected = database.blockCell(centre, other, code);
@@ -166,16 +169,28 @@ describe("frameBlock against the framing database", () => {
         }
       }
     }
+    return { pairs, checked };
+  }
+
+  test("every type with every other type: all neighbourhoods that hold the other type", { tags: ["perf"], timeout: 300_000 }, () => {
+    const { pairs, checked } = checkPairs(1);
     expect(pairs).toBe(333 * 332);
     expect(checked).toBeGreaterThan(1_000_000);
-  }, 300_000);
+  });
+
+  test("every type with every other type: every 41st neighbourhood (the full check is tagged perf)", () => {
+    const { pairs, checked } = checkPairs(41);
+    expect(pairs).toBe(333 * 332);
+    expect(checked).toBeGreaterThan(20_000);
+  }, 60_000);
 });
 
 describe("variants", () => {
-  test("v1 and v2 of every variant-0 cell a type takes, alone and beside every other type, are the database's", () => {
+  /** v1 and v2 of every variant-0 cell `types` take, alone and beside every other type, against the database. */
+  function checkVariants(types: readonly number[]): { checked: number; uncovered: number } {
     let checked = 0;
     let uncovered = 0;
-    for (const type of data.blockTypes) {
+    for (const type of types) {
       if (block(type).variantIgnoredByPosition === true) continue;
       // One other type per table the centre reads (alone: null); relatives with their rims kept and with none.
       const others = new Map<string, number | null>([["alone", null]]);
@@ -211,9 +226,21 @@ describe("variants", () => {
         if (!seen.has(`${String(cell[0])},${String(cell[1])}`)) uncovered++;
       }
     }
-    expect(checked).toBeGreaterThan(333 * 40);
+    return { checked, uncovered };
+  }
+
+  test("v1 and v2 of every variant-0 cell a type takes, alone and beside every other type, are the database's",
+    { tags: ["perf"], timeout: 120_000 }, () => {
+      const { checked, uncovered } = checkVariants(data.blockTypes);
+      expect(checked).toBeGreaterThan(333 * 40);
+      expect(uncovered).toBe(0);
+    });
+
+  test("variants of dirt, stone, copper, grass, mud, sand and gemspark (all types: tagged perf)", () => {
+    const { checked, uncovered } = checkVariants([DIRT, STONE, COPPER, 2, 59, 53, 255]);
+    expect(checked).toBeGreaterThan(7 * 40);
     expect(uncovered).toBe(0);
-  }, 120_000);
+  }, 60_000);
 
   test("the variant is (7x + 11y) mod 3 and never random", () => {
     const random = vi.spyOn(Math, "random");
