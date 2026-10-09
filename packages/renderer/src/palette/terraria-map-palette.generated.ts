@@ -1257,7 +1257,7 @@ export const terrariaMapPalette: MapPalette = {
   ],
 };
 
-// English legend/placement names, with readable symbolic block labels and runtime provenance (ADR 0002).
+// English legend/placement names, with readable symbolic content labels and runtime provenance (ADR 0002).
 export const terrariaMapNames: MapContentNames = {
   gameVersion: "1.4.5.8",
   tiles: [
@@ -2773,10 +2773,10 @@ export const terrariaMapNames: MapContentNames = {
     { symbols: ["GiantTiki"], mapOptionCount: 1, nameSources: ["placement"] },
   ],
   walls: [
-    [], // 0
+    ["None"], // 0
     ["Stone Wall"], // 1
     ["Natural Dirt Wall"], // 2
-    [""], // 3
+    ["Natural Ebonstone Wall"], // 3
     ["Wood Wall"], // 4
     ["Gray Brick Wall"], // 5
     ["Red Brick Wall"], // 6
@@ -2786,22 +2786,22 @@ export const terrariaMapNames: MapContentNames = {
     ["Gold Brick Wall"], // 10
     ["Silver Brick Wall"], // 11
     ["Copper Brick Wall"], // 12
-    [""], // 13
-    [""], // 14
-    [""], // 15
+    ["Natural Hellstone Brick Wall"], // 13
+    ["Natural Obsidian Brick Wall"], // 14
+    ["Natural Mud Wall"], // 15
     ["Dirt Wall"], // 16
     ["Blue Brick Wall"], // 17
     ["Green Brick Wall"], // 18
     ["Pink Brick Wall"], // 19
     ["Obsidian Brick Wall"], // 20
-    [], // 21
+    ["Glass Wall"], // 21
     ["Pearlstone Brick Wall"], // 22
     ["Iridescent Brick Wall"], // 23
     ["Mudstone Brick Wall"], // 24
     ["Cobalt Brick Wall"], // 25
     ["Mythril Brick Wall"], // 26
     ["Planked Wall", "Planked Wall"], // 27
-    [""], // 28
+    ["Natural Pearlstone Brick Wall"], // 28
     ["Candy Cane Wall"], // 29
     ["Green Candy Cane Wall"], // 30
     ["Snow Brick Wall"], // 31
@@ -2813,7 +2813,7 @@ export const terrariaMapNames: MapContentNames = {
     ["Yellow Stucco Wall"], // 37
     ["Green Stucco Wall"], // 38
     ["Gray Stucco Wall"], // 39
-    [""], // 40
+    ["Natural Snow Wall"], // 40
     ["Ebonwood Wall"], // 41
     ["Rich Mahogany Wall"], // 42
     ["Pearlwood Wall"], // 43
@@ -2821,30 +2821,30 @@ export const terrariaMapNames: MapContentNames = {
     ["Tin Brick Wall"], // 45
     ["Tungsten Brick Wall"], // 46
     ["Platinum Brick Wall"], // 47
-    [""], // 48
-    [""], // 49
-    [""], // 50
-    [""], // 51
-    [""], // 52
-    [""], // 53
-    [""], // 54
-    [""], // 55
-    [""], // 56
-    [""], // 57
-    [""], // 58
-    [""], // 59
+    ["Natural Amethyst Wall"], // 48
+    ["Natural Topaz Wall"], // 49
+    ["Natural Sapphire Wall"], // 50
+    ["Natural Emerald Wall"], // 51
+    ["Natural Ruby Wall"], // 52
+    ["Natural Diamond Wall"], // 53
+    ["Natural Cave Wall"], // 54
+    ["Natural Cave 2 Wall"], // 55
+    ["Natural Cave 3 Wall"], // 56
+    ["Natural Cave 4 Wall"], // 57
+    ["Natural Cave 5 Wall"], // 58
+    ["Natural Cave 6 Wall"], // 59
     ["Living Leaf Wall"], // 60
-    [""], // 61
+    ["Natural Cave 7 Wall"], // 61
     ["Infested Spider Wall"], // 62
-    [""], // 63
-    [""], // 64
-    [""], // 65
+    ["Natural Grass Wall"], // 63
+    ["Natural Jungle Wall"], // 64
+    ["Natural Flower Wall"], // 65
     ["Grass Wall"], // 66
     ["Jungle Wall"], // 67
     ["Flower Wall"], // 68
-    [""], // 69
-    [""], // 70
-    [""], // 71
+    ["Natural Corrupt Grass Wall"], // 69
+    ["Natural Hallowed Grass Wall"], // 70
+    ["Natural Ice Wall"], // 71
     ["Cactus Wall"], // 72
     ["Cloud Wall"], // 73
     ["Mushroom Wall"], // 74
@@ -2852,21 +2852,21 @@ export const terrariaMapNames: MapContentNames = {
     ["Slime Block Wall"], // 76
     ["Flesh Block Wall"], // 77
     ["Living Wood Wall"], // 78
-    [""], // 79
-    [""], // 80
-    [""], // 81
+    ["Natural Obsidian Back Wall"], // 79
+    ["Natural Mushroom Wall"], // 80
+    ["Natural Crimson Grass Wall"], // 81
     ["Disc Wall"], // 82
-    [""], // 83
+    ["Natural Crimstone Wall"], // 83
     ["Ice Brick Wall"], // 84
     ["Shadewood Wall"], // 85
-    [""], // 86
+    ["Natural Hive Wall"], // 86
     ["Forbidden Lihzahrd Brick Wall"], // 87
-    [], // 88
-    [], // 89
-    [], // 90
-    [], // 91
-    [], // 92
-    [], // 93
+    ["Purple Stained Glass"], // 88
+    ["Yellow Stained Glass"], // 89
+    ["Blue Stained Glass"], // 90
+    ["Green Stained Glass"], // 91
+    ["Red Stained Glass"], // 92
+    ["Multicolored Stained Glass"], // 93
     ["Cursed Blue Slab Wall"], // 94
     ["Cursed Blue Tiled Wall"], // 95
     ["Cursed Pink Slab Wall"], // 96
@@ -2941,62 +2941,62 @@ export const terrariaMapNames: MapContentNames = {
     ["Sapphire Gemspark Wall"], // 165
     ["Topaz Gemspark Wall"], // 166
     ["Tin Plating Wall"], // 167
-    [], // 168
+    ["Confetti Wall"], // 168
     ["Midnight Confetti Wall"], // 169
-    [""], // 170
-    [""], // 171
+    ["Cave Wall"], // 170
+    ["Cave Wall 2"], // 171
     ["Honeyfall Wall"], // 172
     ["Chlorophyte Brick Wall"], // 173
     ["Crimtane Brick Wall"], // 174
     ["Shroomite Plating Wall"], // 175
     ["Martian Conduit Wall"], // 176
     ["Hellstone Brick Wall"], // 177
-    [""], // 178
+    ["Natural Marble Wall"], // 178
     ["Smooth Marble Wall"], // 179
-    [""], // 180
+    ["Natural Granite Wall"], // 180
     ["Smooth Granite Wall"], // 181
     ["Meteorite Brick Wall"], // 182
     ["Marble Wall"], // 183
     ["Granite Wall"], // 184
-    [""], // 185
+    ["Natural Cave 8 Wall"], // 185
     ["Crystal Block Wall"], // 186
     ["Treacherous Sandstone Wall"], // 187
-    [""], // 188
-    [""], // 189
-    [""], // 190
-    [""], // 191
-    [""], // 192
-    [""], // 193
-    [""], // 194
-    [""], // 195
-    [""], // 196
-    [""], // 197
-    [""], // 198
-    [""], // 199
-    [""], // 200
-    [""], // 201
-    [""], // 202
-    [""], // 203
-    [""], // 204
-    [""], // 205
-    [""], // 206
-    [""], // 207
-    [""], // 208
-    [""], // 209
-    [""], // 210
-    [""], // 211
-    [""], // 212
-    [""], // 213
-    [""], // 214
-    [""], // 215
+    ["Natural Corruption 1 Wall"], // 188
+    ["Natural Corruption 2 Wall"], // 189
+    ["Natural Corruption 3 Wall"], // 190
+    ["Natural Corruption 4 Wall"], // 191
+    ["Natural Crimson 1 Wall"], // 192
+    ["Natural Crimson 2 Wall"], // 193
+    ["Natural Crimson 3 Wall"], // 194
+    ["Natural Crimson 4 Wall"], // 195
+    ["Natural Dirt 1 Wall"], // 196
+    ["Natural Dirt 2 Wall"], // 197
+    ["Natural Dirt 3 Wall"], // 198
+    ["Natural Dirt 4 Wall"], // 199
+    ["Natural Hallow 1 Wall"], // 200
+    ["Natural Hallow 2 Wall"], // 201
+    ["Natural Hallow 3 Wall"], // 202
+    ["Natural Hallow 4 Wall"], // 203
+    ["Natural Jungle 1 Wall"], // 204
+    ["Natural Jungle 2 Wall"], // 205
+    ["Natural Jungle 3 Wall"], // 206
+    ["Natural Jungle 4 Wall"], // 207
+    ["Natural Lava 1 Wall"], // 208
+    ["Natural Lava 2 Wall"], // 209
+    ["Natural Lava 3 Wall"], // 210
+    ["Natural Lava 4 Wall"], // 211
+    ["Natural Rocks 1 Wall"], // 212
+    ["Natural Rocks 2 Wall"], // 213
+    ["Natural Rocks 3 Wall"], // 214
+    ["Natural Rocks 4 Wall"], // 215
     ["Treacherous Hardened Sand Wall"], // 216
-    [""], // 217
-    [""], // 218
-    [""], // 219
-    [""], // 220
-    [""], // 221
-    [""], // 222
-    [""], // 223
+    ["Corrupt Hardened Sand Wall"], // 217
+    ["Crimson Hardened Sand Wall"], // 218
+    ["Hallow Hardened Sand Wall"], // 219
+    ["Corrupt Sandstone Wall"], // 220
+    ["Crimson Sandstone Wall"], // 221
+    ["Hallow Sandstone Wall"], // 222
+    ["Desert Fossil Wall"], // 223
     ["Luminite Brick Wall"], // 224
     ["Cog Wall"], // 225
     ["Sandfall Wall"], // 226
@@ -3014,7 +3014,7 @@ export const terrariaMapNames: MapContentNames = {
     ["Vortex Brick Wall"], // 238
     ["Nebula Brick Wall"], // 239
     ["Stardust Brick Wall"], // 240
-    [], // 241
+    ["Orange Stained Glass"], // 241
     ["Gold Starry Wall"], // 242
     ["Blue Starry Wall"], // 243
     ["Overgrown Living Wood Wall"], // 244
@@ -3045,8 +3045,8 @@ export const terrariaMapNames: MapContentNames = {
     ["Crimstone Wall"], // 269
     ["Cave Dirt Wall"], // 270
     ["Rough Dirt Wall"], // 271
-    [""], // 272
-    [""], // 273
+    ["Marble Echo Unused Wall"], // 272
+    ["Granite Echo Unused Wall"], // 273
     ["Craggy Stone Wall"], // 274
     ["Sandstone Wall"], // 275
     ["Corrupt Growth Wall"], // 276
@@ -3091,7 +3091,7 @@ export const terrariaMapNames: MapContentNames = {
     ["Bamboo Fence"], // 315
     ["Ash Wood Wall"], // 316
     ["Ash Wood Fence"], // 317
-    [], // 318
+    ["Echo Wall"], // 318
     ["Reef Wall"], // 319
     ["Poo Wall"], // 320
     ["Aetherium Wall"], // 321
@@ -3122,8 +3122,8 @@ export const terrariaMapNames: MapContentNames = {
     ["Helium Moss Brick Wall"], // 346
     ["Shimmerfall Wall"], // 347
     ["Fallen Star Wall"], // 348
-    [""], // 349
-    [""], // 350
+    ["Natural Stone Wall"], // 349
+    ["Unbreakable Block Wall"], // 350
     ["Feywood Wall"], // 351
     ["Hallowed Brick Wall"], // 352
     ["Pine Tree Wall"], // 353
@@ -3140,6 +3140,375 @@ export const terrariaMapNames: MapContentNames = {
     ["Forbidden Wall"], // 364
     ["Aquarium Wall"], // 365
     ["Boulder Wall"], // 366
+  ],
+  wallMetadata: [
+    { symbols: ["None"], mapOptionCount: 0, nameSources: ["symbol"] },
+    { symbols: ["Stone"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["DirtUnsafe"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["EbonstoneUnsafe"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["Wood"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["GrayBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["RedBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["BlueDungeonUnsafe"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["GreenDungeonUnsafe"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["PinkDungeonUnsafe"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["GoldBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["SilverBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["CopperBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["HellstoneBrickUnsafe"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["ObsidianBrickUnsafe"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["MudUnsafe"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["Dirt"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["BlueDungeon"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["GreenDungeon"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["PinkDungeon"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["ObsidianBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Glass"], mapOptionCount: 0, nameSources: ["placement"] },
+    { symbols: ["PearlstoneBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["IridescentBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["MudstoneBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["CobaltBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["MythrilBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Planked"], mapOptionCount: 2, nameSources: ["placement", "placement"] },
+    { symbols: ["PearlstoneBrickUnsafe"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["CandyCane"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["GreenCandyCane"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["SnowBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["AdamantiteBeam"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["DemoniteBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["SandstoneBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["EbonstoneBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["RedStucco"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["YellowStucco"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["GreenStucco"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Gray"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["SnowWallUnsafe"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["Ebonwood"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["RichMaogany"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Pearlwood"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["RainbowBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["TinBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["TungstenBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["PlatinumBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["AmethystUnsafe"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["TopazUnsafe"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["SapphireUnsafe"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["EmeraldUnsafe"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["RubyUnsafe"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["DiamondUnsafe"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["CaveUnsafe"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["Cave2Unsafe"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["Cave3Unsafe"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["Cave4Unsafe"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["Cave5Unsafe"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["Cave6Unsafe"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["LivingLeaf"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Cave7Unsafe"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["SpiderUnsafe"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["GrassUnsafe"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["JungleUnsafe"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["FlowerUnsafe"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["Grass"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Jungle"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Flower"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["CorruptGrassUnsafe"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["HallowedGrassUnsafe"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["IceUnsafe"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["Cactus"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Cloud"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Mushroom"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Bone"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Slime"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Flesh"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["LivingWood"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["ObsidianBackUnsafe"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["MushroomUnsafe"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["CrimsonGrassUnsafe"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["DiscWall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["CrimstoneUnsafe"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["IceBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Shadewood"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["HiveUnsafe"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["LihzahrdBrickUnsafe"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["PurpleStainedGlass"], mapOptionCount: 0, nameSources: ["placement"] },
+    { symbols: ["YellowStainedGlass"], mapOptionCount: 0, nameSources: ["placement"] },
+    { symbols: ["BlueStainedGlass"], mapOptionCount: 0, nameSources: ["placement"] },
+    { symbols: ["GreenStainedGlass"], mapOptionCount: 0, nameSources: ["placement"] },
+    { symbols: ["RedStainedGlass"], mapOptionCount: 0, nameSources: ["placement"] },
+    { symbols: ["RainbowStainedGlass"], mapOptionCount: 0, nameSources: ["placement"] },
+    { symbols: ["BlueDungeonSlabUnsafe"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["BlueDungeonTileUnsafe"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["PinkDungeonSlabUnsafe"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["PinkDungeonTileUnsafe"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["GreenDungeonSlabUnsafe"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["GreenDungeonTileUnsafe"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["BlueDungeonSlab"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["BlueDungeonTile"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["PinkDungeonSlab"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["PinkDungeonTile"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["GreenDungeonSlab"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["GreenDungeonTile"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["WoodenFence"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["MetalFence"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Hive"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["PalladiumColumn"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["BubblegumBlock"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["TitanstoneBlock"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["LihzahrdBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Pumpkin"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Hay"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["SpookyWood"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["ChristmasTreeWallpaper"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["OrnamentWallpaper"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["CandyCaneWallpaper"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["FestiveWallpaper"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["StarsWallpaper"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["SquigglesWallpaper"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["SnowflakeWallpaper"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["KrampusHornWallpaper"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["BluegreenWallpaper"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["GrinchFingerWallpaper"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["FancyGrayWallpaper"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["IceFloeWallpaper"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["MusicWallpaper"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["PurpleRainWallpaper"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["RainbowWallpaper"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["SparkleStoneWallpaper"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["StarlitHeavenWallpaper"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["BubbleWallpaper"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["CopperPipeWallpaper"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["DuckyWallpaper"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Waterfall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Lavafall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["EbonwoodFence"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["RichMahoganyFence"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["PearlwoodFence"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["ShadewoodFence"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["WhiteDynasty"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["BlueDynasty"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["ArcaneRunes"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["IronFence"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["CopperPlating"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["StoneSlab"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Sail"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["BorealWood"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["BorealWoodFence"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["PalmWood"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["PalmWoodFence"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["AmberGemspark"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["AmethystGemspark"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["DiamondGemspark"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["EmeraldGemspark"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["AmberGemsparkOff"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["AmethystGemsparkOff"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["DiamondGemsparkOff"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["EmeraldGemsparkOff"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["RubyGemsparkOff"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["SapphireGemsparkOff"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["TopazGemsparkOff"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["RubyGemspark"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["SapphireGemspark"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["TopazGemspark"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["TinPlating"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Confetti"], mapOptionCount: 0, nameSources: ["placement"] },
+    { symbols: ["ConfettiBlack"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["CaveWall"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["CaveWall2"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["Honeyfall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["ChlorophyteBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["CrimtaneBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["ShroomitePlating"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["MartianConduit"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["HellstoneBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["MarbleUnsafe"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["MarbleBlock"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["GraniteUnsafe"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["GraniteBlock"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["MeteoriteBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Marble"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Granite"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Cave8Unsafe"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["Crystal"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Sandstone"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["CorruptionUnsafe1"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["CorruptionUnsafe2"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["CorruptionUnsafe3"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["CorruptionUnsafe4"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["CrimsonUnsafe1"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["CrimsonUnsafe2"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["CrimsonUnsafe3"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["CrimsonUnsafe4"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["DirtUnsafe1"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["DirtUnsafe2"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["DirtUnsafe3"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["DirtUnsafe4"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["HallowUnsafe1"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["HallowUnsafe2"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["HallowUnsafe3"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["HallowUnsafe4"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["JungleUnsafe1"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["JungleUnsafe2"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["JungleUnsafe3"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["JungleUnsafe4"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["LavaUnsafe1"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["LavaUnsafe2"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["LavaUnsafe3"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["LavaUnsafe4"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["RocksUnsafe1"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["RocksUnsafe2"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["RocksUnsafe3"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["RocksUnsafe4"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["HardenedSand"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["CorruptHardenedSand"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["CrimsonHardenedSand"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["HallowHardenedSand"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["CorruptSandstone"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["CrimsonSandstone"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["HallowSandstone"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["DesertFossil"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["LunarBrickWall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["CogWall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["SandFall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["SnowFall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["SillyBalloonPinkWall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["SillyBalloonPurpleWall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["SillyBalloonGreenWall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["IronBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["LeadBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["LesionBlock"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["CrimstoneBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["SmoothSandstone"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Spider"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["SolarBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["VortexBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["NebulaBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["StardustBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["OrangeStainedGlass"], mapOptionCount: 0, nameSources: ["placement"] },
+    { symbols: ["GoldStarryGlassWall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["BlueStarryGlassWall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["LivingWoodUnsafe"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["WroughtIronFence"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["EbonstoneEcho"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["MudWallEcho"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["PearlstoneEcho"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["SnowWallEcho"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["AmethystEcho"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["TopazEcho"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["SapphireEcho"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["EmeraldEcho"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["RubyEcho"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["DiamondEcho"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Cave1Echo"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Cave2Echo"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Cave3Echo"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Cave4Echo"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Cave5Echo"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Cave6Echo"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Cave7Echo"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["SpiderEcho"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["CorruptGrassEcho"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["HallowedGrassEcho"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["IceEcho"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["ObsidianBackEcho"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["CrimsonGrassEcho"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["CrimstoneEcho"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["CaveWall1Echo"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["CaveWall2Echo"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["MarbleEchoUnused"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["GraniteEchoUnused"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["Cave8Echo"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["SandstoneEcho"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Corruption1Echo"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Corruption2Echo"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Corruption3Echo"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Corruption4Echo"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Crimson1Echo"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Crimson2Echo"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Crimson3Echo"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Crimson4Echo"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Dirt1Echo"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Dirt2Echo"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Dirt3Echo"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Dirt4Echo"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Hallow1Echo"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Hallow2Echo"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Hallow3Echo"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Hallow4Echo"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Jungle1Echo"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Jungle2Echo"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Jungle3Echo"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Jungle4Echo"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Lava1Echo"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Lava2Echo"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Lava3Echo"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Lava4Echo"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Rocks1Echo"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Rocks2Echo"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Rocks3Echo"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Rocks4Echo"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["HardenedSandEcho"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["CorruptHardenedSandEcho"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["CrimsonHardenedSandEcho"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["HallowHardenedSandEcho"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["CorruptSandstoneEcho"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["CrimsonSandstoneEcho"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["HallowSandstoneEcho"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["DesertFossilEcho"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["BambooBlockWall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["LargeBambooBlockWall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["AmberStoneWallEcho"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["BambooFence"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["AshWood"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["AshWoodFence"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["EchoWall"], mapOptionCount: 0, nameSources: ["placement"] },
+    { symbols: ["ReefWall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["PoopWall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["ShimmerBlockWall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["ShimmerBrickWall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["LunarRustBrickWall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["DarkCelestialBrickWall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["AstraBrickWall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["CosmicEmberBrickWall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["CryocoreBrickWall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["MercuryBrickWall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["StarRoyaleBrickWall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["HeavenforgeBrickWall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["AncientBlueBrickWall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["AncientGreenBrickWall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["AncientPinkBrickWall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["AncientGoldBrickWall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["AncientSilverBrickWall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["AncientCopperBrickWall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["AncientObsidianBrickWall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["AncientHellstoneBrickWall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["AncientCobaltBrickWall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["AncientMythrilBrickWall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["LavaMossBlockWall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["ArgonMossBlockWall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["KryptonMossBlockWall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["XenonMossBlockWall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["VioletMossBlockWall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["RainbowMossBlockWall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Shimmerfall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["FallenStarWall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["StoneUnsafe"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["UnbreakableBlockWall"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["FeywoodWall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["HallowedBrickWall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["PineTreeBlockWall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["EasterBlockWall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["GothicBrickWall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["FlinxFurBlockWall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["JellyfishBlockWall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["PineWoodBlockWall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["HarpyBlockWall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["MoonplateBlockWall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["LibrarianBlockWall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["SpikeBlockWall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["OfficeBlockWall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["ForbiddenBlockWall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["WaterBlockWall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["BoulderBlockWall"], mapOptionCount: 1, nameSources: ["placement"] },
   ],
   liquids: ["Water", "Lava", "Honey", "Shimmer"],
   paints: ["", "Red Paint", "Orange Paint", "Yellow Paint", "Lime Paint", "Green Paint", "Teal Paint", "Cyan Paint", "Sky Blue Paint", "Blue Paint", "Purple Paint", "Violet Paint", "Pink Paint", "Deep Red Paint", "Deep Orange Paint", "Deep Yellow Paint", "Deep Lime Paint", "Deep Green Paint", "Deep Teal Paint", "Deep Cyan Paint", "Deep Sky Blue Paint", "Deep Blue Paint", "Deep Purple Paint", "Deep Violet Paint", "Deep Pink Paint", "Black Paint", "White Paint", "Gray Paint", "Brown Paint", "Shadow Paint", "Negative Paint", ""],

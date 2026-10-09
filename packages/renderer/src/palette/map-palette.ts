@@ -7,11 +7,11 @@ export type MapColor = number;
 
 export type ContentNameSource = "legend" | "placement" | "symbol" | "unresolved";
 
-/** Runtime provenance retained independently of the UI's choice of label. Indexed by vanilla block ID. */
-export interface TileNameMetadata {
+/** Runtime provenance retained independently of the UI's choice of label. Indexed by vanilla content ID. */
+export interface ContentNameMetadata {
   readonly symbols: readonly string[];
   readonly mapOptionCount: number;
-  /** One source per entry in MapContentNames.tiles[id], including a label for a block without a map colour. */
+  /** One source per name, including a label for content without a map colour. */
   readonly nameSources: readonly ContentNameSource[];
 }
 
@@ -20,8 +20,9 @@ export interface MapContentNames {
   readonly gameVersion: string;
   /** Content ID, then map option; blocks without map colours may still have a label at index zero. */
   readonly tiles: readonly (readonly string[])[];
-  readonly tileMetadata?: readonly TileNameMetadata[];
+  readonly tileMetadata?: readonly ContentNameMetadata[];
   readonly walls: readonly (readonly string[])[];
+  readonly wallMetadata?: readonly ContentNameMetadata[];
   /** Water, lava, honey, shimmer, resolved from the game's English localization. */
   readonly liquids: readonly [string, string, string, string];
   /** Indexed by paint ID like MapPalette.paints; zero and obsolete/unnamed paint IDs have empty strings. */

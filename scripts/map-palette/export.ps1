@@ -160,7 +160,7 @@ function Read-Names([Array]$Lookup, [Array]$Counts, [Reflection.MethodInfo]$GetN
     return ,$entries.ToArray()
 }
 
-. (Join-Path $PSScriptRoot 'tile-names.ps1')
+. (Join-Path $PSScriptRoot 'content-names.ps1')
 
 function Format-NameTable([string]$Name, [Array]$Entries) {
     $lines = New-Object 'Collections.Generic.List[string]'
@@ -284,9 +284,10 @@ try {
     $tiles = Read-Options (Read-Field $map 'tileLookup') (Read-Field $map 'tileOptionCounts') $colours
     $walls = Read-Options (Read-Field $map 'wallLookup') (Read-Field $map 'wallOptionCounts') $colours
     $placementNames = Read-ItemContentNames $game
-    $tileData = Read-TileNames $game (Read-Field $map 'tileLookup') (Read-Field $map 'tileOptionCounts') $getName $placementNames.tiles
+    $tileData = Read-ContentNames $game 'TileID' (Read-Field $map 'tileLookup') (Read-Field $map 'tileOptionCounts') $getName $placementNames.tiles
     $tileNames = $tileData.names
-    $wallNames = Read-Names (Read-Field $map 'wallLookup') (Read-Field $map 'wallOptionCounts') $getName $placementNames.walls
+    $wallData = Read-ContentNames $game 'WallID' (Read-Field $map 'wallLookup') (Read-Field $map 'wallOptionCounts') $getName $placementNames.walls
+    $wallNames = $wallData.names
     # Runtime localization keys observed in the installed game; these are references, not a copied name table.
     $liquidNames = @('LegacyInterface.53', 'LegacyInterface.56', 'LegacyInterface.58', 'SlimeNames_Rainbow.Shimmer') | ForEach-Object {
         $name = [string]$english.getText.Invoke($english.instance, @([string]$_))
@@ -353,18 +354,13 @@ try {
     $lines.Add('  ],')
     $lines.Add('};')
     $lines.Add('')
-    $lines.Add('// English legend/placement names, with readable symbolic block labels and runtime provenance (ADR 0002).')
+    $lines.Add('// English legend/placement names, with readable symbolic content labels and runtime provenance (ADR 0002).')
     $lines.Add('export const terrariaMapNames: MapContentNames = {')
     $lines.Add("  gameVersion: `"$version`",")
     $lines.AddRange([string[]](Format-NameTable 'tiles' $tileNames))
-    $lines.Add('  tileMetadata: [')
-    foreach ($record in $tileData.metadata) {
-        $symbols = @($record.symbols | ForEach-Object { ConvertTo-Json -InputObject ([string]$_) -Compress }) -join ', '
-        $sources = @($record.nameSources | ForEach-Object { ConvertTo-Json -InputObject ([string]$_) -Compress }) -join ', '
-        $lines.Add("    { symbols: [$symbols], mapOptionCount: $($record.mapOptionCount), nameSources: [$sources] },")
-    }
-    $lines.Add('  ],')
+    $lines.AddRange([string[]](Format-NameMetadata 'tileMetadata' $tileData.metadata))
     $lines.AddRange([string[]](Format-NameTable 'walls' $wallNames))
+    $lines.AddRange([string[]](Format-NameMetadata 'wallMetadata' $wallData.metadata))
     $quotedLiquids = @($liquidNames | ForEach-Object { ConvertTo-Json -InputObject ([string]$_) -Compress }) -join ', '
     $lines.Add("  liquids: [$quotedLiquids],")
     $quotedPaints = @(0..($paintCount - 1) | ForEach-Object {
@@ -375,7 +371,9 @@ try {
     $lines.Add('};')
     # Everything was read and validated before the output is touched.
     if ($CoveragePath) {
-        $report = Format-TileCoverage $version $tileData
+        $blockReport = Format-ContentCoverage $version $tileData 'block'
+        $wallReport = Format-ContentCoverage $version $wallData 'wall'
+        $report = $blockReport + @('') + $wallReport
         $coverageOutput = [IO.Path]::GetFullPath($CoveragePath)
         if ($coverageOutput -eq $output) { throw 'CoveragePath must differ from OutputPath.' }
         $null = [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($coverageOutput))
