@@ -1049,8 +1049,10 @@ and packs them into square RGBA pages, 4096 × 4096 by default. It runs in a Wor
 touches the network; the Worker reports the number of `fetch` calls it saw (always 0).
 
 - **Packing:** shelf packing, tallest sheet first, with 2 transparent pixels of padding around every sheet so
-  sampling never bleeds into a neighbour. A sheet that does not fit an empty page (including padding) is rejected with
-  `AtlasSheetTooLargeError`.
+  sampling never bleeds into a neighbour, and every sheet at an even pixel (format 4): the renderer's half-resolution
+  atlas averages 2 × 2 pixels from even positions, and every cell, gutter and shape column of a sheet starts at an even
+  pixel of it, so no half-resolution texel mixes a cell with its gutter. A sheet that does not fit an empty page
+  (including padding) is rejected with `AtlasSheetTooLargeError`.
 - **Index:** `(kind, id) → { page, x, y, width, height, frameWidth, frameHeight, gapX, gapY }`: the per-sheet frame and gutter
   of "Sprite layout" (default tiles 16×16 / 2, walls 32×32 / 4; the 56 tile ids whose grid or gutter differs from the default — e.g. tile 4
   20×20, tile 3 and 24 16×20, tile 15 gutter 2×4, tiles 751/752 18×18 with no gutter — carry their own values, restated from A12's
