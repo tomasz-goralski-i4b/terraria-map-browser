@@ -1,48 +1,8 @@
-import { Session } from "node:inspector/promises";
-import type { HeapProfiler } from "node:inspector";
 import { expect, test, vi } from "vitest";
 import { createWorld } from "@studio/world-model";
 import { renderChunk } from "../src/index.js";
 import type { ChunkRenderOptions } from "../src/index.js";
-
-// Node's inspector declarations omit these modern V8 protocol fields.
-interface AllocationNode extends HeapProfiler.SamplingHeapProfileNode {
-  id: number;
-  children: AllocationNode[];
-}
-
-interface AllocationProfile extends HeapProfiler.SamplingHeapProfile {
-  head: AllocationNode;
-  samples: { nodeId: number }[];
-}
-
-async function allocationCount(action: () => void, functionName: string): Promise<number> {
-  const session = new Session();
-  session.connect();
-  try {
-    // One-byte sampling captures object allocations; collected temporary objects must remain counted.
-    const parameters = {
-      samplingInterval: 1,
-      includeObjectsCollectedByMajorGC: true,
-      includeObjectsCollectedByMinorGC: true,
-    };
-    await session.post("HeapProfiler.startSampling", parameters);
-    action();
-    await session.post("HeapProfiler.collectGarbage");
-    const { profile } = await session.post("HeapProfiler.stopSampling");
-    const allocations = profile as AllocationProfile;
-    const nodeIds = new Set<number>();
-    function visit(node: AllocationNode, inside: boolean): void {
-      const matches = inside || node.callFrame.functionName === functionName;
-      if (matches) nodeIds.add(node.id);
-      for (const child of node.children) visit(child, matches);
-    }
-    visit(allocations.head, false);
-    return allocations.samples.filter((sample) => nodeIds.has(sample.nodeId)).length;
-  } finally {
-    session.disconnect();
-  }
-}
+import { allocationCount } from "./allocation-count.js";
 
 function allocateTileViews(): void {
   // Keep these objects observable until this function returns, then let the profiler collect them.
