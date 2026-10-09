@@ -291,7 +291,7 @@ describe("slopes and half blocks", () => {
 });
 
 describe("the two-pass helper over a tile region", () => {
-  const LEGEND: Readonly<Record<string, number>> = { d: DIRT, s: STONE, c: COPPER, i: IRON };
+  const LEGEND: Readonly<Record<string, number>> = { d: DIRT, s: STONE, c: COPPER, i: IRON, S: 53 };
 
   /** A world with `rows` (N to S) at (2, 2) in air; `#` is `centre`. */
   function worldOf(rows: readonly string[], centre = -1, centreShape = 0): CanonicalWorld {
@@ -378,6 +378,39 @@ describe("the two-pass helper over a tile region", () => {
         expect([columns[x * 5 + y], rows[x * 5 + y]]).toEqual(alone ?? [-1, -1]);
       }
     }
+  });
+
+  test("three types: a centre that reads a table takes the table-read neighbour as the other type", () => {
+    const MUD = 59;
+    const CHLOROPHYTE = 211;
+    expect(framing.kind(MUD, DIRT)).toBe("table");
+    expect(framing.kind(MUD, CHLOROPHYTE)).toBe("relative");
+    // Mud all around, dirt at E, chlorophyte at NW (before dirt in NEIGHBOUR_ORDER) or at SE (after it). The
+    // relative connects (digit 1); the dirt is the pair's other type (digit 2).
+    for (const relativeSlot of [0, 7]) {
+      const neighbours = [MUD, MUD, MUD, MUD, DIRT, MUD, MUD, MUD];
+      neighbours[relativeSlot] = CHLOROPHYTE;
+      const code = [1, 1, 1, 1, 2, 1, 1, 1].reduce((sum, digit, k) => sum + digit * 3 ** k, 0);
+      const actual = framing.frameBlock({ type: MUD, shape: 0, x: REFERENCE[0], y: REFERENCE[1], neighbours });
+      expect(asTuple(actual), `chlorophyte at slot ${String(relativeSlot)}`).toEqual(database.blockCell(MUD, DIRT, code));
+    }
+  });
+
+  test("a relative with no cell of its own (unsupported sand) keeps no rim toward the centre", () => {
+    const SAND = 53;
+    expect(framing.kind(DIRT, SAND)).toBe("relative");
+    const world = worldOf([".....", ".dS..", "....."]);
+    expect(cellAt(world, 2, 1)).toBeNull();
+    const alone = framing.frameBlock({ type: DIRT, shape: 0, x: 3, y: 3, neighbours: [-1, -1, -1, -1, -1, -1, -1, -1] });
+    expect(cellAt(world, 1, 1)).toEqual(asTuple(alone));
+  });
+
+  test("a falling block stands on any block below it, a modded one included", () => {
+    const SAND = 53;
+    const world = createWorld(12, 12);
+    world.setTile(4, 4, { block: { kind: "vanilla", id: SAND }, wires: 0, actuator: false });
+    world.setTile(4, 5, { block: { kind: "mod", mod: "M", internalName: "Rock" }, wires: 0, actuator: false });
+    expect(cellAt(world, 2, 2)).not.toBeNull();
   });
 
   test("frame-important, modded and unknown blocks get no cell; neighbours outside the world are absent", () => {

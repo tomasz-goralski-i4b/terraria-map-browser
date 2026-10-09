@@ -68,6 +68,13 @@ describe("the generated framing database", () => {
     expect(database.blockVariant(DIRT, [1, 1], 2)).toEqual([3, 1]);
   });
 
+  test("index-based variants: variant 0 is the cell itself", () => {
+    const interior = database.cells.findIndex(([column, row]) => column === 1 && row === 1);
+    expect(database.variantCell(DIRT, interior, 0)).toBe(interior);
+    expect(database.cells[database.variantCell(DIRT, interior, 1)]).toEqual([2, 1]);
+    expect(database.cells[database.variantCell(DIRT, interior, 2)]).toEqual([3, 1]);
+  });
+
   test("large-frame types carry their tables by position and ignore the variant", () => {
     for (const id of [273, 409]) {
       const block = terrariaFramingData.blocks[String(id)];
