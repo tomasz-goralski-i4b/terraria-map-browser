@@ -159,7 +159,7 @@ test("an existing copy is never overwritten", async () => {
   await render(<App />);
   await open(writerSource());
   const saved = destination();
-  saved.getFileHandle.mockImplementation(() => Promise.resolve({ isSameEntry: () => Promise.resolve(false), createWritable: saved.createWritable }));
+  saved.getFileHandle.mockResolvedValue({ isSameEntry: () => Promise.resolve(false), createWritable: saved.createWritable });
   await exportAndSave();
   expect(saved.getFileHandle).toHaveBeenCalledExactlyOnceWith("SCCO1.copy.wld", { create: false });
   expect(saved.createWritable).not.toHaveBeenCalled();
@@ -171,9 +171,8 @@ test("a source alias appearing between lookup and creation is refused without tr
   await render(<App />);
   await open(writerSource());
   const saved = destination();
-  saved.getFileHandle.mockImplementation((_name: string, options: { create: boolean }) => options.create
-    ? Promise.resolve({ isSameEntry: () => Promise.resolve(true), createWritable: saved.createWritable })
-    : Promise.reject(new DOMException("No copy exists", "NotFoundError")));
+  saved.getFileHandle.mockRejectedValueOnce(new DOMException("No copy exists", "NotFoundError"))
+    .mockResolvedValueOnce({ isSameEntry: () => Promise.resolve(true), createWritable: saved.createWritable });
   await exportAndSave();
   expect(saved.createWritable).not.toHaveBeenCalled();
   expect(saved.unsafePicker).not.toHaveBeenCalled();
