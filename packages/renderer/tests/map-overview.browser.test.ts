@@ -292,7 +292,7 @@ describe("overview below half a pixel per tile", () => {
     expect(differing).toBe(0);
   });
 
-  test("a layer change sweeps out from the centre of the view: no blank, no chunk ahead of the front, within budget", () => {
+  test("a layer change sweeps out from the centre of the view: no blank, no chunk ahead of the front, within budget", { tags: ["perf"] }, () => {
     // 128 uniform chunks in two colours, all visible, in a cache of 16: the rebuild re-uploads evicted chunks.
     const colorIndex = (chunkX: number, chunkY: number): number => 1 + ((chunkX + chunkY) % 2);
     const world = blocks(2048, 1024, (x, y) => colorIndex(Math.floor(x / 128), Math.floor(y / 128)));
