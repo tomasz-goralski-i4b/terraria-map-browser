@@ -155,6 +155,31 @@ test("file input opens use download even when a directory picker is available", 
   await expect.element(page.getByRole("link", { name: "Download SCCO1.copy.wld" })).toBeVisible();
 });
 
+test("an existing copy is never overwritten", async () => {
+  await render(<App />);
+  await open(writerSource());
+  const saved = destination();
+  saved.getFileHandle.mockImplementation(() => Promise.resolve({ isSameEntry: () => Promise.resolve(false), createWritable: saved.createWritable }));
+  await exportAndSave();
+  expect(saved.getFileHandle).toHaveBeenCalledExactlyOnceWith("SCCO1.copy.wld", { create: false });
+  expect(saved.createWritable).not.toHaveBeenCalled();
+  await expect.element(page.getByRole("alert")).toMatchTextContent("already exists");
+  await expect.element(page.getByRole("link", { name: "Download SCCO1.copy.wld" })).toBeVisible();
+});
+
+test("a source alias appearing between lookup and creation is refused without truncation", async () => {
+  await render(<App />);
+  await open(writerSource());
+  const saved = destination();
+  saved.getFileHandle.mockImplementation((_name: string, options: { create: boolean }) => options.create
+    ? Promise.resolve({ isSameEntry: () => Promise.resolve(true), createWritable: saved.createWritable })
+    : Promise.reject(new DOMException("No copy exists", "NotFoundError")));
+  await exportAndSave();
+  expect(saved.createWritable).not.toHaveBeenCalled();
+  expect(saved.unsafePicker).not.toHaveBeenCalled();
+  await expect.element(page.getByRole("alert")).toMatchTextContent("original");
+});
+
 test("cancelling directory selection keeps the prepared download without a filesystem write", async () => {
   await render(<App />);
   await open(writerSource());
