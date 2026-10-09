@@ -17,7 +17,11 @@ export interface BlockFramingInput {
   /** The tile's world position: it picks the variant and the cell of position-framed types. */
   readonly x: number;
   readonly y: number;
-  /** The eight neighbours' tile ids in NEIGHBOUR_ORDER (NW N NE W E SW S SE); −1 where there is no block. */
+  /**
+   * The eight neighbours' tile ids in NEIGHBOUR_ORDER (NW N NE W E SW S SE); −1 where there is no block. Any id that
+   * is not a self-framed block type (furniture, or NOT_VANILLA for modded and unknown content) is a block that does not
+   * merge: it counts as absent for the cell, but it holds up a falling block above it.
+   */
   readonly neighbours: ArrayLike<number>;
   /** The neighbours' shapes in NEIGHBOUR_ORDER; all full when omitted. */
   readonly neighbourShapes?: ArrayLike<number>;
@@ -65,6 +69,9 @@ const KIND_PARTNER = 2;
 const KIND_RELATIVE = 3;
 const KIND_TABLE = 4;
 const KIND_NAMES: readonly BlockKind[] = ["air", "self", "partner", "relative", "table"];
+
+/** The neighbour id frameRegion passes for a block that is not vanilla content (modded or unknown). */
+export const NOT_VANILLA = 0x10000;
 
 /** Neighbour slots (NEIGHBOUR_ORDER) of the sides N E S W and the corners NW NE SE SW. */
 const SIDE_SLOTS = [1, 4, 6, 3] as const;
@@ -233,6 +240,7 @@ export function createBlockFraming(database: FramingDatabase): BlockFraming {
     if (isFalling(index) && (neighbours[6] ?? -1) < 0) return false;
     const cut = CUT_FACES[shape] ?? 0;
     let other = -1;
+    let tableOther = -1;
     let tables = false;
     let alone = true;
     for (let slot = 0; slot < 8; slot++) {
@@ -248,6 +256,7 @@ export function createBlockFraming(database: FramingDatabase): BlockFraming {
       if (kind >= KIND_PARTNER) {
         alone = false;
         if (other === -1) other = neighbour;
+        if (kind === KIND_TABLE && tableOther === -1) tableOther = neighbour;
         if (kind === KIND_TABLE) tables = true;
       }
     }
@@ -271,7 +280,9 @@ export function createBlockFraming(database: FramingDatabase): BlockFraming {
       }
     } else {
       // Sheets of their own (grass, moss, gemspark, large frames) and pairs that follow no letter: the database's
-      // table, with the first such neighbour as the other type (it tabulates pairs, not mixed neighbourhoods).
+      // table, with the first table-read neighbour as the other type, else the first partner or relative (it
+      // tabulates pairs, not mixed neighbourhoods).
+      if (tableOther !== -1) other = tableOther;
       let code = 0;
       for (let slot = 0; slot < 8; slot++) {
         const kind = neighbourKinds[slot] ?? KIND_AIR;
@@ -313,11 +324,11 @@ export function createBlockFraming(database: FramingDatabase): BlockFraming {
     out.columns.fill(-1);
     out.rows.fill(-1);
     const vanilla = new Int32Array(palette.length);
-    palette.forEach((ref, index) => { vanilla[index] = ref.kind === "vanilla" ? ref.id : -1; });
+    palette.forEach((ref, index) => { vanilla[index] = ref.kind === "vanilla" ? ref.id : NOT_VANILLA; });
     const typeAt = (x: number, y: number): number => {
       if (x < 0 || y < 0 || x >= width || y >= height) return -1;
       const block = planes.block[x * height + y] ?? 0xffff;
-      return block === 0xffff ? -1 : vanilla[block] ?? -1;
+      return block === 0xffff ? -1 : vanilla[block] ?? NOT_VANILLA;
     };
     // A tile of pass p reads cells of pass p − 1 one tile away, and so on: the deepest type in the region sets how
     // far around it to frame.

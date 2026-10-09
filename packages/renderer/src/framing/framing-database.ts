@@ -212,6 +212,7 @@ export async function loadFramingDatabase(data: FramingDatabaseData): Promise<Fr
     },
     variantCell: (centre, cell, variant) => {
       const block = blockOf.get(centre);
+      if (variant === 0) return cell;
       const entry = block === undefined ? undefined : variantMaps[block.variants]?.get(cell);
       return entry === undefined ? -1 : variant === 1 ? entry[0] : entry[1];
     },

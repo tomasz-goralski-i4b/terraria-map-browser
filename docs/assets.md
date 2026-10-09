@@ -511,9 +511,11 @@ database, never from a list of types:
 - **Passes.** Relatives chain: dirt reads sand's cell, sand reads hardened sand's, and so on through sandstone and
   desert fossil, up to five steps. The region helper frames each type in the pass after its relatives, so a region
   needs the tiles up to five away around it (only as far as the deepest type in it needs).
-- Neighbours that are not self-framed blocks (furniture, platforms, modded or unknown content) count as absent. In a
-  neighbourhood of three or more types, a centre that reads a table directly takes its first neighbour of a
-  table-read type as the other type and reads every such neighbour as that type: the database tabulates pairs only.
+- Neighbours that are not self-framed blocks (furniture, platforms, modded or unknown content) count as absent, but
+  they hold up a falling block above them. In a neighbourhood of three or more types, a centre that reads a table
+  directly takes its first neighbour of a table-read type as the other type (else its first partner or relative),
+  reads relatives as itself and every other partner or table-read neighbour as that type: the database tabulates
+  pairs only.
 - For grass, gemspark and the large-frame blocks the database records, in about 230 neighbourhoods **without** the
   other type, other cells in their pair tables than in their tables alone: the game's result there depends on more
   than the 3 × 3. `frameBlock` uses the table alone for them.
