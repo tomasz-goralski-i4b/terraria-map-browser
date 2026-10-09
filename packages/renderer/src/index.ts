@@ -19,3 +19,8 @@ export type {
   MapRenderer, MapRendererOptions, MapRendererStats, RenderableWorld, SpriteAtlasSource, SpriteSheetEntry,
 } from "./gpu/map-renderer.js";
 export { MISSING_SPRITE_COLORS, SPRITE_MIN_ZOOM } from "./gpu/shaders.js";
+export { NEIGHBOUR_ORDER, UNSTABLE_CELL, loadFramingDatabase, neighbourhoodCode } from "./framing/framing-database.js";
+export type {
+  BlockFramingData, BlockRelation, Cell, FramingDatabase, FramingDatabaseData, WallFramingData,
+} from "./framing/framing-database.js";
+export { terrariaFramingData } from "./framing/terraria-framing.generated.js";
