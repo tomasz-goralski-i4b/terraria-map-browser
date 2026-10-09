@@ -55,11 +55,13 @@ async function corpus(t) {
   return { fixtures, artifacts: join(root, "artifacts") };
 }
 
-function exporters(calls, { missing = false, mismatch = false, failure = false } = {}) {
+function exporters(calls, { missing = false, missingDotnet = false, mismatch = false, failure = false } = {}) {
   return async (command, args) => {
     calls.push({ command, args });
     if (failure) throw new Error("TypeScript export failed: unsupported world format");
-    if (command === "dotnet") await writeFile(args.at(-1), cwm());
+    if (command === "dotnet") {
+      if (!missingDotnet) await writeFile(args.at(-1), cwm());
+    }
     else for (const file of ["SCCO1.cwm", "SCCR2.cwm"]) {
       if (missing && file === "SCCR2.cwm") continue;
       const bytes = cwm(); if (mismatch) bytes[bytes.length - 1] = 1;
@@ -78,13 +80,42 @@ test("all manifest entries invoke independent exporters and compare artifacts", 
 });
 
 test("missing exports and deliberate plane mismatches fail with fixture diagnostics", async (t) => {
-  for (const options of [{ missing: true }, { mismatch: true }]) {
+  for (const options of [{ missing: true }, { missingDotnet: true }, { mismatch: true }]) {
     const paths = await corpus(t);
     await assert.rejects(runDifferential({ ...paths, execute: exporters([], options) }), /CWM differential failed/);
     const report = await readFile(join(paths.artifacts, "report.txt"), "utf8");
     assert.match(report, /FAIL SCCR2.wld/);
-    assert.match(report, options.missing ? /missing TypeScript export/ : /plane flags, chunk/);
+    assert.match(report, options.missing ? /missing TypeScript export/ : options.missingDotnet ? /missing .NET export/ : /plane flags, chunk/);
   }
+});
+
+test("every plane locates the second tile's byte using its own element width", () => {
+  const left = cwm({ width: 2, height: 3 });
+  let start = 12 + left.readUInt32LE(8);
+  for (const [plane, size] of [["block", 2], ["wall", 2], ["frameX", 2], ["frameY", 2], ["paint", 1],
+    ["wallPaint", 1], ["liquid", 1], ["liquidAmount", 1], ["shape", 1], ["flags", 2]]) {
+    const right = Buffer.from(left); right[start + 4 * size] = 1;
+    assert.match(compareCwm(left, right), new RegExp(`plane ${plane}, chunk \\(0,0\\), coordinate \\(1,1\\)`));
+    start += 6 * size;
+  }
+});
+
+test("artifacts cannot be placed in tracked fixture sources or reuse old exports", async (t) => {
+  const paths = await corpus(t);
+  await assert.rejects(runDifferential({ ...paths, artifacts: join(import.meta.dirname, "cwm-artifacts"), execute: exporters([]) }), /Artifacts must be/);
+  await mkdir(paths.artifacts);
+  await assert.rejects(runDifferential({ ...paths, execute: exporters([]) }), /EEXIST/);
+});
+
+test("CI always runs the differential job and preserves bounded failure reports", async () => {
+  const workflow = await readFile(new URL("../../.github/workflows/ci.yml", import.meta.url), "utf8");
+  const compatibility = workflow.split("  cwm-compatibility:")[1].split("  verify:")[0];
+  assert.match(compatibility, /dotnet restore .*--locked-mode/);
+  assert.match(compatibility, /pnpm -s typecheck/);
+  assert.match(compatibility, /run: node scripts\/compatibility\/cwm.mjs/);
+  assert.match(compatibility, /if: failure\(\)[\s\S]*actions\/upload-artifact@v4[\s\S]*path: \.tdd\/cwm-\*\/report.txt/);
+  assert.doesNotMatch(compatibility, /continue-on-error|paths-ignore/);
+  assert.match(workflow.split("  verify:")[1], /needs: cwm-compatibility/);
 });
 
 test("missing fixtures, exporter failures and invalid manifests fail instead of skipping", async (t) => {
