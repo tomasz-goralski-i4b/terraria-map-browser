@@ -42,6 +42,7 @@ jobs:
         with:
           name: cwm-mismatch-reports
           path: .tdd/cwm-*/report.txt
+          include-hidden-files: true
           if-no-files-found: ignore
   verify:
     needs: cwm-compatibility
