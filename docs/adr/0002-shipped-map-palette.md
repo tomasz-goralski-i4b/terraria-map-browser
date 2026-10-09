@@ -165,10 +165,14 @@ The exporter applies this policy, implemented independently in `scripts/map-pale
   emit a label at name index zero, without adding a colour or a frame rule. The names table and colour table
   therefore need not have identical option lengths when the colour option count is zero.
 
-`terrariaMapNames.tileMetadata` and `wallMetadata` retain **all** reflected aliases, `symbolStatus`
+The independent `terrariaMapMetadata: MapContentMetadata` export has `tiles` and `walls` tables retaining
+**all** reflected aliases, `symbolStatus`
 (`present`, `unused`, `ambiguous`, `unavailable`), the original `mapOptionCount` and each emitted
-label's `nameSources` (`legend`, `placement`, `symbol`, `unresolved`). These records are independent of the
-frontend's display policy. They contain no game implementation, localization asset or item inventory.
+label's `nameSources` (`legend`, `placement`, `symbol`, `unresolved`). These records are indexed by content ID
+and share the labels' game version. They are independent of the frontend's display policy, and can be imported
+when needed. Keeping metadata separate from `terrariaMapNames` lets the production bundler omit unused
+provenance when the UI consumes only names, avoiding a new >500 KB main-chunk warning without increasing
+the warning limit. They contain no game implementation, localization asset or item inventory.
 Content, status descriptions and Inspector already share `contentName`, so the generated labels reach all three
 without separate UI naming tables. Unknown/mod references still retain keys; the hidden ID column and
 name/key/kind search remain available.

@@ -17,14 +17,19 @@ export interface ContentNameMetadata {
   readonly nameSources: readonly ContentNameSource[];
 }
 
-/** English content names and their runtime provenance (ADR 0002). */
+/** Independently importable provenance; consumers of labels alone need not retain it in their bundle. */
+export interface MapContentMetadata {
+  readonly gameVersion: string;
+  readonly tiles: readonly ContentNameMetadata[];
+  readonly walls: readonly ContentNameMetadata[];
+}
+
+/** English content names (ADR 0002). Provenance is exported separately as MapContentMetadata. */
 export interface MapContentNames {
   readonly gameVersion: string;
   /** Content ID, then map option; blocks without map colours may still have a label at index zero. */
   readonly tiles: readonly (readonly string[])[];
-  readonly tileMetadata?: readonly ContentNameMetadata[];
   readonly walls: readonly (readonly string[])[];
-  readonly wallMetadata?: readonly ContentNameMetadata[];
   /** Water, lava, honey, shimmer, resolved from the game's English localization. */
   readonly liquids: readonly [string, string, string, string];
   /** Indexed by paint ID like MapPalette.paints; zero and obsolete/unnamed paint IDs have empty strings. */

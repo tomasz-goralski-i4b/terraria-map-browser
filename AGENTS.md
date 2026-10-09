@@ -48,8 +48,9 @@ scripts/                           verify/build/test + TDD gates (scripts/tdd) +
 
 ## Hard rules
 - No Terraria assets, player worlds or commercial mods in the repo (`*.wld` is gitignored except generated fixtures).
-  The data-only exception is the map colour table and English content/paint names (`terrariaMapPalette` and
-  `terrariaMapNames` in `terraria-map-palette.generated.ts`) generated from the game by `scripts/map-palette/export.ps1`
+  The data-only exception is the map colour table, English content/paint names and their runtime symbolic metadata
+  (`terrariaMapPalette`, `terrariaMapNames` and `terrariaMapMetadata` in `terraria-map-palette.generated.ts`)
+  generated from the game by `scripts/map-palette/export.ps1`
   ([ADR 0002](docs/adr/0002-shipped-map-palette.md)); it is regenerated, never edited by hand. Map colour rules may be
   derived by calling the game's map functions on synthetic input and comparing results (`scripts/map-palette`,
   ADR 0002); that is observation of behaviour, not reading code.
