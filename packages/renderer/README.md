@@ -99,7 +99,8 @@ exactly the pixels `filterTiles` (below) makes of them. The browser tests assert
 - **Sprite mode (#91).** `setAtlas(atlas)` uploads a sprite atlas (`@studio/assets`' `SpriteAtlas`, square RGBA8 pages)
   once, as one `RGBA8` array texture with a layer per page; `stats().atlasUploads` counts it. A lookup texture
   (`RGBA32I`, `SPRITE_SHEET_ROW` in `src/gpu/shaders.ts`) holds per palette index the tile sheet of its content ID
-  (page, place, size, frame size) and the wall sheet of its wall ID (four texels per index), written with the palette,
+  (page, place, size, frame size), the wall sheet of its wall ID and how its stored frames wrap past the sheet's edge
+  (`SPRITE_FRAME_WRAPS`, docs/assets.md; five texels per index), written with the palette,
   so it grows when the palette is appended; mod and unknown content and IDs without a sheet are *missing*, trees (`SPRITE_DEFERRED_TILES`: tree trunks, tops and
   branches are deferred, docs/assets.md) keep their map colour. A missing block with a stored frame is drawn as a
   generated missing-texture checkerboard (`MISSING_SPRITE_COLORS`, magenta and black, 2 × 2 squares per tile; not a

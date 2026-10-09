@@ -257,6 +257,25 @@ source = (x = 36 × column, y = 36 × row, w = 32, h = 32)
 dest   = top-left at (16 × tileX − 8, 16 × tileY − 8)        // a 32×32 sprite centred on the 16×16 tile (A8)
 ```
 
+### Frames past the sheet's edge
+
+Some frame-important tiles store frames past their sheet's edge: they have more styles than fit one row of the sheet,
+and the styles that do not fit continue at the sheet's start in a second block, further along the other axis. Measured
+(S) in the art of L against the frames six local worlds store (every wrapped object assembled from its tiles looks
+whole, #147); the sheets are 1–4 pixels short of the period where the last gap is trimmed:
+
+| Tile id | Content | Sheet | Wraps past | Second block |
+|---|---|---|---|---|
+| 87, 88, 89 | pianos, dressers, sofas (3 × 2) | 1996–1998 × 72 | x = 1998 | y + 36 |
+| 93 | lamps (1 × 3) | 70 × 2048 | y = 2052 | x + 36 |
+| 101 | bookcases (3 × 4) | 1996 × 142 | x = 1998 | y + 72 |
+| 185 | small piles (the 2 × 1 row) | 1908 × 54 | x = 1908 | y + 18 |
+| 187 | large piles 2 (3 × 2) | 1890 × 72 | x = 1890 | y + 36 |
+
+So a stored frame `f` past the period `p` reads the cell at `f − k·p`, shifted by `k` times the second block's offset,
+`k = ⌊f / p⌋` (`wrappedFrame` in `packages/renderer/src/gpu/frame-wrap.ts`). Ids not in the table were not seen past
+their sheet's edge in those worlds; a frame past the edge of any other sheet keeps its map colour.
+
 ### Worked examples
 
 | # | Case | Input | Source rectangle (x, y, w, h) | Basis |
@@ -275,7 +294,7 @@ Expected sheet sizes (consistent with the size arithmetic, confirmed only by the
 
 | Case | M4 | Deferred |
 |---|---|---|
-| Frame-important tiles with a 16×16 grid (most furniture, multi-tile objects) | draw each tile's own cell at `(frameX, frameY)`; multi-tile objects need nothing extra because every tile carries its own frame | — |
+| Frame-important tiles with a 16×16 grid (most furniture, multi-tile objects) | draw each tile's own cell at `(frameX, frameY)`; multi-tile objects need nothing extra because every tile carries its own frame; frames past the sheet's edge wrap ("Frames past the sheet's edge") | — |
 | Frame-important tiles with other grids (torches, plants, …) | draw with the tile's `textureGrid` size | exact per-id draw offsets |
 | Non-frame-important blocks | the cell framed by "Tile framing" and its database (#141, #146), grass and moss included; half blocks and slopes cut per "Slopes and half blocks"; falling blocks with nothing below them in map colours | paint, lighting |
 | Walls | the cell framed by "Walls" and the framing database (#147), a 32 × 32 cell centred on the tile, below the blocks | paint, lighting |

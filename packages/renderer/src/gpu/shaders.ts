@@ -34,13 +34,14 @@ export const RULE_ROW = 256;
 export const RULE_HEADER_ROWS = 256;
 
 /**
- * Sprite sheet lookup texture (RGBA32I): four texels per palette index, at (index % 256 × 4 + k, index / 256): the
+ * Sprite sheet lookup texture (RGBA32I): five texels per palette index, at (index % 256 × 5 + k, index / 256): the
  * index's tile sheet in k = 0 (atlas page, x, y, state: SPRITE_STATE) and k = 1 (sheet width, height, frame width,
- * frame height), its wall sheet likewise in k = 2 and 3.
+ * frame height), its wall sheet likewise in k = 2 and 3, and in k = 4 how its stored frames wrap past the sheet's edge
+ * (SPRITE_FRAME_WRAPS: period along x, shift along y, period along y, shift along x; 0 for none).
  */
 export const SPRITE_SHEET_ROW = 256;
 /** Texels per palette index in the sprite sheet lookup. */
-export const SPRITE_SHEET_TEXELS = 4;
+export const SPRITE_SHEET_TEXELS = 5;
 
 /** The state of a palette index in the sprite sheet lookup. */
 export const SPRITE_STATE = {
@@ -263,6 +264,16 @@ bool spritePixel(uint index, ivec2 texel, ivec2 sub, out ivec4 color) {
     ? ivec2(frame(texel, ${String(PLANES_16.frameX)}, ${String(PRESENT.frameX)}), frame(texel, ${String(PLANES_16.frameY)}, ${String(PRESENT.frameY)}))
     : ivec2(-1);
   if (stored.x < 0 || stored.y < 0) return cellPixel(place, at, texel, sub, color);
+  // Styles past the sheet's edge continue in its next block (wrappedFrame in frame-wrap.ts).
+  ivec4 wrap = texelFetch(uSpriteSheets, at + ivec2(4, 0), 0);
+  if (wrap.x > 0) {
+    int block = stored.x / wrap.x;
+    stored += ivec2(-block * wrap.x, block * wrap.y);
+  }
+  if (wrap.z > 0) {
+    int block = stored.y / wrap.z;
+    stored += ivec2(block * wrap.w, -block * wrap.z);
+  }
   if (place.w == ${String(SPRITE_STATE.mapColor)}) return false;
   if (place.w == ${String(SPRITE_STATE.missing)}) {
     color = missingPixel(sub);

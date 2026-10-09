@@ -8,6 +8,7 @@ import type { Camera, ChunkCoord, Size } from "../camera/camera.js";
 import { filterTilesPerPixel } from "../chunk/box-filter.js";
 import { WIRE_ALPHA, WIRE_COLORS, WIRE_LAYER, type ChunkLayers } from "../chunk/render.js";
 import { createChunkCellCache } from "../framing/chunk-cells.js";
+import { SPRITE_FRAME_WRAPS } from "./frame-wrap.js";
 import type { ChunkCellCache } from "../framing/chunk-cells.js";
 import { createChunkWallCellCache } from "../framing/chunk-wall-cells.js";
 import type { ChunkWallCellCache } from "../framing/chunk-wall-cells.js";
@@ -210,7 +211,7 @@ const TEXTURE_UNITS = 8;
  * palm tree's frame is not a sheet offset (docs/assets.md, "Special handling": trees are deferred).
  */
 export const SPRITE_DEFERRED_TILES: ReadonlySet<number> = new Set([5, 72, 323, 583, 584, 585, 586, 587, 588, 589, 596, 616, 634]);
-/** Texels per row of the sprite sheet lookup: four per palette index (SPRITE_SHEET_ROW in shaders.ts). */
+/** Texels per row of the sprite sheet lookup: five per palette index (SPRITE_SHEET_ROW in shaders.ts). */
 const SPRITE_SHEET_WIDTH = SPRITE_SHEET_ROW * SPRITE_SHEET_TEXELS;
 
 const TILE_UNIFORMS = [
@@ -641,6 +642,10 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
         const state = atlasTexture === null ? SPRITE_STATE.mapColor : SPRITE_STATE.missing;
         sheetMirror.set([0, 0, 0, state, 0, 0, 0, 0], at + 8);
       }
+      const wrap = vanilla === undefined ? undefined : SPRITE_FRAME_WRAPS.get(vanilla);
+      sheetMirror.set(wrap === undefined ? [0, 0, 0, 0] : wrap.axis === "x"
+        ? [wrap.period, wrap.shift, 0, 0]
+        : [0, 0, wrap.period, wrap.shift], at + 16);
     }
     const firstRow = Math.floor(from / SPRITE_SHEET_ROW);
     const lastRow = Math.floor((to - 1) / SPRITE_SHEET_ROW);
