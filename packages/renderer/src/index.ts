@@ -5,8 +5,8 @@ export { WIRE_ALPHA, WIRE_COLORS, WIRE_LAYER, renderChunk, wireColor } from "./c
 export type { ChunkLayers, ChunkPixels, ChunkRenderOptions } from "./chunk/render.js";
 export { FILTER_SUBTILE, MAX_FILTER_TILES, filterTiles, filterTilesPerPixel } from "./chunk/box-filter.js";
 export { backgroundColor, contentColor, liquidColors, mapOption, paintedColor, placeholderColor } from "./palette/map-palette.js";
-export type { MapBackground, MapColor, MapContentNames, MapOptionRule, MapPalette, Rgba, WorldDepth } from "./palette/map-palette.js";
-export { terrariaMapNames, terrariaMapPalette } from "./palette/terraria-map-palette.generated.js";
+export type { ContentNameMetadata, ContentNameSource, MapBackground, MapColor, MapContentMetadata, MapContentNames, MapOptionRule, MapPalette, Rgba, WorldDepth } from "./palette/map-palette.js";
+export { terrariaMapMetadata, terrariaMapNames, terrariaMapPalette } from "./palette/terraria-map-palette.generated.js";
 export {
   CHUNK_SIZE, MAX_ZOOM, MIN_ZOOM, actualSize, clampCamera, clampZoom, fitWorld, panBy, screenToTile, tileToScreen,
   visibleChunks, zoomAt,

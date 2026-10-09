@@ -21,16 +21,32 @@ test("uses the known frame axis for a map option and option zero without that ax
   expect(contentName({ kind: "vanilla", id: 5 }, "block", { frameX: 22, frameY: 44 })).toBe("Tree");
 });
 
-test("keeps palette keys for unknown, modded and unnamed vanilla content", () => {
-  // Grass and plants have several differently named placement items, not one material label.
-  expect(contentName({ kind: "vanilla", id: 2 }, "block")).toBe("vanilla:2");
-  expect(contentName({ kind: "vanilla", id: 3 }, "block")).toBe("vanilla:3");
+test("names terrain, vegetation and objects even without a map colour", () => {
+  expect(contentName({ kind: "vanilla", id: 2 }, "block")).toBe("Grass");
+  expect(contentName({ kind: "vanilla", id: 3 }, "block")).toBe("Plants");
+  expect(contentName({ kind: "vanilla", id: 61 }, "block")).toBe("Jungle Plants");
+  expect(contentName({ kind: "vanilla", id: 135 }, "block")).toBe("Pressure Plates");
+  expect(contentName({ kind: "vanilla", id: 541 }, "block")).toBe("Echo Block");
+  for (const [id, name] of [[2, "Grass"], [3, "Plants"]] as const) {
+    expect(describeTile({ block: { kind: "vanilla", id }, wires: 0, actuator: false })).toBe(name);
+  }
+});
+
+test("every shipped vanilla block has a name while unknown and modded content keeps its key", () => {
+  for (let id = 0; id < terrariaMapNames.tiles.length; id++) {
+    expect(contentName({ kind: "vanilla", id }, "block"), `block ${String(id)}`).not.toBe(`vanilla:${String(id)}`);
+  }
   expect(contentName({ kind: "unknown", runtimeId: 900 }, "wall")).toBe("unknown:900");
   expect(contentName({ kind: "mod", mod: "CalamityMod", internalName: "AstralStone" }, "block")).toBe("CalamityMod:AstralStone");
   expect(contentName({ kind: "vanilla", id: 5000 }, "block")).toBe("vanilla:5000");
 });
 
 test("wall names use option zero independently of the block's frame", () => {
+  expect(contentName({ kind: "vanilla", id: 64 }, "wall")).toBe("Natural Jungle Wall");
+  expect(describeTile({ block: { kind: "vanilla", id: 2 }, wall: { kind: "vanilla", id: 64 }, wires: 0, actuator: false })).toBe("Grass · Natural Jungle Wall");
+  for (let id = 0; id < terrariaMapNames.walls.length; id++) {
+    expect(contentName({ kind: "vanilla", id }, "wall"), `wall ${String(id)}`).not.toBe(`vanilla:${String(id)}`);
+  }
   expect(contentName({ kind: "vanilla", id: 1 }, "wall")).toBe("Stone Wall");
   expect(describeTile({
     block: { kind: "vanilla", id: 26 }, frameX: 54, frameY: 18,
@@ -38,7 +54,7 @@ test("wall names use option zero independently of the block's frame", () => {
   })).toBe("Crimson Altar · Stone Wall");
   // The current game's only multi-option wall (27) uses the placement-item fallback.
   // Both options say Planked Wall, so current game data cannot distinguish option zero from one.
-  expect(terrariaMapNames.walls[27]).toHaveLength(2);
+  expect(terrariaMapNames.walls[27]).toEqual(["Planked Wall", "Planked Wall"]);
   expect(contentName({ kind: "vanilla", id: 27 }, "wall")).toBe("Planked Wall");
   expect(describeTile({
     block: { kind: "vanilla", id: 26 }, frameX: 54, frameY: 18,

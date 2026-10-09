@@ -106,6 +106,14 @@ test("the Inspector shows only a pinned tile: hovering changes nothing, and Unpi
   await expect.element(page.getByText("Click a tile with the Inspect tool (I) to inspect it.")).toBeVisible();
 });
 
+test.each([[2, "Grass"], [3, "Plants"]] as const)("the Inspector names vegetation %i as %s", async (id, name) => {
+  const world = createWorld(4, 3);
+  world.setTile(2, 1, { block: { kind: "vanilla", id }, wires: 0, actuator: false });
+  await render(<InspectorPanel world={inspectorWorld(world)} />);
+  useViewStore.getState().setPinnedTile({ x: 2, y: 1 });
+  await expect.poll(rows).toContainEqual(["Block", name]);
+});
+
 test("the Inspector names the frame-selected altar and its paint", async () => {
   const world = createWorld(4, 3);
   world.setTile(2, 1, {
@@ -116,6 +124,14 @@ test("the Inspector names the frame-selected altar and its paint", async () => {
   useViewStore.getState().setPinnedTile({ x: 2, y: 1 });
   await expect.poll(rows).toContainEqual(["Block", "Crimson Altar"]);
   expect(rows()).toContainEqual(["Block paint", "Deep Cyan Paint"]);
+});
+
+test("the Inspector names a natural jungle wall instead of its runtime key", async () => {
+  const world = createWorld(4, 3);
+  world.setTile(2, 1, { wall: { kind: "vanilla", id: 64 }, wires: 0, actuator: false });
+  await render(<InspectorPanel world={inspectorWorld(world)} />);
+  useViewStore.getState().setPinnedTile({ x: 2, y: 1 });
+  await expect.poll(rows).toContainEqual(["Wall", "Natural Jungle Wall"]);
 });
 
 test("a tile of a chest also shows the chest, whose slots open over the map as a grid or a list", async () => {

@@ -47,13 +47,79 @@ test("exports every map option of each content ID as a TypeScript module", { ski
     const names = (await import(pathToFileURL(file).href)).terrariaMapNames;
     assert.deepEqual(names, {
       gameVersion: "1.4.5.8",
-      tiles: [["Dirt Block"], ["Demon Altar", "Crimson Altar"], [""], []],
-      walls: [[], ["Stone Wall", "Aether \"Crystal\"\nWall"]],
+      tiles: [["Dirt Block"], ["Demon Altar", "Crimson Altar"], ["Grass"], ["Plants"]],
+      walls: [["None"], ["Stone Wall", "Aether \"Crystal\"\nWall"]],
       liquids: ["Water", "Lava", "Honey", "Shimmer"],
       paints: ["", "Red Paint", "Blue Paint"],
     });
+    const metadata = (await import(pathToFileURL(file).href)).terrariaMapMetadata;
+    assert.deepEqual(metadata, {
+      gameVersion: "1.4.5.8",
+      tiles: [
+        { symbols: ["Dirt"], symbolStatus: "present", mapOptionCount: 1, nameSources: ["placement"] },
+        { symbols: ["DemonAltar"], symbolStatus: "present", mapOptionCount: 2, nameSources: ["legend", "legend"] },
+        { symbols: ["Grass"], symbolStatus: "present", mapOptionCount: 1, nameSources: ["symbol"] },
+        { symbols: ["Plants"], symbolStatus: "present", mapOptionCount: 0, nameSources: ["symbol"] },
+      ],
+      walls: [
+        { symbols: ["None"], symbolStatus: "present", mapOptionCount: 0, nameSources: ["symbol"] },
+        { symbols: ["Stone"], symbolStatus: "present", mapOptionCount: 2, nameSources: ["placement", "legend"] },
+      ],
+    });
+    const coverage = readFileSync(join(directory, "name-coverage.md"), "utf8");
+    assert.match(coverage, /\| 2 \| Grass \| terrain \|/);
+    assert.match(coverage, /\| 3 \| Plants \| vegetation \|/);
+    assert.match(coverage, /Named block IDs: 4\/4/);
   });
 });
+
+test("suffix-marked unused walls retain diagnostic names and explicit metadata/report classification", { skip: !available && "PowerShell is not installed" }, async () => {
+  await withTempDirectory(async (directory) => {
+    const result = runPowerShell("scripts/map-palette/fixture-export.ps1", ["-Directory", directory, "-Scenario", "unused-wall-symbol"]);
+    assert.equal(result.status, 0, result.stderr);
+    const { terrariaMapNames: names, terrariaMapMetadata: metadata } = await import(pathToFileURL(join(directory, "synthetic-map-palette.ts")).href);
+    assert.deepEqual(names.walls[0], ["Marble Echo Unused Wall"]);
+    assert.equal(metadata.walls[0].symbolStatus, "unused");
+    assert.match(readFileSync(join(directory, "name-coverage.md"), "utf8"), /\| 0 \| MarbleEchoUnused \| unused\/obsolete \|/);
+  });
+});
+
+for (const [scenario, expected] of [
+  ["natural-wall", ["Natural Jungle Wall"]],
+  ["missing-wall-symbols", []],
+  ["ambiguous-wall-symbols", []],
+]) {
+  test(`wall naming handles ${scenario} while retaining exact existing option labels`, { skip: !available && "PowerShell is not installed" }, async () => {
+    await withTempDirectory(async (directory) => {
+      const result = runPowerShell("scripts/map-palette/fixture-export.ps1", ["-Directory", directory, "-Scenario", scenario]);
+      assert.equal(result.status, 0, result.stderr);
+      const { terrariaMapNames: names, terrariaMapMetadata: metadata } = await import(pathToFileURL(join(directory, "synthetic-map-palette.ts")).href);
+      assert.deepEqual(names.walls[0], expected);
+      assert.deepEqual(names.walls[1], ["Stone Wall", "Aether \"Crystal\"\nWall"]);
+      assert.equal(metadata.walls[0].mapOptionCount, 0);
+    });
+  });
+}
+
+for (const [scenario, expected, symbols] of [
+  ["missing-symbols", [[""], []], [[], []]],
+  ["ambiguous-symbols", [[""], ["Plants"]], [["Grass", "MeadowGrass"], ["Plants"]]],
+  ["symbol-casing", [["Hallowed Plants 2"], ["UFO Anchor"]], [["HallowedPlants2"], ["UFOAnchor"]]],
+]) {
+  test(`symbolic naming handles ${scenario} without altering resolved labels`, { skip: !available && "PowerShell is not installed" }, async () => {
+    await withTempDirectory(async (directory) => {
+      const result = runPowerShell("scripts/map-palette/fixture-export.ps1", ["-Directory", directory, "-Scenario", scenario]);
+      assert.equal(result.status, 0, result.stderr);
+      const { terrariaMapNames: names, terrariaMapMetadata: metadata } = await import(pathToFileURL(join(directory, "synthetic-map-palette.ts")).href);
+      assert.deepEqual(names.tiles.slice(0, 2), [["Dirt Block"], ["Demon Altar", "Crimson Altar"]]);
+      assert.deepEqual(names.tiles.slice(2), expected);
+      assert.deepEqual(metadata.tiles.slice(2).map((entry) => entry.symbols), symbols);
+      const coverage = readFileSync(join(directory, "name-coverage.md"), "utf8");
+      if (scenario === "missing-symbols") assert.match(coverage, /unavailable symbolic metadata/);
+      if (scenario === "ambiguous-symbols") assert.match(coverage, /ambiguous symbolic aliases/);
+    });
+  });
+}
 
 for (const scenario of ["invalid-range", "missing-member", "missing-legend", "missing-localization", "item-failure"]) {
   test(`refuses an unsupported contract (${scenario}) without writing output`, { skip: !available && "PowerShell is not installed" }, async () => {
@@ -79,18 +145,25 @@ test("exports the palette of a local Terraria installation", {
     assert.equal(palette.liquids.length, 4);
     assert.equal(palette.background.sky.length, 256);
     assert.ok(palette.paints.length >= 31);
-    const names = (await import(pathToFileURL(file).href)).terrariaMapNames;
+    const { terrariaMapNames: names, terrariaMapMetadata: metadata } = await import(pathToFileURL(file).href);
     assert.equal(names.gameVersion, palette.gameVersion);
     assert.equal(names.tiles[0][0], "Dirt Block");
+    assert.equal(names.tiles[2][0], "Grass");
+    assert.equal(names.tiles[3][0], "Plants");
+    assert.ok(names.tiles.every((options) => options[0]?.length > 0));
     assert.equal(names.walls[1][0], "Stone Wall");
     assert.equal(names.walls[2][0], "Natural Dirt Wall");
+    assert.equal(names.walls[64][0], "Natural Jungle Wall");
+    assert.ok(names.walls.every((options) => options[0]?.length > 0));
     assert.deepEqual(names.tiles[26], ["Demon Altar", "Crimson Altar"]);
     assert.deepEqual(names.liquids, ["Water", "Lava", "Honey", "Shimmer"]);
     assert.equal(names.paints[19], "Deep Cyan Paint");
     assert.equal(names.paints[29], "Shadow Paint");
     assert.equal(names.paints[30], "Negative Paint");
     assert.equal(names.paints.length, palette.paints.length);
-    assert.deepEqual(names.tiles.map((options) => options.length), palette.tiles.map((options) => options.length));
-    assert.deepEqual(names.walls.map((options) => options.length), palette.walls.map((options) => options.length));
+    assert.deepEqual(names.tiles.map((options) => options.length), palette.tiles.map((options) => Math.max(1, options.length)));
+    assert.deepEqual(metadata.tiles.map((entry) => entry.mapOptionCount), palette.tiles.map((options) => options.length));
+    assert.deepEqual(names.walls.map((options) => options.length), palette.walls.map((options) => Math.max(1, options.length)));
+    assert.deepEqual(metadata.walls.map((entry) => entry.mapOptionCount), palette.walls.map((options) => options.length));
   });
 });
