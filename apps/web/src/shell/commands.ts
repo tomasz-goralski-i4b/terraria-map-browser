@@ -152,6 +152,12 @@ export function useCommands(): Command[] {
       },
     },
     {
+      id: "view.zoom400", group: "View", label: "Zoom to 400%", shortcut: "4", enabled: hasWorld, ...noWorld,
+      run: () => {
+        getMapController()?.zoomTo(4);
+      },
+    },
+    {
       id: "view.stats", group: "View", label: "Show render stats", icon: "stats", enabled: true, checked: statsVisible,
       run: () => {
         setStatsVisible(!statsVisible);

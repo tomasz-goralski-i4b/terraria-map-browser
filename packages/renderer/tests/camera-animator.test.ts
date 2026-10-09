@@ -168,11 +168,13 @@ test("reset cancels animation and uses the replacement world bounds", () => {
 });
 
 test.each([1, 4])("a drag followed by a no-op zoom factor %s keeps the pending pan", (factor) => {
-  const { animator, advance } = motion({ ...initial, zoom: 16 });
+  const { animator, advance } = motion({ ...initial, zoom: MAX_ZOOM });
   animator.beginDrag();
   animator.drag(-32, 16);
   animator.zoom(factor, 400, 300);
-  expect(advance(16)).toEqual({ camera: { x: initial.x + 2, y: initial.y - 1, zoom: 16 }, settled: true });
+  expect(advance(16)).toEqual({
+    camera: { x: initial.x + 32 / MAX_ZOOM, y: initial.y - 16 / MAX_ZOOM, zoom: MAX_ZOOM }, settled: true,
+  });
   expect(animator.current).toEqual(animator.target);
 });
 

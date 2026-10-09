@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "vitest";
 import {
-  SPRITE_FULL_ZOOM, SPRITE_MIN_ZOOM, createMapRenderer, renderChunk, spriteSampling,
+  MAX_ZOOM, SPRITE_FULL_ZOOM, SPRITE_MIN_ZOOM, createMapRenderer, renderChunk, spriteSampling,
 } from "../src/index.js";
 import type { ChunkLayers, MapRenderer, RenderableWorld, SpriteAtlasSource } from "../src/index.js";
 
@@ -138,6 +138,31 @@ describe("sprite sampling by zoom", () => {
         const green = Math.floor((2 * ((100 + 2 * y) + (101 + 2 * y)) * 2 * 255 + 4 * 255) / (2 * 4 * 255));
         const at = (y * 2 * zoom + x) * 4;
         expect([out[at], out[at + 1], out[at + 2], out[at + 3]], `(${String(x)}, ${String(y)})`).toEqual([red, green, 50, 255]);
+      }
+    }
+  });
+});
+
+describe("the closest zoom", () => {
+  test(`at ${String(MAX_ZOOM)} px per tile a sprite pixel covers exactly 4 × 4 screen pixels`, () => {
+    expect(MAX_ZOOM).toBe(64);
+    const world = chestWorld(2, 1, [[0, 0, 0], [1, 0, 18]]);
+    const layers: ChunkLayers = { background: false, walls: false, blocks: true, liquids: false };
+    const { canvas, renderer } = makeRenderer(2 * MAX_ZOOM, MAX_ZOOM);
+    renderer.setWorld(world);
+    renderer.setLayers(layers);
+    renderer.setAtlas(columnAtlas());
+    renderer.setSpriteMode(true);
+    renderer.setCamera({ x: 0, y: 0, zoom: MAX_ZOOM });
+    renderer.render();
+    const out = readCanvas(canvas);
+    for (let y = 0; y < MAX_ZOOM; y++) {
+      for (let x = 0; x < 2 * MAX_ZOOM; x++) {
+        // Nearest sampling: screen pixel (x, y) shows sprite pixel (x / 4, y / 4) of the tile's cell, nothing blended.
+        const column = (x < MAX_ZOOM ? 0 : 18) + Math.floor((x % MAX_ZOOM) / 4);
+        const at = (y * 2 * MAX_ZOOM + x) * 4;
+        expect([out[at], out[at + 1], out[at + 2], out[at + 3]], `(${String(x)}, ${String(y)})`)
+          .toEqual([(column * 7) % 256, 100 + Math.floor(y / 4), 50, 255]);
       }
     }
   });

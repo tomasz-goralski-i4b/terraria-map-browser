@@ -18,7 +18,7 @@ export interface ChunkCoord {
 }
 
 export const MIN_ZOOM: number = 1 / 8;
-export const MAX_ZOOM = 16;
+export const MAX_ZOOM = 64;
 export const CHUNK_SIZE = 128;
 
 export function clampZoom(zoom: number, minimum: number = MIN_ZOOM): number {
