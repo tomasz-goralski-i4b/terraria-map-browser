@@ -6,7 +6,9 @@
 param(
     [Parameter(Mandatory = $true)][string]$TerrariaAssembly,
     # Defaults to the shipped module, packages/renderer/src/palette/terraria-map-palette.generated.ts.
-    [string]$OutputPath
+    [string]$OutputPath,
+    # Optional reproducible inventory of missing names before and after the symbolic fallback.
+    [string]$CoveragePath
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -19,7 +21,10 @@ if (-not $OutputPath) {
 if ($env:OS -eq 'Windows_NT' -and [Environment]::Is64BitProcess) {
     $hostPath = Join-Path $env:WINDIR 'SysWOW64/WindowsPowerShell/v1.0/powershell.exe'
     if (Test-Path -LiteralPath $hostPath) {
-        & $hostPath -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $PSCommandPath -TerrariaAssembly $TerrariaAssembly -OutputPath $OutputPath
+        $exportArgs = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $PSCommandPath,
+            '-TerrariaAssembly', $TerrariaAssembly, '-OutputPath', $OutputPath)
+        if ($CoveragePath) { $exportArgs += @('-CoveragePath', $CoveragePath) }
+        & $hostPath @exportArgs
         if ($LASTEXITCODE -ne 0) { throw 'Map palette export failed in the 32-bit .NET Framework host.' }
         return
     }
@@ -137,19 +142,25 @@ function Read-ItemContentNames([Reflection.Assembly]$Game) {
     return $names
 }
 
-function Read-Names([Array]$Lookup, [Array]$Counts, [Reflection.MethodInfo]$GetName, [hashtable]$PlacementNames) {
+function Read-Names([Array]$Lookup, [Array]$Counts, [Reflection.MethodInfo]$GetName, [hashtable]$PlacementNames, [hashtable]$Sources = @{}) {
     $entries = New-Object 'Collections.Generic.List[object]'
     for ($id = 0; $id -lt $Lookup.Length; $id++) {
         $options = New-Object 'Collections.Generic.List[string]'
+        $optionSources = New-Object 'Collections.Generic.List[string]'
         for ($option = 0; $option -lt [int]$Counts[$id]; $option++) {
             $name = [string]$GetName.Invoke($null, @([int]($Lookup[$id] + $option)))
-            if (-not $name -and $PlacementNames.ContainsKey($id)) { $name = $PlacementNames[$id] }
+            $source = if ($name) { 'legend' } else { 'unresolved' }
+            if (-not $name -and $PlacementNames.ContainsKey($id)) { $name = $PlacementNames[$id]; $source = 'placement' }
             $options.Add($name)
+            $optionSources.Add($source)
         }
         $entries.Add($options.ToArray())
+        $Sources[$id] = $optionSources.ToArray()
     }
     return ,$entries.ToArray()
 }
+
+. (Join-Path $PSScriptRoot 'tile-names.ps1')
 
 function Format-NameTable([string]$Name, [Array]$Entries) {
     $lines = New-Object 'Collections.Generic.List[string]'
@@ -273,7 +284,8 @@ try {
     $tiles = Read-Options (Read-Field $map 'tileLookup') (Read-Field $map 'tileOptionCounts') $colours
     $walls = Read-Options (Read-Field $map 'wallLookup') (Read-Field $map 'wallOptionCounts') $colours
     $placementNames = Read-ItemContentNames $game
-    $tileNames = Read-Names (Read-Field $map 'tileLookup') (Read-Field $map 'tileOptionCounts') $getName $placementNames.tiles
+    $tileData = Read-TileNames $game (Read-Field $map 'tileLookup') (Read-Field $map 'tileOptionCounts') $getName $placementNames.tiles
+    $tileNames = $tileData.names
     $wallNames = Read-Names (Read-Field $map 'wallLookup') (Read-Field $map 'wallOptionCounts') $getName $placementNames.walls
     # Runtime localization keys observed in the installed game; these are references, not a copied name table.
     $liquidNames = @('LegacyInterface.53', 'LegacyInterface.56', 'LegacyInterface.58', 'SlimeNames_Rainbow.Shimmer') | ForEach-Object {
@@ -341,10 +353,17 @@ try {
     $lines.Add('  ],')
     $lines.Add('};')
     $lines.Add('')
-    $lines.Add('// English map legend names, with unambiguous placement-item names for unnamed content (ADR 0002).')
+    $lines.Add('// English legend/placement names, with readable symbolic block labels and runtime provenance (ADR 0002).')
     $lines.Add('export const terrariaMapNames: MapContentNames = {')
     $lines.Add("  gameVersion: `"$version`",")
     $lines.AddRange([string[]](Format-NameTable 'tiles' $tileNames))
+    $lines.Add('  tileMetadata: [')
+    foreach ($record in $tileData.metadata) {
+        $symbols = @($record.symbols | ForEach-Object { ConvertTo-Json -InputObject ([string]$_) -Compress }) -join ', '
+        $sources = @($record.nameSources | ForEach-Object { ConvertTo-Json -InputObject ([string]$_) -Compress }) -join ', '
+        $lines.Add("    { symbols: [$symbols], mapOptionCount: $($record.mapOptionCount), nameSources: [$sources] },")
+    }
+    $lines.Add('  ],')
     $lines.AddRange([string[]](Format-NameTable 'walls' $wallNames))
     $quotedLiquids = @($liquidNames | ForEach-Object { ConvertTo-Json -InputObject ([string]$_) -Compress }) -join ', '
     $lines.Add("  liquids: [$quotedLiquids],")
@@ -355,6 +374,13 @@ try {
     $lines.Add("  paints: [$quotedPaints],")
     $lines.Add('};')
     # Everything was read and validated before the output is touched.
+    if ($CoveragePath) {
+        $report = Format-TileCoverage $version $tileData
+        $coverageOutput = [IO.Path]::GetFullPath($CoveragePath)
+        if ($coverageOutput -eq $output) { throw 'CoveragePath must differ from OutputPath.' }
+        $null = [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($coverageOutput))
+        [IO.File]::WriteAllText($coverageOutput, (($report -join "`n") + "`n"), (New-Object Text.UTF8Encoding($false)))
+    }
     $null = [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($output))
     [IO.File]::WriteAllText($output, (($lines -join "`n") + "`n"), (New-Object Text.UTF8Encoding($false)))
     Write-Host "Exported the map palette of Terraria $version to $output"

@@ -102,9 +102,9 @@ Further runtime investigation on 2026-10-08 found `TileID.Grass = 2` and `TileID
 symbolic identifiers, not localized material labels. The loaded English dictionary contains exact "Grass" and
 "Plants" values only under `RandomWorldName_Noun`, not corresponding `MapObject`, `TileName` or `WallName` keys.
 World-name nouns do not establish a tile-label mapping. Grass placement candidates include Grass Seeds, Staff of
-Regrowth and Axe of Regrowth; plants have several flower and grass seed names. Both therefore deliberately retain
-`vanilla:2`/`vanilla:3`. A future symbolic-ID fallback would need a separate naming policy and casing rules;
-this exporter does not infer material labels from unrelated localization keys.
+Regrowth and Axe of Regrowth; plants have several flower and grass seed names. Both therefore initially retained
+`vanilla:2`/`vanilla:3`. The separately approved symbolic naming policy below now supplies their labels;
+the exporter still does not infer material labels from unrelated localization keys.
 
 Liquid labels are resolved through the game's localization keys `LegacyInterface.53`, `LegacyInterface.56`,
 `LegacyInterface.58` and `SlimeNames_Rainbow.Shimmer`. Runtime observation confirmed Water, Lava, Honey and Shimmer;
@@ -127,6 +127,60 @@ The generated name section is about 36 KB (9 KB gzipped) for 1.4.5.8, with names
 ambiguous placements, escaped strings, and unsupported contracts.
 The normal TypeScript build checks the generated module; the local-installation test compares representative
 names and dimensions with the exported colour table. Re-run the exporter after game updates.
+
+## Addendum: complete block names and retained metadata (2026-10-09, #199)
+
+**User approval:** @tomasz-goralski-i4b explicitly selected "Readable names; game symbols may be a source"
+in the task conversation on 2026-10-09 and requested that exported records retain extra information so the
+frontend can decide what to show. This approves symbolic metadata as a source for generated English labels
+and provenance, independently of the earlier localization approval. The PR still requires independent review.
+
+Runtime reflection of the installed unmodified 1.4.5.8 server exposes public integral constants on
+`Terraria.ID.TileID`. Each constant's **value** establishes the block-ID relationship; its name is a symbol,
+not a localized material label. Inspection of `Lang`, `TileID.Sets` and the loaded English localization dictionary
+found no generic `TileName`/`WallName` naming table. Placement metadata and the map legend remain the supported
+localized sources; unrelated world-name nouns and arbitrary seed/tool names are not used.
+
+The exporter applies this policy, implemented independently in `scripts/map-palette/tile-names.ps1`:
+
+- Preserve every nonempty legend or unambiguous placement label exactly. If option zero already has a name,
+  leave unnamed nonzero options unchanged; the frontend's existing option-zero fallback remains in effect.
+- If option zero is unnamed, use a symbol only when exactly one public integral constant maps to the ID.
+  Ignore `Count`, out-of-range/nonintegral fields, and symbols marked `Unused`, `Deprecated` or `Reserved`.
+  Missing metadata and multiple aliases retain empty names and appear with their reasons in the report.
+- Split PascalCase, acronym boundaries and underscores into words. Preserve original casing, acronyms and
+  numbers; retain dimension tokens such as `2x1`. Do not translate, singularize, reorder words or infer an item
+  identity. Examples: `Grass` → Grass, `JunglePlants` → Jungle Plants, `Plants2` → Plants 2,
+  `UFOAnchor` → UFO Anchor. Numbers here describe symbol variants, not runtime tile IDs.
+- Blocks without map colours still need names: use unambiguous placement metadata or the same symbol rule to
+  emit a label at name index zero, without adding a colour or a frame rule. The names table and colour table
+  therefore need not have identical option lengths when the colour option count is zero.
+
+`terrariaMapNames.tileMetadata` retains **all** reflected aliases, the original `mapOptionCount` and each emitted
+label's `nameSources` (`legend`, `placement`, `symbol`, `unresolved`). These records are independent of the
+frontend's display policy. They contain no game implementation, localization asset or item inventory.
+Content, status descriptions and Inspector already share `contentName`, so the generated labels reach all three
+without separate UI naming tables. Unknown/mod references still retain keys; the hidden ID column and
+name/key/kind search remain available.
+
+The reproducible [coverage report](../vanilla-block-name-coverage.generated.md) lists every empty option before
+the new fallback, classifies terrain/vegetation/other by documented symbol-word heuristics, and records the
+result/source or residual reason. Categories are triage hints, not a game taxonomy or proof an ID is active.
+Terraria 1.4.5.8 now has names for **754/754 block IDs**, with no residual unnamed block IDs; empty nonzero options
+on already named blocks are deliberately retained. Walls, liquids and paints keep their previous names.
+
+Regenerate both artifacts from the local installation (no worlds are opened):
+
+```powershell
+./scripts/map-palette/export.ps1 `
+  -TerrariaAssembly 'C:/Program Files (x86)/Steam/steamapps/common/Terraria/TerrariaServer.exe' `
+  -CoveragePath docs/vanilla-block-name-coverage.generated.md
+```
+
+Synthetic exporter fixtures cover source precedence, aliases, unavailable metadata, acronym/variant casing,
+JSON escaping and blocks without map colours. Application tests cover every shipped block having a name,
+Grass/Plants in Content/search/status/Inspector, frame-dependent labels, and unknown/mod key fallback.
+The opt-in installation test checks all block names and the retained original colour-option counts.
 
 ## Rights
 

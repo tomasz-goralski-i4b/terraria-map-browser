@@ -5,11 +5,22 @@ export type Rgba = readonly [number, number, number, number];
 /** A map colour as 0xRRGGBB. */
 export type MapColor = number;
 
-/** English legend names, with unambiguous placement-item names for unnamed content (ADR 0002). */
+export type ContentNameSource = "legend" | "placement" | "symbol" | "unresolved";
+
+/** Runtime provenance retained independently of the UI's choice of label. Indexed by vanilla block ID. */
+export interface TileNameMetadata {
+  readonly symbols: readonly string[];
+  readonly mapOptionCount: number;
+  /** One source per entry in MapContentNames.tiles[id], including a label for a block without a map colour. */
+  readonly nameSources: readonly ContentNameSource[];
+}
+
+/** English content names and their runtime provenance (ADR 0002). */
 export interface MapContentNames {
   readonly gameVersion: string;
-  /** Indexed like MapPalette tiles/walls: content ID, then map option; empty strings mean unnamed. */
+  /** Content ID, then map option; blocks without map colours may still have a label at index zero. */
   readonly tiles: readonly (readonly string[])[];
+  readonly tileMetadata?: readonly TileNameMetadata[];
   readonly walls: readonly (readonly string[])[];
   /** Water, lava, honey, shimmer, resolved from the game's English localization. */
   readonly liquids: readonly [string, string, string, string];

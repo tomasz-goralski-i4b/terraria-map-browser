@@ -1257,14 +1257,14 @@ export const terrariaMapPalette: MapPalette = {
   ],
 };
 
-// English map legend names, with unambiguous placement-item names for unnamed content (ADR 0002).
+// English legend/placement names, with readable symbolic block labels and runtime provenance (ADR 0002).
 export const terrariaMapNames: MapContentNames = {
   gameVersion: "1.4.5.8",
   tiles: [
     ["Dirt Block"], // 0
     ["Stone Block"], // 1
-    [""], // 2
-    [""], // 3
+    ["Grass"], // 2
+    ["Plants"], // 3
     ["Torch", "Torch"], // 4
     ["Tree", ""], // 5
     ["Iron"], // 6
@@ -1280,12 +1280,12 @@ export const terrariaMapNames: MapContentNames = {
     ["Anvil"], // 16
     ["Furnace"], // 17
     ["Work Bench"], // 18
-    ["", ""], // 19
+    ["Platforms", "Platforms"], // 19
     ["Sapling"], // 20
     ["Chest", "", "", "", ""], // 21
     ["Demonite"], // 22
     ["Corrupt Seeds"], // 23
-    [""], // 24
+    ["Corrupt Plants"], // 24
     ["Ebonstone Block"], // 25
     ["Demon Altar", "Crimson Altar"], // 26
     ["Sunflower", "Sunflower"], // 27
@@ -1313,7 +1313,7 @@ export const terrariaMapNames: MapContentNames = {
     ["Water Candle"], // 49
     ["Book"], // 50
     ["Web"], // 51
-    [""], // 52
+    ["Vines"], // 52
     ["Sand Block"], // 53
     ["Glass"], // 54
     ["Sign"], // 55
@@ -1322,8 +1322,8 @@ export const terrariaMapNames: MapContentNames = {
     ["Hellstone"], // 58
     ["Mud Block"], // 59
     ["Jungle Grass Seeds"], // 60
-    [""], // 61
-    [""], // 62
+    ["Jungle Plants"], // 61
+    ["Jungle Vines"], // 62
     ["Sapphire"], // 63
     ["Ruby"], // 64
     ["Emerald"], // 65
@@ -1332,10 +1332,10 @@ export const terrariaMapNames: MapContentNames = {
     ["Diamond"], // 68
     ["Thorn"], // 69
     ["Mushroom Grass Seeds"], // 70
-    [""], // 71
+    ["Mushroom Plants"], // 71
     ["Giant Mushroom"], // 72
-    [""], // 73
-    [""], // 74
+    ["Plants 2"], // 73
+    ["Jungle Plants 2"], // 74
     ["Obsidian Brick"], // 75
     ["Hellstone Brick"], // 76
     ["Hellforge"], // 77
@@ -1360,7 +1360,7 @@ export const terrariaMapNames: MapContentNames = {
     ["Cooking Pot"], // 96
     ["Safe"], // 97
     ["Skull Lantern"], // 98
-    [""], // 99
+    ["Trash Can"], // 99
     ["Candelabra"], // 100
     ["Bookcase"], // 101
     ["Throne"], // 102
@@ -1371,12 +1371,12 @@ export const terrariaMapNames: MapContentNames = {
     ["Cobalt"], // 107
     ["Mythril"], // 108
     ["Hallowed Seeds"], // 109
-    [""], // 110
+    ["Hallowed Plants"], // 110
     ["Adamantite"], // 111
     ["Ebonsand Block"], // 112
-    [""], // 113
+    ["Hallowed Plants 2"], // 113
     ["Tinkerer\u0027s Workshop"], // 114
-    [""], // 115
+    ["Hallowed Vines"], // 115
     ["Pearlsand Block"], // 116
     ["Pearlstone Block"], // 117
     ["Pearlstone Brick"], // 118
@@ -1388,7 +1388,7 @@ export const terrariaMapNames: MapContentNames = {
     ["Wooden Beam"], // 124
     ["Crystal Ball"], // 125
     ["Disco Ball"], // 126
-    [], // 127
+    ["Magical Ice Block"], // 127
     ["Mannequin"], // 128
     ["Crystal Shard", "Gelatin Crystal"], // 129
     ["Active Stone Block"], // 130
@@ -1396,7 +1396,7 @@ export const terrariaMapNames: MapContentNames = {
     ["Lever"], // 132
     ["Adamantite Forge", "Titanium Forge"], // 133
     ["Mythril Anvil", "Orichalcum Anvil"], // 134
-    [], // 135
+    ["Pressure Plates"], // 135
     ["Switch"], // 136
     ["Trap", "", ""], // 137
     ["Boulder"], // 138
@@ -1426,7 +1426,7 @@ export const terrariaMapNames: MapContentNames = {
     ["Thin Ice"], // 162
     ["Purple Ice Block"], // 163
     ["Pink Ice Block"], // 164
-    ["", "", "", ""], // 165
+    ["Stalactite", "Stalactite", "Stalactite", "Stalactite"], // 165
     ["Tin"], // 166
     ["Lead"], // 167
     ["Tungsten"], // 168
@@ -1445,33 +1445,33 @@ export const terrariaMapNames: MapContentNames = {
     ["Red Moss"], // 181
     ["Blue Moss"], // 182
     ["Purple Moss"], // 183
-    ["", "", "", "", "", "", "", "", "", "", ""], // 184
-    ["", "", "", "", "", "", "", "", "", "", "", ""], // 185
-    ["", "", "", "", "", "", "", "", "", "", "", ""], // 186
-    ["", "", "", "", "", "", "", "", "", "", "", ""], // 187
+    ["Long Moss", "Long Moss", "Long Moss", "Long Moss", "Long Moss", "Long Moss", "Long Moss", "Long Moss", "Long Moss", "Long Moss", "Long Moss"], // 184
+    ["Small Piles", "Small Piles", "Small Piles", "Small Piles", "Small Piles", "Small Piles", "Small Piles", "Small Piles", "Small Piles", "Small Piles", "Small Piles", "Small Piles"], // 185
+    ["Large Piles", "Large Piles", "Large Piles", "Large Piles", "Large Piles", "Large Piles", "Large Piles", "Large Piles", "Large Piles", "Large Piles", "Large Piles", "Large Piles"], // 186
+    ["Large Piles 2", "Large Piles 2", "Large Piles 2", "Large Piles 2", "Large Piles 2", "Large Piles 2", "Large Piles 2", "Large Piles 2", "Large Piles 2", "Large Piles 2", "Large Piles 2", "Large Piles 2"], // 187
     ["Cactus"], // 188
     ["Cloud"], // 189
     ["Glowing Mushroom"], // 190
     ["Living Wood"], // 191
     ["Leaf Wand"], // 192
     ["Slime Block"], // 193
-    [""], // 194
+    ["Bone Block"], // 194
     ["Flesh Block"], // 195
     ["Rain Cloud"], // 196
     ["Frozen Slime Block"], // 197
     ["Asphalt Block"], // 198
     ["Crimson Seeds"], // 199
     ["Red Ice Block"], // 200
-    [""], // 201
+    ["Crimson Plants"], // 201
     ["Sunplate Block"], // 202
     ["Crimstone Block"], // 203
     ["Crimtane"], // 204
-    [""], // 205
+    ["Crimson Vines"], // 205
     ["Ice Brick"], // 206
     ["Water Fountain"], // 207
     ["Shadewood"], // 208
     ["Cannon"], // 209
-    [], // 210
+    ["Land Mine"], // 210
     ["Chlorophyte"], // 211
     ["Turret"], // 212
     ["Rope"], // 213
@@ -1494,7 +1494,7 @@ export const terrariaMapNames: MapContentNames = {
     ["Crispy Honey Block"], // 230
     ["Larva"], // 231
     ["Wooden Spike"], // 232
-    [""], // 233
+    ["Plant Detritus"], // 233
     ["Crimsand Block"], // 234
     ["Teleporter"], // 235
     ["Life Fruit"], // 236
@@ -1516,13 +1516,13 @@ export const terrariaMapNames: MapContentNames = {
     ["Hay"], // 252
     ["Spooky Wood"], // 253
     ["Pumpkin"], // 254
-    [""], // 255
-    [""], // 256
-    [""], // 257
-    [""], // 258
-    [""], // 259
-    [""], // 260
-    [""], // 261
+    ["Amethyst Gemspark Off"], // 255
+    ["Topaz Gemspark Off"], // 256
+    ["Sapphire Gemspark Off"], // 257
+    ["Emerald Gemspark Off"], // 258
+    ["Ruby Gemspark Off"], // 259
+    ["Diamond Gemspark Off"], // 260
+    ["Amber Gemspark Off"], // 261
     ["Amethyst Gemspark Block"], // 262
     ["Topaz Gemspark Block"], // 263
     ["Sapphire Gemspark Block"], // 264
@@ -1585,7 +1585,7 @@ export const terrariaMapNames: MapContentNames = {
     ["Boreal Wood"], // 321
     ["Palm Wood"], // 322
     ["Palm Tree"], // 323
-    [""], // 324
+    ["Beach Piles"], // 324
     ["Tin Plating"], // 325
     ["Waterfall Block"], // 326
     ["Lavafall Block"], // 327
@@ -1595,10 +1595,10 @@ export const terrariaMapNames: MapContentNames = {
     ["Silver Coin"], // 331
     ["Gold Coin"], // 332
     ["Platinum Coin"], // 333
-    [""], // 334
+    ["Weapons Rack"], // 334
     ["Fireworks Box"], // 335
     ["Living Fire Block"], // 336
-    [""], // 337
+    ["Alphabet Statues"], // 337
     ["Firework Fountain"], // 338
     ["Grasshopper Cage"], // 339
     ["Living Cursed Fire Block"], // 340
@@ -1613,7 +1613,7 @@ export const terrariaMapNames: MapContentNames = {
     ["Statue"], // 349
     ["Martian Conduit Plating"], // 350
     ["Smoke Block"], // 351
-    [""], // 352
+    ["Crimson Thorns"], // 352
     ["Vine Rope"], // 353
     ["Bewitching Table"], // 354
     ["Alchemy Table"], // 355
@@ -1637,20 +1637,20 @@ export const terrariaMapNames: MapContentNames = {
     ["Dripping Water"], // 373
     ["Dripping Lava"], // 374
     ["Dripping Honey"], // 375
-    [""], // 376
+    ["Fishing Crate"], // 376
     ["Sharpening Station"], // 377
     ["Target Dummy"], // 378
     ["Bubble"], // 379
-    [""], // 380
+    ["Planter Box"], // 380
     ["Lava Moss"], // 381
-    [""], // 382
+    ["Vine Flowers"], // 382
     ["Living Mahogany Wand"], // 383
     ["Rich Mahogany Leaf Wand"], // 384
     ["Crystal Block"], // 385
-    [""], // 386
+    ["Trapdoor Open"], // 386
     ["Trap Door"], // 387
     ["Tall Gate"], // 388
-    [""], // 389
+    ["Tall Gate Open"], // 389
     ["Lava Lamp"], // 390
     ["Enchanted Nightcrawler Cage"], // 391
     ["Buggy Cage"], // 392
@@ -1671,7 +1671,7 @@ export const terrariaMapNames: MapContentNames = {
     ["Fossil"], // 407
     ["Luminite"], // 408
     ["Luminite Brick"], // 409
-    [""], // 410
+    ["Lunar Monolith"], // 410
     ["Detonator"], // 411
     ["Ancient Manipulator"], // 412
     ["Red Squirrel Cage"], // 413
@@ -1680,7 +1680,7 @@ export const terrariaMapNames: MapContentNames = {
     ["Vortex Fragment Block"], // 416
     ["Nebula Fragment Block"], // 417
     ["Stardust Fragment Block"], // 418
-    ["", "", ""], // 419
+    ["Logic Gate Lamp", "Logic Gate Lamp", "Logic Gate Lamp"], // 419
     ["Logic Gate (AND)", "Logic Gate (OR)", "Logic Gate (NAND)", "Logic Gate (NOR)", "Logic Gate (XOR)", "Logic Gate (XNOR)"], // 420
     ["Conveyor Belt (Clockwise)"], // 421
     ["Conveyor Belt (Counter Clockwise)"], // 422
@@ -1689,7 +1689,7 @@ export const terrariaMapNames: MapContentNames = {
     ["Announcement Box"], // 425
     ["Red Team Block"], // 426
     ["Red Team Platform"], // 427
-    [], // 428
+    ["Weighted Pressure Plate"], // 428
     ["Wire Bulb"], // 429
     ["Green Team Block"], // 430
     ["Blue Team Block"], // 431
@@ -1731,14 +1731,14 @@ export const terrariaMapNames: MapContentNames = {
     ["Chest", "", "", "", "", "", "", "", "", "", "", "", ""], // 467
     ["Chest", "", "", "", "", "", "", "", "", "", "", "", ""], // 468
     ["Table"], // 469
-    [""], // 470
+    ["Display Doll"], // 470
     ["Weapon Rack"], // 471
     ["Iron Brick"], // 472
     ["Lead Brick"], // 473
     ["Lesion Block"], // 474
     ["Hat Rack"], // 475
     ["Golf Cup"], // 476
-    [""], // 477
+    ["Golf Grass"], // 477
     ["Crimstone Brick"], // 478
     ["Smooth Sandstone"], // 479
     ["Blood Moon Monolith"], // 480
@@ -1753,8 +1753,8 @@ export const terrariaMapNames: MapContentNames = {
     ["Pin Wheel"], // 489
     ["Weather Vane"], // 490
     ["Void Vault"], // 491
-    [""], // 492
-    ["", "", "", "", "", ""], // 493
+    ["Golf Grass Hallowed"], // 492
+    ["Golf Cup Flag", "Golf Cup Flag", "Golf Cup Flag", "Golf Cup Flag", "Golf Cup Flag", "Golf Cup Flag"], // 493
     ["Golf Tee"], // 494
     ["Shell Pile"], // 495
     ["Anti-Portal Block"], // 496
@@ -1765,7 +1765,7 @@ export const terrariaMapNames: MapContentNames = {
     ["Vortex Brick"], // 501
     ["Nebula Brick"], // 502
     ["Stardust Brick"], // 503
-    [], // 504
+    ["Mystic Snake Rope"], // 504
     ["Gold Fish Bowl"], // 505
     ["Bast Statue"], // 506
     ["Gold Starry Block"], // 507
@@ -1773,14 +1773,14 @@ export const terrariaMapNames: MapContentNames = {
     ["Void Monolith"], // 509
     ["Arrow Sign"], // 510
     ["Painted Arrow Sign"], // 511
-    [""], // 512
-    [""], // 513
-    [""], // 514
-    [""], // 515
-    [""], // 516
-    [""], // 517
-    ["", "", ""], // 518
-    ["", "", "", "", "", ""], // 519
+    ["Green Moss Brick"], // 512
+    ["Brown Moss Brick"], // 513
+    ["Red Moss Brick"], // 514
+    ["Blue Moss Brick"], // 515
+    ["Purple Moss Brick"], // 516
+    ["Lava Moss Brick"], // 517
+    ["Lily Pad", "Lily Pad", "Lily Pad"], // 518
+    ["Cattail", "Cattail", "Cattail", "Cattail", "Cattail", "Cattail"], // 519
     ["Plate"], // 520
     ["Black Dragonfly Jar"], // 521
     ["Blue Dragonfly Jar"], // 522
@@ -1789,28 +1789,28 @@ export const terrariaMapNames: MapContentNames = {
     ["Red Dragonfly Jar"], // 525
     ["Yellow Dragonfly Jar"], // 526
     ["Gold Dragonfly Jar"], // 527
-    [""], // 528
-    ["", "", "", "", ""], // 529
-    ["", "", "", ""], // 530
+    ["Mushroom Vines"], // 528
+    ["Sea Oats", "Sea Oats", "Sea Oats", "Sea Oats", "Sea Oats"], // 529
+    ["Oasis Plants", "Oasis Plants", "Oasis Plants", "Oasis Plants"], // 530
     ["Statue"], // 531
     ["Maggot Cage"], // 532
     ["Rat Cage"], // 533
     ["Krypton Moss"], // 534
-    [""], // 535
+    ["Krypton Moss Brick"], // 535
     ["Xenon Moss"], // 536
-    [""], // 537
+    ["Xenon Moss Brick"], // 537
     ["Ladybug Cage"], // 538
     ["Argon Moss"], // 539
-    [""], // 540
-    [], // 541
+    ["Argon Moss Brick"], // 540
+    ["Echo Block"], // 541
     ["Owl Cage"], // 542
     ["Pupfish Bowl"], // 543
     ["Gold Ladybug Cage"], // 544
     ["Lawn Flamingo"], // 545
     ["Grate"], // 546
-    [""], // 547
-    ["", ""], // 548
-    [""], // 549
+    ["Potted Plants 1"], // 547
+    ["Potted Plants 2", "Potted Plants 2"], // 548
+    ["Seaweed"], // 549
     ["Turtle Cage"], // 550
     ["Jungle Turtle Cage"], // 551
     ["Sandcastle Bucket"], // 552
@@ -1818,7 +1818,7 @@ export const terrariaMapNames: MapContentNames = {
     ["Seagull Cage"], // 554
     ["Water Strider Cage"], // 555
     ["Gold Water Strider Cage"], // 556
-    [""], // 557
+    ["Grate Closed"], // 557
     ["Seahorse Cage"], // 558
     ["Gold Seahorse Cage"], // 559
     ["Bronze Golf Trophy", "Silver Golf Trophy", "Gold Golf Trophy"], // 560
@@ -1832,7 +1832,7 @@ export const terrariaMapNames: MapContentNames = {
     ["Pink Fairy Jar"], // 568
     ["Green Fairy Jar"], // 569
     ["Blue Fairy Jar"], // 570
-    [""], // 571
+    ["Bamboo"], // 571
     ["Soul of Light in a Bottle", "Soul of Night in a Bottle", "Soul of Flight in a Bottle", "Soul of Sight in a Bottle", "Soul of Might in a Bottle", "Soul of Fright in a Bottle"], // 572
     ["Tattered Wood Sign"], // 573
     ["Boreal Beam"], // 574
@@ -1852,7 +1852,7 @@ export const terrariaMapNames: MapContentNames = {
     ["Tree"], // 588
     ["Tree"], // 589
     ["Sapling"], // 590
-    ["", "", "", "", "", "", "", "", ""], // 591
+    ["Pots Suspended", "Pots Suspended", "Pots Suspended", "Pots Suspended", "Pots Suspended", "Pots Suspended", "Pots Suspended", "Pots Suspended", "Pots Suspended"], // 591
     ["Hanging Brazier"], // 592
     ["Mini Volcano"], // 593
     ["Large Volcano"], // 594
@@ -1874,7 +1874,7 @@ export const terrariaMapNames: MapContentNames = {
     ["Ruby Squirrel Cage"], // 610
     ["Diamond Squirrel Cage"], // 611
     ["Amber Squirrel Cage"], // 612
-    [""], // 613
+    ["Potted Lava Plants"], // 613
     ["Potted Ember Tendrils"], // 614
     ["Sapling"], // 615
     ["Tree"], // 616
@@ -1884,12 +1884,12 @@ export const terrariaMapNames: MapContentNames = {
     ["Prismatic Lacewing Jar"], // 620
     ["Slice of Cake"], // 621
     ["Teapot"], // 622
-    [""], // 623
+    ["Potted Crystal Plants"], // 623
     ["Abigail\u0027s Flower"], // 624
     ["Neon Moss"], // 625
-    [""], // 626
+    ["Violet Moss Brick"], // 626
     ["Helium Moss", "Helium Moss", "Helium Moss", "Helium Moss", "Helium Moss", "Helium Moss", "Helium Moss", "Helium Moss", "Helium Moss"], // 627
-    ["", "", "", "", "", "", "", "", ""], // 628
+    ["Rainbow Moss Brick", "Rainbow Moss Brick", "Rainbow Moss Brick", "Rainbow Moss Brick", "Rainbow Moss Brick", "Rainbow Moss Brick", "Rainbow Moss Brick", "Rainbow Moss Brick", "Rainbow Moss Brick"], // 628
     ["Stinkbug Cage"], // 629
     ["Stinkbug Blocker"], // 630
     ["Ghostly Stinkbug Blocker"], // 631
@@ -1897,9 +1897,9 @@ export const terrariaMapNames: MapContentNames = {
     ["Ash Grass Seeds"], // 633
     ["Tree"], // 634
     ["Ash Wood"], // 635
-    [""], // 636
-    [""], // 637
-    [""], // 638
+    ["Corrupt Vines"], // 636
+    ["Ash Plants"], // 637
+    ["Ash Vines"], // 638
     ["Mana Crystal"], // 639
     ["Blue Macaw Cage"], // 640
     ["Reef Block"], // 641
@@ -1908,28 +1908,28 @@ export const terrariaMapNames: MapContentNames = {
     ["Yellow Cockatiel Cage"], // 644
     ["Gray Cockatiel Cage"], // 645
     ["Shadow Candle"], // 646
-    ["", "", "", "", "", "", "", "", "", "", "", ""], // 647
-    ["", "", "", "", "", "", "", "", "", "", "", ""], // 648
-    ["", "", "", "", "", "", "", "", "", "", "", ""], // 649
-    ["", "", "", "", "", "", "", "", "", "", "", ""], // 650
-    [""], // 651
-    [""], // 652
+    ["Large Piles Echo", "Large Piles Echo", "Large Piles Echo", "Large Piles Echo", "Large Piles Echo", "Large Piles Echo", "Large Piles Echo", "Large Piles Echo", "Large Piles Echo", "Large Piles Echo", "Large Piles Echo", "Large Piles Echo"], // 647
+    ["Large Piles 2 Echo", "Large Piles 2 Echo", "Large Piles 2 Echo", "Large Piles 2 Echo", "Large Piles 2 Echo", "Large Piles 2 Echo", "Large Piles 2 Echo", "Large Piles 2 Echo", "Large Piles 2 Echo", "Large Piles 2 Echo", "Large Piles 2 Echo", "Large Piles 2 Echo"], // 648
+    ["Small Piles 2x1 Echo", "Small Piles 2x1 Echo", "Small Piles 2x1 Echo", "Small Piles 2x1 Echo", "Small Piles 2x1 Echo", "Small Piles 2x1 Echo", "Small Piles 2x1 Echo", "Small Piles 2x1 Echo", "Small Piles 2x1 Echo", "Small Piles 2x1 Echo", "Small Piles 2x1 Echo", "Small Piles 2x1 Echo"], // 649
+    ["Small Piles 1x1 Echo", "Small Piles 1x1 Echo", "Small Piles 1x1 Echo", "Small Piles 1x1 Echo", "Small Piles 1x1 Echo", "Small Piles 1x1 Echo", "Small Piles 1x1 Echo", "Small Piles 1x1 Echo", "Small Piles 1x1 Echo", "Small Piles 1x1 Echo", "Small Piles 1x1 Echo", "Small Piles 1x1 Echo"], // 650
+    ["Plant Detritus 3x2 Echo"], // 651
+    ["Plant Detritus 2x2 Echo"], // 652
     ["Pot", "Pot", "Pot", "Pot", "Pot", "Pot", "Pot", "Pot", "Pot"], // 653
     ["TNT Barrel"], // 654
-    [""], // 655
+    ["Plantera Thorns"], // 655
     ["Glow Tulip"], // 656
     ["Echo Chamber"], // 657
     ["Aether Monolith"], // 658
     ["Aetherium Block"], // 659
     ["Faeling in a Bottle"], // 660
-    [""], // 661
-    [""], // 662
+    ["Corrupt Jungle Grass"], // 661
+    ["Crimson Jungle Grass"], // 662
     ["Enchanted Moondial"], // 663
     ["Boulder"], // 664
     ["Life Crystal"], // 665
     ["Poo"], // 666
     ["Aetherium Brick"], // 667
-    [""], // 668
+    ["Dirtiest Block"], // 668
     ["Lunar Rust Brick"], // 669
     ["Dark Celestial Brick"], // 670
     ["Astra Brick"], // 671
@@ -1955,7 +1955,7 @@ export const terrariaMapNames: MapContentNames = {
     ["Neon Moss Brick"], // 691
     ["Helium Moss Brick", "Helium Moss Brick", "Helium Moss Brick", "Helium Moss Brick", "Helium Moss Brick", "Helium Moss Brick", "Helium Moss Brick", "Helium Moss Brick", "Helium Moss Brick"], // 692
     ["Mitey-Titey", "Mitey-Titey", "Mitey-Titey", "Mitey-Titey"], // 693
-    ["", "", "", ""], // 694
+    ["Stalactite 1x2 Echo", "Stalactite 1x2 Echo", "Stalactite 1x2 Echo", "Stalactite 1x2 Echo"], // 694
     ["Replica Demon Altar", "Replica Crimson Altar"], // 695
     ["Replica Shadow Orb", "Replica Crimson Heart"], // 696
     ["Web"], // 697
@@ -1964,10 +1964,10 @@ export const terrariaMapNames: MapContentNames = {
     ["Abigail\u0027s Flower"], // 700
     ["Glow Tulip"], // 701
     ["Life Fruit"], // 702
-    [""], // 703
+    ["Jungle Plants Echo"], // 703
     ["Fallen Log"], // 704
-    ["", "", "", ""], // 705
-    [""], // 706
+    ["Oasis Plants Echo", "Oasis Plants Echo", "Oasis Plants Echo", "Oasis Plants Echo"], // 705
+    ["Terragrim Shrine Echo"], // 706
     ["Book"], // 707
     ["Shimmerfall Block"], // 708
     ["Dripping Shimmer"], // 709
@@ -1984,8 +1984,8 @@ export const terrariaMapNames: MapContentNames = {
     ["CRT Monolith"], // 720
     ["Retro Monolith"], // 721
     ["Fallen Star Block"], // 722
-    [""], // 723
-    [""], // 724
+    ["Kite Anchor"], // 723
+    ["Critter Anchor"], // 724
     ["Film Projector"], // 725
     ["Cannonball"], // 726
     ["Dull Red Team Block"], // 727
@@ -2015,6 +2015,762 @@ export const terrariaMapNames: MapContentNames = {
     ["Digtoise"], // 751
     ["Huge Dragon Egg"], // 752
     ["Giant Tiki"], // 753
+  ],
+  tileMetadata: [
+    { symbols: ["Dirt"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Stone"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Grass"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["Plants"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["Torches"], mapOptionCount: 2, nameSources: ["legend", "legend"] },
+    { symbols: ["Trees"], mapOptionCount: 2, nameSources: ["legend", "unresolved"] },
+    { symbols: ["Iron"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Copper"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Gold"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Silver"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["ClosedDoor"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["OpenDoor"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Heart"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Bottles"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Tables"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Chairs"], mapOptionCount: 2, nameSources: ["legend", "legend"] },
+    { symbols: ["Anvils"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Furnaces"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["WorkBenches"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Platforms"], mapOptionCount: 2, nameSources: ["symbol", "symbol"] },
+    { symbols: ["Saplings"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Containers"], mapOptionCount: 5, nameSources: ["legend", "unresolved", "unresolved", "unresolved", "unresolved"] },
+    { symbols: ["Demonite"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["CorruptGrass"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["CorruptPlants"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["Ebonstone"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["DemonAltar"], mapOptionCount: 2, nameSources: ["legend", "legend"] },
+    { symbols: ["Sunflower"], mapOptionCount: 2, nameSources: ["legend", "placement"] },
+    { symbols: ["Pots"], mapOptionCount: 9, nameSources: ["legend", "legend", "legend", "legend", "legend", "legend", "legend", "legend", "legend"] },
+    { symbols: ["PiggyBank"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["WoodBlock"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["ShadowOrbs"], mapOptionCount: 2, nameSources: ["legend", "legend"] },
+    { symbols: ["CorruptThorns"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Candles"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Chandeliers"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Jackolanterns"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Presents"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Meteorite"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["GrayBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["RedBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["ClayBlock"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["BlueDungeonBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["HangingLanterns"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["GreenDungeonBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["PinkDungeonBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["GoldBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["SilverBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["CopperBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Spikes"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["WaterCandle"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Books"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Cobweb"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Vines"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["Sand"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Glass"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Signs"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Obsidian"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Ash"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Hellstone"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Mud"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["JungleGrass"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["JunglePlants"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["JungleVines"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["Sapphire"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Ruby"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Emerald"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Topaz"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Amethyst"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Diamond"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["JungleThorns"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["MushroomGrass"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["MushroomPlants"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["MushroomTrees"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Plants2"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["JunglePlants2"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["ObsidianBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["HellstoneBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Hellforge"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["ClayPot"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Beds"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Cactus"], mapOptionCount: 4, nameSources: ["legend", "unresolved", "unresolved", "unresolved"] },
+    { symbols: ["Coral"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["ImmatureHerbs"], mapOptionCount: 7, nameSources: ["legend", "legend", "legend", "legend", "legend", "legend", "legend"] },
+    { symbols: ["MatureHerbs"], mapOptionCount: 7, nameSources: ["legend", "legend", "legend", "legend", "legend", "legend", "legend"] },
+    { symbols: ["BloomingHerbs"], mapOptionCount: 7, nameSources: ["legend", "legend", "legend", "legend", "legend", "legend", "legend"] },
+    { symbols: ["Tombstones"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Loom"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Pianos"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Dressers"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Benches"], mapOptionCount: 3, nameSources: ["legend", "legend", "legend"] },
+    { symbols: ["Bathtubs"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Banners"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Lampposts"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Lamps"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Kegs"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["ChineseLanterns"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["CookingPots"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Safes"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["SkullLanterns"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["TrashCan"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["Candelabras"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Bookcases"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Thrones"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Bowls"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["GrandfatherClocks"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Statues"], mapOptionCount: 3, nameSources: ["legend", "unresolved", "legend"] },
+    { symbols: ["Sawmill"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Cobalt"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Mythril"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["HallowedGrass"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["HallowedPlants"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["Adamantite"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Ebonsand"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["HallowedPlants2"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["TinkerersWorkbench"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["HallowedVines"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["Pearlsand"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Pearlstone"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["PearlstoneBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["IridescentBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Mudstone"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["CobaltBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["MythrilBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Silt"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["WoodenBeam"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["CrystalBall"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["DiscoBall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["MagicalIceBlock"], mapOptionCount: 0, nameSources: ["symbol"] },
+    { symbols: ["Mannequin"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Crystals"], mapOptionCount: 2, nameSources: ["legend", "legend"] },
+    { symbols: ["ActiveStoneBlock"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["InactiveStoneBlock"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Lever"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["AdamantiteForge"], mapOptionCount: 2, nameSources: ["legend", "legend"] },
+    { symbols: ["MythrilAnvil"], mapOptionCount: 2, nameSources: ["legend", "legend"] },
+    { symbols: ["PressurePlates"], mapOptionCount: 0, nameSources: ["symbol"] },
+    { symbols: ["Switches"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Traps"], mapOptionCount: 3, nameSources: ["legend", "unresolved", "unresolved"] },
+    { symbols: ["Boulder"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["MusicBoxes"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["DemoniteBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Explosives"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["InletPump"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["OutletPump"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Timers"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["CandyCaneBlock"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["GreenCandyCaneBlock"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["SnowBlock"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["SnowBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["HolidayLights"], mapOptionCount: 3, nameSources: ["legend", "unresolved", "unresolved"] },
+    { symbols: ["AdamantiteBeam"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["SandstoneBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["EbonstoneBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["RedStucco"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["YellowStucco"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["GreenStucco"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["GrayStucco"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Ebonwood"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["RichMahogany"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Pearlwood"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["RainbowBrick"], mapOptionCount: 9, nameSources: ["placement", "placement", "placement", "placement", "placement", "placement", "placement", "placement", "placement"] },
+    { symbols: ["IceBlock"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["BreakableIce"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["CorruptIce"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["HallowedIce"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Stalactite"], mapOptionCount: 4, nameSources: ["symbol", "symbol", "symbol", "symbol"] },
+    { symbols: ["Tin"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Lead"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Tungsten"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Platinum"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["PineTree"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["ChristmasTree"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Sinks"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["PlatinumCandelabra"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["PlatinumCandle"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["TinBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["TungstenBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["PlatinumBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["ExposedGems"], mapOptionCount: 7, nameSources: ["legend", "legend", "legend", "legend", "legend", "legend", "legend"] },
+    { symbols: ["GreenMoss"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["BrownMoss"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["RedMoss"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["BlueMoss"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["PurpleMoss"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["LongMoss"], mapOptionCount: 11, nameSources: ["symbol", "symbol", "symbol", "symbol", "symbol", "symbol", "symbol", "symbol", "symbol", "symbol", "symbol"] },
+    { symbols: ["SmallPiles"], mapOptionCount: 12, nameSources: ["symbol", "symbol", "symbol", "symbol", "symbol", "symbol", "symbol", "symbol", "symbol", "symbol", "symbol", "symbol"] },
+    { symbols: ["LargePiles"], mapOptionCount: 12, nameSources: ["symbol", "symbol", "symbol", "symbol", "symbol", "symbol", "symbol", "symbol", "symbol", "symbol", "symbol", "symbol"] },
+    { symbols: ["LargePiles2"], mapOptionCount: 12, nameSources: ["symbol", "symbol", "symbol", "symbol", "symbol", "symbol", "symbol", "symbol", "symbol", "symbol", "symbol", "symbol"] },
+    { symbols: ["CactusBlock"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Cloud"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["MushroomBlock"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["LivingWood"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["LeafBlock"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["SlimeBlock"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["BoneBlock"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["FleshBlock"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["RainCloud"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["FrozenSlimeBlock"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Asphalt"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["CrimsonGrass"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["FleshIce"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["CrimsonPlants"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["Sunplate"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Crimstone"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Crimtane"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["CrimsonVines"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["IceBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["WaterFountain"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Shadewood"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Cannon"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["LandMine"], mapOptionCount: 0, nameSources: ["placement"] },
+    { symbols: ["Chlorophyte"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["SnowballLauncher"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Rope"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Chain"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Campfire"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Firework"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Blendomatic"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["MeatGrinder"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Extractinator"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Solidifier"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Palladium"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Orichalcum"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Titanium"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Slush"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Hive"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["LihzahrdBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["DyePlants"], mapOptionCount: 12, nameSources: ["legend", "legend", "legend", "legend", "legend", "legend", "legend", "legend", "legend", "legend", "legend", "legend"] },
+    { symbols: ["DyeVat"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["HoneyBlock"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["CrispyHoneyBlock"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Larva"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["WoodenSpikes"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["PlantDetritus"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["Crimsand"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Teleporter"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["LifeFruit"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["LihzahrdAltar"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["PlanteraBulb"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["MetalBars"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Painting3X3"], mapOptionCount: 5, nameSources: ["legend", "legend", "legend", "legend", "legend"] },
+    { symbols: ["Painting4X3"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Painting6X4"], mapOptionCount: 2, nameSources: ["legend", "legend"] },
+    { symbols: ["ImbuingStation"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["BubbleMachine"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Painting2X3"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Painting3X2"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Autohammer"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["PalladiumColumn"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["BubblegumBlock"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Titanstone"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["PumpkinBlock"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["HayBlock"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["SpookyWood"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Pumpkins"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["AmethystGemsparkOff"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["TopazGemsparkOff"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["SapphireGemsparkOff"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["EmeraldGemsparkOff"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["RubyGemsparkOff"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["DiamondGemsparkOff"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["AmberGemsparkOff"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["AmethystGemspark"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["TopazGemspark"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["SapphireGemspark"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["EmeraldGemspark"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["RubyGemspark"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["DiamondGemspark"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["AmberGemspark"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Womannequin"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["FireflyinaBottle"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["LightningBuginaBottle"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Cog"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["StoneSlab"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["SandStoneSlab"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["BunnyCage"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["SquirrelCage"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["MallardDuckCage"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["DuckCage"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["BirdCage"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["BlueJay"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["CardinalCage"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["FishBowl"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["HeavyWorkBench"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["CopperPlating"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["SnailCage"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["GlowingSnailCage"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["AmmoBox"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["MonarchButterflyJar"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["PurpleEmperorButterflyJar"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["RedAdmiralButterflyJar"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["UlyssesButterflyJar"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["SulphurButterflyJar"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["TreeNymphButterflyJar"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["ZebraSwallowtailButterflyJar"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["JuliaButterflyJar"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["ScorpionCage"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["BlackScorpionCage"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["FrogCage"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["MouseCage"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["BoneWelder"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["FleshCloningVat"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["GlassKiln"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["LihzahrdFurnace"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["LivingLoom"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["SkyMill"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["IceMachine"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["SteampunkBoiler"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["HoneyDispenser"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["PenguinCage"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["WormCage"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["DynastyWood"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["RedDynastyShingles"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["BlueDynastyShingles"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["MinecartTrack"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Coralstone"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["BlueJellyfishBowl"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["GreenJellyfishBowl"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["PinkJellyfishBowl"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["ShipInABottle"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["SeaweedPlanter"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["BorealWood"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["PalmWood"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["PalmTree"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["BeachPiles"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["TinPlating"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Waterfall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Lavafall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Confetti"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["ConfettiBlack"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["CopperCoinPile"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["SilverCoinPile"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["GoldCoinPile"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["PlatinumCoinPile"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["WeaponsRack"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["FireworksBox"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["LivingFire"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["AlphabetStatues"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["FireworkFountain"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["GrasshopperCage"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["LivingCursedFire"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["LivingDemonFire"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["LivingFrostFire"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["LivingIchor"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["LivingUltrabrightFire"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Honeyfall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["ChlorophyteBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["CrimtaneBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["ShroomitePlating"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["MushroomStatue"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["MartianConduitPlating"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["ChimneySmoke"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["CrimsonThorns"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["VineRope"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["BewitchingTable"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["AlchemyTable"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Sundial"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["MarbleBlock"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["GoldBirdCage"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["GoldBunnyCage"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["GoldButterflyCage"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["GoldFrogCage"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["GoldGrasshopperCage"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["GoldMouseCage"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["GoldWormCage"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["SilkRope"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["WebRope"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Marble"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Granite"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["GraniteBlock"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["MeteoriteBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["PinkSlimeBlock"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["PeaceCandle"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["WaterDrip"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["LavaDrip"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["HoneyDrip"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["FishingCrate"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["SharpeningStation"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["TargetDummy"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Bubble"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["PlanterBox"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["LavaMoss"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["VineFlowers"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["LivingMahogany"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["LivingMahoganyLeaves"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["CrystalBlock"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["TrapdoorOpen"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["TrapdoorClosed"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["TallGateClosed"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["TallGateOpen"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["LavaLamp"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["CageEnchantedNightcrawler"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["CageBuggy"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["CageGrubby"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["CageSluggy"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["ItemFrame"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Sandstone"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["HardenedSand"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["CorruptHardenedSand"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["CrimsonHardenedSand"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["CorruptSandstone"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["CrimsonSandstone"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["HallowHardenedSand"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["HallowSandstone"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["DesertFossil"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Fireplace"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Chimney"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["FossilOre"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["LunarOre"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["LunarBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["LunarMonolith"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["Detonator"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["LunarCraftingStation"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["SquirrelOrangeCage"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["SquirrelGoldCage"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["LunarBlockSolar"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["LunarBlockVortex"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["LunarBlockNebula"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["LunarBlockStardust"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["LogicGateLamp"], mapOptionCount: 3, nameSources: ["symbol", "symbol", "symbol"] },
+    { symbols: ["LogicGate"], mapOptionCount: 6, nameSources: ["legend", "legend", "legend", "legend", "legend", "legend"] },
+    { symbols: ["ConveyorBeltLeft"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["ConveyorBeltRight"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["LogicSensor"], mapOptionCount: 7, nameSources: ["legend", "legend", "legend", "legend", "legend", "legend", "legend"] },
+    { symbols: ["WirePipe"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["AnnouncementBox"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["TeamBlockRed"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["TeamBlockRedPlatform"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["WeightedPressurePlate"], mapOptionCount: 0, nameSources: ["symbol"] },
+    { symbols: ["WireBulb"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["TeamBlockGreen"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["TeamBlockBlue"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["TeamBlockYellow"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["TeamBlockPink"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["TeamBlockWhite"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["TeamBlockGreenPlatform"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["TeamBlockBluePlatform"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["TeamBlockYellowPlatform"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["TeamBlockPinkPlatform"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["TeamBlockWhitePlatform"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["GemLocks"], mapOptionCount: 7, nameSources: ["legend", "legend", "legend", "legend", "legend", "legend", "legend"] },
+    { symbols: ["FakeContainers"], mapOptionCount: 5, nameSources: ["legend", "unresolved", "unresolved", "unresolved", "unresolved"] },
+    { symbols: ["ProjectilePressurePad"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["GeyserTrap"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["BeeHive"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["PixelBox"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["SillyBalloonPink"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["SillyBalloonPurple"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["SillyBalloonGreen"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["SillyStreamerBlue"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["SillyStreamerGreen"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["SillyStreamerPink"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["SillyBalloonMachine"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["SillyBalloonTile"], mapOptionCount: 3, nameSources: ["legend", "legend", "legend"] },
+    { symbols: ["Pigronata"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["PartyMonolith"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["PartyBundleOfBalloonTile"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["PartyPresent"], mapOptionCount: 5, nameSources: ["placement", "placement", "placement", "placement", "placement"] },
+    { symbols: ["SandFallBlock"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["SnowFallBlock"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["SnowCloud"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["SandDrip"], mapOptionCount: 4, nameSources: ["legend", "legend", "legend", "legend"] },
+    { symbols: ["DjinnLamp"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["DefendersForge"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["WarTable"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["WarTableBanner"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["ElderCrystalStand"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Containers2"], mapOptionCount: 13, nameSources: ["legend", "unresolved", "unresolved", "unresolved", "unresolved", "unresolved", "unresolved", "unresolved", "unresolved", "unresolved", "unresolved", "unresolved", "unresolved"] },
+    { symbols: ["FakeContainers2"], mapOptionCount: 13, nameSources: ["legend", "unresolved", "unresolved", "unresolved", "unresolved", "unresolved", "unresolved", "unresolved", "unresolved", "unresolved", "unresolved", "unresolved", "unresolved"] },
+    { symbols: ["Tables2"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["DisplayDoll"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["WeaponsRack2"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["IronBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["LeadBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["LesionBlock"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["HatRack"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["GolfHole"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["GolfGrass"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["CrimstoneBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["SmoothSandstone"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["BloodMoonMonolith"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["CrackedBlueDungeonBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["CrackedGreenDungeonBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["CrackedPinkDungeonBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["RollingCactus"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["AntlionLarva"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["DrumSet"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["PicnicTable"], mapOptionCount: 2, nameSources: ["legend", "legend"] },
+    { symbols: ["FallenLog"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["PinWheel"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["WeatherVane"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["VoidVault"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["GolfGrassHallowed"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["GolfCupFlag"], mapOptionCount: 6, nameSources: ["symbol", "symbol", "symbol", "symbol", "symbol", "symbol"] },
+    { symbols: ["GolfTee"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["ShellPile"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["AntiPortalBlock"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Toilets"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Spider"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["LesionStation"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["SolarBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["VortexBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["NebulaBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["StardustBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["MysticSnakeRope"], mapOptionCount: 0, nameSources: ["symbol"] },
+    { symbols: ["GoldGoldfishBowl"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["CatBast"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["GoldStarryGlassBlock"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["BlueStarryGlassBlock"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["VoidMonolith"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["ArrowSign"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["PaintedArrowSign"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["GreenMossBrick"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["BrownMossBrick"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["RedMossBrick"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["BlueMossBrick"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["PurpleMossBrick"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["LavaMossBrick"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["LilyPad"], mapOptionCount: 3, nameSources: ["symbol", "symbol", "symbol"] },
+    { symbols: ["Cattail"], mapOptionCount: 6, nameSources: ["symbol", "symbol", "symbol", "symbol", "symbol", "symbol"] },
+    { symbols: ["FoodPlatter"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["BlackDragonflyJar"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["BlueDragonflyJar"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["GreenDragonflyJar"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["OrangeDragonflyJar"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["RedDragonflyJar"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["YellowDragonflyJar"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["GoldDragonflyJar"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["MushroomVines"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["SeaOats"], mapOptionCount: 5, nameSources: ["symbol", "symbol", "symbol", "symbol", "symbol"] },
+    { symbols: ["OasisPlants"], mapOptionCount: 4, nameSources: ["symbol", "symbol", "symbol", "symbol"] },
+    { symbols: ["BoulderStatue"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["MaggotCage"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["RatCage"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["KryptonMoss"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["KryptonMossBrick"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["XenonMoss"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["XenonMossBrick"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["LadybugCage"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["ArgonMoss"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["ArgonMossBrick"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["EchoBlock"], mapOptionCount: 0, nameSources: ["placement"] },
+    { symbols: ["OwlCage"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["PupfishBowl"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["GoldLadybugCage"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["LawnFlamingo"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Grate"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["PottedPlants1"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["PottedPlants2"], mapOptionCount: 2, nameSources: ["symbol", "symbol"] },
+    { symbols: ["Seaweed"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["TurtleCage"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["TurtleJungleCage"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Sandcastles"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["GrebeCage"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["SeagullCage"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["WaterStriderCage"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["GoldWaterStriderCage"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["GrateClosed"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["SeahorseCage"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["GoldSeahorseCage"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["GolfTrophies"], mapOptionCount: 3, nameSources: ["legend", "legend", "legend"] },
+    { symbols: ["MarbleColumn"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["BambooBlock"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["LargeBambooBlock"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["PlasmaLamp"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["FogMachine"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["AmberStoneBlock"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["GardenGnome"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["PinkFairyJar"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["GreenFairyJar"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["BlueFairyJar"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Bamboo"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["SoulBottles"], mapOptionCount: 6, nameSources: ["legend", "legend", "legend", "legend", "legend", "legend"] },
+    { symbols: ["TatteredWoodSign"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["BorealBeam"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["RichMahoganyBeam"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["GraniteColumn"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["SandstoneColumn"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["MushroomBeam"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["RockGolemHead"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["HellButterflyJar"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["LavaflyinaBottle"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["MagmaSnailCage"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["TreeTopaz"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["TreeAmethyst"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["TreeSapphire"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["TreeEmerald"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["TreeRuby"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["TreeDiamond"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["TreeAmber"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["GemSaplings"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["PotsSuspended"], mapOptionCount: 9, nameSources: ["symbol", "symbol", "symbol", "symbol", "symbol", "symbol", "symbol", "symbol", "symbol"] },
+    { symbols: ["BrazierSuspended"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["VolcanoSmall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["VolcanoLarge"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["VanityTreeSakuraSaplings"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["VanityTreeSakura"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["TeleportationPylon"], mapOptionCount: 11, nameSources: ["legend", "legend", "legend", "legend", "legend", "legend", "legend", "legend", "legend", "legend", "legend"] },
+    { symbols: ["LavafishBowl"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["AmethystBunnyCage"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["TopazBunnyCage"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["SapphireBunnyCage"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["EmeraldBunnyCage"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["RubyBunnyCage"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["DiamondBunnyCage"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["AmberBunnyCage"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["AmethystSquirrelCage"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["TopazSquirrelCage"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["SapphireSquirrelCage"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["EmeraldSquirrelCage"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["RubySquirrelCage"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["DiamondSquirrelCage"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["AmberSquirrelCage"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["PottedLavaPlants"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["PottedLavaPlantTendrils"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["VanityTreeWillowSaplings"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["VanityTreeYellowWillow"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["MasterTrophyBase"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["AccentSlab"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["TruffleWormCage"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["EmpressButterflyJar"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["SliceOfCake"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["TeaKettle"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["PottedCrystalPlants"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["AbigailsFlower"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["VioletMoss"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["VioletMossBrick"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["RainbowMoss"], mapOptionCount: 9, nameSources: ["placement", "placement", "placement", "placement", "placement", "placement", "placement", "placement", "placement"] },
+    { symbols: ["RainbowMossBrick"], mapOptionCount: 9, nameSources: ["symbol", "symbol", "symbol", "symbol", "symbol", "symbol", "symbol", "symbol", "symbol"] },
+    { symbols: ["StinkbugCage"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["StinkbugHousingBlocker"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["StinkbugHousingBlockerEcho"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["ScarletMacawCage"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["AshGrass"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["TreeAsh"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["AshWood"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["CorruptVines"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["AshPlants"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["AshVines"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["ManaCrystal"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["BlueMacawCage"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["ReefBlock"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["ChlorophyteExtractinator"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["ToucanCage"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["YellowCockatielCage"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["GrayCockatielCage"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["ShadowCandle"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["LargePilesEcho"], mapOptionCount: 12, nameSources: ["symbol", "symbol", "symbol", "symbol", "symbol", "symbol", "symbol", "symbol", "symbol", "symbol", "symbol", "symbol"] },
+    { symbols: ["LargePiles2Echo"], mapOptionCount: 12, nameSources: ["symbol", "symbol", "symbol", "symbol", "symbol", "symbol", "symbol", "symbol", "symbol", "symbol", "symbol", "symbol"] },
+    { symbols: ["SmallPiles2x1Echo"], mapOptionCount: 12, nameSources: ["symbol", "symbol", "symbol", "symbol", "symbol", "symbol", "symbol", "symbol", "symbol", "symbol", "symbol", "symbol"] },
+    { symbols: ["SmallPiles1x1Echo"], mapOptionCount: 12, nameSources: ["symbol", "symbol", "symbol", "symbol", "symbol", "symbol", "symbol", "symbol", "symbol", "symbol", "symbol", "symbol"] },
+    { symbols: ["PlantDetritus3x2Echo"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["PlantDetritus2x2Echo"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["PotsEcho"], mapOptionCount: 9, nameSources: ["legend", "legend", "legend", "legend", "legend", "legend", "legend", "legend", "legend"] },
+    { symbols: ["TNTBarrel"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["PlanteraThorns"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["GlowTulip"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["EchoMonolith"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["ShimmerMonolith"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["ShimmerBlock"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["ShimmerflyinaBottle"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["CorruptJungleGrass"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["CrimsonJungleGrass"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["Moondial"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["BouncyBoulder"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["LifeCrystalBoulder"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["PoopBlock"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["ShimmerBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["DirtiestBlock"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["LunarRustBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["DarkCelestialBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["AstraBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["CosmicEmberBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["CryocoreBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["MercuryBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["StarRoyaleBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["HeavenforgeBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["AncientBlueBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["AncientGreenBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["AncientPinkBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["AncientGoldBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["AncientSilverBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["AncientCopperBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["AncientObsidianBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["AncientHellstoneBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["AncientCobaltBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["AncientMythrilBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["LavaMossBlock"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["ArgonMossBlock"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["KryptonMossBlock"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["XenonMossBlock"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["VioletMossBlock"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["RainbowMossBlock"], mapOptionCount: 9, nameSources: ["placement", "placement", "placement", "placement", "placement", "placement", "placement", "placement", "placement"] },
+    { symbols: ["Stalactite1x1Echo"], mapOptionCount: 4, nameSources: ["placement", "placement", "placement", "placement"] },
+    { symbols: ["Stalactite1x2Echo"], mapOptionCount: 4, nameSources: ["symbol", "symbol", "symbol", "symbol"] },
+    { symbols: ["DemonAltarReplica"], mapOptionCount: 2, nameSources: ["legend", "legend"] },
+    { symbols: ["ShadowOrbsReplica"], mapOptionCount: 2, nameSources: ["legend", "legend"] },
+    { symbols: ["CobwebReplica"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["DeadCellsDisplayJar"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["DeadCellsPotionStation"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["AbigailsFlowerReplica"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["GlowTulipReplica"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["LifeFruitReplica"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["JunglePlantsEcho"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["FallenLogEcho"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["OasisPlantsEcho"], mapOptionCount: 4, nameSources: ["symbol", "symbol", "symbol", "symbol"] },
+    { symbols: ["TerragrimShrineEcho"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["BooksEcho"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Shimmerfall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["ShimmerDrip"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["PufferfishCage"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["RainbowBoulder"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Poulder"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["LavaBoulder"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["SpiderBoulder"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["Ghoulder"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["BoulderThatSpawnsPet"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["LavaCloud"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["StarCloud"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["RainbowCloud"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["CRTMonolith"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["RetroMonolith"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["FallenStarBlock"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["KiteAnchor"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["CritterAnchor"], mapOptionCount: 1, nameSources: ["symbol"] },
+    { symbols: ["NoirMonolith"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["CannonBall"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["TeamBlockRedVariant"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["TeamBlockGreenVariant"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["TeamBlockBlueVariant"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["TeamBlockYellowVariant"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["TeamBlockPinkVariant"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["TeamBlockWhiteVariant"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["RadioThingMonolith"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["Feywood"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["HallowedBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["EasterBlock"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["GothicBrick"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["FlinxFurBlock"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["JellyfishBlock"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["ToyBreakerBlock"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["PineWoodBlock"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["HarpyBlock"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["MoonplateBlock"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["LibrarianBlock"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["SpikeBlock"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["OfficeBlock"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["ForbiddenBlock"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["WaterBlock"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["BoulderBlock"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["DamagingSpikeBlock"], mapOptionCount: 1, nameSources: ["placement"] },
+    { symbols: ["PalworldDigtoiseSleeping"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["PalworldChilletEgg"], mapOptionCount: 1, nameSources: ["legend"] },
+    { symbols: ["GiantTiki"], mapOptionCount: 1, nameSources: ["placement"] },
   ],
   walls: [
     [], // 0
