@@ -92,7 +92,7 @@ describe("instanced chunk pass", () => {
     expect(renderer.stats().drawCalls).toBe(1);
   });
 
-  test("a chunk upload issues at most two texture data calls", () => {
+  test("a chunk upload issues one texture data call per present plane", () => {
     const { renderer, gl } = setup(384, 256);
     renderer.setWorld(blocks(384, 256, () => 1));
     // Palette and background upload first, with no chunk on screen.
@@ -102,7 +102,8 @@ describe("instanced chunk pass", () => {
     renderer.setCamera({ x: 0, y: 0, zoom: 1 });
     renderer.render();
     expect(renderer.stats().residentChunks).toBe(6);
-    expect(calls.reduce((sum, spy) => sum + spy.mock.calls.length, 0)).toBeLessThanOrEqual(6 * 2);
+    // Six planes: block, wall, liquid, liquid amount, paint, wall paint (no flags or frames).
+    expect(calls.reduce((sum, spy) => sum + spy.mock.calls.length, 0)).toBe(6 * 6);
   });
 
   test("evictions are counted in stats", () => {

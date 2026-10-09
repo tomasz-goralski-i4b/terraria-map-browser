@@ -141,9 +141,10 @@ opaque tiles, using the same integer expression on the GPU and in the CPU refere
 What a layer toggle costs:
 - At half a pixel per tile and above, or whenever the chunks around the view are cached: no upload at all.
 - Zoomed out on a world larger than the chunk cache (Medium, Large and larger custom worlds): the new view sweeps
-  out from the centre of the screen, re-uploading evicted chunks within each frame's time budget. A Large world takes
-  a fraction of a second, a 16000 × 4000 world about two seconds. Areas the sweep has not reached keep their old
-  colours: the map never blanks, and the update always grows from the centre as one region.
+  out from the centre of the screen, re-uploading evicted chunks within each frame's time budget. Chunks are uploaded
+  straight from the world's planes with no per-tile JavaScript. Measured on an Intel Arc GPU: a 16400 × 4800 modded
+  world takes about 60 frames, 1 s (3.5 s before #203); smaller worlds proportionally less. Areas the sweep has not
+  reached keep their old colours: the map never blanks, and the update always grows from the centre as one region.
 - Never a re-parse.
 
 ## Theme and tokens

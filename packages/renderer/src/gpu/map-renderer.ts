@@ -7,12 +7,11 @@ import { CHUNK_SIZE, visibleChunks } from "../camera/camera.js";
 import type { Camera, ChunkCoord, Size } from "../camera/camera.js";
 import { filterTilesPerPixel } from "../chunk/box-filter.js";
 import { WIRE_ALPHA, WIRE_COLORS, WIRE_LAYER, type ChunkLayers } from "../chunk/render.js";
+import { backgroundColor, contentColor, liquidColors } from "../palette/map-palette.js";
+import type { MapPalette } from "../palette/map-palette.js";
 import {
-  backgroundColor, contentColor, liquidColors, mapOption, optionColor, optionColors, optionRule,
-} from "../palette/map-palette.js";
-import type { MapPalette, Rgba } from "../palette/map-palette.js";
-import {
-  LAYER_ATTRIBUTE, PAGE_APRON, RECT_ATTRIBUTE, chunkFragmentSource, chunkVertexSource, overviewBuildFragmentSource,
+  LAYER_ATTRIBUTE, PAGE_APRON, PLANES_16, PLANES_8, PLANE_COUNT_16, PLANE_COUNT_8, PRESENT, RECT_ATTRIBUTE,
+  RULE_HEADER_ROWS, RULE_ROW, chunkFragmentSource, chunkVertexSource, overviewBuildFragmentSource,
   overviewBuildVertexSource, overviewFragmentSource, overviewVertexSource,
 } from "./shaders.js";
 
@@ -31,7 +30,10 @@ export interface RenderableWorld {
     readonly liquidAmount: Uint8Array;
     readonly paint: Uint8Array;
     readonly wallPaint: Uint8Array;
-    /** Frame planes pick the map option of multi-option content; absent planes mean frame 0 everywhere. */
+    /**
+     * Frame planes pick the map option of multi-option content; absent planes mean frame 0 everywhere. They are
+     * uploaded as their 16-bit pattern (through a Uint16Array view of the same memory) and sign-extended on the GPU.
+     */
     readonly frameX?: Int16Array;
     readonly frameY?: Int16Array;
     /** CWM flags; only the wire and actuator bits (0–4) are read, for the wire overlay. Absent means none. */
@@ -44,7 +46,8 @@ export interface RenderableWorld {
 export interface MapRendererOptions {
   /**
    * Upper bound of chunks uploaded per scheduled animation frame. Default 256; the time budget below usually ends a
-   * frame's uploads first. Finite values are floored and clamped to at least 1; non-finite values use the default.
+   * frame's uploads first (a chunk upload is one texSubImage3D per plane, about 0.08 ms). Finite values are
+   * floored and clamped to at least 1; non-finite values use the default.
    */
   readonly maxChunkUploadsPerFrame?: number;
   /**
@@ -55,7 +58,7 @@ export interface MapRendererOptions {
    */
   readonly maxUploadMillisecondsPerFrame?: number;
   /**
-   * Baseline chunk texture cache capacity (LRU). Default 512 (about 100 MiB of chunk pages).
+   * Baseline chunk texture cache capacity (LRU). Default 512 (about 120 MiB of chunk pages).
    * Grows to fit the largest set drawn chunk by chunk (at half a pixel per tile and above, so bounded by the
    * viewport) for the current world; resets when the world changes. Zoomed-out views come from the overview and do
    * not grow it.
@@ -67,8 +70,8 @@ export interface MapRendererOptions {
 
 export interface MapRendererStats {
   /**
-   * Texture upload calls since creation: one per chunk upload (all planes), one per palette append and one per
-   * background (once per world).
+   * Texture uploads since creation: one per chunk upload (all its planes), one per palette append (colours and map
+   * option rules) and one per background (once per world).
    */
   readonly textureUploads: number;
   /** Draw calls issued on the canvas by the last synchronous or scheduled frame. */
@@ -106,13 +109,15 @@ const PALETTE_ROW = 256;
 const PALETTE_WIDTH = PALETTE_ROW * 2;
 const PALETTE_CAPACITY = 0xffff;
 const PALETTE_HEIGHT = PALETTE_ROW;
-const VARIANT_CAPACITY = 0xffff;
-const ABSENT = 0xffff;
 const DEFAULT_MAX_CACHED_CHUNKS = 512;
 const DEFAULT_MAX_CHUNK_UPLOADS_PER_FRAME = 256;
 const DEFAULT_MAX_UPLOAD_MILLISECONDS_PER_FRAME = 8;
-/** Chunks per page (array texture layers); a page of both textures is about 12.4 MiB. */
-const PAGE_LAYERS = 64;
+/**
+ * Chunks per page. A page holds one layer per plane and chunk: 32 × 5 = 160 layers of the 16-bit texture and
+ * 32 × 4 = 128 of the 8-bit one, within the 256 array layers WebGL2 guarantees, with room for three more 16-bit
+ * planes (32 × 8 = 256). A page of both textures is about 7.6 MiB.
+ */
+const CHUNKS_PER_PAGE = 32;
 /** Texels per side of a page layer: the chunk and its apron of neighbouring tiles on every side. */
 const PAGE_SIZE = CHUNK_SIZE + 2 * PAGE_APRON;
 /** Ints per instance: the chunk rectangle (origin x, origin y, columns, rows) and its page layer. */
@@ -120,16 +125,18 @@ const INSTANCE_INTS = 5;
 /** The smallest overview factor: one overview texel per 2 × 2 tiles, used below half a pixel per tile. */
 const MIN_OVERVIEW_FACTOR = 2;
 
-// Texture units: 0–1 the chunk page; 2 palette; 3 background and paint colours; 4 variant colours; 5 overview.
-const UNIT_WIDE = 0;
-const UNIT_NARROW = 1;
+// Texture units: 0–1 the chunk page; 2 palette; 3 background and paint colours; 4 map option rules; 5 overview.
+// WebGL2 guarantees 16; the map keeps to at most 10, leaving room for sprite mode's atlas pages and lookup (#91).
+const UNIT_PLANES_16 = 0;
+const UNIT_PLANES_8 = 1;
 const UNIT_PALETTE = 2;
 const UNIT_BACKGROUND = 3;
-const UNIT_VARIANTS = 4;
+const UNIT_RULES = 4;
 const UNIT_OVERVIEW = 5;
+const TEXTURE_UNITS = 6;
 
 const TILE_UNIFORMS = [
-  "uWide", "uNarrow", "uPalette", "uBackground", "uVariantColors", "uPaintRow", "uPaintCount", "uPaletteLength",
+  "uPlanes16", "uPlanes8", "uPresent", "uPalette", "uBackground", "uRules", "uPaintRow", "uPaintCount", "uPaletteLength",
   "uLayers", "uLiquids", "uWireColors", "uWireBits", "uWireAlpha",
 ] as const;
 const CHUNK_UNIFORMS = [...TILE_UNIFORMS, "uCamera", "uZoom", "uViewport", "uFilter", "uStep", "uWorldSize"] as const;
@@ -141,12 +148,38 @@ interface Program<Name extends string> {
   readonly uniforms: Readonly<Record<Name, WebGLUniformLocation>>;
 }
 
-/** One array texture pair holding up to PAGE_LAYERS chunks, each with its apron. */
+/** One array texture per plane format, holding up to CHUNKS_PER_PAGE chunks with their aprons, a layer per plane. */
 interface Page {
-  /** RGBA16UI: block, wall, variant, reserved. */
-  readonly wide: WebGLTexture;
-  /** RGBA8UI: liquid kind, liquid amount, block paint, wall paint. */
-  readonly narrow: WebGLTexture;
+  /** R16UI, PLANES_16 per chunk: block, wall, flags, frameX, frameY. */
+  readonly planes16: WebGLTexture;
+  /** R8UI, PLANES_8 per chunk: liquid kind, liquid amount, block paint, wall paint. */
+  readonly planes8: WebGLTexture;
+}
+
+/** One plane of a world as uploaded: its layer within a chunk's layers and the memory read in place. */
+interface PlaneSource {
+  readonly plane: number;
+  readonly data: Uint16Array | Uint8Array;
+}
+
+/** The planes of one world, by page texture. */
+interface WorldPlanes {
+  readonly world: RenderableWorld;
+  readonly planes16: readonly PlaneSource[];
+  readonly planes8: readonly PlaneSource[];
+  /** PRESENT bits of the optional planes. */
+  readonly present: number;
+}
+
+/**
+ * The map option rules of a map palette, for the rules texture: the ranges of every ruled tile ID, and where they are.
+ */
+interface RuleTable {
+  /** (from, to, colour, 0) per range, RGBA32I, RULE_ROW per row. */
+  readonly ranges: Int32Array;
+  readonly rows: number;
+  /** By tile ID: (first range, range count, axis, colour of option 0), the header of each palette entry with that ID. */
+  readonly headers: ReadonlyMap<number, readonly [number, number, number, number]>;
 }
 
 /** Everything owned by one GL context; rebuilt after a context loss. */
@@ -161,21 +194,8 @@ interface GpuResources {
   readonly emptyArray: WebGLVertexArrayObject;
   readonly framebuffer: WebGLFramebuffer;
   readonly palette: WebGLTexture;
-  /** Colours of frame-selected options, 256 per row. */
-  readonly variantColors: WebGLTexture;
-}
-
-/**
- * The frame → map option rule of one palette entry, flattened for the chunk upload loop, which resolves it per tile.
- */
-interface OptionChoices {
-  /** Whether the rule reads frameX (else frameY). */
-  readonly byX: boolean;
-  /** Inclusive ranges as `from, to, option` triples, in the rule's order (the first match wins, as in `mapOption`). */
-  readonly ranges: Int32Array;
-  readonly colors: readonly Rgba[];
-  /** Variant id by option: 0 for the palette colour's option, -1 until resolved. */
-  readonly ids: Int32Array;
+  /** Map option rules: headers by palette index, then the ranges (see RULE_ROW in shaders.ts). */
+  readonly rules: WebGLTexture;
 }
 
 /** The overview of one world: a mipmapped RGBA8 texture, one texel per factor × factor tiles, premultiplied. */
@@ -234,10 +254,10 @@ function integerTexture(gl: WebGL2RenderingContext, format: number, width: numbe
   return texture;
 }
 
-function pageTexture(gl: WebGL2RenderingContext, format: number): WebGLTexture {
+function pageTexture(gl: WebGL2RenderingContext, format: number, planes: number): WebGLTexture {
   const texture = requireValue(gl.createTexture(), "a texture");
   gl.bindTexture(gl.TEXTURE_2D_ARRAY, texture);
-  gl.texStorage3D(gl.TEXTURE_2D_ARRAY, 1, format, PAGE_SIZE, PAGE_SIZE, PAGE_LAYERS);
+  gl.texStorage3D(gl.TEXTURE_2D_ARRAY, 1, format, PAGE_SIZE, PAGE_SIZE, CHUNKS_PER_PAGE * planes);
   gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
   gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
   return texture;
@@ -255,8 +275,61 @@ function instanceArray(gl: WebGL2RenderingContext, buffer: WebGLBuffer): WebGLVe
   return array;
 }
 
-function createResources(gl: WebGL2RenderingContext): GpuResources {
+/**
+ * The rules of every tile ID with a frame → option rule and map colours, in ID order: each range carries the colour
+ * of its option (`optionColor`: an option the ID lacks falls back to option 0), each header the colour of option 0,
+ * which a frame outside every range selects (`mapOption`).
+ */
+function ruleTable(mapPalette: MapPalette | undefined): RuleTable {
+  const headers = new Map<number, readonly [number, number, number, number]>();
+  const ranges: number[] = [];
+  const entries = Object.entries(mapPalette?.tileOptions ?? {}).map(([id, rule]) => [Number(id), rule] as const);
+  for (const [id, rule] of entries.sort(([first], [second]) => first - second)) {
+    const colors = mapPalette?.tiles[id];
+    const fallback = colors?.[0];
+    if (colors === undefined || fallback === undefined) continue;
+    headers.set(id, [ranges.length / 4, rule.ranges.length, rule.axis === "frameX" ? 0 : 1, fallback]);
+    for (const [from, to, option] of rule.ranges) ranges.push(from, to, colors[option] ?? fallback, 0);
+  }
+  const rows = Math.ceil(ranges.length / 4 / RULE_ROW);
+  const padded = new Int32Array(rows * RULE_ROW * 4);
+  padded.set(ranges);
+  return { ranges: padded, rows, headers };
+}
+
+/** Throws when the GPU offers fewer texture units or array layers than the map needs. */
+function checkLimits(gl: WebGL2RenderingContext): void {
+  const units = gl.getParameter(gl.MAX_TEXTURE_IMAGE_UNITS) as number;
+  if (units < TEXTURE_UNITS) {
+    throw new Error(`The map needs ${String(TEXTURE_UNITS)} texture units; this GPU offers ${String(units)}`);
+  }
+  const layers = gl.getParameter(gl.MAX_ARRAY_TEXTURE_LAYERS) as number;
+  const needed = CHUNKS_PER_PAGE * Math.max(PLANE_COUNT_16, PLANE_COUNT_8);
+  if (layers < needed) {
+    throw new Error(`The map needs ${String(needed)} array texture layers; this GPU offers ${String(layers)}`);
+  }
+}
+
+/**
+ * Sets GL's default unpack state. The context belongs to the canvas, not the renderer: a previous renderer on the
+ * same canvas, or other code, may have left any state behind.
+ */
+function defaultUnpack(gl: WebGL2RenderingContext): void {
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+  gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 0);
+  gl.pixelStorei(gl.UNPACK_IMAGE_HEIGHT, 0);
+  gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, 0);
+  gl.pixelStorei(gl.UNPACK_SKIP_ROWS, 0);
+  gl.pixelStorei(gl.UNPACK_SKIP_IMAGES, 0);
+}
+
+function createResources(gl: WebGL2RenderingContext, rules: RuleTable): GpuResources {
+  defaultUnpack(gl);
   const instances = requireValue(gl.createBuffer(), "a buffer");
+  const rulesTexture = integerTexture(gl, gl.RGBA32I, RULE_ROW, RULE_HEADER_ROWS + rules.rows);
+  if (rules.rows > 0) {
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, RULE_HEADER_ROWS, RULE_ROW, rules.rows, gl.RGBA_INTEGER, gl.INT, rules.ranges);
+  }
   return {
     chunk: link(gl, chunkVertexSource, chunkFragmentSource, CHUNK_UNIFORMS),
     build: link(gl, overviewBuildVertexSource, overviewBuildFragmentSource, BUILD_UNIFORMS),
@@ -266,7 +339,7 @@ function createResources(gl: WebGL2RenderingContext): GpuResources {
     emptyArray: requireValue(gl.createVertexArray(), "a vertex array"),
     framebuffer: requireValue(gl.createFramebuffer(), "a framebuffer"),
     palette: integerTexture(gl, gl.RGBA8UI, PALETTE_WIDTH, PALETTE_HEIGHT),
-    variantColors: integerTexture(gl, gl.RGBA8UI, PALETTE_ROW, PALETTE_ROW),
+    rules: rulesTexture,
   };
 }
 
@@ -297,31 +370,31 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   // The four liquid kinds (CWM kinds 1–4) as the shader's ivec3 array.
   const liquidUniform = new Int32Array(liquidColors(mapPalette).slice(1).flatMap(([red, green, blue]) => [red, green, blue]));
   const maxTextureSize = gl.getParameter(gl.MAX_TEXTURE_SIZE) as number;
+  checkLimits(gl);
+  const rules = ruleTable(mapPalette);
 
   // Looked up once: getExtension returns null while the context is lost. Used only to restore a forced loss.
   const loseContext = gl.getExtension("WEBGL_lose_context");
-  let resources = createResources(gl);
+  let resources = createResources(gl, rules);
   let world: RenderableWorld | null = null;
   let cacheCapacity = maxCachedChunks;
   let camera: Camera = { x: 0, y: 0, zoom: 1 };
   let layers = 15;
-  // LRU of chunk key → page slot (page * PAGE_LAYERS + layer): Map iteration order is insertion order, and a hit
-  // re-inserts its key at the end.
+  // LRU of chunk key → page slot (page * CHUNKS_PER_PAGE + slot in page): Map iteration order is insertion order, and
+  // a hit re-inserts its key at the end.
   const chunks = new Map<number, number>();
   const pages: Page[] = [];
   const freeSlots: number[] = [];
   let nextSlot = 0;
-  // Interleaved planes of one chunk and its apron, in the page layout (transposed, PAGE_SIZE texels per column).
-  const wideStaging = new Uint16Array(PAGE_SIZE * PAGE_SIZE * 4);
-  const narrowStaging = new Uint8Array(PAGE_SIZE * PAGE_SIZE * 4);
+  let planeSources: WorldPlanes | null = null;
   let instanceData = new Int32Array(INSTANCE_INTS * 256);
   const paletteMirror = new Uint8Array(PALETTE_WIDTH * PALETTE_HEIGHT * 4);
+  // Rule headers by palette index, written only with a palette that has rules (the texture starts zeroed: no rule).
+  const ruleHeaders = rules.headers.size === 0 ? null : new Int32Array(RULE_ROW * RULE_HEADER_ROWS * 4);
   let paletteUploaded = 0;
-  // Frame-selected colours, appended as chunks upload: variant ids (1-based) by palette index and option.
-  const variantMirror = new Uint8Array(PALETTE_ROW * PALETTE_ROW * 4);
-  // By palette index: the entry's map-option rule, null when it has none, undefined until resolved.
-  const optionsByPalette: (OptionChoices | null | undefined)[] = [];
-  let variantCount = 0;
+  // The world the plane unpack state (alignment, row length, image height) is set for; null for GL's defaults. Chunk
+  // uploads set it once and then only move the skip parameters; other uploads restore the defaults first.
+  let unpackWorld: RenderableWorld | null = null;
   // Per-row background colours plus the paint row, for the world they were computed for.
   let background: { readonly texture: WebGLTexture; readonly world: RenderableWorld; readonly paintRow: number } | null = null;
   let overview: Overview | null = null;
@@ -338,15 +411,10 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   let frame = 0;
   let disposed = false;
 
-  const resetVariants = (): void => {
-    optionsByPalette.length = 0;
-    variantCount = 0;
-  };
-
   const clearChunks = (): void => {
     for (const page of pages) {
-      gl.deleteTexture(page.wide);
-      gl.deleteTexture(page.narrow);
+      gl.deleteTexture(page.planes16);
+      gl.deleteTexture(page.planes8);
     }
     pages.length = 0;
     chunks.clear();
@@ -371,6 +439,13 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     overview.builtCount = 0;
   };
 
+  /** Restores GL's default unpack state after chunk uploads. */
+  const resetUnpack = (): void => {
+    if (unpackWorld === null) return;
+    defaultUnpack(gl);
+    unpackWorld = null;
+  };
+
   const uploadPalette = (palette: readonly ContentRef[]): void => {
     const total = Math.min(palette.length, PALETTE_CAPACITY);
     if (total <= paletteUploaded) return;
@@ -381,9 +456,11 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       const column = index % PALETTE_ROW;
       paletteMirror.set(contentColor(ref, "block", mapPalette), (row * PALETTE_WIDTH + column) * 4);
       paletteMirror.set(contentColor(ref, "wall", mapPalette), (row * PALETTE_WIDTH + PALETTE_ROW + column) * 4);
+      ruleHeaders?.set((ref.kind === "vanilla" ? rules.headers.get(ref.id) : undefined) ?? [0, 0, 0, 0], index * 4);
     }
     const firstRow = Math.floor(paletteUploaded / PALETTE_ROW);
     const lastRow = Math.floor((total - 1) / PALETTE_ROW);
+    resetUnpack();
     gl.activeTexture(gl.TEXTURE0 + UNIT_PALETTE);
     gl.bindTexture(gl.TEXTURE_2D, resources.palette);
     gl.pixelStorei(gl.UNPACK_ROW_LENGTH, PALETTE_WIDTH);
@@ -402,130 +479,100 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 0);
     gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, 0);
     gl.pixelStorei(gl.UNPACK_SKIP_ROWS, 0);
+    if (ruleHeaders !== null) {
+      // Whole rows: headers of a previous world's palette are overwritten with this one's.
+      gl.activeTexture(gl.TEXTURE0 + UNIT_RULES);
+      gl.bindTexture(gl.TEXTURE_2D, resources.rules);
+      gl.texSubImage2D(
+        gl.TEXTURE_2D, 0, 0, firstRow, RULE_ROW, lastRow - firstRow + 1, gl.RGBA_INTEGER, gl.INT,
+        ruleHeaders.subarray(firstRow * RULE_ROW * 4),
+      );
+    }
     textureUploads++;
     // Content colours the overview already holds may have been absent (out of range) before this append.
     invalidateOverview();
     paletteUploaded = total;
   };
 
-  /**
-   * The variant id of a block: its frame-selected option colour, or 0 when the palette colour applies. The palette
-   * colour is `contentColor` at frame (0, 0), which is not option 0 when the rule maps frame (0, 0) elsewhere (a
-   * sunflower's flower): "no variant" therefore means "the option of frame (0, 0)".
-   */
-  const variantOf = (paletteIndex: number, frameX: number, frameY: number, palette: readonly ContentRef[]): number => {
-    let choices = optionsByPalette[paletteIndex];
-    if (choices === undefined) {
-      const ref = palette[paletteIndex];
-      const rule = ref === undefined ? undefined : optionRule(ref, "block", mapPalette);
-      const colors = ref === undefined ? undefined : optionColors(ref, "block", mapPalette);
-      if (rule === undefined || colors === undefined) {
-        choices = null;
-      } else {
-        const ids = new Int32Array(Math.max(0, ...rule.ranges.map(([, , option]) => option)) + 1).fill(-1);
-        ids[mapOption(rule, 0, 0)] = 0;
-        choices = { byX: rule.axis === "frameX", ranges: Int32Array.from(rule.ranges.flat()), colors, ids };
-      }
-      optionsByPalette[paletteIndex] = choices;
-    }
-    if (choices === null) return 0;
-    // mapOption, without its per-call iteration: this runs for every framed tile of every uploaded chunk.
-    const frame = choices.byX ? frameX : frameY;
-    const { ranges, ids } = choices;
-    let option = 0;
-    for (let range = 0; range < ranges.length; range += 3) {
-      if (frame >= (ranges[range] ?? 0) && frame <= (ranges[range + 1] ?? -1)) {
-        option = ranges[range + 2] ?? 0;
-        break;
-      }
-    }
-    const known = ids[option] ?? -1;
-    if (known >= 0) return known;
-    const color = optionColor(choices.colors, option);
-    if (color === undefined || variantCount >= VARIANT_CAPACITY) {
-      ids[option] = 0;
-      return 0;
-    }
-    variantMirror.set(color, variantCount * 4);
-    ids[option] = ++variantCount;
-    return variantCount;
-  };
-
   const allocateSlot = (): number => {
     const free = freeSlots.pop();
     if (free !== undefined) return free;
     const slot = nextSlot++;
-    if (slot >= pages.length * PAGE_LAYERS) {
-      pages.push({ wide: pageTexture(gl, gl.RGBA16UI), narrow: pageTexture(gl, gl.RGBA8UI) });
+    if (slot >= pages.length * CHUNKS_PER_PAGE) {
+      pages.push({ planes16: pageTexture(gl, gl.R16UI, PLANE_COUNT_16), planes8: pageTexture(gl, gl.R8UI, PLANE_COUNT_8) });
     }
     return slot;
   };
 
+  /** The planes of `source` to upload, by page texture; the frame planes as Uint16Array views of their memory. */
+  const planesOf = (source: RenderableWorld): WorldPlanes => {
+    if (planeSources?.world === source) return planeSources;
+    const { block, wall, flags, frameX, frameY, liquid, liquidAmount, paint, wallPaint } = source.planes;
+    const bits = (frame: Int16Array): Uint16Array => new Uint16Array(frame.buffer, frame.byteOffset, frame.length);
+    const planes16: PlaneSource[] = [{ plane: PLANES_16.block, data: block }, { plane: PLANES_16.wall, data: wall }];
+    let present = 0;
+    if (flags !== undefined) {
+      planes16.push({ plane: PLANES_16.flags, data: flags });
+      present |= PRESENT.flags;
+    }
+    if (frameX !== undefined) {
+      planes16.push({ plane: PLANES_16.frameX, data: bits(frameX) });
+      present |= PRESENT.frameX;
+    }
+    if (frameY !== undefined) {
+      planes16.push({ plane: PLANES_16.frameY, data: bits(frameY) });
+      present |= PRESENT.frameY;
+    }
+    const planes8: PlaneSource[] = [
+      { plane: PLANES_8.liquid, data: liquid }, { plane: PLANES_8.liquidAmount, data: liquidAmount },
+      { plane: PLANES_8.paint, data: paint }, { plane: PLANES_8.wallPaint, data: wallPaint },
+    ];
+    planeSources = { world: source, planes16, planes8, present };
+    return planeSources;
+  };
+
   /**
-   * Interleaves one chunk's planes, with its apron of neighbouring tiles, into its page layer with two uploads. Each
-   * block's frame-selected option is resolved on the CPU (as `renderChunk` does, so the GPU output is exact); new
-   * variant colours are uploaded too.
+   * Uploads one chunk, with its apron of neighbouring tiles, into its page layers: one texSubImage3D per present plane,
+   * read in place from the world's plane. A chunk is a rectangle of a column-major plane and a layer stores it
+   * transposed, so the unpack parameters select it: an upload row is a world column (UNPACK_ROW_LENGTH is the world's
+   * height, UNPACK_IMAGE_HEIGHT its width), starting at the chunk's first column (UNPACK_SKIP_ROWS) and first row
+   * (UNPACK_SKIP_PIXELS). No tile is touched in JavaScript.
    */
   const uploadChunk = (source: RenderableWorld, chunk: ChunkCoord, slot: number): void => {
     const originX = chunk.x * CHUNK_SIZE;
     const originY = chunk.y * CHUNK_SIZE;
-    const columns = Math.min(CHUNK_SIZE, source.width - originX);
-    const rows = Math.min(CHUNK_SIZE, source.height - originY);
     // The apron, clipped to the world: texels past the world's edges keep stale values the shaders never read.
     const firstColumn = Math.max(-PAGE_APRON, -originX);
-    const endColumn = Math.min(columns + PAGE_APRON, source.width - originX);
+    const endColumn = Math.min(CHUNK_SIZE + PAGE_APRON, source.width - originX);
     const firstRow = Math.max(-PAGE_APRON, -originY);
-    const endRow = Math.min(rows + PAGE_APRON, source.height - originY);
-    const { block, wall, liquid, liquidAmount, paint, wallPaint, frameX, frameY, flags } = source.planes;
-    const framed = mapPalette?.tileOptions !== undefined && (frameX !== undefined || frameY !== undefined);
-    const paletteLength = source.palette.length;
-    const firstNewVariant = variantCount;
-    for (let column = firstColumn; column < endColumn; column++) {
-      const from = (originX + column) * source.height + originY;
-      const to = ((column + PAGE_APRON) * PAGE_SIZE + PAGE_APRON) * 4;
-      for (let row = firstRow; row < endRow; row++) {
-        const index = from + row;
-        const texel = to + row * 4;
-        const blockId = block[index] ?? ABSENT;
-        wideStaging[texel] = blockId;
-        wideStaging[texel + 1] = wall[index] ?? ABSENT;
-        // Most content has no map-option rule: skip the frame planes for it once that is known (null).
-        wideStaging[texel + 2] = framed && blockId < paletteLength && optionsByPalette[blockId] !== null
-          ? variantOf(blockId, frameX?.[index] ?? 0, frameY?.[index] ?? 0, source.palette)
-          : 0;
-        wideStaging[texel + 3] = (flags?.[index] ?? 0) & WIRE_LAYER.all;
-        narrowStaging[texel] = liquid[index] ?? 0;
-        narrowStaging[texel + 1] = liquidAmount[index] ?? 0;
-        narrowStaging[texel + 2] = paint[index] ?? 0;
-        narrowStaging[texel + 3] = wallPaint[index] ?? 0;
-      }
-    }
-    if (variantCount > firstNewVariant) {
-      const firstVariantRow = Math.floor(firstNewVariant / PALETTE_ROW);
-      const lastVariantRow = Math.floor((variantCount - 1) / PALETTE_ROW);
-      gl.activeTexture(gl.TEXTURE0 + UNIT_VARIANTS);
-      gl.bindTexture(gl.TEXTURE_2D, resources.variantColors);
-      gl.texSubImage2D(
-        gl.TEXTURE_2D, 0, 0, firstVariantRow, PALETTE_ROW, lastVariantRow - firstVariantRow + 1, gl.RGBA_INTEGER,
-        gl.UNSIGNED_BYTE, variantMirror.subarray(firstVariantRow * PALETTE_ROW * 4),
-      );
-    }
-    const page = pages[Math.floor(slot / PAGE_LAYERS)];
+    const endRow = Math.min(CHUNK_SIZE + PAGE_APRON, source.height - originY);
+    const page = pages[Math.floor(slot / CHUNKS_PER_PAGE)];
     if (page === undefined) throw new Error(`chunk slot ${String(slot)} has no page`);
-    const layer = slot % PAGE_LAYERS;
-    // Texture width is the chunk's rows (y), height its columns (x), both with the apron; texels past the world's
-    // edges keep stale values the shaders never read.
-    const height = columns + 2 * PAGE_APRON;
-    gl.activeTexture(gl.TEXTURE0 + UNIT_WIDE);
-    gl.bindTexture(gl.TEXTURE_2D_ARRAY, page.wide);
-    gl.texSubImage3D(
-      gl.TEXTURE_2D_ARRAY, 0, 0, 0, layer, PAGE_SIZE, height, 1, gl.RGBA_INTEGER, gl.UNSIGNED_SHORT, wideStaging,
-    );
-    gl.activeTexture(gl.TEXTURE0 + UNIT_NARROW);
-    gl.bindTexture(gl.TEXTURE_2D_ARRAY, page.narrow);
-    gl.texSubImage3D(
-      gl.TEXTURE_2D_ARRAY, 0, 0, 0, layer, PAGE_SIZE, height, 1, gl.RGBA_INTEGER, gl.UNSIGNED_BYTE, narrowStaging,
-    );
+    const inPage = slot % CHUNKS_PER_PAGE;
+    const { planes16, planes8 } = planesOf(source);
+    if (unpackWorld !== source) {
+      gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+      gl.pixelStorei(gl.UNPACK_ROW_LENGTH, source.height);
+      // A 3D upload must fit its skipped rows within the image height, which defaults to the upload's own height.
+      gl.pixelStorei(gl.UNPACK_IMAGE_HEIGHT, source.width);
+      unpackWorld = source;
+    }
+    gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, originY + firstRow);
+    gl.pixelStorei(gl.UNPACK_SKIP_ROWS, originX + firstColumn);
+    const upload = (planes: readonly PlaneSource[], count: number, type: number): void => {
+      for (const { plane, data } of planes) {
+        gl.texSubImage3D(
+          gl.TEXTURE_2D_ARRAY, 0, firstRow + PAGE_APRON, firstColumn + PAGE_APRON, inPage * count + plane,
+          endRow - firstRow, endColumn - firstColumn, 1, gl.RED_INTEGER, type, data,
+        );
+      }
+    };
+    gl.activeTexture(gl.TEXTURE0 + UNIT_PLANES_16);
+    gl.bindTexture(gl.TEXTURE_2D_ARRAY, page.planes16);
+    upload(planes16, PLANE_COUNT_16, gl.UNSIGNED_SHORT);
+    gl.activeTexture(gl.TEXTURE0 + UNIT_PLANES_8);
+    gl.bindTexture(gl.TEXTURE_2D_ARRAY, page.planes8);
+    upload(planes8, PLANE_COUNT_8, gl.UNSIGNED_BYTE);
     textureUploads++;
   };
 
@@ -543,6 +590,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     if (background?.world === source) return;
     releaseBackground();
     const paintRow = Math.ceil(source.height / PALETTE_ROW);
+    resetUnpack();
     const texels = new Uint8Array(PALETTE_ROW * (paintRow + 1) * 4);
     const depth = { surfaceY: source.surfaceY, height: source.height, ...(source.rockY === undefined ? {} : { rockY: source.rockY }) };
     for (let y = 0; y < source.height; y++) texels.set(backgroundColor(y, depth, mapPalette), y * 4);
@@ -585,11 +633,12 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
 
   /** Uniforms of the tile colour function shared by both chunk passes. */
   const setTileUniforms = (uniforms: Readonly<Record<(typeof TILE_UNIFORMS)[number], WebGLUniformLocation>>): void => {
-    gl.uniform1i(uniforms.uWide, UNIT_WIDE);
-    gl.uniform1i(uniforms.uNarrow, UNIT_NARROW);
+    gl.uniform1i(uniforms.uPlanes16, UNIT_PLANES_16);
+    gl.uniform1i(uniforms.uPlanes8, UNIT_PLANES_8);
+    gl.uniform1i(uniforms.uPresent, planeSources?.present ?? 0);
     gl.uniform1i(uniforms.uPalette, UNIT_PALETTE);
     gl.uniform1i(uniforms.uBackground, UNIT_BACKGROUND);
-    gl.uniform1i(uniforms.uVariantColors, UNIT_VARIANTS);
+    gl.uniform1i(uniforms.uRules, UNIT_RULES);
     gl.uniform1i(uniforms.uPaletteLength, paletteUploaded);
     gl.uniform1i(uniforms.uLayers, layers);
     gl.uniform3iv(uniforms.uWireColors, wireColorUniform);
@@ -613,7 +662,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       const originY = chunk.y * CHUNK_SIZE;
       instanceData.set([
         originX, originY, Math.min(CHUNK_SIZE, source.width - originX), Math.min(CHUNK_SIZE, source.height - originY),
-        slot % PAGE_LAYERS,
+        slot % CHUNKS_PER_PAGE,
       ], index * INSTANCE_INTS);
     });
     gl.bindVertexArray(resources.instanceArray);
@@ -623,15 +672,15 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     let calls = 0;
     let start = 0;
     while (start < sorted.length) {
-      const pageIndex = Math.floor((sorted[start]?.[1] ?? 0) / PAGE_LAYERS);
+      const pageIndex = Math.floor((sorted[start]?.[1] ?? 0) / CHUNKS_PER_PAGE);
       let end = start + 1;
-      while (end < sorted.length && Math.floor((sorted[end]?.[1] ?? 0) / PAGE_LAYERS) === pageIndex) end++;
+      while (end < sorted.length && Math.floor((sorted[end]?.[1] ?? 0) / CHUNKS_PER_PAGE) === pageIndex) end++;
       const page = pages[pageIndex];
       if (page !== undefined) {
-        gl.activeTexture(gl.TEXTURE0 + UNIT_WIDE);
-        gl.bindTexture(gl.TEXTURE_2D_ARRAY, page.wide);
-        gl.activeTexture(gl.TEXTURE0 + UNIT_NARROW);
-        gl.bindTexture(gl.TEXTURE_2D_ARRAY, page.narrow);
+        gl.activeTexture(gl.TEXTURE0 + UNIT_PLANES_16);
+        gl.bindTexture(gl.TEXTURE_2D_ARRAY, page.planes16);
+        gl.activeTexture(gl.TEXTURE0 + UNIT_PLANES_8);
+        gl.bindTexture(gl.TEXTURE_2D_ARRAY, page.planes8);
         // No base instance in WebGL2: each page's instances start at an attribute offset.
         gl.vertexAttribIPointer(RECT_ATTRIBUTE, 4, gl.INT, stride, start * stride);
         gl.vertexAttribIPointer(LAYER_ATTRIBUTE, 1, gl.INT, stride, start * stride + 16);
@@ -847,8 +896,8 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       gl.bindTexture(gl.TEXTURE_2D, resources.palette);
       gl.activeTexture(gl.TEXTURE0 + UNIT_BACKGROUND);
       gl.bindTexture(gl.TEXTURE_2D, background?.texture ?? null);
-      gl.activeTexture(gl.TEXTURE0 + UNIT_VARIANTS);
-      gl.bindTexture(gl.TEXTURE_2D, resources.variantColors);
+      gl.activeTexture(gl.TEXTURE0 + UNIT_RULES);
+      gl.bindTexture(gl.TEXTURE_2D, resources.rules);
       drawCalls += drawInstances(source, ready);
       const drawnKeys = new Set(ready.map(([chunk]) => keyOf(chunk)));
       drawn = visible.filter((chunk) => drawnKeys.has(keyOf(chunk)));
@@ -883,10 +932,11 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     freeSlots.length = 0;
     nextSlot = 0;
     paletteUploaded = 0;
-    resetVariants();
+    // A new context starts with the default unpack state.
+    unpackWorld = null;
     background = null;
     overview = null;
-    resources = createResources(gl);
+    resources = createResources(gl, rules);
     schedule();
   };
   canvas.addEventListener("webglcontextlost", onContextLost);
@@ -900,7 +950,10 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
         releaseBackground();
         releaseOverview();
         paletteUploaded = 0;
-        resetVariants();
+        planeSources = null;
+        // Also drops the reference that would keep the previous world's planes alive.
+        if (gl.isContextLost()) unpackWorld = null;
+        else resetUnpack();
         world = next;
       }
       schedule();
@@ -930,17 +983,20 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       canvas.removeEventListener("webglcontextlost", onContextLost);
       canvas.removeEventListener("webglcontextrestored", onContextRestored);
       if (!gl.isContextLost()) {
+        // The context outlives this renderer: leave it with the default unpack state.
+        resetUnpack();
         clearChunks();
         releaseOverview();
         for (const program of [resources.chunk, resources.build, resources.overview]) gl.deleteProgram(program.program);
         gl.deleteTexture(resources.palette);
-        gl.deleteTexture(resources.variantColors);
+        gl.deleteTexture(resources.rules);
         gl.deleteBuffer(resources.instances);
         gl.deleteVertexArray(resources.instanceArray);
         gl.deleteVertexArray(resources.emptyArray);
         gl.deleteFramebuffer(resources.framebuffer);
       }
       releaseBackground();
+      unpackWorld = null;
     },
   };
 }
