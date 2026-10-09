@@ -490,11 +490,15 @@ the centre (that side can only be `d` or `x`, because `n` sees the centre as its
 fallback removed the rim. Without the check the centre would draw an open edge against an outline (example 14).
 Examples 8 and 14 show both sides of it (G, R).
 
-**Inputs beyond 3 × 3.** Every tile that is **not** a partner type takes its cell from its 3 × 3. A partner type (dirt,
-ash, snow, …) additionally needs **one bit per relative edge neighbour**: whether that neighbour's cell keeps its rim.
-Implementations frame in **two passes**: first all non-partner tiles from their 3 × 3, then partner tiles from their
-3 × 3 plus those bits. An edit invalidates a 5 × 5 area around the changed tile. R: framing in two passes, in one
-pass and with the game's own range framing gives identical cells.
+**Inputs beyond 3 × 3.** A tile without relatives takes its cell from its 3 × 3. A tile with relatives (dirt beside
+stone, …) additionally needs **one bit per relative edge neighbour**: whether that neighbour's cell keeps its rim.
+Relatives chain (below: up to five steps, dirt → sand → hardened sand → sandstone → desert fossil → 407), so
+implementations frame in **passes by depth**: a type of depth 0 has no relatives, a type of depth `k` frames after its
+relatives, all of depth below `k`. For the common case (stone, ores, … with depth 0 and dirt with depth 1) that is two
+passes. A tile of depth `k` depends on the tiles up to `k + 1` away, so an edit invalidates the `(2k + 3)²` area
+around the changed tile for the deepest `k` there: 5 × 5 for dirt and stone, at most 13 × 13 along the sand chain. R:
+framing in two passes, in one pass and with the game's own range framing gives identical cells (for the observed
+pairs).
 
 **Implementation (`frameBlock`, `packages/renderer/src/framing/frame-block.ts`).** The letters come from the
 database, never from a list of types:
@@ -508,9 +512,8 @@ database, never from a list of types:
   **relative** when the other type sees the centre as its partner and the table connects at corners like itself.
   Any other pair table is looked up directly. Mud beside dirt is one: mud connects to dirt at every edge, even where
   dirt's own cell lost its rim, and draws notches toward dirt in its corners, so it follows no letter.
-- **Passes.** Relatives chain: dirt reads sand's cell, sand reads hardened sand's, and so on through sandstone and
-  desert fossil, up to five steps. The region helper frames each type in the pass after its relatives, so a region
-  needs the tiles up to five away around it (only as far as the deepest type in it needs).
+- **Passes.** The region helper frames each type in the pass after its relatives ("Inputs beyond 3 × 3"), so it frames
+  the tiles up to `k` around the region, for the deepest `k` in it, and reads one more ring of tiles.
 - Neighbours that are not self-framed blocks (furniture, platforms, modded or unknown content) count as absent, but
   they hold up a falling block above them. In a neighbourhood of three or more types, a centre that reads a table
   directly takes its first neighbour of a table-read type as the other type (else its first partner or relative),

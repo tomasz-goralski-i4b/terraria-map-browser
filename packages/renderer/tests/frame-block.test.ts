@@ -170,26 +170,48 @@ describe("frameBlock against the framing database", () => {
 });
 
 describe("variants", () => {
-  test("v1 and v2 of every variant-0 cell a type takes are the database's", () => {
+  test("v1 and v2 of every variant-0 cell a type takes, alone and beside every other type, are the database's", () => {
     let checked = 0;
+    let uncovered = 0;
     for (const type of data.blockTypes) {
       if (block(type).variantIgnoredByPosition === true) continue;
+      // One other type per table the centre reads (alone: null); relatives with their rims kept and with none.
+      const others = new Map<string, number | null>([["alone", null]]);
+      for (const other of data.blockTypes) {
+        const char = relationChar(type, other);
+        if (other !== type && isTableChar(char) && !others.has(char)) others.set(char, other);
+      }
       const seen = new Set<string>();
-      for (let code = 0; code < 6561; code++) {
-        const digits = digitsOf(code);
-        if (digits.includes(2)) continue;
-        const v0 = frameDigits(type, -1, digits, ...REFERENCE);
-        if (v0 === null || seen.has(`${String(v0.column)},${String(v0.row)}`)) continue;
-        seen.add(`${String(v0.column)},${String(v0.row)}`);
-        for (const [variant, position] of [[1, VARIANT_1], [2, VARIANT_2]] as const) {
-          const expected = database.blockVariant(type, [v0.column, v0.row], variant) ?? [v0.column, v0.row];
-          expect(asTuple(frameDigits(type, -1, digits, position[0], position[1])), `${String(type)} v${String(variant)}`).toEqual(expected);
-          checked++;
+      for (const other of others.values()) {
+        for (const rims of other === null ? [0] : [0, 15]) {
+          for (let code = 0; code < 6561; code++) {
+            const digits = digitsOf(code);
+            if (digits.includes(2) !== (other !== null)) continue;
+            const neighbours = digits.map((digit) => (digit === 0 ? -1 : digit === 1 ? type : other ?? -1));
+            const at = (x: number, y: number): SheetCell | null =>
+              framing.frameBlock({ type, shape: 0, x, y, neighbours, rimsTowardCentre: rims });
+            const v0 = at(...REFERENCE);
+            if (v0 === null || seen.has(`${String(v0.column)},${String(v0.row)}`)) continue;
+            seen.add(`${String(v0.column)},${String(v0.row)}`);
+            for (const [variant, position] of [[1, VARIANT_1], [2, VARIANT_2]] as const) {
+              const expected = database.blockVariant(type, [v0.column, v0.row], variant) ?? [v0.column, v0.row];
+              expect(asTuple(at(position[0], position[1])), `${String(type)} v${String(variant)}`).toEqual(expected);
+              checked++;
+            }
+          }
         }
       }
+      // Every variant-0 cell of the type's variant map is one frameBlock gives (the map also lists UNSTABLE_CELL).
+      const map = inflate(data.variantMaps[block(type).variants] ?? "");
+      for (let at = 0; at + 2 < map.length; at += 3) {
+        const cell = data.cells[map.charCodeAt(at) - 48];
+        if (cell === undefined || (cell[0] === 63 && cell[1] === 63)) continue;
+        if (!seen.has(`${String(cell[0])},${String(cell[1])}`)) uncovered++;
+      }
     }
-    expect(checked).toBeGreaterThan(333 * 20);
-  });
+    expect(checked).toBeGreaterThan(333 * 40);
+    expect(uncovered).toBe(0);
+  }, 120_000);
 
   test("the variant is (7x + 11y) mod 3 and never random", () => {
     const random = vi.spyOn(Math, "random");
@@ -409,7 +431,7 @@ describe("the two-pass helper over a tile region", () => {
     const SAND = 53;
     const world = createWorld(12, 12);
     world.setTile(4, 4, { block: { kind: "vanilla", id: SAND }, wires: 0, actuator: false });
-    world.setTile(4, 5, { block: { kind: "mod", mod: "M", internalName: "Rock" }, wires: 0, actuator: false });
+    world.setTile(4, 5, { block: { kind: "mod", mod: "ExampleMod", internalName: "ExampleBlock" }, wires: 0, actuator: false });
     expect(cellAt(world, 2, 2)).not.toBeNull();
   });
 
@@ -417,7 +439,7 @@ describe("the two-pass helper over a tile region", () => {
     const world = createWorld(3, 3);
     world.setTile(0, 0, { block: { kind: "vanilla", id: DIRT }, wires: 0, actuator: false });
     world.setTile(1, 0, { block: { kind: "vanilla", id: 21 }, wires: 0, actuator: false });
-    world.setTile(2, 0, { block: { kind: "mod", mod: "M", internalName: "X" }, wires: 0, actuator: false });
+    world.setTile(2, 0, { block: { kind: "mod", mod: "ExampleMod", internalName: "ExampleBlock" }, wires: 0, actuator: false });
     const columns = new Int16Array(9);
     const rows = new Int16Array(9);
     framing.frameRegion(world, { left: 0, top: 0, width: 3, height: 3 }, { columns, rows });
