@@ -97,6 +97,13 @@ export interface MapRendererOptions {
   readonly maxCachedChunks?: number;
   /** Map colours (content, paint, background by depth), as in `renderChunk`; without one, placeholders are drawn. */
   readonly mapPalette?: MapPalette;
+  /**
+   * Called with true when the renderer starts preparing its sprite program in the background (KHR_parallel_shader_compile:
+   * seconds on some drivers with a cold shader cache; sprites show map colours meanwhile) and with false when it is
+   * ready, or the preparation ends otherwise (context loss, dispose). Without the extension the program is linked at
+   * once and this is never called.
+   */
+  readonly onSpritesPreparing?: (preparing: boolean) => void;
 }
 
 export interface MapRendererStats {
@@ -125,6 +132,8 @@ export interface MapRendererStats {
    * a sprite zoom, and the cached cells of the 3 × 3 areas `invalidateTiles` recomputes.
    */
   readonly framedWalls: number;
+  /** Whether the sprite program is being prepared in the background (MapRendererOptions.onSpritesPreparing). */
+  readonly spritesPreparing: boolean;
 }
 
 export interface MapRenderer {
@@ -191,6 +200,8 @@ const CHUNKS_PER_PAGE = 32;
 const PAGE_SIZE = CHUNK_SIZE + 2 * PAGE_APRON;
 /** Ints per instance: the chunk rectangle (origin x, origin y, columns, rows) and its page layer. */
 const INSTANCE_INTS = 5;
+/** How often a sprite program linked in the background is asked whether it is done. */
+const LINK_POLL_MILLISECONDS = 50;
 /** The smallest overview factor: one overview texel per 2 × 2 tiles, used below half a pixel per tile. */
 const MIN_OVERVIEW_FACTOR = 2;
 
@@ -519,6 +530,8 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   // The sprite program while the driver links it in the background (KHR_parallel_shader_compile, where offered).
   let spriteLinking: Linking | null = null;
   let parallelCompile = parallelShaderCompile(gl);
+  // The timer that asks whether the background link is done; 0 when none is pending.
+  let linkPoll = 0;
   let world: RenderableWorld | null = null;
   let cacheCapacity = maxCachedChunks;
   let camera: Camera = { x: 0, y: 0, zoom: 1 };
@@ -1044,14 +1057,57 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
    */
   const spriteProgramOf = (wait: boolean): Program<(typeof SPRITE_CHUNK_UNIFORMS)[number]> | null => {
     if (spriteProgram !== null) return spriteProgram;
-    spriteLinking ??= startLink(gl, chunkVertexSource, chunkSpriteFragmentSource);
-    // Linking it takes seconds on some drivers (D3D11 with a cold shader cache): animation frames do not wait for it.
-    const done = wait || parallelCompile === null
-      || (gl.getProgramParameter(spriteLinking.program, parallelCompile.COMPLETION_STATUS_KHR) as boolean);
-    if (!done) return null;
+    startSpriteLink();
+    if (spriteProgram !== null) return spriteProgram;
+    return wait || spriteLinkDone() ? finishSpriteLink() : null;
+  };
+
+  /**
+   * Starts linking the sprite program: with KHR_parallel_shader_compile in the background (it takes seconds on some
+   * drivers, D3D11 with a cold shader cache), reported through onSpritesPreparing and polled until it is done; without
+   * it at once.
+   */
+  const startSpriteLink = (): void => {
+    if (spriteProgram !== null || spriteLinking !== null) return;
+    spriteLinking = startLink(gl, chunkVertexSource, chunkSpriteFragmentSource);
+    if (parallelCompile === null) {
+      finishSpriteLink();
+      return;
+    }
+    options?.onSpritesPreparing?.(true);
+    const poll = (): void => {
+      linkPoll = 0;
+      if (spriteLinking === null || disposed || gl.isContextLost()) return;
+      if (!spriteLinkDone()) {
+        linkPoll = window.setTimeout(poll, LINK_POLL_MILLISECONDS);
+        return;
+      }
+      finishSpriteLink();
+      schedule();
+    };
+    linkPoll = window.setTimeout(poll, LINK_POLL_MILLISECONDS);
+  };
+
+  const spriteLinkDone = (): boolean => spriteLinking === null || parallelCompile === null
+    || (gl.getProgramParameter(spriteLinking.program, parallelCompile.COMPLETION_STATUS_KHR) as boolean);
+
+  /** Waits for the sprite program's link (if it is still running) and keeps the program. */
+  const finishSpriteLink = (): Program<(typeof SPRITE_CHUNK_UNIFORMS)[number]> => {
+    if (spriteProgram !== null) return spriteProgram;
+    if (spriteLinking === null) throw new Error("the sprite program is not being linked");
+    const inBackground = parallelCompile !== null;
     spriteProgram = finishLink(gl, spriteLinking, SPRITE_CHUNK_UNIFORMS);
-    spriteLinking = null;
+    endSpriteLink(inBackground);
     return spriteProgram;
+  };
+
+  /** Forgets the pending link and its poll; reports the end of a background one. */
+  const endSpriteLink = (background: boolean): void => {
+    const pending = spriteLinking !== null;
+    spriteLinking = null;
+    window.clearTimeout(linkPoll);
+    linkPoll = 0;
+    if (pending && background) options?.onSpritesPreparing?.(false);
   };
 
   /** Uniforms of the tile colour function shared by both chunk passes; `sprites` those of the sprite program. */
@@ -1429,7 +1485,8 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     overview = null;
     resources = createResources(gl, rules);
     spriteProgram = null;
-    spriteLinking = null;
+    // A background link died with the context; the next sprite frame (or atlas) starts another.
+    endSpriteLink(parallelCompile !== null);
     parallelCompile = parallelShaderCompile(gl);
     halfAtlasProgram = null;
     // The atlas died with the context too: upload it again (its sheets follow the palette's next upload).
@@ -1470,7 +1527,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       if (!gl.isContextLost()) {
         applyAtlas(next);
         // Linking starts now, while the assets arrive, rather than on the first sprite frame.
-        if (next !== null && spriteProgram === null) spriteLinking ??= startLink(gl, chunkVertexSource, chunkSpriteFragmentSource);
+        if (next !== null) startSpriteLink();
       }
       schedule();
     },
@@ -1538,6 +1595,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       textureUploads, drawCalls, visibleChunks: drawn, residentChunks: chunks.size, evictedChunks, atlasUploads,
       framedTiles: framedBefore + (cellCache?.framedTiles ?? 0),
       framedWalls: framedWallsBefore + (wallCache?.framedTiles ?? 0),
+      spritesPreparing: spriteLinking !== null,
     }),
     dispose: () => {
       if (disposed) return;
@@ -1563,6 +1621,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
         gl.deleteVertexArray(resources.emptyArray);
         gl.deleteFramebuffer(resources.framebuffer);
       }
+      endSpriteLink(parallelCompile !== null);
       releaseBackground();
       unpackWorld = null;
     },

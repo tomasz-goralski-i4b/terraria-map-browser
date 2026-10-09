@@ -131,7 +131,10 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
   const start = (canvas: HTMLCanvasElement): (() => void) | null => {
     let renderer: MapRenderer;
     try {
-      renderer = createMapRenderer(canvas, { mapPalette: terrariaMapPalette });
+      renderer = createMapRenderer(canvas, {
+        mapPalette: terrariaMapPalette,
+        onSpritesPreparing: (preparing) => { useViewStore.getState().setSpritesPreparing(preparing); },
+      });
     } catch (cause) {
       // Creating the renderer needs the mounted canvas, so its failure is only known after mounting.
       setError(cause instanceof Error ? cause.message : String(cause));
