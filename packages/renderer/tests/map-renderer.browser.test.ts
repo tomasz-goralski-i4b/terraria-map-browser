@@ -359,7 +359,7 @@ describe("GPU output equals renderChunk for multi-option content", () => {
     };
   }
 
-  test.each(layerCombos)("layers %o with a map palette at 1 pixel per tile", (layers) => {
+  test.each(layerCombos)("layers %o with a map palette at 1 pixel per tile", { tags: ["perf"] }, (layers) => {
     const framed = framedWorld(300, 400);
     const canvas = makeCanvas(300, 400);
     const renderer = makeRenderer(canvas, { mapPalette: syntheticMapPalette });

@@ -20,11 +20,8 @@ words.
 | A6 | MonoGame `MonoGame.Framework/Content/LzxDecoder.cs` (C# port of libmspack `lzxd.c`) | `55b5621b` | LZX bitstream: window 60–103, header 146–155, block header 160–210, tree lengths 585–625, bit reader 649–700, constants 750–770 |
 | A7 | [libmspack](https://github.com/kyz/libmspack) `libmspack/mspack/lzxd.c` | `55d50197` | the original LZX decoder A6 was ported from (not read line by line in this spike) |
 | A8 | [TEdit](https://github.com/TEdit/Terraria-Map-Editor) `src/TEdit/View/WorldRenderXna.xaml.cs` | `99928583` | wall source rectangle 4282–4297, frame-important tile source rectangle 4737 |
-| A9 | TEdit `src/TEdit.Terraria/Render/WallFraming.cs` | `99928583` | wall framing (port of `Framing.WallFrame`, 1.4.5.4): variant patterns 15–29, table 40–80, neighbours 86–119, variant choice 135–153 |
-| A10 | TEdit `src/TEdit/Render/BlendRules.cs` | `99928583` | block self-framing rules: 93–113 (diagonal-sensitive rules 109–112); cell notation 401–415 |
 | A11 | TEdit `src/TEdit.Terraria/Objects/TileProperty.cs` | `99928583` | defaults `TextureGrid 16×16`, `FrameGap 2×2`: lines 95–96 |
 | A12 | TEdit `src/TEdit.Terraria/Data/tiles.json` | `99928583` | per-tile `textureGrid`, `frameGap`, `frameSize`, `isFramed`, `isAnimated` (754 entries, ids 0–753); dirt line 3, torch 98, tree 256, chair 867, chest 3084 |
-| A13 | TEdit `src/TEdit.Terraria/Render/TileFraming.cs` | `99928583` | 8-way framing for gemspark-like tiles: lines 6–36 |
 | L | Local install: Steam app 105600, build id `24893155`, `changelog.txt` line 1 "Version 1.4.5.8" | checked 2026-10-07 | counts and header bytes only (see "Local install") |
 | F | [docs/file-format/tiles.md](file-format/tiles.md) ("Record layout"), [vectors.md](file-format/vectors.md) (T6) | this repo | which tiles store `frameX`/`frameY` in the `.wld` |
 
@@ -210,54 +207,53 @@ open question (deferred).
 Where `frameX`/`frameY` come from:
 
 - **Frame-important tile ids** — read from the `.wld` record (F, "Record layout"). The renderer uses them as stored.
-- **Other blocks** — the `.wld` stores **no** frame; Terraria recomputes it on load from the neighbours
-  ("self-framing"). The renderer has to do the same (A10). The base rule set picks one of 16 neighbour cases from the
-  four direct neighbours of the same type, then one of three variants. Cell names in A10 are `<row letter><1-based
-  column>`, so `B2`–`B4` = cells (1,1), (2,1), (3,1) → `frameX/frameY` (18,18), (36,18), (54,18).
-- **Diagonal rules.** When all four direct neighbours are the same type, A10 (lines 109–112) first tries
-  four higher-priority rules that also look at the diagonals: top-left and bottom-left missing → `A11`–`C11`;
-  top-right and bottom-right missing → `A12`–`C12`; both top diagonals missing → `B7`–`B9`; both bottom diagonals
-  missing → `C7`–`C9`. Only if none matches does `B2`–`B4` apply. The first M4 renderer ignores these rules and
-  always uses `B2`–`B4` for the four-neighbour case; worked example 1 therefore states all eight neighbours, so that
-  it matches the source as well. The full rules (diagonals, merge partners, slopes) are in "Tile framing" below,
-  which supersedes this summary for the framing follow-up.
+- **Other blocks** — the `.wld` stores **no** frame; Terraria computes it on load from the neighbours
+  ("self-framing"), and the renderer has to do the same. "Tile framing" below gives the rules (neighbours, diagonal
+  corners, merging, slopes, variants) and the framing database that holds the game's own result for every
+  neighbourhood. For example a dirt block with dirt on all eight neighbours takes cell (1,1), (2,1) or (3,1) by its
+  variant → `frameX/frameY` (18,18), (36,18), (54,18).
 
 ### Walls (`Wall_<id>`)
 
-A wall cell is **32 × 32** with a 4-pixel gutter, **stride 36** (A8 4294–4295, A9 45). The `.wld` stores no wall
-frame; it is computed from the four direct neighbours (A9 86–119):
+A wall cell is **32 × 32** with a 4-pixel gutter, **stride 36**: the frames the game writes are multiples of 36 (R).
+The `.wld` stores no wall frame; the game computes it from the neighbours (R, [ADR 0003](adr/0003-observe-framing-in-the-game.md)):
 
-1. `index` = N·1 + W·2 + E·4 + S·8, where a neighbour counts if it has a wall, or an active tile of a
-   "truncates walls" type (A9 13: 54, 328, 459, 748). Tiles on the world border use cell (0,0).
-2. If `index = 15`, add a centre sub-pattern chosen by `(x mod 3, y mod 3)` (A9 31–37; values 0–4).
-3. A variant number picks a column of the table (A9 135–153):
-   - **Ordinary walls** (`LargeFrameType = 0`): variant **0–2** only. Terraria picks it randomly when the wall is
-     framed and the `.wld` does not store it; TEdit substitutes the deterministic `(7x + 11y) mod 3` (A9 150–153).
-   - **Large-frame walls** (`LargeFrameType` 1 or 2, a per-wall property): variant **0–3**, taken from a fixed
-     repeating pattern over `(x, y)` — 3 tiles wide × 4 high for type 1, 2 × 2 for type 2 (A9 15–29, 144–148).
-     Only these walls use variant 3, whose cells lie in rows 5–6 (A9 60–79, fourth pair).
-4. The (index, variant) table (A9 60–79) gives a cell `(column, row)`. For variants 0–2 every cell lies in rows 0–4,
-   i.e. inside a 468 × 180 sheet.
+1. **Neighbours.** Only the four side neighbours count; the diagonals never change the cell (R: 0 of the 6 561
+   neighbourhoods of each of the 366 walls). A side neighbour counts when it has **any** wall (another wall type counts
+   exactly like the same wall) or an active block of type 54, 328, 459 or 748.
+2. **Interior.** A wall whose four sides all count takes its cell by position, repeating every 3 tiles in both
+   directions. At variant 0, by `(x mod 3, y mod 3)`:
 
-**M4 rule:** ordinary walls use variant `(7x + 11y) mod 3` (the same substitute as TEdit, so the result is in 0–2
-and never leaves rows 0–4); large-frame walls are deferred and drawn with the same 0–2 rule until a follow-up adds
-their patterns and confirms their sheets have rows 5–6.
+   | | x mod 3 = 0 | 1 | 2 |
+   |---|---|---|---|
+   | **y mod 3 = 0** | (6,2) | (1,1) | (1,1) |
+   | **1** | (1,1) | (6,1) | (10,0) |
+   | **2** | (1,1) | (11,0) | (1,1) |
+
+3. **Variant.** Ordinary walls (344 of 366) take a random variant whenever they are framed, as blocks do; the cells of
+   every variant are in rows 0–4. The viewer uses `(7x + 11y) mod 3` (chosen, as for blocks).
+4. **Large-frame walls** (22) ignore the variant and take their cells by position, using row 5 as well: 146, 147,
+   167, 179 and 354 repeat every **3 × 12** tiles; 17, 185, 224, 274, 323–330, 355, 358, 359, 362, 363 and 366 every
+   **6 × 6**.
+
+The framing database holds every wall's cell for all 6 561 neighbourhoods, its interior cells at 12 × 12 positions
+and its variant map, so these rules can be checked against it.
 
 ```text
 source = (x = 36 × column, y = 36 × row, w = 32, h = 32)
-dest   = top-left at (16 × tileX − 8, 16 × tileY − 8)        // a 32×32 sprite centred on the 16×16 tile
+dest   = top-left at (16 × tileX − 8, 16 × tileY − 8)        // a 32×32 sprite centred on the 16×16 tile (A8)
 ```
 
 ### Worked examples
 
 | # | Case | Input | Source rectangle (x, y, w, h) | Basis |
 |---|---|---|---|---|
-| 1 | Dirt, `Tiles_0` (not frame-important), dirt on all eight neighbours (four sides and four diagonals), variant 0 | computed frame (18, 18) | **(18, 18, 16, 16)** → pixels 18–33 × 18–33 | A10 rule `B2`–`B4` (no diagonal rule matches), stride 18 |
-| 2 | Dirt, only a right-hand neighbour, variant 0 | computed frame (162, 0) | **(162, 0, 16, 16)** | A10 rule `A10`–`C10`: column 9 × 18 = 162 |
+| 1 | Dirt, `Tiles_0` (not frame-important), dirt on all eight neighbours (four sides and four diagonals), variant 0 | computed frame (18, 18) | **(18, 18, 16, 16)** → pixels 18–33 × 18–33 | R ("Tile framing", example 5), stride 18 |
+| 2 | Dirt, only a right-hand neighbour, variant 0 | computed frame (162, 0) | **(162, 0, 16, 16)** | R ("Tile framing", example 2): column 9 × 18 = 162 |
 | 3 | Torch, `Tiles_4` (frame-important, grid 20×20, gap 2) | `.wld` vector T6: `frameX 0, frameY 66` | **(0, 66, 20, 20)** — style row 66 / 22 = 3 | F (T6), A12 line 98 |
 | 4 | Chest, `Tiles_21` (frame-important 2×2 object, grid 16, gap 2), style `s`, part `(dx, dy)` | `frameX = 36s + 18dx`, `frameY = 18dy` | style 1, bottom-right: **(54, 18, 16, 16)** | A12 line 3084 (`frameSize 2×2`) |
-| 5 | Stone wall, `Wall_1`, no wall neighbours, variant 0 | index 0 → cell (9, 3) | **(324, 108, 32, 32)** | A9 line 60 |
-| 6 | Wall with all four neighbours at `x mod 3 = 0`, `y mod 3 = 1` (centre sub-pattern 0), variant 0 | index 15 → cell (1, 1) | **(36, 36, 32, 32)** | A9 lines 34, 75 |
+| 5 | Stone wall, `Wall_1`, no wall neighbours, variant 0 | cell (9, 3) | **(324, 108, 32, 32)** | R (framing database) |
+| 6 | Wall with all four neighbours at `x mod 3 = 0`, `y mod 3 = 1`, variant 0 | cell (1, 1) | **(36, 36, 32, 32)** | R (framing database) |
 
 Expected sheet sizes (consistent with the size arithmetic, confirmed only by the opt-in test): `Tiles_0`
 288 × 270 = 16 × 15 cells of 18; `Wall_1` 468 × 180 = 13 × 5 cells of 36.
@@ -268,63 +264,58 @@ Expected sheet sizes (consistent with the size arithmetic, confirmed only by the
 |---|---|---|
 | Frame-important tiles with a 16×16 grid (most furniture, multi-tile objects) | draw each tile's own cell at `(frameX, frameY)`; multi-tile objects need nothing extra because every tile carries its own frame | — |
 | Frame-important tiles with other grids (torches, plants, …) | draw with the tile's `textureGrid` size | exact per-id draw offsets |
-| Non-frame-important blocks | base self-framing (same-type neighbours, 16 cases × 3 variants, deterministic variant) | diagonal corners, blending with merge partners, slopes and half blocks: specified in "Tile framing", implemented by its follow-up; grass rules and 8-way framing for gemspark-like tiles (A13) stay deferred |
-| Walls | 4-neighbour framing with the table above, variant `(7x + 11y) mod 3` (0–2, rows 0–4 only) | Terraria's random variant, the variant patterns of `LargeFrameType` 1/2 walls (variant 3, rows 5–6) |
+| Non-frame-important blocks | map colours | framing by "Tile framing" and its database (#141, #146), grass and moss included |
+| Walls | map colours | framing by "Walls" and the framing database (#147) |
 | Animated tiles (173 ids flagged `isAnimated` in A12, all frame-important) | draw the stored frame (static) | animation |
 | Trees (5, 323, …), tree tops/branches, variant sheets (`Tiles_5_N`, `Tiles_2_Beach`, `Tiles_59_2`, …) | placeholder | yes |
 | Paint, actuated/inactive tint, illumination, liquids, wires | — | yes |
 
 ## Tile framing
 
-This section explains how a block whose frame is **not** stored in the `.wld` picks its cell in `Tiles_<id>`. It
-refines the "Other blocks" and "Diagonal rules" notes in "Sprite layout" and covers diagonal corners, blending with a
-merge partner (for example stone ↔ dirt), slopes, half blocks and the variant. "Grass and moss sheets" adds the
-taller sheets and the grass rules (cited, with the art as a check). Gemspark 8-way framing and the 13 non-block
-self-framed ids (vines, beams, …) stay deferred (see "Not covered").
+This section explains how a block or wall whose frame is **not** stored in the `.wld` picks its cell: diagonal
+corners, merging with other types (for example stone ↔ dirt), slopes and half blocks, the variant, grass and moss,
+large-frame blocks, walls. Cactus, vines, beams and the other non-block self-framed ids stay deferred ("Not covered").
 
-**How we derived it.** The cell catalogue (what each cell of a sheet *looks like*) was **measured from the game's own
-sheet art** (S). The selection rule is ours: draw the cell whose look matches the neighbourhood. TEdit was used in two
-ways only. It is the cited source for the neighbour classes and the corner priority, which the art cannot decide.
-Afterwards its rule list and edge table (A10) served as a **cross-check** (X) of the measured result. No TEdit table
-was converted into ours. Every numeric value below comes from the measurement or from arithmetic on it.
+**How we derived it.** Everything here comes from the game itself, observed as a black box, and from the game's own
+sheet art. The **cell catalogue** (what each cell of a sheet looks like) is **measured from the art** (S). The
+**selection** (which cell the game gives which neighbourhood) is **observed at runtime** (R, [ADR 0003](adr/0003-observe-framing-in-the-game.md)):
+the installed game's framing is called on synthetic tiles and the frames it writes are recorded, for every
+neighbourhood of every pair of self-framed types. The result is committed as the **framing database**
+(`packages/renderer/src/framing/terraria-framing.generated.ts`); the rules below are our own description of it and
+are checked against it. In-game screenshots (G) were the first check and stay as history. No rule, table or value
+comes from another editor's code or data.
 
 ### Sources and evidence
 
 | Id | Source | Revision | Used for |
 |---|---|---|---|
-| A8 | TEdit `src/TEdit/View/WorldRenderXna.xaml.cs` | `99928583` | block path 5709–5813: which tiles take it 5709, "not pixel-perfect" note 5725, cobweb 5729–5735, stone family 5736–5746, merge test 5747–5766, edge check against the neighbour's cell 5768–5783, merge-partner mask 5784–5795, grass switch 5796–5799, variant 5801, source rectangle 5813; half block and slope drawing 5899–5954 |
-| A10 | TEdit `src/TEdit/Render/BlendRules.cs` | `99928583` | cross-check only: rule list 93–179, open-edge table 44–67, rule matching 418–451; random variant 41 and 253–256; deterministic variant 258–264. **Cited** for grass: grass rule list 150–249, grass lookup with its fallback 285–303, relaxed corner matching 454–505 |
-| A13 | TEdit `src/TEdit.Terraria/Render/TileFraming.cs` | `99928583` | gemspark ids 15–16; open faces per block shape 43–51; variant choice 277–289 (large-frame patterns 18–32) |
-| A14 | TEdit `src/TEdit.Terraria/Objects/TileProperty.cs` | `99928583` | `Merges` 162–178 (how TEdit connects two tiles) |
-| A12 | TEdit `src/TEdit.Terraria/Data/tiles.json` | `99928583` | per-id `isFramed`, `canBlend`, `isStone`, `isGrass`, `mergeWith`, `largeFrameType`; dirt line 3, stone 14, grass 27, corrupt grass 3165, cobweb 4131, ash 4206, hellstone 4217, mud 4230, jungle grass 4242, green moss 7900, coralstone 10492, corrupt/crimson jungle grass 17680/17693 |
-| F | [header.md](file-format/header.md) (frame-important bitset), [tiles.md](file-format/tiles.md) ("Record layout", byte-2 bits 4–6 = block shape) | this repo | which ids are framed at runtime; the shape values 0–5 |
+| F | [header.md](file-format/header.md) (frame-important bitset), [tiles.md](file-format/tiles.md) ("Record layout", byte-2 bits 4–6 = block shape) | this repo | which ids store their frames; the shape values 0–5 |
 | S | **Sheet art**: local install L (1.4.5.8), sheets decoded with `packages/assets` and measured with [`packages/assets/tools/measure-tile-sheets.ts`](../packages/assets/tools/measure-tile-sheets.ts) (prints to the terminal; no pixels are saved) | measured 2026-10-07 and (layout agreement, grass and moss, large-frame sheets) 2026-10-08 | the cell catalogue ("Measuring the sheet", "Grass and moss sheets") |
-| X | **Cross-check**: the selection rule and A10's rule list, both evaluated over every neighbourhood by a one-off script that is deliberately **not** committed, because it had to encode A10's rule list. The grass run evaluates A10's grass lookup the same way | run 2026-10-07, grass 2026-10-08 | agreement figures quoted where used; the cells of the grass examples |
-| G | **In-game check** of v2 and v3 Frozen observation worlds, generated from `SJCO1` | user screenshots, 2026-10-08 20:27–20:29 and 20:59–21:01; disposable game saves | [Observation results](#observation-results-2026-10-08) and [Frozen-world results](#frozen-world-results): ore seams/rims, missing-rim fallback, corner priority, shape neighbours and growth control |
+| G | **In-game check** of v2 and v3 Frozen observation worlds, generated from `SJCO1` | user screenshots, 2026-10-08 20:27–20:29 and 20:59–21:01; disposable game saves | [Observation results](#observation-results-2026-10-08) and [Frozen-world results](#frozen-world-results) |
+| R | **Runtime observation** ([ADR 0003](adr/0003-observe-framing-in-the-game.md)): the installed game's `WorldGen.TileFrame` and `Framing.WallFrame` called on synthetic tiles by [`scripts/framing/observe.ps1`](../scripts/framing/observe.ps1); only the frames they write are recorded | L (1.4.5.8), 2026-10-09 | every rule below; the [framing database](#the-framing-database); [Runtime observation results](#runtime-observation-results-2026-10-09) |
 
-TEdit names seancode's Terrafirma UV notes as the origin of its rule list (A10 82–85). We could not reach a pinned
-revision of that page, so it is not used. Nothing below comes from decompiled game code. Evidence marks: **S**
-(measured in the art), **X** (agrees with TEdit), **cited** (taken from a TEdit rule, restated), **chosen** (our
-decision where neither art nor source decides). **G** records only the cases actually visible in the screenshots;
-it does not establish a general rule for unobserved neighbourhoods or reload behaviour.
+Evidence marks: **S** (measured in the art), **G** (seen in a screenshot; only the cases visible there), **R**
+(observed at runtime: exact, because it reads the frame the game writes, so pixel-identical cells are told apart),
+**chosen** (our decision where the game leaves a choice, such as the variant). R never reads code: the game is a
+black box called on our own input. Nothing here comes from decompiled game code.
 
 ### Which tiles are framed at runtime
 
 - **Frame-important ids** (header bitset, F) store `frameX`/`frameY` and never take this path.
-- All **other** ids are framed from their neighbours when the world loads. In A12 that is **342** ids (`isFramed`
-  absent):
-  - **329** carry `canBlend`. **301** of them use the block framer of this section (A8 5709): dirt, stone, ores,
-    sand, bricks, wood and similar blocks. The other 28 are two sub-families:
-    - **18 gemspark ids** use a separate 8-way framer (A13 15–16), deferred;
-    - **10 grass ids** (`isGrass`: 2, 23, 60, 70, 109, 199, 477, 492, 661, 662) use extra grass rules (cited in
-      "Grass and moss sheets");
-  - **13 ids** without `canBlend` (cactus 80, vines, beams, columns, decorative cobweb 697, …) have their own
-    framing, deferred.
-- Sheet sizes (S): dirt, stone and most blocks use **288 × 270** = 16 columns × 15 rows of 18-pixel cells.
-  **21 dirt-partner ids** have **288 × 396** sheets (22 rows): they are all **moss** (A12 names: moss blocks 179–183,
-  534, 536, 539, 625, 627; moss bricks 512–517, 535, 537, 540, 626, 628), and they share the layout of the grass
-  sheets, which are 288 × 396 too (`Tiles_2` is 288 × 1980). See "Grass and moss sheets". The 24 large-frame ids
-  use **234 × 180** sheets (see "Variant").
+- **333 block types** frame from their neighbours (R: every type whose 3 × 3 centre takes an interior cell, in five trials out of five, when framed
+  by the game). They are listed in the framing database (`blockTypes`): dirt, stone, ores, sand, bricks, wood, grass,
+  moss, gemspark and the other placeable blocks. Each has its tables there.
+- **Falling blocks** among them (sand, ebonsand, pearlsand, crimsand, silt, slush, shell piles and the four coin piles) fall when nothing is
+  below them, so the game never frames them in such a place. R observes them standing on a stone floor below the
+  neighbourhood's bottom row (outside the centre's 3 × 3); a neighbourhood in which a tile still falls or moves is
+  recorded as **unstable** (cell `(63, 63)`, `UNSTABLE_CELL`) instead of a cell.
+- Other ids that store no frame but have no block interior (cactus 80, vines, beams, columns, …) frame by rules of
+  their own; deferred.
+- **Walls** (every wall type, 366 in 1.4.5.8) frame from their four side neighbours ("Walls" in "Sprite layout").
+- Sheet sizes (S): dirt, stone and most blocks use **288 × 270** = 16 columns × 15 rows of 18-pixel cells. The moss
+  sheets (moss blocks 179–183, 534, 536, 539, 625, 627; moss bricks 512–517, 535, 537, 540, 626, 628) are
+  **288 × 396** (22 rows) and share the layout of the grass sheets, which are 288 × 396 too (`Tiles_2` is 288 × 1980).
+  See "Grass and moss sheets". The 24 large-frame ids use **234 × 180** sheets (see "Variant").
 
 Notation: `(c, r)` is a cell, column `c` and row `r`, both 0-based. Its source rectangle is `(18c, 18r, 16, 16)`
 (stride 18, see "Sprite layout"). x grows to the right and y downwards. N/E/S/W are the edge neighbours and
@@ -390,7 +381,7 @@ Results:
   are different: in dirt they measure as **single notches** in the same corner (for example (0,5) has a notch SE
   where stone has a rim corner SE; (0,9) and (1,9) measure as plain). Whether the game draws them for a dirt tile
   with one missing diagonal is open (O7).
-- **Other dirt-partner sheets.** The 111 self-framed, non-grass ids whose partner is dirt (A12): 21 have taller
+- **Other dirt-partner sheets.** The self-framed, non-grass ids whose partner is dirt (R): 21 have taller
   288 × 396 sheets (moss, see "Grass and moss sheets"). The first pass (`--partner 0 --compare 1`) proved 48 of the
   90 sheets of 288 × 270: **29** match stone cell for cell, and **19** match on every side and rim and differ only
   because the four notch looks are drawn without a notch (bricks, sand, …). The agreement test against stone
@@ -408,7 +399,7 @@ Results:
     art cannot say where a rim belongs (O6).
 
   Result: **88 of the 89** sheets, ash and hellstone share stone's layout of sides and rims (hellstone 732/732, with
-  ash as its partner per A12); whether a sheet draws the four notch looks is per sheet (`--compare 1`). The test
+  ash as its partner, R); whether a sheet draws the four notch looks is per sheet (`--compare 1`). The test
   checks *where* the sheet draws distinct art, not what the rim art shows; that mud's rims look stone-grey rather
   than dirt-brown is therefore still only a visual note.
 
@@ -449,122 +440,118 @@ Every side code except `oooo` belongs to exactly three cells. The 27 `oooo` cell
 | `dooo` | rim corner NW | (1,6) (1,8) (1,10) |
 | `odoo` | rim corner NE | (0,6) (0,8) (0,10) |
 
-**Variant order (chosen):** the three cells of a look are numbered `v0`, `v1`, `v2` in reading order (row first,
-then column). X: TEdit numbers the variants of all 61 looks in the same order.
+**Variant order (R):** the three cells of a look are `v0`, `v1`, `v2` in reading order (row first, then column): the
+game's variant 0, 1 and 2 give exactly these cells (for example dirt (0,3) → (2,3), (4,3); stone (9,7) → (9,8), (9,9)).
+The database holds the full variant map of every type.
 
 ### Neighbour classes
 
-#### Viewer contract (chosen; the basis of the follow-up)
+A neighbour with no active tile, or outside the world, is **absent** (`x`). For a present neighbour, R shows that
+every self-framed type `t` treats every other self-framed type `u` in exactly one of four ways, over all 6 561
+neighbourhoods of `t` with `u` (the framing database records which way for all 333 × 332 pairs):
 
-Each of the 8 neighbours `n` of a centre of type `t` gets one wanted letter. Apply the first rule that holds:
+1. **Like itself** (`o`): `t` frames exactly as if `u` were `t`. This is far wider than a "stone family": stone, for
+   example, treats 212 other types like itself, among them wood, bricks, gem stones and grass.
+2. **Like air** (`x`): `u` is a **seam**. Ores beside other ores or beside stone are seams (copper beside stone and
+   beside iron frame identically, R).
+3. **As its partner** (`d`): `t` draws its rim looks toward `u` (rows 5–14 of the stone layout). Dirt is the partner
+   of 133 types (stone, the ores, sand, bricks, wood, …); ash of hellstone; snow (147) of the ice blocks 161, 163, 164,
+   170, 200, 224, 738; sand (53) of 397 and 747; mud (59) of dirt and of the jungle grasses ("Grass and moss sheets").
+   Stone, copper, hellstone (with ash) and coralstone frame **identically** against their partner.
+4. **As a relative** (own table, no rims): `t` connects to `u` at corners and, at edges, only where `u`'s own cell
+   keeps its rim toward `t` (the **edge check**, below). Dirt sees the 133 types it is the partner of this way; most
+   stone-like blocks see the sand types (53, 112, 116, 234, 495) this way.
 
-1. no active tile, or outside the world → `x`. An actuated tile still counts as present (A8 tests presence only,
-   cited).
-2. `n` has type `t`, or both are in the **stone family** (`isStone`, 33 ids: stone 1, ebonstone 25, pearlstone 117,
-   crimstone 203, gem stones 63–68, …) → `o` (cited, A8 5736–5746).
-3. `n` has type `p`, the centre's **merge partner** (A12 `mergeWith`: dirt 0 for 119 ids, ash 57 for hellstone 58;
-   mud 59 for jungle and mushroom grass) → `d`. Evidence S: every measured dirt-partner sheet carries the 37 rim looks,
-   and only a partner classed as `d` can select them.
-4. `t` is `n`'s merge partner (`n` is a **relative**, e.g. stone or copper seen from dirt) → `o` at a corner. At an
-   edge it is `o` only if the relative's own cell keeps its **rim toward the centre**, otherwise `x` (the **edge
-   check**, see below).
-5. anything else → `x`. This covers ore ↔ ore, ore ↔ stone and brick ↔ ore: the two tiles draw a seam.
-   Cobweb (51, partner `-1` in A12) is the exception: it takes every present neighbour as `o` on edges and `x` on
-   corners (cited, A8 5729–5735).
-
-In vanilla 1.4.5 every partner type in scope (dirt, ash) has no partner of its own. A tile that has a partner is
-therefore never a relative of anything in scope. The only exception is mud, which is the partner of jungle and
-mushroom grass; grass takes its own rules ("Grass and moss sheets"). Because of this the edge check is never nested.
-
-#### How TEdit classifies (cited, for comparison; A8 5729–5795, A14 172–178)
-
-The stone family connects only to the stone family. Every other block connects to a neighbour that is the same type,
-names the centre as its partner, is the centre's partner, or **shares** the centre's partner. For copper,
-dirt is therefore connected **and** in the partner mask at the same time, and iron ore is connected. Comparison (X,
-same script):
-
-- **Stone family and dirt:** our rules and TEdit's give the **same look for all 6 561 stone neighbourhoods**
-  (`o`/`d`/`x` on 8 neighbours) and all 256 dirt neighbourhoods. Every one of the 61 looks is reachable.
-- **Ores and other non-stone blocks:** TEdit connects dirt as well, so it reaches only 4 of the 37 rim looks (the
-  rim corners). A copper vein in a dirt pocket gets the SE-rim-corner cell (0,5), not the full rim (6,11) that the
-  copper sheet provides. Copper next to iron ore joins seamlessly in TEdit and shows a seam under our rule 5.
-- **Ore in stone:** TEdit connects the ore to stone, but its edge check then drops those edges (stone's cell is
-  closed toward the ore). The result is the same as rule 5: an outlined ore.
-
-The ore rows are where the two models really differ. Our rule 3 rests on the art: 37 rim looks per ore sheet that
-TEdit never draws. Rule 5 for ore ↔ ore has no art evidence either way. G confirms the seam for copper beside
-iron in H4-16a and the full dirt rim in H4-15; other ore pairs remain unobserved.
+Neighbourhoods with **three or more** types at once (for example dirt with stone and copper around it) are not
+tabulated: in them each neighbour takes the letter of its own pair, and R checks the resulting rules (below) for the
+observed pairs. Cobweb (51) treats almost every block like itself and is one of the 333 types.
 
 ### Choosing the cell
 
-Given the wanted letters:
+Given the letters of the eight neighbours (`x` absent or seam, `o` like itself or a connecting relative, `d` partner):
 
-1. **Sides** (`NESW`, the wanted letters of N, E, S, W) other than `oooo`: take the look with exactly these sides
-   in the sheet map. 28 of the 65 side codes that contain `d` have no cell (`dddx ddox ddxd ddxo ddxx dodx
-   doxd doxx dxdd dxdo dxod dxxd dxxo oddx odxd odxx oxdd oxxd xddd xddo xddx xdod xdox xodd xodx xxdd xxdo
-   xxod`). For those, **turn every `d` side into `x`** and look again. All 16 `o`/`x` codes exist, so this always
-   finds a cell. X: TEdit falls back the same way. G: all 28 side codes match the fallback in v3 Frozen;
-   those generated cases have empty diagonals, so other corner contexts are not independently observed.
-2. **Sides `oooo`:** the corners decide. If **all four corners are `x`**, select the **NW+NE notches**
-   (G: both dirt and stone, v3 Frozen). Otherwise walk the nine interior looks in this cited order and take the first whose
-   every non-`o` corner equals the wanted corner letter: rim SE, rim SW, rim NW, rim NE, notches SE+SW, NW+NE,
-   NE+SE, NW+SW, plain interior. The art shows *which* looks exist. The order only matters when several fit
-   (three or four missing corners, or a rim corner together with a notch) and is **cited** (A10 108–112 and
-   168–179). Consequences: a single missing corner keeps the plain interior, because no one-notch look exists in the
-   stone layout (S; dirt's rim-corner slots hold single notches, O7).
-   Two opposite missing corners also keep the plain interior (G: dirt and stone). The all-four-corners exception
-   above corrects the cited order, which would select SE+SW and disagrees with the observed game cells.
+1. **Sides** (`NESW`) other than `oooo`: take the look with exactly these sides in the sheet map. 28 of the 65 side
+   codes that contain `d` have no cell (`dddx ddox ddxd ddxo ddxx dodx doxd doxx dxdd dxdo dxod dxxd dxxo oddx odxd
+   odxx oxdd oxxd xddd xddo xddx xdod xdox xodd xodx xxdd xxdo xxod`). For those, **turn every `d` side into `x`**
+   and look again. All 16 `o`/`x` codes exist, so this always finds a cell. R: exactly these 28 codes fall back, for
+   stone, copper, hellstone and coralstone with every corner of their own type (G saw all 28 in game).
+2. **Sides `oooo`:** the corners decide. If **all four corners are `x`**, select the **NW+NE notches**. Otherwise
+   walk the nine interior looks in this order and take the first whose every non-`o` corner equals the wanted corner
+   letter: rim SE, rim SW, rim NE, rim NW, notches SE+SW, NW+NE, NE+SE, NW+SW, plain interior. R: this predicts all 81
+   corner combinations of stone with dirt corners and all 16 of dirt and of stone with air. Consequences: one missing
+   corner, or two opposite ones, keep the plain interior (no one-notch look exists in the stone layout). Dirt's
+   rim-corner slots, whose art shows single notches, are selected only as rim corners toward mud, dirt's own partner
+   (R), never for a missing corner (O7).
 3. **Variant:** cell `v` of the look, with `v` from "Variant".
 
-**Edge check (rule 4).** The open edges of a cell are its sides that are not `x` (`o` or `d`). This follows
-directly from the measured look. X: it agrees with TEdit's open-edge table (A10 44–67) on all 183 cells. A relative
-`n` at an edge of the centre computes its own cell first. The centre then treats that edge as `o` only if `n`'s cell
-has `d` on the side facing the centre. That side can only be `d` or `x`, because `n` sees the centre as its partner.
-It becomes `x` when step 1's fallback removed the rim. Without the check the centre would draw an open edge against
-an outline. TEdit performs the same check (cited, A8 5768–5783), but it runs it lazily during rendering, so the
-outcome depends on drawing order. Ours runs in a fixed order.
+**Edge check.** The open edges of a cell are its sides that are not `x` (`o` or `d`). A relative `n` at an edge of
+the centre takes its own cell first; the centre treats that edge as `o` only if `n`'s cell has `d` on the side facing
+the centre (that side can only be `d` or `x`, because `n` sees the centre as its partner). It is `x` when step 1's
+fallback removed the rim. Without the check the centre would draw an open edge against an outline (example 14).
+Examples 8 and 14 show both sides of it (G, R).
 
-**Inputs beyond 3 × 3, resolved.** Issue #95 asks for a mapping from the 3 × 3 neighbourhood. That holds for every
-tile that is **not** a partner type: its cell depends only on its 3 × 3. A partner type (dirt, ash) additionally
-needs **one bit per relative edge neighbour**: whether that neighbour's cell keeps its rim. The neighbour's cell
-depends on its own 3 × 3, so in raw tiles a dirt tile depends on the 5 × 5 window without its four corners.
+**Inputs beyond 3 × 3.** Every tile that is **not** a partner type takes its cell from its 3 × 3. A partner type (dirt,
+ash, snow, …) additionally needs **one bit per relative edge neighbour**: whether that neighbour's cell keeps its rim.
 Implementations frame in **two passes**: first all non-partner tiles from their 3 × 3, then partner tiles from their
-3 × 3 plus those bits. An edit invalidates a 5 × 5 area around the changed tile. The art makes dropping the check
-impossible: the dirt sheet has no rims (S), so an open dirt edge against an outlined stone edge leaves a half-drawn
-seam (example 14).
+3 × 3 plus those bits. An edit invalidates a 5 × 5 area around the changed tile. R: framing in two passes, in one
+pass and with the game's own range framing gives identical cells.
 
 ### Variant
 
 - **Inputs.** Ordinary blocks have three variants (`v0`–`v2`), hand-drawn copies of the same look (S: 3 cells per
   look). The `.wld` stores no frame for these tiles (F), so it stores no variant either.
-- **Game behaviour (cited, not yet observed).** TEdit's wall framer states that the game picks the variant at
-  random when it frames a tile whose frame the `.wld` does not store (A9 150–153). TEdit's rule lookup still has a
-  random overload (A10 41, 253–256), but its block path passes a deterministic variant instead (A8 5801). Only `largeFrameType` tiles follow a fixed pattern
-  (A13 271–289). If that is right, the game changes variants on every reload and no viewer can reproduce the exact
-  picture. H2 checks this.
-- **Large-frame tiles** (`largeFrameType` 1 or 2 in A12: 24 ids, e.g. 273, 274, 284, 325, 357, 409, 618, 669–676)
-  take the variant from a fixed repeating pattern over `(x mod 3, y mod 4)` (type 1) or `(x mod 2, y mod 2)`
-  (type 2) (A13 18–32, 281–285). A13 states that it ports the game's framing (A13 7), so its pattern values are
-  not a source for us and are not restated (O4). Until they are observed, these ids use the default rule.
+- **Game behaviour (R).** Framing a tile with reset draws its variant at random (about a third each); framing it
+  again without reset keeps the variant the tile remembers in memory. The `.wld` stores no variant, so every load
+  draws new ones and no viewer can reproduce the exact picture (O1). Walls behave the same (R).
+- **Large-frame tiles (R).** 24 ids frame by **world position** and ignore the remembered variant. Seven repeat over
+  `(x mod 3, y mod 4)`: 273, 274, 284, 325, 357, 618, 736. Seventeen repeat over `(x mod 2, y mod 2)`: 409, 669–676,
+  735, 737, 741–743, 745, 746, 749. Cells of a plain interior (sides and corners `o`):
+
+  | Kind | (0,0) | (1,0) | (2,0) | (0,1) | (1,1) | (2,1) | (0,2) | (1,2) | (2,2) | (0,3) | (1,3) | (2,3) |
+  |---|---|---|---|---|---|---|---|---|---|---|---|---|
+  | 3 × 4 | (2,1) | (3,6) | (2,1) | (1,1) | (3,1) | (1,1) | (2,1) | (2,1) | (3,6) | (1,1) | (1,1) | (3,1) |
+  | 2 × 2 | (1,1) | (2,1) | | (3,1) | (3,6) | | | | | | | |
+
+  Row 6 is the second copy of the rim-free block (below), so the "six cells per look" are the three of row 1 and the
+  three of row 6, spread by position. The database holds each large-frame type's whole table at all 24 positions
+  `(x mod 6, y mod 4)`, so the other looks are recorded too.
 - **Large-frame sheets (S).** All 24 sheets are **234 × 180**: 13 columns × 10 rows. Rows 0–4 hold the rim-free
   block of the stone layout (columns 0–12; no rim art), and rows 5–9 repeat it at the same positions with the same
   side codes, so every look has **six** cells, not three (`--tile 273 --rows 10` lists every side code ×6). Against
   stone's rows 0–4 (`--tile 1 --rows 5 --agree <id>`), 15 sheets score 240/240 sides; 735, 737, 741, 743, 745 and
   746 score 166–236 because of patterned edges. Some draw the four notch looks (409), others draw them as plain
-  interiors (273). TEdit only ever selects from rows 0–4 (its variant is capped at the third cell, A10 264), so
-  rows 5–9 are unused there. How the game spreads the six cells over a slab is the observation H9 asks for.
-- **Recommended viewer behaviour:** `v = (7x + 11y) mod 3`, where `x` and `y` are the tile's world coordinates.
-  TEdit uses the same deterministic substitute (A13 288), and M4 already uses it for walls. Renders become
-  reproducible and testable, and neighbouring tiles rarely share a variant, which is the visual point of the
-  variants. Never use `Math.random`.
+  interiors (273).
+- **Grass-like blocks without a partner (R).** A block of grass (or moss, or the ids 381, 512–517, 534–540, 625–628,
+  633) with no air, no partner and no other block around takes the plain interior or the full-partner-rim cell (6,11)
+  in a checkerboard by `(x + y) mod 2`, which shifts with the variant. The database holds these types' tables by
+  position too. Such fully enclosed slabs are rare in worlds.
+- **Viewer behaviour (chosen):** `v = (7x + 11y) mod 3`, where `x` and `y` are the tile's world coordinates. The game
+  is random, so any deterministic choice is as faithful as another; this one makes renders reproducible and testable,
+  and neighbouring tiles rarely share a variant, which is the visual point of the variants. Never use `Math.random`.
 
 ### Slopes and half blocks
 
 The block shape is stored in byte-2 bits 4–6 of a tile record (F): 0 full, 1 half, 2–5 slopes. The names in F give
-the corner that is **cut away**, and TEdit's drawing code (A8 5909–5949) confirms that reading. It draws each shape
-as eight 2-pixel columns `i = 0…7` of the chosen cell:
+the corner that is **cut away**: shape 2 the NE corner, 3 NW, 4 SE, 5 SW; the half block cuts its top half.
 
-| Shape | Cut corner | Column `i` draws | Full (solid) faces |
+**Face rule (R).** A side of the centre is connected (`o`) only when the centre's own face there is whole **and** the
+neighbour on that side is present with a whole face toward the centre. The half block cuts only its top face (its
+half-height side faces count as whole); a slope cuts the two faces at its cut corner: shape 2 N and E, shape 3 N and W,
+shape 4 S and E, shape 5 S and W. The cell is then chosen from those sides and the corners as for a full block. R
+checked it against every dirt centre of each of the 6 shapes with its four side neighbours each air or dirt of each
+shape (14 406 neighbourhoods, corners full): **14 406 predicted, no exception**.
+
+**Corner rule (R).** A corner neighbour counts by **presence** alone, whatever its shape. R checked every combination
+of a full centre whose sides connect (each side in every shape with a whole face toward the centre) and whose corners
+are air or a block in every shape: **460 992** for dirt and **5 483 712** for stone with dirt corners, **all
+predicted**. So a shape only matters through the faces of the centre and of its side neighbours.
+
+**Drawing** a shaped tile (how the chosen 16 × 16 cell is cut and moved into the tile) is not framing, and the runtime
+observation does not cover it. Until the sprite-mode follow-up (#146) checks it against in-game renders, it is cited
+from TEdit's drawing code (A8 5909–5949), which draws each shape as eight 2-pixel columns `i = 0…7` of the chosen
+cell:
+
+| Shape | Cut corner | Column `i` draws | Whole faces |
 |---|---|---|---|
 | 1 half | top half | cell rows 0–7, placed in tile rows 8–15 | S (W and E only half) |
 | 2 top-right | NE | cell rows 0 … 15−2i, moved down by 2i | W, S |
@@ -572,75 +559,65 @@ as eight 2-pixel columns `i = 0…7` of the chosen cell:
 | 4 bottom-right | SE | cell rows 2i … 15, placed at the top | W, N |
 | 5 bottom-left | SW | cell rows 0 … 2i+1, placed at the top | E, N |
 
-Shapes 2–4 therefore keep the outline of the cell and slide it diagonally, column by column; only shape 5 is a
-plain per-column crop of the 16 × 16 cell. The half block uses only the upper half of the cell.
-
-**Which cell a shaped tile uses.** TEdit's block framer (A8 5709–5813) ignores shapes completely. It chooses the
-cell from the 3 × 3 neighbourhood exactly as for a full block (neither the centre's shape nor the neighbours' shapes
-matter); only the drawing changes. TEdit's newer 8-way framer for gemsparks (A13 137–269) is stricter. There a
-neighbour connects only if both facing faces are full (per a face table, A13 43–51), and a corner only if the two
-edges next to it connect. A13's face table agrees with the column above for shapes 0–3 but not for 4 and 5 (O5).
-
-**M4 rule (cited, A8):** choose the cell as if the tile were full, then draw it by the shape table. G shows that
-this approximation differs from the game: full dirt neighbours draw closed edges toward the cut faces in H3.
-The exact treatment of partial faces and diagonals still needs a derived rule (O5); the renderer is unchanged.
+Shapes 2–4 keep the outline of the cell and slide it diagonally, column by column; only shape 5 is a plain per-column
+crop of the 16 × 16 cell. The half block uses only the upper half of the cell. The whole faces agree with the face
+rule (R).
 
 ### Worked examples
 
 `#` = centre, `d` dirt, `s` stone, `c` copper ore (`Tiles_7`), `i` iron ore (`Tiles_6`), `.` empty. Rows run N to S,
-centre at `x = 0, y = 0`, so the variant is 0. For another variant, take `v1`/`v2` of the same look. Every row was
-computed with the contract above by the measuring script. "Wanted" lists the wanted side letters `NESW` (plus
-corners `NW NE SE SW` for `oooo`). The right-hand column says how the row is supported and whether TEdit agrees.
+centre at `x = 0, y = 0`, so the variant is 0. For another variant, take `v1`/`v2` of the same look. Every row is the
+game's own result (R, and `packages/renderer/tests/framing-database.test.ts` checks the database against them).
+"Wanted" lists the wanted side letters `NESW` (plus corners `NW NE SE SW` for `oooo`).
 
-| # | Centre (sheet) | Neighbourhood | Wanted → look | Cells v0 / v1 / v2 | Source rectangle (v0) | Basis |
+| # | Centre (sheet) | Neighbourhood | Wanted → look | Cells v0 / v1 / v2 | Source rectangle (v0) | Evidence |
 |---|---|---|---|---|---|---|
-| 1 | dirt (0) | `...` / `.#.` / `...` | `xxxx` isolated | (9,3) (10,3) (11,3) | (162, 54, 16, 16) | S, X |
-| 2 | dirt | `...` / `.#d` / `...` | `xoxx` left end | (9,0) (9,1) (9,2) | (162, 0, 16, 16) | S, X |
-| 3 | dirt | `...` / `d#d` / `ddd` | `xooo` top surface (edge) | (1,0) (2,0) (3,0) | (18, 0, 16, 16) | S, X |
-| 4 | dirt | `...` / `.#d` / `.dd` | `xoox` top-left corner | (0,3) (2,3) (4,3) | (0, 54, 16, 16) | S, X |
-| 5 | dirt | `ddd` / `d#d` / `ddd` | `oooo` + `oooo` plain interior | (1,1) (2,1) (3,1) | (18, 18, 16, 16) | S, X |
-| 6 | dirt | `.d.` / `d#d` / `ddd` | `oooo` + `xxoo` inner corners N | (6,1) (7,1) (8,1) | (108, 18, 16, 16) | S, X |
-| 7 | dirt | `.d.` / `d#d` / `.d.` | `oooo` + `xxxx` → SE+SW notches (priority) | (6,2) (7,2) (8,2) | (108, 36, 16, 16) | S, cited order, X |
-| 8a | dirt | `dds` / `d#s` / `dds`, stone mass to the E | E is a relative whose cell keeps its W rim (8b) → `oooo` + `oooo` | (1,1) (2,1) (3,1) | (18, 18, 16, 16) | S, X |
-| 8b | stone (1), the E neighbour of 8a | `dss` / `d#s` / `dss` | `oood` rim W | (9,7) (9,8) (9,9) | (162, 126, 16, 16) | S, X |
-| 9 | stone | `sss` / `s#d` / `sss` | `odoo` rim E | (8,7) (8,8) (8,9) | (144, 126, 16, 16) | S, X |
-| 10 | stone | `ddd` / `d#d` / `ddd` | `dddd` stone pocket in dirt | (6,11) (7,11) (8,11) | (108, 198, 16, 16) | S, X |
-| 11 | stone | `.d.` / `s#s` / `...` | `doxo` rim N, air S | (13,1) (14,1) (15,1) | (234, 18, 16, 16) | S, X |
-| 12 | stone | `sss` / `s#s` / `ssd` | `oooo` + `oodo` rim corner SE | (0,5) (0,7) (0,9) | (0, 90, 16, 16) | S, X |
-| 13 | stone | `ss.` / `d#s` / `dd.` | `oodd` rims S and W | (2,6) (2,8) (2,10) | (36, 108, 16, 16) | S, X |
-| 14a | stone | `.dd` / `.#d` / `...` | `ddxx` has no cell → `xxxx` | (9,3) (10,3) (11,3) | (162, 54, 16, 16) | S, chosen fallback, X |
-| 14b | dirt, the E neighbour of 14a (its own row `d#d`, N `d`, S `.`) | 3 × 3 `dd.` / `s#d` / `...` | W is a relative whose cell (14a) has no rim → `x`: `ooxx` bottom-left corner | (0,4) (2,4) (4,4) | (0, 72, 16, 16) | edge check, X |
-| 15 | copper (7) | `ddd` / `d#d` / `ddd` | `dddd` full dirt rim | (6,11) (7,11) (8,11) | (108, 198, 16, 16) | S (rule 3); TEdit: (0,5) |
-| 16a | copper | `...` / `c#i` / `...` | `xxxo` right end (seam to iron) | (12,0) (12,1) (12,2) | (216, 0, 16, 16) | **provisional** (rule 5, H4); TEdit: `xoxo` (6,4) |
-| 16b | iron (6), the E neighbour of 16a | `...` / `c#i` / `...` | `xoxx` left end | (9,0) (9,1) (9,2) | (162, 0, 16, 16) | **provisional**; TEdit: (6,4) |
-| 17 | copper | `sss` / `s#s` / `sss` | `xxxx` outlined ore in stone | (9,3) (10,3) (11,3) | (162, 54, 16, 16) | rule 5, X |
-| 18 | dirt, shape 2 (top-right cut) | `...` / `d#.` / `dd.` | `xxoo` top-right corner (shape ignored) | (1,3) (3,3) (5,3) | (18, 54, 16, 16), drawn column by column per shape 2 | S, X, A8 5909–5918 |
-| 19 | dirt, shape 1 (half) | `...` / `d#d` / `...` | `xoxo` horizontal middle | (6,4) (7,4) (8,4) | (108, 72, 16, 8) drawn into tile rows 8–15 | S, X, A8 5903–5907 |
+| 1 | dirt (0) | `...` / `.#.` / `...` | `xxxx` isolated | (9,3) (10,3) (11,3) | (162, 54, 16, 16) | S, R |
+| 2 | dirt | `...` / `.#d` / `...` | `xoxx` left end | (9,0) (9,1) (9,2) | (162, 0, 16, 16) | S, R |
+| 3 | dirt | `...` / `d#d` / `ddd` | `xooo` top surface (edge) | (1,0) (2,0) (3,0) | (18, 0, 16, 16) | S, R |
+| 4 | dirt | `...` / `.#d` / `.dd` | `xoox` top-left corner | (0,3) (2,3) (4,3) | (0, 54, 16, 16) | S, R |
+| 5 | dirt | `ddd` / `d#d` / `ddd` | `oooo` + `oooo` plain interior | (1,1) (2,1) (3,1) | (18, 18, 16, 16) | S, R |
+| 6 | dirt | `.d.` / `d#d` / `ddd` | `oooo` + `xxoo` inner corners N | (6,1) (7,1) (8,1) | (108, 18, 16, 16) | S, R |
+| 7 | dirt | `.d.` / `d#d` / `.d.` | `oooo` + `xxxx` → NW+NE notches (four-corner rule) | (6,1) (7,1) (8,1) | (108, 18, 16, 16) | S, G, R |
+| 8a | dirt | `dds` / `d#s` / `dds`, stone mass to the E | E is a relative whose cell keeps its W rim (8b) → `oooo` + `oooo` | (1,1) (2,1) (3,1) | (18, 18, 16, 16) | S, G, R |
+| 8b | stone (1), the E neighbour of 8a | `dss` / `d#s` / `dss` | `oood` rim W | (9,7) (9,8) (9,9) | (162, 126, 16, 16) | S, G, R |
+| 9 | stone | `sss` / `s#d` / `sss` | `odoo` rim E | (8,7) (8,8) (8,9) | (144, 126, 16, 16) | S, R |
+| 10 | stone | `ddd` / `d#d` / `ddd` | `dddd` stone pocket in dirt | (6,11) (7,11) (8,11) | (108, 198, 16, 16) | S, R |
+| 11 | stone | `.d.` / `s#s` / `...` | `doxo` rim N, air S | (13,1) (14,1) (15,1) | (234, 18, 16, 16) | S, R |
+| 12 | stone | `sss` / `s#s` / `ssd` | `oooo` + `oodo` rim corner SE | (0,5) (0,7) (0,9) | (0, 90, 16, 16) | S, R |
+| 13 | stone | `ss.` / `d#s` / `dd.` | `oodd` rims S and W | (2,6) (2,8) (2,10) | (36, 108, 16, 16) | S, R |
+| 14a | stone | `.dd` / `.#d` / `...` | `ddxx` has no cell → `xxxx` | (9,3) (10,3) (11,3) | (162, 54, 16, 16) | S, G, R |
+| 14b | dirt, the E neighbour of 14a (its own row `d#d`, N `d`, S `.`) | 3 × 3 `dd.` / `s#d` / `...` | W is a relative whose cell (14a) has no rim → `x`: `ooxx` bottom-left corner | (0,4) (2,4) (4,4) | (0, 72, 16, 16) | S, G, R |
+| 15 | copper (7) | `ddd` / `d#d` / `ddd` | `dddd` full dirt rim | (6,11) (7,11) (8,11) | (108, 198, 16, 16) | S, G, R |
+| 16a | copper | `...` / `c#i` / `...` | `xxxo` right end (seam to iron) | (12,0) (12,1) (12,2) | (216, 0, 16, 16) | G, R |
+| 16b | iron (6), the E neighbour of 16a | `...` / `c#i` / `...` | `xoxx` left end | (9,0) (9,1) (9,2) | (162, 0, 16, 16) | G, R |
+| 17 | copper | `sss` / `s#s` / `sss` | `xxxx` outlined ore in stone | (9,3) (10,3) (11,3) | (162, 54, 16, 16) | G, R |
+| 18 | dirt, shape 2 (top-right cut) | `...` / `d#.` / `dd.` | N and E cut → `xxoo` top-right corner | (1,3) (3,3) (5,3) | (18, 54, 16, 16) | R |
+| 19 | dirt, shape 1 (half) | `...` / `d#d` / `...` | N cut → `xoxo` horizontal middle | (6,4) (7,4) (8,4) | (108, 72, 16, 16) | R |
 
 Example 8 shows how merging is asymmetric. In the same dirt/stone pair, dirt draws a seamless interior and stone
 draws the dirt rim. Example 14 shows the other side of that boundary. Stone has no cell for rims on N and E, so it
 falls back to a full outline. The dirt tile to its E then closes its own W edge, and both sides draw an outline
 instead of an open edge meeting an outline. Examples 6 and 7 are inner corners, where empty diagonals meet a solid
-mass.
+mass; in example 7 all four diagonals are empty and the game draws the NW+NE notches.
 
 ### Grass and moss sheets
 
-**Ids.** The 10 grass ids (A12 `isGrass`) and the 21 moss ids (see "Which tiles are framed at runtime"). Grass
-grows on its partner: dirt for 2, 23, 109, 199, 477, 492 and mud for 60, 70 (A12). For corrupt and crimson jungle
-grass (661, 662) A12 names dirt, but their art is drawn on **mud** (S: measured with mud as partner,
-`--partner-near 59`, `Tiles_661` gives the same sheet map as `Tiles_2` with dirt and `Tiles_662` the same as
-crimson grass `Tiles_199` with dirt; measured with dirt, `Tiles_661` differs from `Tiles_2` in 192 cells). Moss is in the stone
-family with dirt as partner (A12), and its art is drawn on stone.
+**Ids.** The 10 grass ids (2, 23, 60, 70, 109, 199, 477, 492, 661, 662) and the 21 moss ids (see "Which tiles are
+framed at runtime"). Grass grows on its partner: dirt for 2, 23, 109, 199, 477, 492, mud for 60, 70, 661 and 662 (R:
+jungle grass, corrupt and crimson jungle grass on mud frame **identically** to grass on dirt in all 6 561
+neighbourhoods; on dirt they do not). Moss frames identically beside stone and beside dirt (R).
 
 **Layout (S).** Grass and moss sheets have **22 rows**. All 10 grass sheets and the 11 moss *blocks* have
 non-empty cells at the **same 252 positions**. The 10 moss *bricks* lack 30 of them: (8–10, 5–10), (11–13, 15–16)
 and (8–13, 17). Rows 0–14 hold 174 cells: 147 of stone's 183 positions, without the single rims next to air
-(13–15, 0–3), the rim corners (0–1, 5–10) and the three-rim looks (11–12, 5–10), plus 27 cells at (7–15, 12–14), where every cell is outlined grass without partner art. Rows 15–21 hold 78
-more cells; by their side codes they carry the moved looks (single rims next to air in rows 18–21, six cells each;
-three-rim looks in (11–13, 15–16) and (8–13, 17); interior looks with rim corners in (6–8, 18–21)) and grass
-looks that combine air on one side with partner on the other three ((0–4, 15–17)). The extra **88 rows** of
-`Tiles_2` (rows 22–109) are four further 22-row blocks of pure white pixels (`255,255,255,255`) at a subset of the
-252 positions (183, 251, 252 and 252 cells); no framing rule addresses them, and what draws them is open (O9).
+(13–15, 0–3), the rim corners (0–1, 5–10) and the three-rim looks (11–12, 5–10), plus 27 cells at (7–15, 12–14), where
+every cell is outlined grass without partner art. Rows 15–21 hold 78 more cells; by their side codes they carry the
+moved looks (single rims next to air in rows 18–21, six cells each; three-rim looks in (11–13, 15–16) and (8–13, 17);
+interior looks with rim corners in (6–8, 18–21)) and grass looks that combine air on one side with partner on the
+other three ((0–4, 15–17)). The extra **88 rows** of `Tiles_2` (rows 22–109) are four further 22-row blocks of pure
+white pixels (`255,255,255,255`) at a subset of the 252 positions (183, 251, 252 and 252 cells); framing never selects
+them (R), and what draws them is open (O9).
 
 Sheet map of `Tiles_2` (`--tile 2 --partner-near 0 --rows 22`: dirt's colours without its outline, matched within
 8 per channel, because grass draws dirt in lighting variants such as `150,107,76` for dirt's `151,107,75`):
@@ -671,71 +648,33 @@ Sheet map of `Tiles_2` (`--tile 2 --partner-near 0 --rows 22`: dirt's colours wi
  21  oxod oxod oxod oxod oxod oxod dood dood dooo ---- ---- ---- ---- ---- ---- ----
 ```
 
-Here `o` is grass reaching the edge, `d` partner (dirt) reaching the edge and `x` closed. **The `x` letters are
-reliable; `o` against `d` is not.** Grass art puts a grass strip along every face that meets air and dirt
-everywhere else, so one side often holds both, and the three variants of a look disagree (for example (0,0),
-(0,1), (0,2): `xddx`, `odox`, `odxx`). Measured the same way, grass 23 and 109 and (with mud) 60, 70 and 661
-give this exact map; 199 and 662 match each other but not it, and mowed grass 477/492 differs in 104 cells.
-Against this map as reference, the agreement test scores 944–986 of 1 008 sides for the nine other grass sheets
-(94–98 %), 760–839 for moss (75–83 %) and 494–542 of 696 for stone, dirt and mud (71–78 %). The art therefore
-confirms one shared grass layout but gives **no** cell catalogue that an implementation could select from. That is
-why the rules below are cited.
+Here `o` is grass reaching the edge, `d` partner (dirt) reaching the edge and `x` closed. The `x` letters are
+reliable; `o` against `d` is not, because grass art puts a grass strip along every face that meets air and dirt
+everywhere else. The art therefore confirms one shared grass layout but gives no rule for choosing among it.
 
-**Neighbour classes (cited, A8 5747–5799, A14 172–178).** For a grass centre, a neighbour is *connected* when it is
-the same grass, its partner, or a block that names the same partner (stone, ores and the other dirt-partner blocks
-for dirt grass). A connected neighbour that is the partner itself is in addition a *partner* neighbour. Air and any
-other block are open. This differs from our block contract, where an unrelated block is a seam (rule 5); for grass
-it stays cited until H7.
+**Selection (R).** The game's grass selection is the **framing database**: every grass type's table against its
+partner and against every other type, over all 6 561 neighbourhoods. It does not reduce to the block rules: grass and
+moss use rows 15–21 and the cells at (7–15, 12–14), and moss differs from grass beside its partner in 3 811 of the
+6 561 neighbourhoods. An implementation selects grass and moss cells from the database (or reproduces it exactly).
 
-**Choosing the cell (cited, A10 150–249, 285–303, 454–505).**
+**Worked examples (R).** `#` = grass centre (`Tiles_2`), `g` grass, `d` dirt, `s` stone, `.` air; rows N to S;
+variant 0 at `x = y = 0`. "Measured look" is the side code of the v0 cell in the map above.
 
-1. The connected edge neighbours (N, E, S, W) pick one of 16 groups, as for blocks.
-2. Within the group, a list of grass rules is tried in a fixed order and the first match wins. A rule may demand
-   that the partner edges are exactly a given set, that given corners are present, that given corners are not
-   connected, and that given edges or corners are not partner. A required corner counts as present when it is
-   grass *or* partner (the relaxed matching), so a grass tile in a grass-and-dirt field takes the same cell for
-   either corner.
-3. The list holds the first part of the rim rules of ordinary blocks (A10 120–148) without eight that would shadow
-   grass looks (158–166), and grass-only rules (181–249), some placed in front of the rim rules. The grass-only
-   rules also reach the cells that are empty in stone's layout: rows 15–21 and (7–15, 12–14). The rim rules
-   added later for blocks (168–179: single rims next to air, three-rim looks, rim corners) are not in the grass
-   list, which matches the stone cells that the grass sheets leave empty.
-4. If no grass rule matches, every partner neighbour is treated as grass and the 20 base looks apply (the 16
-   side looks and the four inner-corner looks, "Choosing the cell" steps 1–2 without rims).
-
-The variant is chosen as for blocks. A8 notes at 5725 that this rule-list path is a stand-in for the game's
-own framing and not pixel-exact, so the grass rules are the weakest part of this section and are checked first in
-game (H7).
-
-**Art check (S, X).** Evaluated over all 6 561 neighbourhoods (grass, dirt or air on each of the 8 neighbours),
-the cell that the cited rules choose has its closed sides exactly where the neighbourhood has air in **6 561 of
-6 561** cases for variant 1, and in 5 985 for variants 0 and 2. All 576 misses are four cells ((0,0), (4,0),
-(0,2), (4,2)) where grass tufts touch an open edge and the measurement reads that edge as closed. The rules use
-47 cells per variant.
-
-**Worked examples (cited, A10; art check S).** `#` = grass centre (`Tiles_2`), `g` grass, `d` dirt, `.` air; rows
-N to S; variant 0 at `x = y = 0`. "Measured look" is the side code of the v0 cell in the map above.
-
-| # | Neighbourhood | Expected cells v0 / v1 / v2 | Source rectangle (v0) | Measured look | Note |
+| # | Neighbourhood | Cells v0 / v1 / v2 | Source rectangle (v0) | Measured look | Note |
 |---|---|---|---|---|---|
 | G1 | `...` / `g#g` / `ddd` | (1,0) (2,0) (3,0) | (18, 0, 16, 16) | `xodo` | flat surface on dirt |
-| G2 | `...` / `d#g` / `ddd` | (1,0) (2,0) (3,0) | (18, 0, 16, 16) | `xodo` | dirt to the W does not end the grass strip |
-| G3 | `...` / `.#.` / `.d.` | (6,0) (7,0) (8,0) | (108, 0, 16, 16) | `xxox` | single grass tile on dirt |
+| G2 | `...` / `d#g` / `ddd` | (0,11) (1,11) (2,11) | (0, 198, 16, 16) | `xxdd` | the grass strip ends at the dirt to the W |
+| G3 | `...` / `.#.` / `.d.` | (6,5) (6,6) (6,7) | (108, 90, 16, 16) | `xxdx` | single grass tile on dirt |
 | G4 | `...` / `.#g` / `.dd` | (0,3) (2,3) (4,3) | (0, 54, 16, 16) | `xddx` | hill top-left |
 | G5 | `ddd` / `g#g` / `...` | (1,2) (2,2) (3,2) | (18, 36, 16, 16) | `doxo` | grass on a ceiling |
 | G6 | `ddd` / `d#d` / `ddd` | (1,1) (2,1) (3,1) | (18, 18, 16, 16) | `dddd` | buried: drawn as dirt with grass specks |
-| G7 | `ggg` / `g#g` / `ggg` | (1,1) (2,1) (3,1) | (18, 18, 16, 16) | `dddd` | no face meets air: same cell as G6 |
+| G7 | `ggg` / `g#g` / `ggg` | (1,1) (2,1) (3,1) | (18, 18, 16, 16) | `dddd` | no face meets air: same cell as G6 (at even `x + y`, "Variant") |
 | G8 | `gg.` / `g#g` / `ggg` | (2,6) (2,8) (2,10) | (36, 108, 16, 16) | `dddd`, corner NE `x` | one diagonal open |
-| G9 | `.d.` / `.#g` / `.d.` | (7,13) (10,13) (13,13) | (126, 234, 16, 16) | `ooox` | air W, dirt N and S: a grass-only cell |
+| G9 | `.d.` / `.#g` / `.d.` | (0,15) (0,16) (0,17) | (0, 270, 16, 16) | `dddx` | air W, dirt N and S |
+| G9-stone | `.s.` / `.#g` / `.s.` | (7,13) (10,13) (13,13) | (126, 234, 16, 16) | `ooox` | stone N and S: a grass-only cell |
 
-G6 and G7 show the relaxed matching. G9 shows a grass-only cell outside the stone layout; its variants are three
-columns apart. In every row the measured `x` sides are exactly the air edges.
-
-**Moss.** A12 puts moss in the stone family with dirt as partner, so TEdit frames it with the block rules and
-never reaches rows 15–21. The art says otherwise: moss sheets have the grass positions, including rows 15–21, and
-draw their moss on stone the way grass sheets draw grass on dirt. Neither layout scores close to all sides (moss
-against stone 68–72 %, against grass 75–83 %), so whether the game frames moss with the grass rules (with stone as
-the "dirt") is open (O8, H8). Until then a viewer frames moss like stone over rows 0–14 (A12, cited).
+**Moss (R).** Green moss (179) takes cells from rows 15–21 in 1 840 of the 6 561 neighbourhoods with stone, the same
+beside stone and beside dirt. Its selection is its own (neither the block rule nor grass's); the database holds it.
 
 ### Human steps (in-game check, G)
 
@@ -824,7 +763,7 @@ isolated multi-tile objects. Compare any game-saved copy with the original manif
 - **H6** Inspect **Diagonal hole** cases `H6-NW`, `H6-NE`, `H6-SE`, `H6-SW`: a dirt mass with a single one-tile
   hole at a diagonal of one dirt tile (all four edges dirt, one corner empty), once per corner. Record whether
   that tile shows a small notch in the corner (O7) or a plain interior.
-- **H7** Inspect **Grass** examples `G1`–`G9` on dirt and `G9-stone` on stone (which A8 treats as connected).
+- **H7** Inspect **Grass** examples `G1`–`G9` on dirt and `G9-stone` on stone.
   Identify each drawn cell by comparing its outline and grass/dirt split with the sheet cells, then compare
   it with the expected cells.
 - **H8** Inspect **Moss** cases `H8-surface`, `H8-pillar`, `H8-hole`, `H8-boundary`: green moss on stone with
@@ -908,48 +847,88 @@ several sheet cells have identical pixels. No game assets or screenshots are com
 | Map options | Every generated case survives the frozen traversal. The PNG shows sprites, not the fullscreen game map, so map colour agreement remains unverified. Pot option 7 remains the separate palette issue #195. |
 | Reloads and large frames, O1/O4 | Stable input panels are now available. These four screenshots still do not provide a matched reload pair or a complete unambiguous coordinate-to-frame pattern. |
 
+### Runtime observation results (2026-10-09)
+
+Evidence R ([ADR 0003](adr/0003-observe-framing-in-the-game.md)). Pipeline, all local, nothing committed:
+
+```bash
+dotnet run --project dotnet/Terraria.WorldCodec.Synthetic -- generate packages/test-fixtures/worlds/SJCO1.wld local-renders/framing-observations.wld
+node scripts/framing/export-cases.mjs local-renders/framing-observations.wld local-renders/framing-observations.wld.manifest.json local-renders/framing-cases.json
+```
+
+```powershell
+./scripts/framing/observe.ps1 -TerrariaAssembly '<Terraria>/TerrariaServer.exe' -CasesPath local-renders/framing-cases.json -OutputPath local-renders/framing-observed.json
+node scripts/framing/analyse.mjs local-renders/framing-observed.json local-renders/framing-cases.json local-renders/framing-report.md
+```
+
+The observer initializes the game's tile data with the game's own initialization, checks two sentinels (a dirt
+interior frames at (1,1); stone beside dirt draws a dirt rim) and then records, for Terraria 1.4.5.8 on L:
+
+- **Every catalogue case** of the generated world (116 cases outside the map options), all three variants of every
+  tile. All worked examples 1–19 match their documented cells (example 7 as corrected to NW+NE).
+- **Every 3 × 3 neighbourhood** (air, the centre's type or one other type on each of the 8 neighbours; 6 561 per pair)
+  of 17 pairs: dirt/stone, stone/dirt, dirt/copper, copper/dirt, copper/stone, copper/iron, ash/hellstone,
+  hellstone/ash, coralstone/dirt, coralstone/stone, moss/stone, moss/dirt, grass/dirt, jungle grass/mud, corrupt
+  jungle grass/mud and /dirt, crimson jungle grass/mud.
+- **Every side-shape combination** of a dirt centre (14 406), and **every block type's slab** at two origins and two
+  variants (large frames).
+- **Variants:** 90 frames with reset and 30 without.
+
+Framing in two passes, in one pass, and with the game's own range framing (`WorldGen.RangeFrame`) gives identical
+cells, so the results do not depend on the framing order.
+
+#### The framing database
+
+`observe.ps1 -Mode Database` (in parallel shards, about 15 minutes) records, for every one of the **333 self-framed
+block types** and every other one, all 6 561 neighbourhoods of the pair, each type's variant map, the tables by
+position of the position-dependent types, every **wall** type, and every shaped-corner combination. Verification is
+part of the run: pairs are grouped by 64 probe neighbourhoods, every grouped pair gets its full table, every pair
+treated like air or like itself is checked on 200 further neighbourhoods, and one of each in full; a run with any
+failure is refused. The game keeps some state between frames: for a few sand-type neighbourhoods (about 0.07 % of
+samples) the first frame after other tiles differs from every repeat, so each neighbourhood is framed twice and the
+second, steady result is recorded. `scripts/framing/export-database.mjs` merges the shards, checks the shaped-corner rule over all
+5.9 million combinations, and writes `packages/renderer/src/framing/terraria-framing.generated.ts` (86 KiB: 53
+distinct tables, raw-deflated; the relation of every pair; the variant maps). `loadFramingDatabase` reads it;
+`packages/renderer/tests/framing-database.test.ts` checks the worked examples against it in CI, without the game.
+
+| Question | Answer (R) |
+|---|---|
+| O1 variants | Random on every framed load, remembered only in memory ("Variant"). Exact reproduction is impossible; `(7x + 11y) mod 3` stays. |
+| O2 ore neighbours | Rules 3 and 5 hold over every neighbourhood ("Neighbour classes"). |
+| O3 fallback and corners | The 28 fallback codes are exact; the corner order holds with rim NE before rim NW ("Choosing the cell"). |
+| O4 large frames | 24 ids, position patterns 3 × 4 and 2 × 2, variant ignored ("Variant"). |
+| O5 shapes | The face rule, 14 406 of 14 406 ("Slopes and half blocks"). Shaped corner neighbours not observed. |
+| O6 coralstone | Frames identically to stone against dirt (rims) and against stone. |
+| O7 one missing diagonal | Plain interior for each of the four corners, for dirt and stone. |
+| O8 moss | Uses rows 15–21; same with stone or dirt around; own selection, not the grass rule ("Grass and moss sheets"). |
+| O10 jungle grasses | Mud is the partner; identical to grass on dirt. |
+| Grass examples | G1, G4–G8 match; G2, G3, G9 corrected. |
+| Shaped corners | A corner neighbour counts by presence, whatever its shape (5 944 704 of 5 944 704). |
+| Merging | Per pair: like air, like itself, as partner or as relative (database). |
+| Walls | Any wall counts as a neighbour, never the diagonals; the blocks 54, 328, 459, 748 count too; variants random except 22 large-frame walls ("Walls"). |
+
+`scripts/framing/observe.test.mjs` (opt-in, `TERRARIA_ASSEMBLY`) re-runs the pipeline and checks these statements
+against a local installation.
+
 ### Not covered (deferred)
 
-Gemspark 8-way framing (A13), cactus/vines/beams/columns, the white mask blocks of `Tiles_2` (O9), modded tiles,
-walls (already in "Walls"), tile animation, paint and lighting. Grass is documented (cited) but not derived, and
-large-frame and moss framing wait for H8–H9.
+Non-block self-framed ids (cactus, vines, beams, columns, …), the white mask blocks of `Tiles_2` (O9), modded tiles,
+tile animation, paint and lighting. Neighbourhoods of three or more types at once are covered by the rules, not by
+tables (see "Neighbour classes").
 
 ### Open questions
 
-The [observation results](#observation-results-2026-10-08) and [Frozen-world results](#frozen-world-results)
-narrow these questions. A result for one material or context is not proof for all ids.
+Every question of the earlier lists is answered by the [runtime observation](#runtime-observation-results-2026-10-09) (R):
+O1 (variants are random per load), O2 (merging, per pair in the database), O3 (fallback and corner order), O4 (large
+frames), O5 (the face rule and the corner rule), O6 (coralstone frames like stone), O7 (one missing diagonal keeps
+the plain interior), O8 (moss: its own selection, in the database) and O10 (mud is the jungle grasses' partner).
+What stays open:
 
-- **O1** Does the game re-roll the variant on every load (H2)? The recommendation stands either way.
-- **O2** Ore ↔ ore and ore ↔ dirt. G confirms rule 3's full dirt rim for copper and rule 5's seam for copper
-  beside iron; outlined copper in stone is also observed. Generalization to other non-stone blocks and ore
-  pairs remains based on the art and the chosen contract.
-- **O3** G confirms fallback for all 28 missing side codes in the empty-diagonal contexts, and NW+NE
-  notch priority for four missing diagonals in dirt and stone. Other three-hole rotations and mixed
-  rim/notch corner priorities remain unobserved.
-- **O4** Large-frame variant patterns (24 ids): still open. The art shows six cells per look (two copies of the
-  rim-free block), not three, and gives no sign of how they are spread; restate the patterns from H9, not from A13.
-- **O5** G shows that full dirt neighbours close edges toward cut faces (H3), contradicting A8's
-  shape-independent approximation. The complete partial-face and corner rules remain to be derived;
-  A13's face entries for shapes 4 and 5 also disagree with its own drawing code.
-- **O6** Answered per sheet ("Measuring the sheet", "Grass and moss sheets", "Variant"): 88 of the 89 dirt-partner
-  sheets of 288 × 270, ash and hellstone share stone's layout of sides and rims; the 21 taller sheets are moss and
-  share the grass positions; the 24 large-frame sheets hold the rim-free block twice. Still open: **coralstone
-  315**, whose rim slots carry no partner art, so the art cannot prove where its rims are (its rows 0–4 follow the
-  stone layout); a viewer frames it like stone. Rows 15–21 are answered for grass (cited rules) and stay open for
-  moss (O8).
-- **O7** Dirt's sheet holds single-notch art in the 12 slots where stone has rim corners. The contract keeps the
-  plain interior for one missing diagonal (cited order, A10 108–112). If H6 shows a notch, a partner-less block
-  would select those slots for one missing corner, and step 2 of "Choosing the cell" gains four single-notch looks.
-- **O8** Green moss's tested stone-neighbour contexts support ordinary block positions over rows 0–14.
-  The art also has grass rows 15–21; no uniquely identified use of those rows is observed, and the
-  complete rule for all moss types and dirt boundaries remains open.
-- **O9** `Tiles_2` rows 22–109: four white-only mask blocks at the grass positions. Not used by framing; what the
-  game draws with them is open and out of scope for the viewer until a feature needs it.
-- **O10** Corrupt and crimson jungle grass (661, 662): A12 names dirt as partner, but both the art (S)
-  and the unchanged frozen cases (G) support mud: the grass connects to mud below and closes toward dirt
-  at the left. The viewer's mud-partner choice is supported for both observed ids.
-
-Proposed follow-up issues: [planning/tile-framing-follow-ups.md](planning/tile-framing-follow-ups.md).
+- **O9** `Tiles_2` rows 22–109 (white mask blocks): framing never selects them; what draws them is out of scope until a
+  feature needs it.
+- **Drawing shaped tiles**: how the chosen cell is cut into a slope or half block (the sprite-mode follow-up).
+- **Mixed neighbourhoods**: three or more types around one centre follow the per-pair letters by the rules above;
+  the observer can check any such neighbourhood on demand, but the database tabulates pairs only.
 
 ## License review of existing decoders
 
@@ -965,7 +944,7 @@ format, never copied; "Depend" = may be a build or runtime dependency.
 | libmspack `lzxd.c` (A7) | C | **LGPL-2.1** | yes | no | the canonical decoder, but native — unusable in the browser and an unwanted native dependency in .NET |
 | [xnb-js](https://github.com/Lybell-Art/xnb-js) (`2e533abf`) | JS | **LGPL-3.0** | readme only | no | LGPL in a bundled PWA adds relinking obligations; we would also lose control of error reporting |
 | [xnbcli](https://github.com/LeonBlade/xnbcli) (`499929e4`) | JS (Node) | **GPL-3.0** | **no** | no | copyleft; do not read the code to keep our implementation clearly independent |
-| TEdit (A8–A13) | C# | Ms-PL | yes | no | already a cited source for the `.wld` format; its texture loading goes through XNA |
+| TEdit (A8, A11, A12) | C# | Ms-PL | yes | no | already a cited source for the `.wld` format; its texture loading goes through XNA |
 | tModLoader | C# | MIT | yes (M7) | no | mod assets are M7 |
 
 **Recommendation:** write both decoders (.NET and TS) **from this document**, with no dependency. The format subset

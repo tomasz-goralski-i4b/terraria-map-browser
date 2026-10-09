@@ -74,7 +74,7 @@ describe("packSheets", () => {
     }
   });
 
-  it("packSheets_MixedSizes_ReadingARectangleBackYieldsTheOriginalPixels", () => {
+  it("packSheets_MixedSizes_ReadingARectangleBackYieldsTheOriginalPixels", { tags: ["perf"] }, () => {
     const atlas = packSheets(MIXED, { pageSize: 512, padding: 2 });
     for (const source of MIXED) {
       const entry = findSprite(atlas, source.kind, source.id);
@@ -338,7 +338,7 @@ describe("buildSpriteAtlas", () => {
     expect(entry && readSpritePixels(result.atlas, entry)).toEqual(patternRgba(90, 40));
   });
 
-  it("buildSpriteAtlas_SecondBuildWithSameFingerprint_ReadsCacheAndDecodesNothing", async () => {
+  it("buildSpriteAtlas_SecondBuildWithSameFingerprint_ReadsCacheAndDecodesNothing", { tags: ["perf"] }, async () => {
     const content = contentWith(SHEETS);
     const cache = new MemoryDirectory();
     const counter = countingDecoder();

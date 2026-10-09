@@ -118,7 +118,9 @@ Install the matching browser once locally with `pnpm exec playwright install chr
 ([Playwright browser setup](https://playwright.dev/docs/browsers)). Browser installation is an explicit setup
 step, not a dependency install hook. `bash scripts/verify.sh` runs the full build (.NET, `tsc -b`, Vite), lint with zero
 warnings, the contract and fixture checks, all Node and browser Vitest projects (`scripts/test.sh`) and the
-inspector smoke.
+inspector smoke. CI runs it as two parallel jobs on separate runners, `verify (dotnet)` and `verify (web)`, by setting
+`STUDIO_VERIFY_PART=dotnet` (restore, build, `dotnet test`, inspector smoke) or `=web` (everything else); the two
+halves together are exactly the unset run, which local and agent-gate runs keep using.
 
 The Vitest tag `perf` (defined in `vitest.config.ts`) marks tests that are too slow or too timing-sensitive for the
 shared CI runners, which render through SwiftShader: wall-clock bounds (a heartbeat or long-task bound), the
