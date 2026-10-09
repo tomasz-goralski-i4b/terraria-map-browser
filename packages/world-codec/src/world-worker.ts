@@ -1,6 +1,7 @@
-// Worker entry: parses worlds off the main thread (protocol in worker-protocol.ts).
+// Worker entry: parses and saves worlds off the main thread (protocol in worker-protocol.ts).
 import { WorldFormatError } from "./world-format-error.js";
 import { readWorldTiles } from "./tiles.js";
+import { writeWorld } from "./writer.js";
 import {
   collectTransferList,
   type WorldWorkerFailure,
@@ -31,5 +32,15 @@ async function parse(requestId: number, input: File | ArrayBuffer): Promise<void
 
 // Cancellation is the client terminating this Worker; there is nothing to stop from inside.
 scope.onmessage = (event) => {
-  void parse(event.data.requestId, event.data.input);
+  const request = event.data;
+  if (request.type === "parse") {
+    void parse(request.requestId, request.input);
+    return;
+  }
+  try {
+    const output = writeWorld(request.world);
+    scope.postMessage({ type: "saved", requestId: request.requestId, output }, { transfer: [output] });
+  } catch (error) {
+    scope.postMessage({ type: "failed", requestId: request.requestId, error: toFailure(error) });
+  }
 };
