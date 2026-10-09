@@ -70,6 +70,7 @@ function fullWorld(width: number, height: number): RenderableWorld {
     block: new Uint16Array(count), wall: new Uint16Array(count), liquid: new Uint8Array(count),
     liquidAmount: new Uint8Array(count), paint: new Uint8Array(count), wallPaint: new Uint8Array(count),
     frameX: new Int16Array(count), frameY: new Int16Array(count), flags: new Uint16Array(count),
+    shape: new Uint8Array(count),
   };
   for (let i = 0; i < count; i++) {
     const hash = (i * 2654435761) >>> 0;
@@ -82,6 +83,7 @@ function fullWorld(width: number, height: number): RenderableWorld {
     planes.frameX[i] = ((hash >>> 16) % 6) * 9;
     planes.frameY[i] = ((hash >>> 19) % 7) * 18;
     planes.flags[i] = (hash >>> 22) & 0xff;
+    planes.shape[i] = (hash >>> 25) % 6;
   }
   return {
     width, height, surfaceY: Math.floor(height / 3), planes,
@@ -107,9 +109,14 @@ function offsetViews(world: RenderableWorld): RenderableWorld {
 
 type PlaneName = keyof RenderableWorld["planes"];
 
-/** Plane order in the page layers (packages/renderer/README.md, chunk pages). */
+/**
+ * Plane order in the page layers (packages/renderer/README.md, chunk pages). The 16-bit page holds one more layer per
+ * chunk after the world's planes: the framed cells, computed by the renderer and uploaded only in sprite mode.
+ */
 const PLANES_16: readonly PlaneName[] = ["block", "wall", "flags", "frameX", "frameY"];
-const PLANES_8: readonly PlaneName[] = ["liquid", "liquidAmount", "paint", "wallPaint"];
+const PLANES_8: readonly PlaneName[] = ["liquid", "liquidAmount", "paint", "wallPaint", "shape"];
+const LAYERS_16 = PLANES_16.length + 1;
+const LAYERS_8 = PLANES_8.length;
 
 interface Upload {
   readonly plane: PlaneName;
@@ -225,9 +232,10 @@ describe("chunk uploads read the world planes in place", () => {
           expect(call.rowLength).toBe(world.height);
           expect(call.alignment).toBe(1);
           expect(call.imageHeight).toBe(world.width);
-          const order = PLANES_16.includes(call.plane) ? PLANES_16 : PLANES_8;
-          expect(call.layer % order.length).toBe(order.indexOf(call.plane));
-          slots.add(Math.floor(call.layer / order.length));
+          const wide = PLANES_16.includes(call.plane);
+          const layers = wide ? LAYERS_16 : LAYERS_8;
+          expect(call.layer % layers).toBe((wide ? PLANES_16 : PLANES_8).indexOf(call.plane));
+          slots.add(Math.floor(call.layer / layers));
         }
         // All planes of one chunk share its slot.
         expect(slots.size).toBe(1);
@@ -554,8 +562,8 @@ describe("cost of a layer toggle", () => {
         now += CALL_OVERHEAD + texels * (type === gl.UNSIGNED_SHORT ? 2 : 1) * PER_BYTE;
         return;
       }
-      // Main: one charge per chunk, at the block plane's upload (16-bit, layer slot * 5 + 0).
-      if (format !== gl.RED_INTEGER || type !== gl.UNSIGNED_SHORT || (args[4] as number) % 5 !== 0) return;
+      // Main: one charge per chunk, at the block plane's upload (16-bit, layer slot * LAYERS_16 + 0).
+      if (format !== gl.RED_INTEGER || type !== gl.UNSIGNED_SHORT || (args[4] as number) % LAYERS_16 !== 0) return;
       const y0 = unpack.get(gl.UNPACK_SKIP_PIXELS) ?? 0;
       const x0 = unpack.get(gl.UNPACK_SKIP_ROWS) ?? 0;
       const reads = mainPreparation(world, rules, x0, x0 + (height ?? 0), y0, y0 + (width ?? 0), wide, narrow);
