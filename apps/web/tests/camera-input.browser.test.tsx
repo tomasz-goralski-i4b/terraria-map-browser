@@ -255,7 +255,7 @@ test("a live reduced-motion change finishes easing and unmount cancels pending f
   expect(renderer.dispose).toHaveBeenCalledOnce();
 });
 
-test("zoom to 400 % glides to 4 px per tile around the centre of the view", async () => {
+test("zoomTo glides to 4 px per tile around the centre of the view", async () => {
   await mount();
   const centre = { x: canvas().width / 2, y: canvas().height / 2 };
   const tile = screenToTile(drawn, centre.x, centre.y);

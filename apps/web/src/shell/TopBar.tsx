@@ -103,6 +103,7 @@ function recentMenu(recent: readonly RecentWorld[], now: number): MenuItem {
 /** The menu bar, the open world's name and file, and the global actions. Nothing else lives here. */
 export function TopBar({ commands }: { readonly commands: readonly Command[] }): React.JSX.Element {
   const summary = useAppStore((state) => state.summary);
+  const unsaved = useAppStore((state) => state.unsavedChanges);
   const input = useRef<HTMLInputElement>(null);
   const assetStatus = useAssetStore((state) => state.status);
   const folder = useWorldLibrary((state) => state.folder);
@@ -139,7 +140,6 @@ export function TopBar({ commands }: { readonly commands: readonly Command[] }):
         { kind: "separator" },
         menuItem(get("view.fit")),
         menuItem(get("view.actual")),
-        menuItem(get("view.zoom400")),
         { kind: "separator" },
         menuItem(get("view.stats")),
         { kind: "submenu", label: "Theme", icon: "theme", items: commands.filter((command) => command.id.startsWith("view.theme.")).map(menuItem) },
@@ -170,6 +170,7 @@ export function TopBar({ commands }: { readonly commands: readonly Command[] }):
         ) : (
           <>
             <span className="world-name">{summary.name}</span>
+            {unsaved && <span className="unsaved-dot" role="img" aria-label="Unsaved changes" title="Unsaved changes" />}
             <span className="world-file muted">{summary.fileName} · {formatBytes(summary.fileSize)} · format {summary.formatVersion}</span>
           </>
         )}

@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import type { MapRendererStats } from "@studio/renderer";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { MAX_ZOOM, MIN_ZOOM, type MapRendererStats } from "@studio/renderer";
 import type { WorldChest } from "@studio/world-codec";
 import type { Tile } from "@studio/world-model";
 import { chestTitle } from "../panels/chest-fields.js";
@@ -52,6 +52,75 @@ function RenderStats(): React.JSX.Element {
   );
 }
 
+/** "250", "250 %", "62,5%" → 2.5 / 0.625 pixels per tile; anything else is not a zoom. */
+export function parseZoomPercent(text: string): number | null {
+  const value = Number(text.replace(/%/g, "").replace(",", ".").trim());
+  return text.trim().length > 0 && Number.isFinite(value) && value > 0 ? value / 100 : null;
+}
+
+const ZOOM_RANGE = `${String(MIN_ZOOM * 100)} %–${String(MAX_ZOOM * 100)} %`;
+
+/**
+ * The zoom in the bottom-right corner, as in image editors: a click turns it into a field; Enter (or leaving the
+ * field) zooms to the typed percentage around the centre of the view, clamped to what the map supports; Escape
+ * leaves it unchanged.
+ */
+function ZoomField({ zoom }: { readonly zoom: number | null }): React.JSX.Element {
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState("");
+  const input = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (editing) input.current?.select();
+  }, [editing]);
+  if (zoom === null) return <span className="status-cell status-zoom" title="Zoom" data-testid="zoom" />;
+  const shown = `${String(Math.round(zoom * 100))}%`;
+  const commit = (): void => {
+    setEditing(false);
+    const next = parseZoomPercent(text);
+    if (next !== null) getMapController()?.zoomTo(next);
+  };
+  if (!editing) {
+    return (
+      <button
+        type="button" className="status-cell status-zoom status-zoom-button" data-testid="zoom"
+        aria-label={`Zoom ${shown}, click to type a zoom`} title={`Zoom: click to type a value (${ZOOM_RANGE})`}
+        onClick={() => {
+          setText(String(Math.round(zoom * 100)));
+          setEditing(true);
+        }}
+      >
+        {shown}
+      </button>
+    );
+  }
+  return (
+    <input
+      ref={input}
+      className="status-zoom-input"
+      aria-label={`Zoom in percent (${ZOOM_RANGE})`}
+      inputMode="decimal"
+      autoComplete="off"
+      spellCheck={false}
+      value={text}
+      onChange={(event) => {
+        setText(event.target.value);
+      }}
+      onBlur={commit}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          commit();
+        } else if (event.key === "Escape") {
+          event.preventDefault();
+          event.stopPropagation();
+          setText("");
+          setEditing(false);
+        }
+      }}
+    />
+  );
+}
+
 /**
  * The bottom bar: cursor tile, its depth band, what is at it, zoom, and render stats on demand. Values are tabular
  * numerals in fixed-width cells, so the bar never shifts while the pointer moves.
@@ -84,9 +153,7 @@ export function StatusBar({ world }: { readonly world?: StatusWorld | null }): R
       </span>
       <span className="status-spacer" />
       {statsVisible && <RenderStats />}
-      <span className="status-cell status-zoom" title="Zoom" data-testid="zoom">
-        {zoom === null ? "" : `${String(Math.round(zoom * 100))}%`}
-      </span>
+      <ZoomField zoom={zoom} />
     </footer>
   );
 }

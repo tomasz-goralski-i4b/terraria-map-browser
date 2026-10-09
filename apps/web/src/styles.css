@@ -376,6 +376,14 @@ kbd {
   font-size: var(--text-small);
 }
 
+.unsaved-dot {
+  align-self: center;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-2);
+}
+
 .assets-button {
   position: relative;
   overflow: hidden;
@@ -1238,6 +1246,36 @@ kbd {
 
 .status-zoom {
   min-width: 7ch;
+  text-align: right;
+}
+
+.status-zoom-button {
+  height: 18px;
+  padding: 0 var(--space-1);
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  cursor: text;
+}
+
+.status-zoom-button:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-2);
+}
+
+.status-zoom-input {
+  width: 8ch;
+  height: 18px;
+  padding: 0 var(--space-1);
+  border: 1px solid var(--focus);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--text-1);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
   text-align: right;
 }
 

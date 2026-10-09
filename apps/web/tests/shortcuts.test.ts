@@ -13,7 +13,7 @@ test.each([
   ["a bare 1 is not Alt+1", key({ key: "1", code: "Digit1" }), "Alt+1", false],
   ["Alt+2 is not Alt+1", key({ key: "2", code: "Digit2", altKey: true }), "Alt+1", false],
   ["1 for Actual size", key({ key: "1", code: "Digit1" }), "1", true],
-  ["4 for Zoom to 400%", key({ key: "4", code: "Digit4" }), "4", true],
+  ["a bare digit", key({ key: "4", code: "Digit4" }), "4", true],
   ["? with Shift", key({ key: "?", code: "Slash", shiftKey: true }), "Shift+?", true],
   ["Ctrl+K", key({ key: "k", code: "KeyK", ctrlKey: true }), "Control+K", true],
   ["⌘K on macOS", key({ key: "k", code: "KeyK", metaKey: true }), "Control+K", true],

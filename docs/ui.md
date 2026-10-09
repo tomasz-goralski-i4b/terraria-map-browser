@@ -47,13 +47,14 @@ Code: `apps/web/src/ui/` (primitives), `apps/web/src/shell/` (layout, commands, 
 ```
 
 - **Top bar** (`shell/TopBar.tsx`) holds the menu bar, the open world's name, file, size and format (centred, as an
-  editor's title), the assets button and the global actions. It holds nothing else. With editing it gains an
-  unsaved-changes dot next to the name.
+  editor's title), the assets button and the global actions. It holds nothing else. A dot next to the name marks
+  unsaved changes (`unsavedChanges` in the app store, set by edit tools, cleared by a save or by opening another
+  world); while it is set, reloading or closing the tab asks first with the browser's own "Leave site?" dialog.
 - **Menu bar** (WAI-ARIA `menubar`, as in code and image editors), built from commands:
   - *File*: Open World… `Ctrl+O`, Open Folder…, **Worlds ▸** (the remembered folder's worlds, newest first, with size
     and age; the submenu flies out on hover or `→`), **Open Recent ▸**, Save `Ctrl+S` (disabled until editing),
     Save As… `Ctrl+Shift+S`, Close World.
-  - *View*: Show panels, Fit world, Actual size, Zoom to 400%, Show render stats, **Theme ▸**, Reset layout.
+  - *View*: Show panels, Fit world, Actual size, Show render stats, **Theme ▸**, Reset layout.
   - *Assets*: Connect, Preview sprite sheets, Disconnect.
   - *Help*: Command palette, Keyboard shortcuts.
 
@@ -70,8 +71,7 @@ Code: `apps/web/src/ui/` (primitives), `apps/web/src/shell/` (layout, commands, 
   settings here: brush size and shape, and the layer mask, i.e. which of block, wall, paint, liquid and wires a stroke
   writes (as TEdit does). A tool never opens a dialog to change a setting.
 - **Map** (`components/MapView.tsx`, `MapCanvas.tsx`) holds the zoom controls (Fit world `F`, 1:1 `1`) in its top
-  right corner; View ▸ Zoom to 400% (`4`) is next to them in the menu. The minimap (#145) and transient messages
-  (loading, errors) also go over the map. With no world it shows the **start screen** (`components/StartScreen.tsx`),
+  right corner. The minimap (#145) and transient messages (loading, errors) also go over the map. With no world it shows the **start screen** (`components/StartScreen.tsx`),
   as an editor's start page: Open World, Open Worlds Folder, Connect assets, the folder's worlds and the recent ones,
   where Terraria keeps worlds, and that files stay on this computer.
 - **Notifications** (`shell/Notifications.tsx`, `notify()` in `shell/notification-store.ts`) report finished
@@ -90,7 +90,9 @@ Code: `apps/web/src/ui/` (primitives), `apps/web/src/shell/` (layout, commands, 
   - its depth band;
   - its block, wall and liquid in one line;
   - render stats, when turned on from the menu;
-  - the zoom (backing-store pixels per tile × 100 %).
+  - the zoom (backing-store pixels per tile × 100 %). As in image editors, a click turns it into a field: type any
+    percentage and press Enter (or leave the field) to zoom there around the centre of the view, clamped to the
+    supported range (12.5 %–25 600 %, lower only to fit a large world); Escape keeps the zoom.
 
   With editing it also shows the selection size and the brush footprint.
 

@@ -8,7 +8,7 @@ import type { Tile } from "@studio/world-model";
 import { App } from "../src/App.js";
 import { worldFieldGroups } from "../src/panels/world-fields.js";
 import { DEFAULT_LAYOUT, type LayoutStorage } from "../src/shell/layout-store.js";
-import { StatusBar, type StatusWorld } from "../src/shell/StatusBar.js";
+import { parseZoomPercent, StatusBar, type StatusWorld } from "../src/shell/StatusBar.js";
 import { useViewStore } from "../src/shell/view-store.js";
 import "../src/styles.css";
 import "./support/commands.js";
@@ -269,6 +269,26 @@ test("the menu bar works from the keyboard: Alt+letter, arrows between menus and
   await expect.element(page.getByRole("dialog", { name: "Keyboard shortcuts" })).toBeVisible();
   await userEvent.keyboard("{Alt>}f{/Alt}");
   expect(document.querySelector("[role=menu]")).toBeNull();
+});
+
+test("the zoom in the status bar takes a typed percentage; Escape keeps the zoom", async () => {
+  expect([parseZoomPercent("250"), parseZoomPercent(" 62,5 % "), parseZoomPercent("abc"), parseZoomPercent("0"), parseZoomPercent("")])
+    .toEqual([2.5, 0.625, null, null, null]);
+  await render(<App layoutStorage={storage} />);
+  await openFixture("SCCO1.wld");
+  const zoom = page.getByRole("button", { name: /^Zoom \d+%, click to type a zoom$/ });
+  await expect.element(zoom).toBeVisible();
+  const before = useViewStore.getState().zoom;
+  await zoom.click();
+  const field = page.getByRole("textbox", { name: /^Zoom in percent/ });
+  await expect.element(field).toHaveFocus();
+  await userEvent.keyboard("{Control>}a{/Control}12345{Escape}");
+  await expect.element(field).not.toBeInTheDocument();
+  expect(useViewStore.getState().zoom).toBe(before);
+  await zoom.click();
+  await userEvent.keyboard("{Control>}a{/Control}300{Enter}");
+  await expect.poll(() => useViewStore.getState().zoom, { timeout: 5000 }).toBeCloseTo(3, 3);
+  await expect.element(page.getByTestId("zoom")).toHaveTextContent("300%");
 });
 
 test("the dock tabs follow the arrow keys, Home and End", async () => {

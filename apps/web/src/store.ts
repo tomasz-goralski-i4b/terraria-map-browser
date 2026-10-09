@@ -20,6 +20,12 @@ export interface AppState {
   /** Summary of the currently loaded world; kept when a later open fails or is cancelled. */
   readonly summary: WorldSummary | null;
   readonly error: LoadError | null;
+  /**
+   * The loaded world was changed after it was opened or last saved. Edit tools set it; saving or opening another world
+   * clears it. While it is set, reloading or closing the tab asks first.
+   */
+  readonly unsavedChanges: boolean;
+  readonly setUnsavedChanges: (unsaved: boolean) => void;
   readonly setLoading: (fileName: string) => void;
   readonly setLoaded: (summary: WorldSummary) => void;
   readonly setFailed: (error: LoadError) => void;
@@ -36,11 +42,15 @@ export const useAppStore = create<AppState>()((set) => ({
   loadingFileName: null,
   summary: null,
   error: null,
+  unsavedChanges: false,
+  setUnsavedChanges: (unsaved) => {
+    set({ unsavedChanges: unsaved });
+  },
   setLoading: (fileName) => {
     set({ phase: "loading", loadingFileName: fileName, error: null });
   },
   setLoaded: (summary) => {
-    set({ phase: "loaded", loadingFileName: null, summary, error: null });
+    set({ phase: "loaded", loadingFileName: null, summary, error: null, unsavedChanges: false });
   },
   setFailed: (error) => {
     set({ phase: "failed", loadingFileName: null, error });

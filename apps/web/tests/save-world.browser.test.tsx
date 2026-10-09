@@ -173,6 +173,23 @@ test("File ▸ Save As… names the file, shows the folder and what saving guara
   await expect.element(notifications()).toMatchTextContent("verified by reading it back");
 });
 
+test("with unsaved changes a reload asks first; saving clears them", async () => {
+  await render(<App />);
+  await openWorld(writerSource());
+  const reload = (): boolean => {
+    const event = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(event);
+    return event.defaultPrevented;
+  };
+  expect(reload()).toBe(false);
+  useAppStore.getState().setUnsavedChanges(true);
+  await expect.element(page.getByRole("img", { name: "Unsaved changes" })).toBeVisible();
+  await expect.poll(reload).toBe(true);
+  await saveInto(folderDouble());
+  await expect.element(page.getByRole("img", { name: "Unsaved changes" })).not.toBeInTheDocument();
+  await expect.poll(reload).toBe(false);
+});
+
 test("Ctrl+Shift+S opens Save As; Ctrl+S is kept from the browser while there is nothing to save", async () => {
   await render(<App />);
   await openWorld(writerSource());

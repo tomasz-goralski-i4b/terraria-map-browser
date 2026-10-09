@@ -282,6 +282,7 @@ export async function confirmSave(): Promise<void> {
     }
     finish(controller);
     useSaveStore.setState(CLOSED);
+    useAppStore.getState().setUnsavedChanges(false);
     notify({ kind: "success", title: `Saved ${name}`, detail: `${formatBytes(output.byteLength)} in “${folderLabel(directory)}” · verified by reading it back` });
   } catch (error) {
     if (active()) useSaveStore.setState({ stage: "idle", error: isAbort(error) ? null : errorText(error) });
@@ -323,6 +324,7 @@ export async function downloadWorldCopy(): Promise<void> {
     }, DOWNLOAD_URL_LIFETIME_MS);
     finish(controller);
     useSaveStore.setState(CLOSED);
+    useAppStore.getState().setUnsavedChanges(false);
     notify({ kind: "success", title: `Downloaded ${name}`, detail: `${formatBytes(output.byteLength)} · verified by reading it back` });
   } catch (error) {
     if (active()) useSaveStore.setState({ stage: "idle", error: isAbort(error) ? null : errorText(error) });

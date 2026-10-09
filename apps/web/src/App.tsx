@@ -15,6 +15,7 @@ import { ToolOptions } from "./shell/ToolOptions.js";
 import { ToolRail } from "./shell/ToolRail.js";
 import { TopBar } from "./shell/TopBar.js";
 import { useViewStore } from "./shell/view-store.js";
+import { useAppStore } from "./store.js";
 import { resetWorldLibrary, startWorldLibrary } from "./world/world-library.js";
 import { resetDefaultWorldSession } from "./world/world-session.js";
 
@@ -26,6 +27,24 @@ function SpritePreview(): React.JSX.Element | null {
   const atlas = ready ? getDefaultAssetSession().getAtlas() : null;
   if (!open || atlas === null) return null;
   return <SpritePreviewDialog atlas={atlas} onClose={() => { setOpen(false); }} />;
+}
+
+/**
+ * With unsaved changes, reloading or closing the tab asks first. Browsers show their own confirmation ("Leave site?
+ * Changes you made may not be saved"); a page cannot word it.
+ */
+function useUnsavedChangesGuard(): void {
+  const unsaved = useAppStore((state) => state.unsavedChanges);
+  useEffect(() => {
+    if (!unsaved) return undefined;
+    const onBeforeUnload = (event: BeforeUnloadEvent): void => {
+      event.preventDefault();
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => {
+      window.removeEventListener("beforeunload", onBeforeUnload);
+    };
+  }, [unsaved]);
 }
 
 /** The theme choice applies to the document root, so tokens resolve the same in dialogs and the page. */
@@ -65,6 +84,7 @@ export function App({ layoutStorage }: AppProps = {}): React.JSX.Element {
     void getDefaultAssetSession().restore();
   }, []);
   useTheme();
+  useUnsavedChangesGuard();
   const commands = useCommands();
   useGlobalShortcuts(commands);
   const dockHidden = useLayoutStore((state) => state.dockHidden);

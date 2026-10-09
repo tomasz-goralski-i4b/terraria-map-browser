@@ -104,7 +104,7 @@ let defaultSession: WorldSession | undefined;
 /** Forgets the loaded world and returns the store to its initial idle state (a freshly mounted app). */
 export function resetDefaultWorldSession(): void {
   defaultSession?.reset();
-  useAppStore.setState({ phase: "idle", loadingFileName: null, summary: null, error: null });
+  useAppStore.setState({ phase: "idle", loadingFileName: null, summary: null, error: null, unsavedChanges: false });
 }
 
 /** The session used by the app: backed by a real world-parsing Worker. */
