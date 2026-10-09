@@ -109,6 +109,21 @@ export interface FramingDatabase {
   readonly blockVariant: (centre: number, cell: Cell, variant: number) => Cell | null;
   /** The cell of a wall in neighbourhood `code` (0 no wall, 1 the same wall, 2 another wall), variant 0. */
   readonly wallCell: (wall: number, code: number) => Cell | null;
+
+  // Index-based access for the block framer (frame-block.ts), which looks up millions of cells without allocating.
+  /** Cell index → cell. */
+  readonly cells: readonly Cell[];
+  readonly tableCount: number;
+  /** The cell index `table` records for neighbourhood `code`; −1 when the neighbourhood is unstable. */
+  readonly tableCell: (table: number, code: number) => number;
+  /** The table of `centre` with air and itself only, at position (x, y) for position-framed types; null: no block type. */
+  readonly aloneTable: (centre: number, x: number, y: number) => number | null;
+  /** The table `centre` frames by beside `other` when their relation is "table"; null otherwise. */
+  readonly pairTable: (centre: number, other: number) => number | null;
+  /** The cell index of variant `variant` of a block whose variant-0 cell index is `cell`; −1 when not observed. */
+  readonly variantCell: (centre: number, cell: number, variant: number) => number;
+  /** Whether `centre` frames by position and ignores the variant (the large-frame types). */
+  readonly ignoresVariant: (centre: number) => boolean;
 }
 
 async function inflate(base64: string): Promise<string> {
@@ -131,6 +146,13 @@ export async function loadFramingDatabase(data: FramingDatabaseData): Promise<Fr
   const rows = (await inflate(data.relations)).split("\n");
   const typeIndex = new Map(data.blockTypes.map((type, index) => [type, index]));
   const cellKey = new Map(data.cells.map((cell, index) => [`${String(cell[0])},${String(cell[1])}`, index]));
+  // By number: the index-based lookups run per tile and must not build a key string.
+  const blockOf = new Map(Object.entries(data.blocks).map(([type, block]) => [Number(type), block]));
+  const unstableIndex = data.cells.findIndex((cell) => cell[0] === UNSTABLE_CELL[0] && cell[1] === UNSTABLE_CELL[1]);
+  const tableCell = (table: number, code: number): number => {
+    const index = (tables[table]?.charCodeAt(code) ?? 48 + unstableIndex) - 48;
+    return index === unstableIndex ? -1 : index;
+  };
   const cellAt = (table: string | undefined, code: number): Cell | null => {
     if (table === undefined) return null;
     const cell = data.cells[table.charCodeAt(code) - 48];
@@ -174,5 +196,25 @@ export async function loadFramingDatabase(data: FramingDatabaseData): Promise<Fr
       const entry = data.walls[String(wall)];
       return entry === undefined ? null : cellAt(tables[entry.table], code);
     },
+    cells: data.cells.map((cell): Cell => [cell[0] ?? 0, cell[1] ?? 0]),
+    tableCount: tables.length,
+    tableCell,
+    aloneTable: (centre, x, y) => {
+      const block = blockOf.get(centre);
+      if (block === undefined) return null;
+      if (block.byPosition === undefined) return block.alone;
+      return block.byPosition[(((y % 4) + 4) % 4) * 6 + ((x % 6) + 6) % 6] ?? block.alone;
+    },
+    pairTable: (centre, other) => {
+      const char = relationChar(centre, other);
+      if (char === null || char === "-" || char === "o" || char === "x") return null;
+      return blockOf.get(centre)?.tables[char.charCodeAt(0) - 65] ?? null;
+    },
+    variantCell: (centre, cell, variant) => {
+      const block = blockOf.get(centre);
+      const entry = block === undefined ? undefined : variantMaps[block.variants]?.get(cell);
+      return entry === undefined ? -1 : variant === 1 ? entry[0] : entry[1];
+    },
+    ignoresVariant: (centre) => blockOf.get(centre)?.variantIgnoredByPosition === true,
   };
 }
