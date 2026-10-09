@@ -112,7 +112,8 @@ function syntheticAtlas(): SpriteAtlasSource {
 
 /** The map colours of the world at one pixel per tile, from the CPU reference. */
 function mapColors(world: RenderableWorld, layers: ChunkLayers): Uint8Array {
-  return renderChunk(world as never, 0, 0, { surfaceY: world.surfaceY, layers }).pixels;
+  const { pixels } = renderChunk(world as never, 0, 0, { surfaceY: world.surfaceY, layers });
+  return new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength);
 }
 
 type Rgba = readonly [number, number, number, number];
