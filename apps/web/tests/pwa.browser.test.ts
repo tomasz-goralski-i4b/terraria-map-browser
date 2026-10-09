@@ -14,11 +14,11 @@ function openApp(): Promise<HTMLIFrameElement> {
   });
 }
 
-async function waitForOpenButton(frame: HTMLIFrameElement): Promise<void> {
+async function waitForStartScreen(frame: HTMLIFrameElement): Promise<void> {
   await expect.poll(
     () => frame.contentDocument?.body.textContent ?? "",
     { timeout: 10_000 },
-  ).toContain("Open .wld world");
+  ).toContain("Open World…");
 }
 
 test("the built manifest is linked and valid", async () => {
@@ -39,7 +39,7 @@ test("the built manifest is linked and valid", async () => {
 test("the app shell loads offline after the first visit", async () => {
   // First visit (online): the page registers the service worker, which precaches the shell.
   const first = await openApp();
-  await waitForOpenButton(first);
+  await waitForStartScreen(first);
   const registration = await navigator.serviceWorker.getRegistration(APP_URL);
   expect(registration).toBeDefined();
   await expect.poll(() => registration?.active?.state, { timeout: 10_000 }).toBe("activated");
@@ -49,7 +49,7 @@ test("the app shell loads offline after the first visit", async () => {
     await expect(fetch(APP_URL, { cache: "no-store" })).rejects.toThrow();
     // Second visit (offline): navigation and assets are answered by the service worker's precache.
     const second = await openApp();
-    await waitForOpenButton(second);
+    await waitForStartScreen(second);
     const actions = [...(second.contentDocument?.querySelectorAll(".top-actions button") ?? [])].map((b) => b.textContent);
     expect(actions).toContain("Connect Terraria assets");
   } finally {

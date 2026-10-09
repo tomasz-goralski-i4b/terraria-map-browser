@@ -5,7 +5,7 @@ import type { Command, CommandGroup } from "./commands.js";
 import { useViewStore } from "./view-store.js";
 
 /** A modal `<dialog>`: the browser traps focus, closes it on Escape and restores focus to where it was opened. */
-function useModal(open: boolean, onClose: () => void): React.RefObject<HTMLDialogElement | null> {
+export function useModal(open: boolean, onClose: () => void): React.RefObject<HTMLDialogElement | null> {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     const dialog = ref.current;

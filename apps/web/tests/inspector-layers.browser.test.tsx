@@ -16,6 +16,7 @@ import { toCanonicalWorld } from "../src/world/canonical-world.js";
 import { getDefaultWorldSession } from "../src/world/world-session.js";
 import "../src/styles.css";
 import "./support/commands.js";
+import { dockTab } from "./support/shell.js";
 
 beforeEach(async () => {
   hydrateLayout(null);
@@ -421,6 +422,7 @@ function cpuView(world: CanonicalWorld, depth: { surfaceY: number; rockY: number
 
 test("in a loaded world every layer and wire row removes and restores exactly its pixels, uploading and parsing nothing", async () => {
   await render(<App layoutStorage={null} />);
+  await dockTab("View");
   const parse = vi.spyOn(WorldWorkerClient.prototype, "parse");
   await openFixture("SCCO1.wld");
   // Generous waits: the parse and the renderer's first frames are slow on software GL under the full suite.

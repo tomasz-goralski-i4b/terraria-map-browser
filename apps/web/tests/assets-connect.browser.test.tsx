@@ -14,6 +14,7 @@ import {
 } from "../src/assets/asset-session.js";
 import { hydrateLayout } from "../src/shell/layout-store.js";
 import "../src/styles.css";
+import { dockTab } from "./support/shell.js";
 
 const created: string[] = [];
 
@@ -68,6 +69,7 @@ function useSession(content: FileSystemDirectoryHandle): void {
 test("connecting a Content folder builds the atlas in the Worker and reports it, with the unreadable sheet, on the Sprites row", async () => {
   useSession(await syntheticContent(3));
   await render(<App />);
+  await dockTab("View");
   await expect.element(page.getByRole("button", { name: "Show Sprites" })).toBeDisabled();
   await expect.element(page.getByText("Not connected")).toBeVisible();
 
@@ -96,9 +98,10 @@ test("the atlas build shows its progress on the Sprites row and can be cancelled
     openFolderInput: () => undefined,
   }));
   await render(<App />);
+  await dockTab("View");
   await page.getByRole("button", { name: "Connect Terraria assets" }).click();
   await expect.element(page.getByRole("progressbar", { name: "Building the sprite atlas" })).toBeVisible();
-  await expect.element(page.getByRole("button", { name: "Open .wld world" })).toBeEnabled();
+  await expect.element(page.getByRole("region", { name: "Start" }).getByRole("button", { name: "Open World…" })).toBeEnabled();
 
   await page.getByRole("button", { name: "Terraria assets", exact: true }).click();
   await page.getByRole("menuitem", { name: "Cancel building" }).click();
