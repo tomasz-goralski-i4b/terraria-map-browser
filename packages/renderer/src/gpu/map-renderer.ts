@@ -235,6 +235,23 @@ interface Program<Name extends string> {
   readonly uniforms: Readonly<Record<Name, WebGLUniformLocation>>;
 }
 
+/** A rectangle of world tiles; right and bottom exclusive. */
+interface Area {
+  readonly left: number;
+  readonly top: number;
+  readonly right: number;
+  readonly bottom: number;
+}
+
+/** The smallest area holding `first` (if any) and `second`. */
+function union(first: Area | undefined, second: Area): Area {
+  if (first === undefined) return second;
+  return {
+    left: Math.min(first.left, second.left), top: Math.min(first.top, second.top),
+    right: Math.max(first.right, second.right), bottom: Math.max(first.bottom, second.bottom),
+  };
+}
+
 /** One array texture per plane format, holding up to CHUNKS_PER_PAGE chunks with their aprons, a layer per plane. */
 interface Page {
   /** R16UI, PLANES_16 per chunk: block, wall, flags, frameX, frameY, framed block cell, framed wall cell. */
@@ -540,8 +557,9 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   const framedSlots = new Set<number>();
   // The framed slots whose wall cell layer holds any wall cell (WALLS_INSTANCE_BIT).
   const wallSlots = new Set<number>();
-  // Resident chunks whose planes changed (invalidateTiles): uploaded again on their next draw.
-  const dirtyChunks = new Set<number>();
+  // Resident chunks whose planes changed (invalidateTiles), with the world tiles that changed in their layers (right and
+  // bottom exclusive): uploaded again on their next draw, that rectangle only.
+  const dirtyChunks = new Map<number, Area>();
   // The world the plane unpack state (alignment, row length, image height) is set for; null for GL's defaults. Chunk
   // uploads set it once and then only move the skip parameters; other uploads restore the defaults first.
   let unpackWorld: RenderableWorld | null = null;
@@ -818,16 +836,24 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
    * read in place from the world's plane. A chunk is a rectangle of a column-major plane and a layer stores it
    * transposed, so the unpack parameters select it: an upload row is a world column (UNPACK_ROW_LENGTH is the world's
    * height, UNPACK_IMAGE_HEIGHT its width), starting at the chunk's first column (UNPACK_SKIP_ROWS) and first row
-   * (UNPACK_SKIP_PIXELS). No tile is touched in JavaScript.
+   * (UNPACK_SKIP_PIXELS). No tile is touched in JavaScript. With `area` (world tiles, after an edit) only the part of
+   * the layers inside it, and the slot's cell layers stay as they are (uploadCellArea updates them).
    */
-  const uploadChunk = (source: RenderableWorld, chunk: ChunkCoord, slot: number): void => {
+  const uploadChunk = (source: RenderableWorld, chunk: ChunkCoord, slot: number, area?: Area): void => {
     const originX = chunk.x * CHUNK_SIZE;
     const originY = chunk.y * CHUNK_SIZE;
     // The apron, clipped to the world: texels past the world's edges keep stale values the shaders never read.
-    const firstColumn = Math.max(-PAGE_APRON, -originX);
-    const endColumn = Math.min(CHUNK_SIZE + PAGE_APRON, source.width - originX);
-    const firstRow = Math.max(-PAGE_APRON, -originY);
-    const endRow = Math.min(CHUNK_SIZE + PAGE_APRON, source.height - originY);
+    let firstColumn = Math.max(-PAGE_APRON, -originX);
+    let endColumn = Math.min(CHUNK_SIZE + PAGE_APRON, source.width - originX);
+    let firstRow = Math.max(-PAGE_APRON, -originY);
+    let endRow = Math.min(CHUNK_SIZE + PAGE_APRON, source.height - originY);
+    if (area !== undefined) {
+      firstColumn = Math.max(firstColumn, area.left - originX);
+      endColumn = Math.min(endColumn, area.right - originX);
+      firstRow = Math.max(firstRow, area.top - originY);
+      endRow = Math.min(endRow, area.bottom - originY);
+      if (endColumn <= firstColumn || endRow <= firstRow) return;
+    }
     const page = pages[Math.floor(slot / CHUNKS_PER_PAGE)];
     if (page === undefined) throw new Error(`chunk slot ${String(slot)} has no page`);
     const inPage = slot % CHUNKS_PER_PAGE;
@@ -857,7 +883,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     upload(planes8, PLANE_COUNT_8, gl.UNSIGNED_BYTE);
     textureUploads++;
     // The slot's cell layer still holds the cells of whatever was there before.
-    framedSlots.delete(slot);
+    if (area === undefined) framedSlots.delete(slot);
   };
 
   /** The framed cells of `source`'s chunks, blocks and walls; null without a framing. */
@@ -903,6 +929,56 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
     textureUploads++;
     framedSlots.add(slot);
+  };
+
+  /**
+   * Uploads the framed cells of `chunk` inside `area` (world tiles), recomputed after an edit, into its slot's cell
+   * layers, which hold the rest of its current cells (framedSlots): the block cells inside the chunk and the wall
+   * cells inside its layer, apron included. The unpack parameters select the rectangle of the column-major arrays.
+   */
+  const uploadCellArea = (source: RenderableWorld, chunk: ChunkCoord, slot: number, area: Area): void => {
+    const caches = cellsOf(source);
+    const page = pages[Math.floor(slot / CHUNKS_PER_PAGE)];
+    if (caches === null || page === undefined) return;
+    const originX = chunk.x * CHUNK_SIZE;
+    const originY = chunk.y * CHUNK_SIZE;
+    const layer = (slot % CHUNKS_PER_PAGE) * PLANE_COUNT_16;
+    resetUnpack();
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 2);
+    gl.activeTexture(gl.TEXTURE0 + UNIT_PLANES_16);
+    gl.bindTexture(gl.TEXTURE_2D_ARRAY, page.planes16);
+    /** Uploads columns [c0, c1) × rows [r0, r1) of a column-major array of `rows` rows, `offset` texels into the layer. */
+    const part = (
+      plane: number, cells: Uint16Array, rows: number, offset: number, c0: number, c1: number, r0: number, r1: number,
+    ): void => {
+      if (c1 <= c0 || r1 <= r0) return;
+      gl.pixelStorei(gl.UNPACK_ROW_LENGTH, rows);
+      // A 3D upload must fit its skipped rows within the image height: the array's columns.
+      gl.pixelStorei(gl.UNPACK_IMAGE_HEIGHT, cells.length / rows);
+      gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, r0);
+      gl.pixelStorei(gl.UNPACK_SKIP_ROWS, c0);
+      gl.texSubImage3D(
+        gl.TEXTURE_2D_ARRAY, 0, offset + r0, offset + c0, layer + plane, r1 - r0, c1 - c0, 1, gl.RED_INTEGER,
+        gl.UNSIGNED_SHORT, cells,
+      );
+    };
+    const columns = Math.min(CHUNK_SIZE, source.width - originX);
+    const rows = Math.min(CHUNK_SIZE, source.height - originY);
+    part(
+      PLANES_16.cell, caches.blocks.cells(chunk), rows, PAGE_APRON,
+      Math.max(0, area.left - originX), Math.min(columns, area.right - originX),
+      Math.max(0, area.top - originY), Math.min(rows, area.bottom - originY),
+    );
+    const walls = caches.walls.cells(chunk);
+    part(
+      PLANES_16.wallCell, walls, PAGE_SIZE, 0,
+      Math.max(0, area.left - originX + PAGE_APRON), Math.min(PAGE_SIZE, area.right - originX + PAGE_APRON),
+      Math.max(0, area.top - originY + PAGE_APRON), Math.min(PAGE_SIZE, area.bottom - originY + PAGE_APRON),
+    );
+    defaultUnpack(gl);
+    // A wall cell may have appeared where the chunk had none.
+    if (walls.some((cell) => cell !== NO_CELL)) wallSlots.add(slot);
+    else wallSlots.delete(slot);
   };
 
   /** Drops the background of the previous world: its texture and the reference that would keep its planes alive. */
@@ -1188,18 +1264,20 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       return slot;
     };
     /**
-     * Uploads the planes of a resident chunk whose planes changed (invalidateTiles) again, into its own slot. False
-     * when the frame's budget is spent: the chunk keeps drawing what it held.
+     * Uploads the changed part of a resident chunk whose planes changed (invalidateTiles) again, into its own slot, and
+     * of its cells if the slot holds them. False when the frame's budget is spent: the chunk keeps drawing what it held.
      */
     const refresh = (chunk: ChunkCoord, slot: number): boolean => {
       const key = keyOf(chunk);
-      if (!dirtyChunks.has(key)) return true;
+      const area = dirtyChunks.get(key);
+      if (area === undefined) return true;
       if (!mayUpload()) {
         loading.pending = true;
         return false;
       }
       uploads++;
-      uploadChunk(source, chunk, slot);
+      uploadChunk(source, chunk, slot, area);
+      if (framedSlots.has(slot)) uploadCellArea(source, chunk, slot, area);
       dirtyChunks.delete(key);
       return true;
     };
@@ -1412,12 +1490,16 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       const regions = cellCache?.world === source ? cellCache.invalidate(tiles) : [];
       const wallRegions = wallCache?.world === source ? wallCache.invalidate(tiles) : [];
       const chunksX = Math.ceil(source.width / CHUNK_SIZE);
-      const touched = new Set<number>();
+      // Per touched chunk, the union of the changed tiles (right and bottom exclusive).
+      const touched = new Map<number, Area>();
       const touch = (left: number, top: number, right: number, bottom: number): void => {
         const lastX = Math.floor(Math.min(source.width - 1, right) / CHUNK_SIZE);
         const lastY = Math.floor(Math.min(source.height - 1, bottom) / CHUNK_SIZE);
         for (let x = Math.floor(Math.max(0, left) / CHUNK_SIZE); x <= lastX; x++) {
-          for (let y = Math.floor(Math.max(0, top) / CHUNK_SIZE); y <= lastY; y++) touched.add(y * chunksX + x);
+          for (let y = Math.floor(Math.max(0, top) / CHUNK_SIZE); y <= lastY; y++) {
+            const key = y * chunksX + x;
+            touched.set(key, union(touched.get(key), { left, top, right: right + 1, bottom: bottom + 1 }));
+          }
         }
       };
       // A changed tile's planes lie in its chunk and, through the page apron, in its neighbours'; the cells of its
@@ -1430,8 +1512,8 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
         const bottom = area.top + area.height - 1;
         touch(area.left - PAGE_APRON, area.top - PAGE_APRON, right + PAGE_APRON, bottom + PAGE_APRON);
       }
-      for (const key of touched) {
-        if (chunks.has(key)) dirtyChunks.add(key);
+      for (const [key, area] of touched) {
+        if (chunks.has(key)) dirtyChunks.set(key, union(dirtyChunks.get(key), area));
         if (overview?.world === source && overview.built[key] === 1) {
           overview.built[key] = 0;
           overview.builtCount--;
