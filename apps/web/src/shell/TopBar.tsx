@@ -134,6 +134,10 @@ export function TopBar({ commands }: { readonly commands: readonly Command[] }):
       ],
     },
     {
+      label: "Edit", mnemonic: "E",
+      items: commands.filter((command) => command.group === "Edit").map(menuItem),
+    },
+    {
       label: "View", mnemonic: "V",
       items: [
         menuItem(get("view.dock")),

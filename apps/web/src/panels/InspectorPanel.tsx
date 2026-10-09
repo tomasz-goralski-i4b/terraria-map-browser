@@ -7,6 +7,7 @@ import { useAppStore } from "../store.js";
 import { IconButton } from "../ui/IconButton.js";
 import { PropertyGrid, type Property } from "../ui/PropertyGrid.js";
 import { canonicalWorldOf } from "../world/canonical-world.js";
+import { useBrushStore } from "../world/brush-session.js";
 import { chestLookupOf } from "../world/chests.js";
 import { contentName, paintName } from "../world/content-names.js";
 import { getDefaultWorldSession } from "../world/world-session.js";
@@ -77,6 +78,7 @@ export function tileProperties(point: TilePoint, tile: Tile, showAll = true): Pr
  * pointer, so this section changes only on a click and never resizes the dock while the pointer moves.
  */
 export function InspectorPanel({ world }: { readonly world?: InspectorWorld | null }): React.JSX.Element {
+  useBrushStore((state) => state.revision);
   const summary = useAppStore((state) => state.summary);
   const pinned = useViewStore((state) => state.pinnedTile);
   const setPinned = useViewStore((state) => state.setPinnedTile);

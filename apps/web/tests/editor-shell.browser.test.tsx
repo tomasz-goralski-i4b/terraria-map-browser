@@ -249,8 +249,10 @@ test("the menu bar works from the keyboard: Alt+letter, arrows between menus and
   await userEvent.keyboard("{Alt>}f{/Alt}");
   await expect.element(page.getByRole("menuitem", { name: "Open World…" })).toHaveFocus();
   await userEvent.keyboard("{ArrowRight}");
+  await expect.element(page.getByRole("menuitem", { name: "Undo", exact: true })).toHaveFocus();
+  await userEvent.keyboard("{ArrowRight}");
   await expect.element(page.getByRole("menuitemcheckbox", { name: "Show panels" })).toHaveFocus();
-  await userEvent.keyboard("{ArrowLeft}");
+  await userEvent.keyboard("{ArrowLeft}{ArrowLeft}");
   await expect.element(page.getByRole("menuitem", { name: "Open World…" })).toHaveFocus();
   // Open World…, Open Folder…, Worlds, Open Recent.
   await userEvent.keyboard("{ArrowDown}{ArrowDown}{ArrowDown}");

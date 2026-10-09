@@ -6,6 +6,7 @@ import type { Camera, MapRenderer, RenderableWorld, Size } from "@studio/rendere
 import { getDefaultAssetSession, useAssetStore } from "../assets/asset-session.js";
 import { registerMapController, rendererLayers, useViewStore, type ToolId } from "../shell/view-store.js";
 import { getBlockFraming } from "../world/block-framing.js";
+import { beginBrush, finishBrush, moveBrush, subscribeBrushChanges } from "../world/brush-session.js";
 
 const KEY_PAN_PIXELS_PER_MS = 0.384;
 const KEY_ZOOM_FACTOR = 1.25;
@@ -18,7 +19,7 @@ const CLICK_SLOP = 4;
 const CANVAS_STYLE: React.CSSProperties = {
   position: "absolute", inset: 0, width: "100%", height: "100%", touchAction: "none", cursor: "grab",
 };
-const TOOL_CURSORS: Partial<Record<ToolId, string>> = { inspect: "crosshair" };
+const TOOL_CURSORS: Partial<Record<ToolId, string>> = { inspect: "crosshair", brush: "crosshair", erase: "crosshair" };
 
 // Overlays are positioned inline for the same reason: they must stay above the canvas and clickable.
 const CONTROLS_STYLE: React.CSSProperties = { position: "absolute", top: 8, right: 8, zIndex: 1, display: "flex", gap: 4 };
@@ -83,6 +84,11 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
    * slop on its way (an out-and-back drag is still a drag).
    */
   const pressRef = useRef<{ readonly at: Point; moved: boolean } | null>(null);
+  const brushPointer = useRef<number | null>(null);
+  const cancelDrawing = (): void => {
+    finishBrush(true);
+    brushPointer.current = null;
+  };
 
   /** Canvas backing-store pixels of a point in CSS pixels relative to the canvas, at the current canvas geometry. */
   const toBacking = useCallback((point: Point): Point => {
@@ -167,6 +173,9 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
     };
     sessionRef.current = session;
     renderer.setWorld(session.world);
+    const unsubscribeEdits = subscribeBrushChanges((edited, tiles) => {
+      if (edited.planes === session.world.planes) renderer.invalidateTiles(tiles);
+    });
     renderer.setLayers(rendererLayers(useViewStore.getState().layers));
     applySprites(renderer, useViewStore.getState().layers.sprites);
     // Self-framed blocks (dirt, stone, ores, grass, …) keep their map colours until the framing database is inflated.
@@ -186,12 +195,15 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
     motionPreference.addEventListener("change", updateMotionPreference);
 
     const stopMotion = (): void => {
+      finishBrush(true);
+      brushPointer.current = null;
       session.keys.clear();
       session.animator.cancelMotion();
     };
     window.addEventListener("blur", stopMotion);
 
     const onWheel = (event: WheelEvent): void => {
+      cancelDrawing();
       event.preventDefault();
       if (session.viewport.width === 0) return;
       session.keys.clear();
@@ -206,6 +218,7 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
       const width = Math.round(canvas.clientWidth * window.devicePixelRatio);
       const height = Math.round(canvas.clientHeight * window.devicePixelRatio);
       if (width === 0 || height === 0 || (width === canvas.width && height === canvas.height && session.viewport.width !== 0)) return;
+      cancelDrawing();
       // Geometry and camera must change in the same frame, including the test hooks and resting-pointer status.
       session.pendingResize = { width, height };
       queueCamera(session);
@@ -218,6 +231,7 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
     window.addEventListener("resize", resize);
 
     const zoomBy = (factor: number): void => {
+      cancelDrawing();
       if (session.viewport.width === 0) return;
       session.keys.clear();
       session.animator.zoom(factor, session.viewport.width / 2, session.viewport.height / 2);
@@ -225,6 +239,7 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
     };
     registerMapController({
       centerOn: (x, y) => {
+        cancelDrawing();
         if (session.viewport.width === 0) return;
         session.keys.clear();
         session.animator.pan(0, 0); // settles which camera the next pan starts from
@@ -243,6 +258,7 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
         zoomBy(zoom / session.animator.target.zoom);
       },
       jumpTo: (camera) => {
+        cancelDrawing();
         if (session.viewport.width === 0) return;
         session.keys.clear();
         session.animator.reset(clampCamera(camera, session.viewport, session.world), session.viewport, session.world);
@@ -255,6 +271,9 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
     });
 
     return () => {
+      finishBrush(true);
+      brushPointer.current = null;
+      unsubscribeEdits();
       registerMapController(null);
       useViewStore.getState().setHoverTile(null);
       useViewStore.getState().setZoom(null);
@@ -333,6 +352,26 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
 
   const onPointerDown = (event: React.PointerEvent<HTMLCanvasElement>): void => {
     withSession((session) => {
+      const selected = useViewStore.getState().tool;
+      if (brushPointer.current !== null) {
+        finishBrush(true);
+        brushPointer.current = null;
+      }
+      if ((selected === "brush" || selected === "erase") && event.isPrimary && event.button === 0 && session.pointers.size === 0) {
+        const point = toBacking(localPoint(event.clientX, event.clientY));
+        const tile = session.renderer.tileAt(point.x, point.y);
+        if (tile === null || !beginBrush(selected === "erase")) return;
+        session.animator.cancelMotion();
+        session.keys.clear();
+        brushPointer.current = event.pointerId;
+        moveBrush(tile.x, tile.y);
+        try {
+          event.currentTarget.setPointerCapture(event.pointerId);
+        } catch {
+          // A pointer that ended before capture can still finish its stroke over the canvas.
+        }
+        return;
+      }
       session.keys.clear();
       session.animator.beginDrag();
       session.pointers.set(event.pointerId, localPoint(event.clientX, event.clientY));
@@ -351,6 +390,14 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
   const onPointerMove = (event: React.PointerEvent<HTMLCanvasElement>): void => {
     withSession((session) => {
       const local = localPoint(event.clientX, event.clientY);
+      if (brushPointer.current === event.pointerId) {
+        const point = toBacking(local);
+        const tile = session.renderer.tileAt(point.x, point.y);
+        moveBrush(tile?.x ?? -1, tile?.y ?? -1);
+        session.hover = local;
+        session.requestFrame();
+        return;
+      }
       const last = session.pointers.get(event.pointerId);
       const press = pressRef.current;
       if (press !== null && Math.hypot(local.x - press.at.x, local.y - press.at.y) >= CLICK_SLOP) press.moved = true;
@@ -381,6 +428,16 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
 
   const onPointerEnd = (event: React.PointerEvent<HTMLCanvasElement>): void => {
     withSession((session) => {
+      if (brushPointer.current === event.pointerId) {
+        if (event.type === "pointerup") {
+          const point = toBacking(localPoint(event.clientX, event.clientY));
+          const tile = session.renderer.tileAt(point.x, point.y);
+          moveBrush(tile?.x ?? -1, tile?.y ?? -1);
+        }
+        finishBrush(event.type !== "pointerup");
+        brushPointer.current = null;
+        return;
+      }
       if (!session.pointers.delete(event.pointerId)) return;
       const press = pressRef.current;
       pressRef.current = null;
@@ -414,6 +471,7 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
       }
       const arrow = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key);
       const factor = { "+": KEY_ZOOM_FACTOR, "=": KEY_ZOOM_FACTOR, "-": 1 / KEY_ZOOM_FACTOR, _: 1 / KEY_ZOOM_FACTOR }[event.key];
+      if (arrow || factor !== undefined) cancelDrawing();
       if (!arrow && factor === undefined) {
         session.keys.clear();
         session.animator.cancelMotion();
@@ -460,6 +518,8 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
           });
         }}
         onBlur={() => {
+          finishBrush(true);
+          brushPointer.current = null;
           withSession((session) => {
             session.keys.clear();
             session.animator.cancelMotion();
@@ -472,6 +532,7 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
           className="button button-overlay"
           aria-keyshortcuts="F"
           onClick={() => {
+            cancelDrawing();
             withSession((session) => {
               session.keys.clear();
               session.animator.zoom(fitWorld(session.viewport, session.world).zoom / session.animator.target.zoom,
@@ -487,6 +548,7 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
           className="button button-overlay"
           aria-keyshortcuts="1"
           onClick={() => {
+            cancelDrawing();
             withSession((session) => {
               session.keys.clear();
               session.animator.zoom(1 / session.animator.target.zoom, session.viewport.width / 2, session.viewport.height / 2);

@@ -5,6 +5,7 @@ import type { Tile } from "@studio/world-model";
 import { chestTitle } from "../panels/chest-fields.js";
 import { useAppStore } from "../store.js";
 import { canonicalWorldOf } from "../world/canonical-world.js";
+import { useBrushStore } from "../world/brush-session.js";
 import { chestLookupOf } from "../world/chests.js";
 import { describeTile } from "../world/content-names.js";
 import { depthLabel, type DepthLevels } from "../world/depth.js";
@@ -126,6 +127,7 @@ function ZoomField({ zoom }: { readonly zoom: number | null }): React.JSX.Elemen
  * numerals in fixed-width cells, so the bar never shifts while the pointer moves.
  */
 export function StatusBar({ world }: { readonly world?: StatusWorld | null }): React.JSX.Element {
+  useBrushStore((state) => state.revision);
   const summary = useAppStore((state) => state.summary);
   const hover = useViewStore((state) => state.hoverTile);
   const zoom = useViewStore((state) => state.zoom);

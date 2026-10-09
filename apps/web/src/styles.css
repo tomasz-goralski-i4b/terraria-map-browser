@@ -634,6 +634,11 @@ kbd {
   font-weight: 600;
 }
 
+.tool-options { overflow-x: auto; }
+.tool-options label { display: inline-flex; align-items: center; gap: var(--space-1); }
+.tool-options input[type="number"] { width: 3.5rem; }
+.tool-options > * { flex-shrink: 0; }
+
 /* ---------- Map ---------- */
 .map-view {
   position: relative;

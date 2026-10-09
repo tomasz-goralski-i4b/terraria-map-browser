@@ -6,11 +6,12 @@ import { chooseWorldFile } from "../world/open-world.js";
 import { openSaveAs, useSaveStore } from "../world/save-world.js";
 import { chooseWorldsFolder, hasFolderPicker } from "../world/world-library.js";
 import { closeWorld } from "../world/world-session.js";
+import { finishBrush, redoBrush, undoBrush, useBrushStore } from "../world/brush-session.js";
 import { WORLD_GROUP_IDS } from "../panels/world-fields.js";
 import { resetLayout, useLayoutStore, type ThemeChoice } from "./layout-store.js";
 import { getMapController, useViewStore, type MapLayers, type ToolId } from "./view-store.js";
 
-export type CommandGroup = "File" | "View" | "Layers" | "Tools" | "Assets" | "Help";
+export type CommandGroup = "File" | "Edit" | "View" | "Layers" | "Tools" | "Assets" | "Help";
 
 /**
  * One user action. Menus, the tool rail, tooltips, the shortcut help and the command palette are all built from this
@@ -47,28 +48,32 @@ const EDITING_LATER = "World editing is not available yet";
 export const TOOLS: readonly ToolDefinition[] = [
   { id: "pan", label: "Pan", icon: "pan", shortcut: "H", group: "navigate", available: true, hint: "Drag to pan · Wheel or +/− to zoom · Arrow keys to move" },
   { id: "inspect", label: "Inspect", icon: "inspect", shortcut: "I", group: "navigate", available: true, hint: "Click a tile (or press Enter) to pin it in the Inspector · Hover to preview · Drag to pan" },
-  { id: "brush", label: "Brush", icon: "brush", shortcut: "B", group: "edit", available: false, hint: "" },
-  { id: "erase", label: "Erase", icon: "erase", shortcut: "E", group: "edit", available: false, hint: "" },
+  { id: "brush", label: "Brush", icon: "brush", shortcut: "B", group: "edit", available: true, hint: "Drag to paint simple blocks or walls" },
+  { id: "erase", label: "Erase", icon: "erase", shortcut: "E", group: "edit", available: true, hint: "Drag to erase the selected layer" },
   { id: "fill", label: "Fill", icon: "fill", shortcut: "G", group: "edit", available: false, hint: "" },
   { id: "select", label: "Select", icon: "select", shortcut: "M", group: "edit", available: false, hint: "" },
   { id: "picker", label: "Pick content", icon: "picker", shortcut: "K", group: "edit", available: false, hint: "" },
   { id: "object", label: "Place object", icon: "object", shortcut: "O", group: "objects", available: false, hint: "" },
 ];
 
-export function toolCommands(tool: ToolId, setTool: (tool: ToolId) => void): Command[] {
-  return TOOLS.map((definition) => ({
+export function toolCommands(tool: ToolId, setTool: (tool: ToolId) => void, editReason: string | null = "Open a vanilla world first"): Command[] {
+  return TOOLS.map((definition) => {
+    const reason = !definition.available ? EDITING_LATER : definition.id === "brush" || definition.id === "erase" ? editReason : null;
+    return ({
     id: `tool.${definition.id}`,
     group: "Tools",
     label: definition.label,
     icon: definition.icon,
     shortcut: definition.shortcut,
-    enabled: definition.available,
-    ...(definition.available ? {} : { disabledReason: EDITING_LATER }),
+    enabled: reason === null,
+    ...(reason === null ? {} : { disabledReason: reason }),
     checked: tool === definition.id,
     run: () => {
+      finishBrush(true);
       setTool(definition.id);
     },
-  }));
+  });
+  });
 }
 
 /** Layer toggles, in the order of the Layers panel, with their shortcuts. Sprites has its own row (with the assets). */
@@ -94,6 +99,10 @@ export function useCommands(): Command[] {
   const hasWorld = useAppStore((state) => state.summary !== null);
   const loadingWorld = useAppStore((state) => state.phase === "loading");
   const saving = useSaveStore((state) => state.open);
+  const brushReason = useBrushStore((state) => state.reason);
+  const canUndo = useBrushStore((state) => state.canUndo);
+  const canRedo = useBrushStore((state) => state.canRedo);
+  const editReason = loadingWorld ? "A world is loading" : saving ? "Finish exporting first" : brushReason;
   const dockHidden = useLayoutStore((state) => state.dockHidden);
   const setDockHidden = useLayoutStore((state) => state.setDockHidden);
   const theme = useLayoutStore((state) => state.theme);
@@ -115,6 +124,8 @@ export function useCommands(): Command[] {
   const setSpritePreviewOpen = useViewStore((state) => state.setSpritePreviewOpen);
 
   return [
+    { id: "edit.undo", group: "Edit", label: "Undo", shortcut: "Control+Z", enabled: canUndo && editReason === null, run: undoBrush },
+    { id: "edit.redo", group: "Edit", label: "Redo", shortcut: "Control+Shift+Z", enabled: canRedo && editReason === null, run: redoBrush },
     { id: "file.open", group: "File", label: "Open World…", icon: "file", shortcut: "Control+O", enabled: true, run: chooseWorldFile },
     {
       id: "file.openFolder", group: "File", label: "Open Folder…", icon: "folder", enabled: hasFolderPicker(),
@@ -215,7 +226,7 @@ export function useCommands(): Command[] {
         setLayers({ sprites: !layers.sprites });
       },
     },
-    ...toolCommands(tool, setTool),
+    ...toolCommands(tool, setTool, editReason),
     {
       id: "tool.unpin", group: "Tools", label: "Unpin inspected tile", shortcut: "Escape", enabled: pinnedTile !== null,
       ...(pinnedTile === null ? { disabledReason: "No tile is pinned" } : {}),

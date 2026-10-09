@@ -1,3 +1,5 @@
+export { createBrushHistory, BRUSH_BLOCKS, BRUSH_WALLS, type BrushOptions, type BrushHistory, type TileCoordinate, type TileDiff } from "./brush.js";
+
 /** A stable reference to world content — vanilla, mod, or an unknown runtime ID. */
 export type ContentRef =
   | { kind: "vanilla"; id: number }

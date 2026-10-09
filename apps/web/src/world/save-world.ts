@@ -5,6 +5,7 @@ import { notify } from "../shell/notification-store.js";
 import { useAppStore } from "../store.js";
 import type { ExportResponse, ExportStage } from "./export-protocol.js";
 import { snapshotForExport } from "./export-snapshot.js";
+import { finishBrush } from "./brush-session.js";
 import {
   ensurePermission, errorText, isAbort, WORLD_PICKER_LOCATION,
   type OpenWorldHandle, type WorldCopyDestination, type WorldSaveDirectory,
@@ -154,6 +155,7 @@ async function removeIfEmpty(directory: WorldSaveDirectory, handle: WorldCopyDes
 
 /** Opens the Save As dialog for the loaded world. */
 export async function openSaveAs(): Promise<void> {
+  finishBrush();
   const session = getDefaultWorldSession();
   const opened = session.getOpenedFile();
   const world = session.getLoadedWorld();

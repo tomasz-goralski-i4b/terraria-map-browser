@@ -1,6 +1,7 @@
 import { WorldWorkerClient, WorldWorkerError, type WorldTilesResult } from "@studio/world-codec";
 import { useAppStore, type LoadError } from "../store.js";
 import { resetWorldSave } from "./save-world.js";
+import { finishBrush, setBrushWorld } from "./brush-session.js";
 import type { OpenedWorldFile, OpenWorldHandle, WorldSaveDirectory } from "./world-file.js";
 
 /** Small display facts about the loaded world; the planes and palette themselves stay outside React and the store. */
@@ -66,6 +67,7 @@ export function createWorldSession(parser: WorldParser): WorldSession {
   };
 
   const open = async (file: File, handle?: OpenWorldHandle, directory?: WorldSaveDirectory): Promise<void> => {
+    finishBrush(true);
     resetWorldSave();
     current?.abort();
     const controller = new AbortController();
@@ -76,6 +78,7 @@ export function createWorldSession(parser: WorldParser): WorldSession {
       const world = await parser.parse(file, { signal: controller.signal });
       if (current !== controller) return;
       loaded = world;
+      setBrushWorld("entities" in world ? world : null);
       openedFile = { file, handle: handle ?? null, directory: directory ?? null };
       useAppStore.getState().setLoaded(summarize(world, file));
     } catch (error) {
@@ -89,6 +92,8 @@ export function createWorldSession(parser: WorldParser): WorldSession {
   };
 
   const reset = (): void => {
+    finishBrush(true);
+    setBrushWorld(null);
     resetWorldSave();
     cancel();
     current = null;

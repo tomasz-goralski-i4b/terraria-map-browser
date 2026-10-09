@@ -65,8 +65,8 @@ describe("simple vanilla brush", () => {
     const world = createWorld(4, 4);
     world.setTile(1, 1, { block: { kind: "unknown", runtimeId: 900 }, wires: 0, actuator: false });
     const history = createBrushHistory(world);
-    expect(() => history.begin({ layer: "block", id: 21, size: 1 })).toThrow(RangeError);
-    for (const size of [0, 10, 1.5, NaN]) expect(() => history.begin({ layer: "wall", id: 1, size })).toThrow(RangeError);
+    expect(() => { history.begin({ layer: "block", id: 21, size: 1 }); }).toThrow(RangeError);
+    for (const size of [0, 10, 1.5, NaN]) expect(() => { history.begin({ layer: "wall", id: 1, size }); }).toThrow(RangeError);
     history.begin({ layer: "block", id: 38, size: 9 });
     history.move(1, 1);
     history.commit();
