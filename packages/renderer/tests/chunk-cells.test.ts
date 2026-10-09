@@ -46,7 +46,7 @@ function stamp(world: CanonicalWorld, left: number, top: number, rows: readonly 
   });
 }
 
-type Rect = { readonly x: number; readonly y: number; readonly width: number; readonly height: number };
+interface Rect { readonly x: number; readonly y: number; readonly width: number; readonly height: number }
 type Cells = readonly (readonly [number, number])[];
 
 /** The source rectangle of a look's cell v0 / v1 / v2 at the tile's variant (7x + 11y) mod 3 (docs/assets.md). */
@@ -127,7 +127,7 @@ describe("chunk cell cache", () => {
       ".gdddddddddddd.....",
       ".dddddddddddddd....",
     ]);
-    stamp(world, 18, 3, [
+    stamp(world, 23, 3, [
       "....mmm.......",
       "..mmssssmm....",
       ".mssssssssm...",
@@ -145,7 +145,7 @@ describe("chunk cell cache", () => {
         if (expected !== NO_CELL) framed++;
       }
     }
-    expect(framed).toBeGreaterThan(150);
+    expect(framed).toBe(46 + 31 + 63);
   });
 
   test("grass and moss tiles take the framing database's cell for their neighbourhood and variant", () => {

@@ -1,6 +1,8 @@
 // GLSL for the WebGL2 backend. The colour rules mirror `renderChunk` (../chunk/render.ts) and use integer arithmetic so
 // the chunk pass is bit-exact: no tie-breaking can differ because (l*a + c*(255-a)) / 255 never has a .5 fraction.
 import { FILTER_SUBTILE } from "../chunk/box-filter.js";
+import { BLOCK_CELL_STRIDE } from "../framing/chunk-cells.js";
+import { NO_CELL } from "../framing/frame-block.js";
 
 /** Tiles of neighbouring chunks stored around each chunk's page layer, so the box filter can cross chunk edges. */
 export const PAGE_APRON = 1;
@@ -10,13 +12,17 @@ export const PAGE_APRON = 1;
  * place in its page. Each layer is stored transposed (planes are column-major): texel (s, t) = (y, x) of the chunk,
  * offset by the apron. A new plane is one more entry here (and in the renderer's upload table), not a new texture.
  */
-export const PLANES_16 = { block: 0, wall: 1, flags: 2, frameX: 3, frameY: 4 } as const;
-export const PLANES_8 = { liquid: 0, liquidAmount: 1, paint: 2, wallPaint: 3 } as const;
+export const PLANES_16 = { block: 0, wall: 1, flags: 2, frameX: 3, frameY: 4, cell: 5 } as const;
+export const PLANES_8 = { liquid: 0, liquidAmount: 1, paint: 2, wallPaint: 3, shape: 4 } as const;
 export const PLANE_COUNT_16: number = Object.keys(PLANES_16).length;
 export const PLANE_COUNT_8: number = Object.keys(PLANES_8).length;
 
-/** Bits of `uPresent`: optional planes the world has. An absent plane reads as 0 and is never uploaded. */
-export const PRESENT = { flags: 1, frameX: 2, frameY: 4 } as const;
+/**
+ * Bits of `uPresent`: optional planes the world has. An absent plane reads as 0 and is never uploaded. `cells` is set
+ * only for a chunk pass whose chunks all hold their framed cells (the cell plane, computed by the renderer, not read
+ * from the world).
+ */
+export const PRESENT = { flags: 1, frameX: 2, frameY: 4, shape: 8, cells: 16 } as const;
 
 /**
  * Rules texture: 256 texels per row. Rows 0–255 hold one header per palette index (index % 256, index / 256):
@@ -76,11 +82,12 @@ precision highp isampler2D;
 precision highp sampler2DArray;
 // Chunk pages, uploaded straight from the world's planes: uPlanes16 holds the 16-bit planes (block, wall, flags,
 // frameX, frameY as their 16-bit pattern), uPlanes8 the 8-bit ones (liquid kind, liquid amount, block paint, wall
-// paint). A chunk's plane p is layer vLayer * planes + p, holding the chunk and an apron of PAGE_APRON tiles of its
+// paint, block shape). The cell plane of uPlanes16 holds the framed sheet cell of self-framed blocks (column · 64 + row,
+// NO_CELL without one), framed by the renderer. A chunk's plane p is layer vLayer * planes + p, holding the chunk and an apron of PAGE_APRON tiles of its
 // neighbours, transposed: texel (s, t) = (y in chunk + PAGE_APRON, x in chunk + PAGE_APRON).
 uniform usampler2DArray uPlanes16;
 uniform usampler2DArray uPlanes8;
-uniform int uPresent; // optional planes the world has: bit 0 flags, 1 frameX, 2 frameY
+uniform int uPresent; // optional planes: bit 0 flags, 1 frameX, 2 frameY, 3 shape, 4 framed cells
 // Row r holds palette entries 256r…256r+255: block colours in x 0…255, wall colours in x 256…511.
 uniform usampler2D uPalette;
 // Background colour of world row y at texel (y % 256, y / 256), resolved on the CPU by backgroundColor();
@@ -151,21 +158,59 @@ ivec3 painted(ivec3 base, int paint, bool wall) {
   return tint * max(base.r, max(base.g, base.b)) / 255;
 }
 
-// The atlas pixel of a block with a stored frame at sprite pixel sub (0–15 per axis) of its tile: the frame's cell,
-// scaled into the tile, or the missing-texture checkerboard for content without a sheet. False without a stored frame
-// (frames of -1), for content sprite mode leaves in map colours, or past the sheet's edge.
+// The missing-texture checkerboard at sprite pixel sub.
+ivec4 missingPixel(ivec2 sub) {
+  bool first = ((sub.x / ${String(SPRITE_TILE_PIXELS / 2)} + sub.y / ${String(SPRITE_TILE_PIXELS / 2)}) & 1) == 0;
+  return ivec4(first ? ivec3(${MISSING_SPRITE_COLORS[0]?.join(", ") ?? "0"}) : ivec3(${MISSING_SPRITE_COLORS[1]?.join(", ") ?? "0"}), 255);
+}
+
+// The atlas pixel of a self-framed block at sprite pixel sub: its framed cell (the cell plane), cut by its shape into
+// eight 2-pixel columns as shapedColumns() (../framing/chunk-cells.ts) gives them; transparent where the shape cuts
+// it away. False without framed cells or a cell (a falling block with nothing below it, or not self-framed), for
+// content sprite mode leaves in map colours, or past the sheet's edge.
+bool cellPixel(ivec4 place, ivec2 at, ivec2 texel, ivec2 sub, out ivec4 color) {
+  if ((uPresent & ${String(PRESENT.cells)}) == 0) return false;
+  uint cell = plane16(texel, ${String(PLANES_16.cell)});
+  if (cell == ${String(NO_CELL)}u || place.w == ${String(SPRITE_STATE.mapColor)}) return false;
+  if (place.w == ${String(SPRITE_STATE.missing)}) {
+    color = missingPixel(sub);
+    return true;
+  }
+  int shape = (uPresent & ${String(PRESENT.shape)}) != 0 ? int(plane8(texel, ${String(PLANES_8.shape)})) : 0;
+  int column = sub.x / 2;
+  // Column (sourceY, destY, height) per shape: half, slopes cut at NE, NW, SE, SW; anything else is full.
+  ivec3 rows = ivec3(0, 0, 16);
+  if (shape == 1) rows = ivec3(0, 8, 8);
+  else if (shape == 2) rows = ivec3(0, 2 * column, 16 - 2 * column);
+  else if (shape == 3) rows = ivec3(0, 14 - 2 * column, 2 * column + 2);
+  else if (shape == 4) rows = ivec3(2 * column, 0, 16 - 2 * column);
+  else if (shape == 5) rows = ivec3(0, 0, 2 * column + 2);
+  if (sub.y < rows.y || sub.y >= rows.y + rows.z) {
+    color = ivec4(0);
+    return true;
+  }
+  ivec4 size = texelFetch(uSpriteSheets, at + ivec2(1, 0), 0);
+  ivec2 origin = ivec2(int(cell >> 6u), int(cell & 63u)) * ${String(BLOCK_CELL_STRIDE)};
+  ivec2 pixel = origin + ivec2(sub.x, rows.x + sub.y - rows.y);
+  if (any(greaterThanEqual(pixel, size.xy))) return false;
+  color = ivec4(round(texelFetch(uAtlas, ivec3(place.yz + pixel, place.x), 0) * 255.0));
+  return true;
+}
+
+// The atlas pixel of a block at sprite pixel sub (0–15 per axis) of its tile. A stored frame selects its cell, scaled
+// into the tile, or the missing-texture checkerboard for content without a sheet; a block without one (frames of -1)
+// shows its framed cell (cellPixel). False for content sprite mode leaves in map colours, or past the sheet's edge.
 bool spritePixel(uint index, ivec2 texel, ivec2 sub, out ivec4 color) {
-  if ((uPresent & ${String(PRESENT.frameX | PRESENT.frameY)}) != ${String(PRESENT.frameX | PRESENT.frameY)}) return false;
-  ivec2 stored = ivec2(
-    frame(texel, ${String(PLANES_16.frameX)}, ${String(PRESENT.frameX)}),
-    frame(texel, ${String(PLANES_16.frameY)}, ${String(PRESENT.frameY)}));
-  if (stored.x < 0 || stored.y < 0) return false;
   ivec2 at = ivec2(int(index) % ${String(SPRITE_SHEET_ROW)} * 2, int(index) / ${String(SPRITE_SHEET_ROW)});
   ivec4 place = texelFetch(uSpriteSheets, at, 0);
+  bool frames = (uPresent & ${String(PRESENT.frameX | PRESENT.frameY)}) == ${String(PRESENT.frameX | PRESENT.frameY)};
+  ivec2 stored = frames
+    ? ivec2(frame(texel, ${String(PLANES_16.frameX)}, ${String(PRESENT.frameX)}), frame(texel, ${String(PLANES_16.frameY)}, ${String(PRESENT.frameY)}))
+    : ivec2(-1);
+  if (stored.x < 0 || stored.y < 0) return cellPixel(place, at, texel, sub, color);
   if (place.w == ${String(SPRITE_STATE.mapColor)}) return false;
   if (place.w == ${String(SPRITE_STATE.missing)}) {
-    bool first = ((sub.x / ${String(SPRITE_TILE_PIXELS / 2)} + sub.y / ${String(SPRITE_TILE_PIXELS / 2)}) & 1) == 0;
-    color = ivec4(first ? ivec3(${MISSING_SPRITE_COLORS[0]?.join(", ") ?? "0"}) : ivec3(${MISSING_SPRITE_COLORS[1]?.join(", ") ?? "0"}), 255);
+    color = missingPixel(sub);
     return true;
   }
   ivec4 size = texelFetch(uSpriteSheets, at + ivec2(1, 0), 0);
@@ -195,7 +240,8 @@ ivec4 over(ivec4 top, ivec4 below) {
 
 // Straight-alpha RGBA (0–255) of a tile relative to the instance's chunk origin, apron included (-1 to the chunk size).
 // Only the planes the enabled layers need are read. With uSprites, sub is the sprite pixel (0–15 per axis) within the
-// tile: a block with a stored frame and a sheet shows that sheet's pixel, over the wall or background behind it.
+// tile: a block with a stored frame or a framed cell, and a sheet, shows that sheet's pixel, over the wall or
+// background behind it.
 ivec4 localColorAt(ivec2 local, ivec2 sub) {
   ivec2 texel = ivec2(local.y + ${String(PAGE_APRON)}, local.x + ${String(PAGE_APRON)});
   int tileY = vRect.y + local.y;
