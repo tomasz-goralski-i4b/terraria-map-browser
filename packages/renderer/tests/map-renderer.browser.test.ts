@@ -475,7 +475,7 @@ describe("uploads, cache and draw calls", () => {
     expect(readCanvas(canvas)).toEqual(first);
   });
 
-  test("a reused cache slot draws the wires of its new chunk, not of the evicted one", () => {
+  test("a reused cache slot draws the wires of its new chunk, not of the evicted one", { tags: ["perf"] }, () => {
     // Every chunk column gets its own wire colour, so stale flags in a reused slot would show the wrong colour.
     const wired = wiredWorld(1152, 128);
     const flags = wired.planes.flags ?? new Uint16Array(0);
