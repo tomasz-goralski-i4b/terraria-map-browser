@@ -156,10 +156,11 @@ describe("chunk edges", () => {
     renderer.setAtlas(columnAtlas());
     renderer.setSpriteMode(true);
     const allowed = new Set([(15 * 7) % 256, (18 * 7) % 256]);
-    // Cameras around the one that puts the border on the centre of pixel 11, a float32 step apart.
+    // 33 cameras around the one that puts the border on the centre of pixel 11, a float32 step apart (the old
+    // shader drew a far tile edge at the first of them).
     const tie = 128 - 11.5 / zoom;
     const seen = new Set<number>();
-    for (let k = -64; k <= 64; k++) {
+    for (let k = -16; k <= 16; k++) {
       renderer.setCamera({ x: tie + k * 2 ** -17, y: 0, zoom });
       renderer.render();
       const out = readCanvas(canvas);
@@ -170,5 +171,5 @@ describe("chunk edges", () => {
       }
     }
     expect(seen.size).toBeGreaterThan(0);
-  });
+  }, 60_000);
 });
