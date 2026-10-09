@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { render } from "vitest-browser-react";
 import { createMapRenderer, fitWorld, screenToTile } from "@studio/renderer";
 import type { Camera, MapRenderer, RenderableWorld } from "@studio/renderer";
+import { setDefaultAssetSession, useAssetStore, type AssetSession, type AssetStatus } from "../src/assets/asset-session.js";
 import { MapCanvas } from "../src/components/MapCanvas.js";
 import { StatusBar } from "../src/shell/StatusBar.js";
 
@@ -268,4 +269,24 @@ test("opening another world gives the renderer that world's fitted camera before
   // The renderer's first frame of the new world must not use the previous world's camera: it would start building
   // around the wrong place.
   expect(cameraAtSetWorld).toEqual(fitWorld({ width: canvas().width, height: canvas().height }, other));
+});
+
+test("the map follows the connected atlas, and drops it when the assets are disconnected during a rebuild", async () => {
+  const connected = { pages: [], index: { pageSize: 1, entries: [] } };
+  let atlas: typeof connected | null = connected;
+  setDefaultAssetSession({ getAtlas: () => atlas } as unknown as AssetSession);
+  try {
+    await mount();
+    const ready: AssetStatus = { kind: "ready", folderName: "Images", tileSheets: 0, wallSheets: 0, pages: 0, fromCache: true, missing: [] };
+    act(() => { useAssetStore.setState({ status: ready }); });
+    expect(renderer.setAtlas).toHaveBeenLastCalledWith(connected);
+    act(() => { useAssetStore.setState({ status: { kind: "building", folderName: "Images", progress: null } }); });
+    // Disconnect: the session forgets the atlas and goes back to "none".
+    atlas = null;
+    act(() => { useAssetStore.setState({ status: { kind: "none" } }); });
+    expect(renderer.setAtlas).toHaveBeenLastCalledWith(null);
+  } finally {
+    setDefaultAssetSession(undefined);
+    useAssetStore.setState({ status: { kind: "none" } });
+  }
 });

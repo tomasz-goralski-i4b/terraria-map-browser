@@ -162,6 +162,18 @@ bool paletteColor(uint index, int xOffset, out ivec3 color) {
   return true;
 }
 
+// Straight-alpha top over below, in integers. Over an opaque pixel it is renderChunk's rounded blend (map mode only ever
+// has opaque or empty pixels, so it stays bit-exact); over a partly transparent one (a half-transparent sprite pixel
+// with nothing behind it) the general rule, alpha and colour rounded to nearest.
+ivec4 over(ivec4 top, ivec4 below) {
+  if (top.a == 0) return below;
+  if (below.a == 0 || top.a == 255) return top;
+  if (below.a == 255) return ivec4((2 * (top.rgb * top.a + below.rgb * (255 - top.a)) + 255) / 510, 255);
+  int weight = below.a * (255 - top.a);
+  int alpha = top.a + (weight + 127) / 255;
+  return ivec4((top.rgb * top.a * 255 + below.rgb * weight + alpha * 255 / 2) / (alpha * 255), alpha);
+}
+
 // Straight-alpha RGBA (0–255) of a tile relative to the instance's chunk origin, apron included (-1 to the chunk size).
 // Only the planes the enabled layers need are read. With uSprites, sub is the sprite pixel (0–15 per axis) within the
 // tile: a block with a stored frame and a sheet shows that sheet's pixel, over the wall or background behind it.
@@ -184,23 +196,15 @@ ivec4 localColorAt(ivec2 local, ivec2 sub) {
     if (paletteColor(wall, 256, content)) {
       color = ivec4(painted(content, int(plane8(texel, ${String(PLANES_8.wallPaint)})), true), 255);
     }
-    // A sprite pixel over what lies behind it (paint is not applied to sprites). Behind is opaque or empty.
-    if (hasSprite && sprite.a != 0) {
-      if (sprite.a == 255 || color.a == 0) color = sprite;
-      else color.rgb = (2 * (sprite.rgb * sprite.a + color.rgb * (255 - sprite.a)) + 255) / 510;
-    }
+    // A sprite pixel over what lies behind it (paint is not applied to sprites).
+    if (hasSprite) color = over(sprite, color);
   }
 
   if ((uLayers & 8) != 0) {
     uint liquid = plane8(texel, ${String(PLANES_8.liquid)});
     int amount = int(plane8(texel, ${String(PLANES_8.liquidAmount)}));
     if (liquid >= 1u && liquid <= 4u && amount != 0) {
-      ivec3 tint = uLiquids[liquid - 1u];
-      if (color.a == 255) {
-        color.rgb = (2 * (tint * amount + color.rgb * (255 - amount)) + 255) / 510;
-      } else {
-        color = ivec4(tint, amount);
-      }
+      color = over(ivec4(uLiquids[liquid - 1u], amount), color);
     }
   }
 
@@ -213,11 +217,8 @@ ivec4 localColorAt(ivec2 local, ivec2 sub) {
     for (int i = 4; i >= 0; i--) {
       if ((wires & uWireBits[i]) != 0) wire = uWireColors[i];
     }
-    if (color.a == 255) {
-      color.rgb = (2 * (wire * uWireAlpha + color.rgb * (255 - uWireAlpha)) + 255) / 510;
-    } else {
-      color = ivec4(wire, uWireAlpha);
-    }
+    // renderChunk's wire rule: blended over an opaque pixel, replacing any other.
+    color = color.a == 255 ? over(ivec4(wire, uWireAlpha), color) : ivec4(wire, uWireAlpha);
   }
   return color;
 }

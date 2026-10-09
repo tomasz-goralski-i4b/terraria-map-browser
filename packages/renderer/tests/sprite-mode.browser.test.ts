@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "vitest";
-import { SPRITE_MIN_ZOOM, createMapRenderer, renderChunk } from "../src/index.js";
+import { SPRITE_MIN_ZOOM, createMapRenderer, liquidColors, renderChunk } from "../src/index.js";
 import type { ChunkLayers, MapRenderer, RenderableWorld, SpriteAtlasSource } from "../src/index.js";
 
 const created: MapRenderer[] = [];
@@ -41,7 +41,10 @@ const palette = [
   { kind: "vanilla", id: 600 }, { kind: "vanilla", id: 5 },
 ] as const;
 
-/** Tiles of the test world: (x, y, block, frameX, frameY); every other tile has the wall only. */
+/**
+ * Tiles of the test world: (x, y, block, frameX, frameY); every other tile has the wall only (row 2 has none). The
+ * second chest is under water (WATER_AMOUNT), so liquids are composited over its sprite.
+ */
 const TILES: readonly (readonly [number, number, number, number, number])[] = [
   [0, 0, CHEST, 0, 0],
   [1, 0, CHEST, 36, 18],
@@ -53,6 +56,8 @@ const TILES: readonly (readonly [number, number, number, number, number])[] = [
 ];
 const WIDTH = 4;
 const HEIGHT = 3;
+const WATER_TILE = [1, 0] as const;
+const WATER_AMOUNT = 128;
 
 function spriteWorld(): RenderableWorld {
   const count = WIDTH * HEIGHT;
@@ -60,6 +65,10 @@ function spriteWorld(): RenderableWorld {
   const wall = new Uint16Array(count).fill(ABSENT);
   const frameX = new Int16Array(count).fill(-1);
   const frameY = new Int16Array(count).fill(-1);
+  const liquid = new Uint8Array(count);
+  const liquidAmount = new Uint8Array(count);
+  liquid[WATER_TILE[0] * HEIGHT + WATER_TILE[1]] = 1;
+  liquidAmount[WATER_TILE[0] * HEIGHT + WATER_TILE[1]] = WATER_AMOUNT;
   for (let x = 0; x < WIDTH; x++) for (let y = 0; y < HEIGHT; y++) if (y !== 2) wall[x * HEIGHT + y] = WALL;
   for (const [x, y, id, fx, fy] of TILES) {
     block[x * HEIGHT + y] = id;
@@ -69,8 +78,7 @@ function spriteWorld(): RenderableWorld {
   return {
     width: WIDTH, height: HEIGHT, surfaceY: 1,
     planes: {
-      block, wall, frameX, frameY, liquid: new Uint8Array(count), liquidAmount: new Uint8Array(count),
-      paint: new Uint8Array(count), wallPaint: new Uint8Array(count),
+      block, wall, frameX, frameY, liquid, liquidAmount, paint: new Uint8Array(count), wallPaint: new Uint8Array(count),
     },
     palette,
   };
@@ -84,9 +92,10 @@ const SHEETS = [
   { kind: "tile", id: 5, page: 0, x: 2, y: 60, width: 44, height: 44, frameWidth: 20, frameHeight: 20, gapX: 2, gapY: 2 },
 ] as const;
 
-/** A sheet pixel: distinct per position and sheet, fully transparent on every seventh diagonal. */
+/** A sheet pixel: distinct per position and sheet; transparent, half transparent or opaque by its diagonal. */
 function sheetPixel(sheet: number, x: number, y: number): readonly [number, number, number, number] {
-  return [(x * 3 + sheet * 90) % 256, (y * 5 + 7) % 256, (x * y + sheet * 40) % 256, (x + y) % 7 === 0 ? 0 : 255];
+  const diagonal = (x + y) % 7;
+  return [(x * 3 + sheet * 90) % 256, (y * 5 + 7) % 256, (x * y + sheet * 40) % 256, diagonal === 0 ? 0 : diagonal === 3 ? 128 : 255];
 }
 
 function syntheticAtlas(): SpriteAtlasSource {
@@ -106,101 +115,117 @@ function mapColors(world: RenderableWorld, layers: ChunkLayers): Uint8Array {
   return renderChunk(world as never, 0, 0, { surfaceY: world.surfaceY, layers }).pixels;
 }
 
+type Rgba = readonly [number, number, number, number];
+
+/**
+ * Straight-alpha `top` over `below`, in the shader's integer arithmetic: over an opaque pixel the rounded blend
+ * `renderChunk` uses, over a partly transparent one the general rule with rounded alpha.
+ */
+function over(top: Rgba, below: Rgba): Rgba {
+  const [r, g, b, a] = top;
+  if (a === 0) return below;
+  if (below[3] === 0 || a === 255) return top;
+  if (below[3] === 255) {
+    const mix = (t: number, d: number): number => Math.floor((2 * (t * a + d * (255 - a)) + 255) / 510);
+    return [mix(r, below[0]), mix(g, below[1]), mix(b, below[2]), 255];
+  }
+  const weight = below[3] * (255 - a);
+  const alpha = a + Math.floor((weight + 127) / 255);
+  const mix = (t: number, d: number): number => Math.floor((t * a * 255 + d * weight + Math.floor((alpha * 255) / 2)) / (alpha * 255));
+  return [mix(r, below[0]), mix(g, below[1]), mix(b, below[2]), alpha];
+}
+
 const ALL: ChunkLayers = { background: true, walls: true, blocks: true, liquids: true };
 const ZOOM = 16;
 
-/** The expected canvas at ZOOM pixels per tile with sprites: sheet pixels over the map colour of what lies behind. */
-function expectedSprites(world: RenderableWorld, layers: ChunkLayers): Uint8Array {
+function pixelAt(pixels: Uint8Array, index: number): Rgba {
+  return [pixels[index] ?? 0, pixels[index + 1] ?? 0, pixels[index + 2] ?? 0, pixels[index + 3] ?? 0];
+}
+
+/**
+ * The expected canvas at `zoom` (an integer) pixels per tile, computed on the CPU. Without sprites it is each tile's
+ * map colour; with them a tile that has a sheet shows the sheet pixel `frame + sub × cell / 16` of its sprite pixel
+ * `sub`, over the map colour of what lies behind, with the liquid over that.
+ */
+function expectedCanvas(world: RenderableWorld, layers: ChunkLayers, zoom: number, sprites: boolean): Uint8Array {
   const map = mapColors(world, layers);
-  const behind = mapColors(world, { ...layers, blocks: false });
-  const out = new Uint8Array(WIDTH * ZOOM * HEIGHT * ZOOM * 4);
-  for (let py = 0; py < HEIGHT * ZOOM; py++) {
-    for (let px = 0; px < WIDTH * ZOOM; px++) {
-      const tx = Math.floor(px / ZOOM);
-      const ty = Math.floor(py / ZOOM);
+  const behind = mapColors(world, { ...layers, blocks: false, liquids: false });
+  const water = liquidColors(undefined)[1] ?? [0, 0, 0, 0];
+  const out = new Uint8Array(WIDTH * zoom * HEIGHT * zoom * 4);
+  for (let py = 0; py < HEIGHT * zoom; py++) {
+    for (let px = 0; px < WIDTH * zoom; px++) {
+      const tx = Math.floor(px / zoom);
+      const ty = Math.floor(py / zoom);
       const tile = (ty * WIDTH + tx) * 4;
-      let color: readonly number[] = [...map.subarray(tile, tile + 4)];
-      const placed = layers.blocks ? TILES.find(([x, y]) => x === tx && y === ty) : undefined;
+      let color = pixelAt(map, tile);
+      const placed = sprites && layers.blocks ? TILES.find(([x, y]) => x === tx && y === ty) : undefined;
       const sheetIndex = placed === undefined ? -1 : [CHEST, TORCH].indexOf(placed[2]);
       const sheet = SHEETS[sheetIndex];
       if (placed !== undefined && sheet !== undefined) {
-        // A tile is 16 sprite pixels; a larger cell is scaled into it.
-        const sx = placed[3] + Math.floor(((px % ZOOM) * sheet.frameWidth) / 16);
-        const sy = placed[4] + Math.floor(((py % ZOOM) * sheet.frameHeight) / 16);
-        const pixel = sheetPixel(sheetIndex, sx, sy);
-        color = pixel[3] === 0 ? [...behind.subarray(tile, tile + 4)] : pixel;
+        // Sampled at the pixel centre.
+        const sub = (p: number): number => Math.floor((((p % zoom) + 0.5) * 16) / zoom);
+        const sx = placed[3] + Math.floor((sub(px) * sheet.frameWidth) / 16);
+        const sy = placed[4] + Math.floor((sub(py) * sheet.frameHeight) / 16);
+        color = over(sheetPixel(sheetIndex, sx, sy), pixelAt(behind, tile));
+        if (layers.liquids && tx === WATER_TILE[0] && ty === WATER_TILE[1]) {
+          color = over([water[0], water[1], water[2], WATER_AMOUNT], color);
+        }
       }
-      out.set(color, (py * WIDTH * ZOOM + px) * 4);
+      out.set(color, (py * WIDTH * zoom + px) * 4);
     }
   }
   return out;
 }
 
-/** The canvas drawn in map mode at `zoom`, for comparison. */
-function mapModeAt(world: RenderableWorld, zoom: number, width: number, height: number): Uint8Array {
-  const { canvas, renderer } = makeRenderer(width, height);
+function draw(world: RenderableWorld, zoom: number, layers: ChunkLayers, sprites: boolean, atlas = true): Uint8Array {
+  const { canvas, renderer } = makeRenderer(Math.ceil(WIDTH * zoom), Math.ceil(HEIGHT * zoom));
   renderer.setWorld(world);
+  renderer.setLayers(layers);
+  if (atlas) renderer.setAtlas(syntheticAtlas());
+  renderer.setSpriteMode(sprites);
   renderer.setCamera({ x: 0, y: 0, zoom });
   renderer.render();
+  expect(canvas.getContext("webgl2")?.getError()).toBe(0);
   return readCanvas(canvas);
 }
 
 describe("sprite mode", () => {
-  test("frame-important tiles show the atlas cell their frames select; other blocks and walls keep their map colour", () => {
-    const world = spriteWorld();
-    const { canvas, renderer } = makeRenderer(WIDTH * ZOOM, HEIGHT * ZOOM);
-    renderer.setWorld(world);
-    renderer.setAtlas(syntheticAtlas());
-    renderer.setSpriteMode(true);
-    renderer.setCamera({ x: 0, y: 0, zoom: ZOOM });
-    renderer.render();
-    expect(readCanvas(canvas)).toEqual(expectedSprites(world, ALL));
-  });
+  test.each([ZOOM, SPRITE_MIN_ZOOM])(
+    "at %i pixels per tile frame-important tiles show the atlas cell their frames select; other blocks, trees and walls keep their map colour",
+    (zoom) => {
+      const world = spriteWorld();
+      expect(draw(world, zoom, ALL, true)).toEqual(expectedCanvas(world, ALL, zoom, true));
+    },
+  );
 
-  test("layer toggles remove exactly their pixels in sprite mode", () => {
+  test("layer toggles remove exactly their pixels in sprite mode, and liquids cover sprites, half-transparent ones too", () => {
     const world = spriteWorld();
-    const { canvas, renderer } = makeRenderer(WIDTH * ZOOM, HEIGHT * ZOOM);
-    renderer.setWorld(world);
-    renderer.setAtlas(syntheticAtlas());
-    renderer.setSpriteMode(true);
-    renderer.setCamera({ x: 0, y: 0, zoom: ZOOM });
     for (const layers of [
-      { ...ALL, blocks: false }, { ...ALL, walls: false }, { ...ALL, background: false }, { ...ALL, walls: false, background: false },
+      { ...ALL, blocks: false }, { ...ALL, walls: false }, { ...ALL, background: false }, { ...ALL, liquids: false },
+      { ...ALL, walls: false, background: false },
     ]) {
-      renderer.setLayers(layers);
-      renderer.render();
-      expect(readCanvas(canvas), JSON.stringify(layers)).toEqual(expectedSprites(world, layers));
+      expect(draw(world, ZOOM, layers, true), JSON.stringify(layers)).toEqual(expectedCanvas(world, layers, ZOOM, true));
     }
   });
 
-  test(`below ${String(SPRITE_MIN_ZOOM)} pixels per tile the map is drawn exactly as in map mode, overview included`, () => {
+  test(`below ${String(SPRITE_MIN_ZOOM)} pixels per tile the map keeps its map colours, and the overview is unchanged`, () => {
     const world = spriteWorld();
-    for (const zoom of [SPRITE_MIN_ZOOM - 1, 4, 1, 0.75, 0.25]) {
-      const width = Math.ceil(WIDTH * zoom);
-      const height = Math.ceil(HEIGHT * zoom);
-      const { canvas, renderer } = makeRenderer(width, height);
-      renderer.setWorld(world);
-      renderer.setAtlas(syntheticAtlas());
-      renderer.setSpriteMode(true);
-      renderer.setCamera({ x: 0, y: 0, zoom });
-      renderer.render();
-      expect(readCanvas(canvas), `zoom ${String(zoom)}`).toEqual(mapModeAt(world, zoom, width, height));
+    for (const zoom of [SPRITE_MIN_ZOOM - 1, 4, 1]) {
+      expect(draw(world, zoom, ALL, true), `zoom ${String(zoom)}`).toEqual(expectedCanvas(world, ALL, zoom, false));
+    }
+    // Filtered and overview zooms: the same pixels as without an atlas or sprites, and something is drawn.
+    for (const zoom of [0.75, 0.25]) {
+      const drawn = draw(world, zoom, ALL, true);
+      expect(drawn, `zoom ${String(zoom)}`).toEqual(draw(world, zoom, ALL, false, false));
+      expect(drawn.some((value, index) => index % 4 === 3 && value !== 0), `zoom ${String(zoom)} drew nothing`).toBe(true);
     }
   });
 
   test("without an atlas, or with sprite mode off, the map is drawn in map colours at any zoom", () => {
     const world = spriteWorld();
-    const expected = mapModeAt(world, ZOOM, WIDTH * ZOOM, HEIGHT * ZOOM);
-    const { canvas, renderer } = makeRenderer(WIDTH * ZOOM, HEIGHT * ZOOM);
-    renderer.setWorld(world);
-    renderer.setCamera({ x: 0, y: 0, zoom: ZOOM });
-    renderer.setSpriteMode(true);
-    renderer.render();
-    expect(readCanvas(canvas)).toEqual(expected);
-    renderer.setAtlas(syntheticAtlas());
-    renderer.setSpriteMode(false);
-    renderer.render();
-    expect(readCanvas(canvas)).toEqual(expected);
+    const expected = expectedCanvas(world, ALL, ZOOM, false);
+    expect(draw(world, ZOOM, ALL, true, false)).toEqual(expected);
+    expect(draw(world, ZOOM, ALL, false)).toEqual(expected);
   });
 
   test("switching sprite mode and crossing the threshold upload no chunk; the atlas is uploaded once per setAtlas", () => {

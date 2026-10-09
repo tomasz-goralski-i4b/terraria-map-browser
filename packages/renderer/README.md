@@ -105,7 +105,9 @@ exactly the pixels `filterTiles` (below) makes of them. The browser tests assert
   tiles; the codec stores −1 for the others) and a sheet from that sheet: sprite pixel `sub` (0–15 per axis) of the tile
   reads sheet pixel `frame + sub × cell / 16`, so a cell larger than 16 × 16 is scaled into the tile (the game's exact
   draw offsets are deferred, docs/assets.md). Transparent sprite pixels show the wall, else the background, behind
-  them; paint is not applied to sprites; liquids and wires still draw over them. Everything else, the box filter and
+  them; paint is not applied to sprites; liquids and wires still draw over them. A half-transparent sprite pixel with
+  nothing behind it is the one partly transparent pixel liquids can land on outside map mode: there they use the
+  general straight-alpha rule (`over` in `src/gpu/shaders.ts`, rounded to nearest); map mode stays bit-exact. Everything else, the box filter and
   the overview keep map colours. The mode is a uniform: switching it or crossing the threshold uploads nothing. The
   atlas pages use 2 more texture units (8 in all).
 - `tileAt` and anything that reads tile data (names, coordinates) use the camera and the CWM planes, never GPU

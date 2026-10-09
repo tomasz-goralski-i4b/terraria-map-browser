@@ -74,8 +74,9 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
   const [error, setError] = useState<string | null>(null);
   const tool = useViewStore((state) => state.tool);
   const layers = useViewStore((state) => state.layers);
-  // A new atlas arrives with the "ready" status; a rebuild keeps drawing the previous one until then.
-  const assetsReady = useAssetStore((state) => state.status.kind === "ready");
+  // Every status change may come with another atlas (ready, disconnected, a failed rebuild); the renderer ignores an
+  // unchanged one, so following each change is cheap. A rebuild keeps drawing the previous atlas until it is ready.
+  const assetStatus = useAssetStore((state) => state.status);
   /**
    * The primary press that may become a click (pin a tile): where it went down, and whether it ever left the click
    * slop on its way (an out-and-back drag is still a drag).
@@ -305,7 +306,7 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
   useEffect(() => {
     const renderer = sessionRef.current?.renderer;
     if (renderer !== undefined) applySprites(renderer, layers.sprites);
-  }, [assetsReady, layers.sprites]);
+  }, [assetStatus, layers.sprites]);
 
   /** Pins the tile under a backing-store point in the Inspector (Inspect tool). */
   const pinAt = (session: MapSession, point: Point): void => {
