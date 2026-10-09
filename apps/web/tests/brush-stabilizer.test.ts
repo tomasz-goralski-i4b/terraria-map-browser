@@ -2,6 +2,15 @@ import { describe, expect, it } from "vitest";
 import { createBrushStabilizer } from "../src/world/brush-stabilizer.js";
 
 describe("brush stabilization", () => {
+  it("keeps the first movement after a long stationary hold delayed", () => {
+    const stroke = createBrushStabilizer({ x: 30, y: 40 }, 100);
+    expect(stroke.step(16).settled).toBe(true);
+    stroke.move({ x: 230, y: 40 }, 2000);
+    const resumed = stroke.step(16);
+    expect(resumed.point?.x).toBeGreaterThan(30);
+    expect(resumed.point?.x).toBeLessThan(40);
+    expect(resumed.settled).toBe(false);
+  });
   it("trails continuous screen coordinates, settles while held, and flushes the release endpoint", () => {
     const stroke = createBrushStabilizer({ x: 20, y: 30 }, 50);
     stroke.move({ x: 120, y: 30 });

@@ -1,5 +1,5 @@
 import { act } from "react";
-import { afterEach, expect, test } from "vitest";
+import { afterEach, expect, test, vi } from "vitest";
 import { page } from "vitest/browser";
 import { render } from "vitest-browser-react";
 import { readWorldTiles } from "@studio/world-codec";
@@ -86,6 +86,22 @@ test("round footprint and optional preview match painting; smoothing trails and 
   await new Promise<void>((resolve) => { requestAnimationFrame(() => { requestAnimationFrame(() => { resolve(); }); }); });
   for (let x = 4; x <= 20; x++) expect(view.tileAt(x, 12).block).toBeUndefined();
   expect(useBrushStore.getState().active).toBe(false);
+  // Idle time must be integrated against the old target, before accepting a new target.
+  let clock = performance.now();
+  const timing = vi.spyOn(performance, "now").mockImplementation(() => clock);
+  try {
+    act(() => { pointer("pointerdown", 4, 16); });
+    await new Promise<void>((resolve) => { requestAnimationFrame(() => { resolve(); }); });
+    clock += 2000;
+    act(() => { pointer("pointermove", 20, 16); });
+    clock += 16;
+    await new Promise<void>((resolve) => { requestAnimationFrame(() => { resolve(); }); });
+    expect(view.tileAt(20, 16).block).toBeUndefined();
+    expect(view.tileAt(4, 16).block).toEqual({ kind: "vanilla", id: 1 });
+  } finally {
+    timing.mockRestore();
+    act(() => { window.dispatchEvent(new Event("blur")); });
+  }
   // A chord emits moves with changed buttons, not another pointerdown/up for each button.
   act(() => {
     useBrushStore.setState({ smoothing: 0 });

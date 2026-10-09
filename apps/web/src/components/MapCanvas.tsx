@@ -90,7 +90,6 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
   const brushPointer = useRef<number | null>(null);
   const brushTrail = useRef<{
     readonly filter: ReturnType<typeof createBrushStabilizer>;
-    readonly strength: number;
     point: Point | null;
     time: number;
   } | null>(null);
@@ -432,7 +431,7 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
         brushPointer.current = event.pointerId;
         const local = localPoint(event.clientX, event.clientY);
         const strength = useBrushStore.getState().smoothing;
-        brushTrail.current = { filter: createBrushStabilizer(local, strength), strength, point: local, time: performance.now() };
+        brushTrail.current = { filter: createBrushStabilizer(local, strength), point: local, time: performance.now() };
         session.hover = local;
         moveBrush(tile.x, tile.y);
         session.requestFrame();
@@ -479,11 +478,10 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
         const tile = session.renderer.tileAt(point.x, point.y);
         const trail = brushTrail.current;
         if (trail !== null) {
-          trail.filter.move(tile === null ? null : local);
-          if (trail.strength === 0 || tile === null) {
-            trail.point = tile === null ? null : local;
-            drawBrushPoint(session, trail.point);
-          }
+          const now = performance.now();
+          trail.point = trail.filter.move(tile === null ? null : local, now - trail.time);
+          trail.time = now;
+          drawBrushPoint(session, trail.point);
         }
         session.hover = local;
         session.requestFrame();
