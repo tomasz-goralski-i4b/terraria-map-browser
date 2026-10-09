@@ -15,9 +15,9 @@ docs/assets.md ("Tile framing") specifies.
 - `frameBlock(input) → { column, row }` in `packages/renderer` (no React, no DOM): input = centre type, the 8
   neighbours (absent / type), for each edge neighbour that is a relative of the centre whether its own cell keeps
   its rim toward the centre, and the tile's world `x, y`; output = the cell of variant `(7x + 11y) mod 3`.
-- Neighbour letters by the "Viewer contract" rules 1–5 of docs/assets.md, in that order (rule 5 for ore ↔ ore is
-  provisional, and so is rule 3 for non-stone blocks such as ores in dirt: keep both behind one clearly named
-  function so H4 can change them in one place).
+- Neighbour letters by the "Viewer contract" rules 1–5 of docs/assets.md, in that order. The game confirmed rule 5
+  for copper beside iron and rule 3 for copper in dirt (G, H4); other ore pairs and non-stone blocks follow the art
+  and the contract (O2), so keep rules 3 and 5 behind one clearly named function.
 - Cell choice by the documented steps: side code from the sheet map, the `d → x` fallback for the 28 side codes
   without a cell, and the corner order for side code `oooo`. The sheet map and the interior looks are restated as a
   typed constant from the doc (our measurement, not a TEdit table).
@@ -180,9 +180,10 @@ catalogue and the in-game observations.
 
 ## Scope
 - Extend the framing function of the block implementation: grass ids select from the measured grass catalogue
-  (docs/assets.md, "Grass and moss sheets"); moss follows the rule set that H8 observed; large-frame ids take the
-  variant pattern that H9 observed (`(x mod 3, y mod 4)` or `(x mod 2, y mod 2)` over the six interior cells).
-- Corrupt and crimson jungle grass (661, 662) use the partner that H10 observed.
+  (docs/assets.md, "Grass and moss sheets"); moss is framed like stone over rows 0–14, which H8 supports against
+  stone (whether rows 15–21 are ever used stays open, O8); large-frame ids keep the default variant until their
+  pattern over the six interior cells is observed (O4 is still open after H9).
+- Corrupt and crimson jungle grass (661, 662) take **mud** as partner (G, H10/O10).
 
 ## Out of scope
 - Gemspark 8-way, the white mask blocks of `Tiles_2`, walls, paint, lighting.

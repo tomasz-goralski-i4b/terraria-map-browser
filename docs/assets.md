@@ -600,7 +600,7 @@ corners `NW NE SE SW` for `oooo`). The right-hand column says how the row is sup
 | 4 | dirt | `...` / `.#d` / `.dd` | `xoox` top-left corner | (0,3) (2,3) (4,3) | (0, 54, 16, 16) | S, X |
 | 5 | dirt | `ddd` / `d#d` / `ddd` | `oooo` + `oooo` plain interior | (1,1) (2,1) (3,1) | (18, 18, 16, 16) | S, X |
 | 6 | dirt | `.d.` / `d#d` / `ddd` | `oooo` + `xxoo` inner corners N | (6,1) (7,1) (8,1) | (108, 18, 16, 16) | S, X |
-| 7 | dirt | `.d.` / `d#d` / `.d.` | `oooo` + `xxxx` → SE+SW notches (priority) | (6,2) (7,2) (8,2) | (108, 36, 16, 16) | S, cited order, X |
+| 7 | dirt | `.d.` / `d#d` / `.d.` | `oooo` + `xxxx` → NW+NE notches (four-corner exception) | (6,1) (7,1) (8,1) | (108, 18, 16, 16) | S, G (dirt and stone, v3 Frozen); the cited order and TEdit: SE+SW (6,2) |
 | 8a | dirt | `dds` / `d#s` / `dds`, stone mass to the E | E is a relative whose cell keeps its W rim (8b) → `oooo` + `oooo` | (1,1) (2,1) (3,1) | (18, 18, 16, 16) | S, X |
 | 8b | stone (1), the E neighbour of 8a | `dss` / `d#s` / `dss` | `oood` rim W | (9,7) (9,8) (9,9) | (162, 126, 16, 16) | S, X |
 | 9 | stone | `sss` / `s#d` / `sss` | `odoo` rim E | (8,7) (8,8) (8,9) | (144, 126, 16, 16) | S, X |
@@ -611,8 +611,8 @@ corners `NW NE SE SW` for `oooo`). The right-hand column says how the row is sup
 | 14a | stone | `.dd` / `.#d` / `...` | `ddxx` has no cell → `xxxx` | (9,3) (10,3) (11,3) | (162, 54, 16, 16) | S, chosen fallback, X |
 | 14b | dirt, the E neighbour of 14a (its own row `d#d`, N `d`, S `.`) | 3 × 3 `dd.` / `s#d` / `...` | W is a relative whose cell (14a) has no rim → `x`: `ooxx` bottom-left corner | (0,4) (2,4) (4,4) | (0, 72, 16, 16) | edge check, X |
 | 15 | copper (7) | `ddd` / `d#d` / `ddd` | `dddd` full dirt rim | (6,11) (7,11) (8,11) | (108, 198, 16, 16) | S (rule 3); TEdit: (0,5) |
-| 16a | copper | `...` / `c#i` / `...` | `xxxo` right end (seam to iron) | (12,0) (12,1) (12,2) | (216, 0, 16, 16) | **provisional** (rule 5, H4); TEdit: `xoxo` (6,4) |
-| 16b | iron (6), the E neighbour of 16a | `...` / `c#i` / `...` | `xoxx` left end | (9,0) (9,1) (9,2) | (162, 0, 16, 16) | **provisional**; TEdit: (6,4) |
+| 16a | copper | `...` / `c#i` / `...` | `xxxo` right end (seam to iron) | (12,0) (12,1) (12,2) | (216, 0, 16, 16) | rule 5, G (seam, H4); TEdit: `xoxo` (6,4) |
+| 16b | iron (6), the E neighbour of 16a | `...` / `c#i` / `...` | `xoxx` left end | (9,0) (9,1) (9,2) | (162, 0, 16, 16) | rule 5, G (seam, H4); TEdit: (6,4) |
 | 17 | copper | `sss` / `s#s` / `sss` | `xxxx` outlined ore in stone | (9,3) (10,3) (11,3) | (162, 54, 16, 16) | rule 5, X |
 | 18 | dirt, shape 2 (top-right cut) | `...` / `d#.` / `dd.` | `xxoo` top-right corner (shape ignored) | (1,3) (3,3) (5,3) | (18, 54, 16, 16), drawn column by column per shape 2 | S, X, A8 5909–5918 |
 | 19 | dirt, shape 1 (half) | `...` / `d#d` / `...` | `xoxo` horizontal middle | (6,4) (7,4) (8,4) | (108, 72, 16, 8) drawn into tile rows 8–15 | S, X, A8 5903–5907 |
@@ -621,7 +621,8 @@ Example 8 shows how merging is asymmetric. In the same dirt/stone pair, dirt dra
 draws the dirt rim. Example 14 shows the other side of that boundary. Stone has no cell for rims on N and E, so it
 falls back to a full outline. The dirt tile to its E then closes its own W edge, and both sides draw an outline
 instead of an open edge meeting an outline. Examples 6 and 7 are inner corners, where empty diagonals meet a solid
-mass.
+mass. In example 7 all four diagonals are empty: the game draws the NW+NE notches (G), the exception of step 2 to
+the cited order, which would pick SE+SW.
 
 ### Grass and moss sheets
 
