@@ -260,3 +260,83 @@ describe("sprite mode", () => {
     expect(renderer.stats().atlasUploads).toBe(2);
   });
 });
+
+/**
+ * spriteWorld() placed at columns 128–131 (the second chunk), with other chests at columns 0–3 of the first chunk: a
+ * cache of one chunk must evict the first to draw the second.
+ */
+function twoChunkWorld(): RenderableWorld {
+  const inner = spriteWorld();
+  const width = 256;
+  const count = width * HEIGHT;
+  const block = new Uint16Array(count).fill(ABSENT);
+  const wall = new Uint16Array(count).fill(WALL);
+  const frameX = new Int16Array(count).fill(-1);
+  const frameY = new Int16Array(count).fill(-1);
+  const liquid = new Uint8Array(count);
+  const liquidAmount = new Uint8Array(count);
+  const offset = 128 * HEIGHT;
+  const planes = inner.planes;
+  block.set(planes.block, offset);
+  wall.set(planes.wall, offset);
+  if (planes.frameX !== undefined) frameX.set(planes.frameX, offset);
+  if (planes.frameY !== undefined) frameY.set(planes.frameY, offset);
+  liquid.set(planes.liquid, offset);
+  liquidAmount.set(planes.liquidAmount, offset);
+  for (let x = 0; x < WIDTH; x++) {
+    block[x * HEIGHT] = CHEST;
+    frameX[x * HEIGHT] = 18 * x;
+    frameY[x * HEIGHT] = 18;
+  }
+  return {
+    width, height: HEIGHT, surfaceY: inner.surfaceY,
+    planes: { block, wall, frameX, frameY, liquid, liquidAmount, paint: new Uint8Array(count), wallPaint: new Uint8Array(count) },
+    palette,
+  };
+}
+
+describe("sprite mode with the chunk cache", () => {
+  test("after a cache slot is evicted and reused, the frames drawn belong to the new chunk", () => {
+    const canvas = document.createElement("canvas");
+    canvas.width = WIDTH * ZOOM;
+    canvas.height = HEIGHT * ZOOM;
+    const renderer = createMapRenderer(canvas, { maxCachedChunks: 1 });
+    created.push(renderer);
+    renderer.setWorld(twoChunkWorld());
+    renderer.setAtlas(syntheticAtlas());
+    renderer.setSpriteMode(true);
+    renderer.setCamera({ x: 0, y: 0, zoom: ZOOM });
+    renderer.render();
+    const first = readCanvas(canvas);
+    renderer.setCamera({ x: 128, y: 0, zoom: ZOOM });
+    renderer.render();
+    expect(renderer.stats().evictedChunks).toBeGreaterThanOrEqual(1);
+    expect(renderer.stats().residentChunks).toBe(1);
+    const second = readCanvas(canvas);
+    expect(second).not.toEqual(first);
+    expect(second).toEqual(expectedCanvas(spriteWorld(), ALL, ZOOM, true));
+  });
+
+  test("panning across the whole world draws sprites without uploading or rebuilding the atlas again", () => {
+    const canvas = document.createElement("canvas");
+    canvas.width = WIDTH * ZOOM;
+    canvas.height = HEIGHT * ZOOM;
+    const renderer = createMapRenderer(canvas, { maxCachedChunks: 1 });
+    created.push(renderer);
+    const world = twoChunkWorld();
+    renderer.setWorld(world);
+    renderer.setAtlas(syntheticAtlas());
+    renderer.setSpriteMode(true);
+    for (let x = 0; x <= world.width - WIDTH; x += 6) {
+      renderer.setCamera({ x, y: 0, zoom: ZOOM });
+      renderer.render();
+    }
+    for (let x = world.width - WIDTH; x >= 0; x -= 6) {
+      renderer.setCamera({ x, y: 0, zoom: ZOOM });
+      renderer.render();
+    }
+    // Chunks were uploaded along the way (the cache grows to the views that straddle both), the atlas never again.
+    expect(renderer.stats().atlasUploads).toBe(1);
+    expect(renderer.stats().textureUploads).toBeGreaterThan(2);
+  });
+});

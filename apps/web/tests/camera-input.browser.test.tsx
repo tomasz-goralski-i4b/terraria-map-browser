@@ -290,3 +290,32 @@ test("the map follows the connected atlas, and drops it when the assets are disc
     useAssetStore.setState({ status: { kind: "none" } });
   }
 });
+
+test("panning and zooming the map read no asset files and rebuild no atlas", async () => {
+  const atlas = { pages: [], index: { pageSize: 1, entries: [] } };
+  const session = {
+    getAtlas: vi.fn(() => atlas), connect: vi.fn(), connectFiles: vi.fn(), reconnect: vi.fn(), restore: vi.fn(),
+    chooseFiles: vi.fn(), disconnect: vi.fn(),
+  };
+  setDefaultAssetSession(session as unknown as AssetSession);
+  try {
+    await mount();
+    act(() => {
+      useAssetStore.setState({ status: { kind: "ready", folderName: "Images", tileSheets: 1, wallSheets: 0, pages: 1, fromCache: true, missing: [] } });
+    });
+    for (let step = 0; step < 30; step++) {
+      pointer("pointerdown", 120, 90);
+      pointer("pointermove", 120 - step * 7, 90 + (step % 5));
+      pointer("pointerup", 120 - step * 7, 90 + (step % 5));
+      wheel(step % 2 === 0 ? -5 : 5);
+      await frame();
+    }
+    for (const read of [session.connect, session.connectFiles, session.reconnect, session.restore, session.chooseFiles]) {
+      expect(read).not.toHaveBeenCalled();
+    }
+    expect(vi.mocked(renderer.setAtlas).mock.calls.every(([given]) => given === atlas)).toBe(true);
+  } finally {
+    setDefaultAssetSession(undefined);
+    useAssetStore.setState({ status: { kind: "none" } });
+  }
+});

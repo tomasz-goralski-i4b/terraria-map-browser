@@ -1064,6 +1064,10 @@ committed. The .NET decoder (#73) must reproduce the same vectors.
 - Assertions only, no output files: every `Tiles_0…753` and `Wall_1…366` (case-insensitive names) decodes; header
   file size = file length; frame total = decompressed size; reader = `Texture2DReader`, format 0, one level, data
   length = `w × h × 4`; `Tiles_0` is 288 × 270 and `Wall_1` 468 × 180.
+- Sprite mode (#91): `apps/web/tests/terraria-sprites.browser.test.ts` builds an atlas of only the sheets the spawn area of
+  `SCCO1.wld` needs (vitest browser command `buildLocalAtlas`, run on the Node side) and draws that area at 16 pixels
+  per tile: every framed tile there has a sheet, sprites change the picture, and no pixel is the missing-texture
+  checkerboard.
 - Never write decoded pixels into the repository; renders made by hand go to `local-renders/` (gitignored).
 
 ## Open questions

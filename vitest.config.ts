@@ -1,5 +1,7 @@
 import { globSync, readFileSync } from "node:fs";
+import { readdir, readFile, stat } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vitest/config";
 import { playwright } from "@vitest/browser-playwright";
@@ -11,6 +13,47 @@ const packageDirs = globSync("{packages,apps}/*/src").map((src) => dirname(src))
 
 // Headless Chromium on a machine without a GPU needs a software GL backend (SwiftShader) to offer WebGL2.
 const softwareWebGl = ["--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"];
+
+/**
+ * Opt-in (docs/assets.md, "Opt-in integration test"): builds a small sprite atlas from the local Terraria Content
+ * folder in TERRARIA_CONTENT, with only the tile sheets of `tileIds`, and returns it with base64 pages. Null when the
+ * variable is unset (CI): the test then skips. Nothing is written anywhere.
+ */
+async function buildLocalAtlas(tileIds: readonly number[]): Promise<{
+  pageSize: number; pages: string[]; entries: unknown[]; missing: number;
+} | null> {
+  const content = process.env["TERRARIA_CONTENT"];
+  if (content === undefined || content === "") return null;
+  const images = join(content, "Images");
+  const wanted = new Set(tileIds.map((id) => `tiles_${String(id)}.xnb`));
+  const names = (await readdir(images)).filter((name) => wanted.has(name.toLowerCase()));
+  // The built package, loaded only when the test runs (scripts/build.sh builds it first).
+  const assets = (await import(pathToFileURL(resolve("packages/assets/dist/index.js")).href)) as typeof import("./packages/assets/src/index.js");
+  const directory = {
+    getDirectoryHandle: () => Promise.reject(new Error("no sub-directories")),
+    entries: async function* () {
+      for (const name of names) {
+        const path = join(images, name);
+        const info = await stat(path);
+        const file = {
+          name, size: info.size, lastModified: info.mtimeMs,
+          arrayBuffer: async () => {
+            const bytes = await readFile(path);
+            return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+          },
+        };
+        yield [name, { kind: "file", getFile: () => Promise.resolve(file) }] as [string, { kind: string; getFile: () => Promise<typeof file> }];
+      }
+    },
+  };
+  const { atlas, missing } = await assets.buildSpriteAtlas(directory, { pageSize: 2048 });
+  return {
+    pageSize: atlas.index.pageSize,
+    pages: atlas.pages.map((page) => Buffer.from(page).toString("base64")),
+    entries: [...atlas.index.entries],
+    missing: missing.length,
+  };
+}
 
 // Browser projects are registered by hand: each may need its own plugins or commands.
 const browserProjects = [
@@ -77,6 +120,7 @@ const browserProjects = [
           setAppOffline: (_context: unknown, offline: boolean) => {
             setDistServerOffline(offline);
           },
+          buildLocalAtlas: (_context: unknown, tileIds: number[]) => buildLocalAtlas(tileIds),
         },
       },
     },
