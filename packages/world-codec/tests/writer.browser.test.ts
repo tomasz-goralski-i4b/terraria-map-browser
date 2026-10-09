@@ -17,6 +17,39 @@ function client(probe = false): { client: WorldWorkerClient; worker: Worker } {
 afterEach(() => { clients.splice(0).forEach((created) => { created.dispose(); }); });
 
 describe("Worker save", () => {
+  it.each([
+    { kind: "unknown", runtimeId: 900 },
+    { kind: "mod", mod: "CalamityMod", internalName: "AstralStone", runtimeId: 900 },
+  ])("refuses $kind content without output or caller mutation and recovers", async (ref) => {
+    const { client: created, worker } = client();
+    const responses: string[] = [];
+    worker.addEventListener("message", (event: MessageEvent<{ type: string }>) => {
+      responses.push(event.data.type);
+    });
+    for (const role of ["block", "wall", "unused"] as const) {
+      const world = writerWorld();
+      Object.assign(world, { palette: [ref] });
+      if (role !== "unused") world.planes[role][2] = 0;
+      const before = structuredClone(world);
+      const error: unknown = await created.save(world).catch((caught: unknown) => caught);
+      expect(error).toBeInstanceOf(WorldWorkerError);
+      expect(error).toMatchObject({ code: "UnsupportedWrite" });
+      expect(world).toEqual(before);
+    }
+    await expect.poll(() => responses).toEqual(["failed", "failed", "failed"]);
+    const restored = writerWorld();
+    expect(new Uint8Array(await created.save(restored))).toEqual(restored.envelope.source);
+  });
+
+  it("preserves unencodable tile coordinates through Worker failures", async () => {
+    const { client: created } = client();
+    const world = writerWorld();
+    world.planes.wall[5] = world.palette.length;
+    const before = structuredClone(world);
+    await expect(created.save(world)).rejects.toMatchObject({ code: "UnencodableTile", x: 1, y: 1 });
+    expect(world).toEqual(before);
+  });
+
   it("transfers a new output, detaches it in the Worker and keeps caller buffers unchanged", async () => {
     const world = { ...writerWorld(), palette: [{ kind: "vanilla", id: 1 }] as const };
     world.planes.block[2] = 0;

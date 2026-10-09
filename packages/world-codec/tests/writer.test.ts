@@ -79,6 +79,23 @@ describe("format-326 writer vectors", () => {
 });
 
 describe("world save", () => {
+  describe.each([writeWorldTiles, writeWorld])("$name unsupported content", (write) => {
+    it.each([
+      { kind: "unknown", runtimeId: 900 },
+      { kind: "mod", mod: "CalamityMod", internalName: "AstralStone", runtimeId: 900 },
+    ])("refuses $kind content in block, wall and unused palette roles without mutation", (ref) => {
+      for (const role of ["block", "wall", "unused"] as const) {
+        const world = writerWorld();
+        // Exercise the runtime boundary too: mod refs are outside the codec's typed palette subset.
+        Object.assign(world, { palette: [ref] });
+        if (role !== "unused") world.planes[role][2] = 0;
+        const before = structuredClone(world);
+        expectFailure(() => write(world), "UnsupportedWrite");
+        expect(world).toEqual(before);
+      }
+    });
+  });
+
   describe.each([writeWorldTiles, writeWorld])("$name missing palette references", (write) => {
     it.each(["block", "wall"] as const)("rejects a sparse %s entry at its coordinate", (plane) => {
       const palette = [{ kind: "vanilla", id: 1 }] as WorldTilesResult["palette"][number][];
