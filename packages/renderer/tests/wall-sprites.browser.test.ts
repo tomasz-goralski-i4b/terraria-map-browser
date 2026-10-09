@@ -260,6 +260,28 @@ describe("walls in sprite mode", () => {
     expectClose(readCanvas(canvas), expectedCanvas(world, CHUNK_SIZE - 4, 0, columns, world.height), columns * ZOOM);
   });
 
+  test("a chunk without wall cells skips the wall layer: its neighbour's overhang, a modded wall and a new wall still show", () => {
+    // The chunk beside the walls has none of its own; only its apron holds the overhang of the wall left of it.
+    const world = createWorld(CHUNK_SIZE * 2, 8);
+    stamp(world, CHUNK_SIZE - 2, 0, ["..", ".1", ".1", ".."]);
+    stamp(world, CHUNK_SIZE + 3, 5, ["m."]);
+    const columns = 8;
+    const { canvas, renderer } = makeRenderer(columns * ZOOM, world.height * ZOOM);
+    renderer.setWorld(renderable(world));
+    renderer.setLayers(ALL);
+    renderer.setAtlas(syntheticAtlas());
+    renderer.setFraming(framing);
+    renderer.setSpriteMode(true);
+    renderer.setCamera({ x: CHUNK_SIZE - 4, y: 0, zoom: ZOOM });
+    renderer.render();
+    expectClose(readCanvas(canvas), expectedCanvas(world, CHUNK_SIZE - 4, 0, columns, world.height), columns * ZOOM);
+    // A wall placed where the chunk had none is drawn once its tiles are invalidated.
+    stamp(world, CHUNK_SIZE + 1, 1, ["22", "2."]);
+    renderer.invalidateTiles([{ x: CHUNK_SIZE + 1, y: 1 }, { x: CHUNK_SIZE + 2, y: 1 }, { x: CHUNK_SIZE + 1, y: 2 }]);
+    renderer.render();
+    expectClose(readCanvas(canvas), expectedCanvas(world, CHUNK_SIZE - 4, 0, columns, world.height), columns * ZOOM);
+  });
+
   test("invalidating one changed wall recomputes exactly its 3 × 3 area and redraws it", () => {
     const world = createWorld(12, 8);
     stamp(world, 0, 0, SCENE);

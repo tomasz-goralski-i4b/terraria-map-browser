@@ -85,6 +85,12 @@ export function spriteSampling(zoom: number): { readonly samples: number; readon
  * are not uploaded yet draws its self-framed blocks in map colours. The slot in the page is the low 16 bits.
  */
 export const CELLS_INSTANCE_BIT = 0x10000;
+/**
+ * Set in an instance's layer attribute, with CELLS_INSTANCE_BIT, when its chunk or apron has any framed wall cell: the
+ * sprite pass skips the wall layer of chunks without one (sky, open caves), whose walls (if any: not vanilla content)
+ * keep their map colours either way.
+ */
+export const WALLS_INSTANCE_BIT = 0x20000;
 
 /** Vertex attribute locations of the per-chunk instance data, bound before linking. */
 export const RECT_ATTRIBUTE = 0;
@@ -148,7 +154,9 @@ uniform int uSpriteWeight;
 #endif
 flat in ivec4 vRect;
 flat in int vLayer;
-flat in int vCells; // 1 when this chunk's cell plane holds its framed cells (CELLS_INSTANCE_BIT)
+// Bit 0 when this chunk's cell planes hold its framed cells (CELLS_INSTANCE_BIT), bit 1 when they hold any wall cell
+// (WALLS_INSTANCE_BIT).
+flat in int vCells;
 
 const uint ABSENT = 65535u;
 
@@ -225,7 +233,7 @@ ivec2 sheetAt(uint index) {
 // it away. False without framed cells or a cell (a falling block with nothing below it, or not self-framed), for
 // content sprite mode leaves in map colours, or past the sheet's edge.
 bool cellPixel(ivec4 place, ivec2 at, ivec2 texel, ivec2 sub, out ivec4 color) {
-  if ((uPresent & ${String(PRESENT.cells)}) == 0 || vCells == 0) return false;
+  if ((uPresent & ${String(PRESENT.cells)}) == 0 || (vCells & 1) == 0) return false;
   uint cell = plane16(texel, ${String(PLANES_16.cell)});
   if (cell == ${String(NO_CELL)}u || place.w == ${String(SPRITE_STATE.mapColor)}) return false;
   if (place.w == ${String(SPRITE_STATE.missing)}) {
@@ -452,6 +460,10 @@ ivec4 wallSample(ivec2 texel, vec2 centre, ivec4 ownMapped) {
       storeWall(dx, dy, a, b);
     }
   }
+  // No wall reaches the footprint (a hole in the walls): nothing to sample.
+  if ((wallNWA.w | wallNA.w | wallNEA.w | wallWA.w | wallCA.w | wallEA.w | wallSWA.w | wallSA.w | wallSEA.w) == WALL_NONE) {
+    return ivec4(0);
+  }
   vec4 sum = vec4(0.0);
   // Runtime bounds (uSpriteSamples is at most MAX_SPRITE_SAMPLES): the loops stay loops, so the shader stays small.
   for (int y = 0; y < count; y++) {
@@ -516,7 +528,7 @@ ivec4 localColorAt(ivec2 local, vec2 sub) {
     // hidden background a fading overhang darkens slightly.
 #ifdef SPRITES
     bool covered = hasSprite && sprite.a == 255;
-    if (!covered && (uLayers & 2) != 0 && (uPresent & ${String(PRESENT.cells)}) != 0 && vCells != 0) {
+    if (!covered && (uLayers & 2) != 0 && (uPresent & ${String(PRESENT.cells)}) != 0 && (vCells & 2) != 0) {
       ivec4 walls = over(wallSample(texel, sub, wallShown ? color : ivec4(0)), behind);
       color = uSpriteWeight < 256 ? (color * (256 - uSpriteWeight) + walls * uSpriteWeight + 128) / 256 : walls;
     }
@@ -576,7 +588,7 @@ void main() {
   gl_Position = vec4(screen.x / uViewport.x * 2.0 - 1.0, 1.0 - screen.y / uViewport.y * 2.0, 0.0, 1.0);
   vRect = aRect;
   vLayer = aLayer & ${String(CELLS_INSTANCE_BIT - 1)};
-  vCells = (aLayer & ${String(CELLS_INSTANCE_BIT)}) != 0 ? 1 : 0;
+  vCells = (aLayer >> 16) & 3;
 }
 `;
 
@@ -673,7 +685,7 @@ void main() {
   gl_Position = vec4(texel / uTarget * 2.0 - 1.0, 0.0, 1.0);
   vRect = aRect;
   vLayer = aLayer & ${String(CELLS_INSTANCE_BIT - 1)};
-  vCells = (aLayer & ${String(CELLS_INSTANCE_BIT)}) != 0 ? 1 : 0;
+  vCells = (aLayer >> 16) & 3;
 }
 `;
 

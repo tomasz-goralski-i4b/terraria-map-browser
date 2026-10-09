@@ -7,6 +7,7 @@ import { CHUNK_SIZE, visibleChunks } from "../camera/camera.js";
 import type { Camera, ChunkCoord, Size } from "../camera/camera.js";
 import { filterTilesPerPixel } from "../chunk/box-filter.js";
 import { WIRE_ALPHA, WIRE_COLORS, WIRE_LAYER, type ChunkLayers } from "../chunk/render.js";
+import { NO_CELL } from "../framing/cells.js";
 import { createChunkCellCache } from "../framing/chunk-cells.js";
 import { SPRITE_FRAME_WRAPS } from "./frame-wrap.js";
 import type { ChunkCellCache } from "../framing/chunk-cells.js";
@@ -16,7 +17,7 @@ import type { BlockFraming } from "../framing/frame-block.js";
 import { backgroundColor, contentColor, liquidColors } from "../palette/map-palette.js";
 import type { MapPalette } from "../palette/map-palette.js";
 import {
-  CELLS_INSTANCE_BIT, LAYER_ATTRIBUTE, PAGE_APRON, PLANES_16, PLANES_8, PLANE_COUNT_16, PLANE_COUNT_8, PRESENT, RECT_ATTRIBUTE,
+  CELLS_INSTANCE_BIT, WALLS_INSTANCE_BIT, LAYER_ATTRIBUTE, PAGE_APRON, PLANES_16, PLANES_8, PLANE_COUNT_16, PLANE_COUNT_8, PRESENT, RECT_ATTRIBUTE,
   RULE_HEADER_ROWS, RULE_ROW, SPRITE_MIN_ZOOM, SPRITE_SHEET_ROW, SPRITE_SHEET_TEXELS, spriteSampling, SPRITE_STATE, chunkFragmentSource, chunkSpriteFragmentSource, chunkVertexSource, overviewBuildFragmentSource,
   overviewBuildVertexSource, overviewFragmentSource, overviewVertexSource,
 } from "./shaders.js";
@@ -496,6 +497,8 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   let framedBefore = 0;
   let framedWallsBefore = 0;
   const framedSlots = new Set<number>();
+  // The framed slots whose wall cell layer holds any wall cell (WALLS_INSTANCE_BIT).
+  const wallSlots = new Set<number>();
   // Resident chunks whose planes changed (invalidateTiles): uploaded again on their next draw.
   const dirtyChunks = new Set<number>();
   // The world the plane unpack state (alignment, row length, image height) is set for; null for GL's defaults. Chunk
@@ -524,6 +527,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     cellCache = null;
     wallCache = null;
     framedSlots.clear();
+    wallSlots.clear();
   };
 
   const clearChunks = (): void => {
@@ -816,10 +820,13 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       gl.TEXTURE_2D_ARRAY, 0, PAGE_APRON, PAGE_APRON, layer + PLANES_16.cell,
       rows, columns, 1, gl.RED_INTEGER, gl.UNSIGNED_SHORT, cells,
     );
+    const walls = caches.walls.cells(chunk);
     gl.texSubImage3D(
       gl.TEXTURE_2D_ARRAY, 0, 0, 0, layer + PLANES_16.wallCell, PAGE_SIZE, PAGE_SIZE, 1, gl.RED_INTEGER,
-      gl.UNSIGNED_SHORT, caches.walls.cells(chunk),
+      gl.UNSIGNED_SHORT, walls,
     );
+    if (walls.some((cell) => cell !== NO_CELL)) wallSlots.add(slot);
+    else wallSlots.delete(slot);
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
     textureUploads++;
     framedSlots.add(slot);
@@ -930,7 +937,9 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       const originY = chunk.y * CHUNK_SIZE;
       instanceData.set([
         originX, originY, Math.min(CHUNK_SIZE, source.width - originX), Math.min(CHUNK_SIZE, source.height - originY),
-        (slot % CHUNKS_PER_PAGE) | (framedSlots.has(slot) ? CELLS_INSTANCE_BIT : 0),
+        (slot % CHUNKS_PER_PAGE) | (framedSlots.has(slot)
+          ? CELLS_INSTANCE_BIT | (wallSlots.has(slot) ? WALLS_INSTANCE_BIT : 0)
+          : 0),
       ], index * INSTANCE_INTS);
     });
     gl.bindVertexArray(resources.instanceArray);
