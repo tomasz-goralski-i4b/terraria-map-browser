@@ -1,4 +1,5 @@
 // The independent codec API; importing it requires no host globals.
+export { serializeCwm, type CwmBinaryWorld, type CwmContentRef } from "./cwm-binary.js";
 export { ByteReader } from "./byte-reader.js";
 export {
   resolveWorldFormat, SUPPORTED_VANILLA_FORMATS,
