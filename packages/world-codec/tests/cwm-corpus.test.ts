@@ -21,7 +21,7 @@ interface ChunkSnapshot {
 }
 
 describe("TypeScript CWM corpus export", () => {
-  it("exports every fixture twice with exact golden headers and plane digests, preserving sources and goldens", async () => {
+  it("exports every fixture twice with exact golden headers and plane digests, preserving sources and goldens", { tags: ["perf"], timeout: 120_000 }, async () => {
     const directory = await mkdtemp(join(tmpdir(), "terraria-cwm-corpus-"));
     const first = join(directory, "first");
     const second = join(directory, "second");
@@ -76,7 +76,7 @@ describe("TypeScript CWM corpus export", () => {
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
-  }, 120_000);
+  });
 
   it("rejects source-directory aliases before writing anything", async () => {
     await expect(exportCwmCorpus(fixtures, fixtures)).rejects.toThrow(/fixture|source|destination/i);

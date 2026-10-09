@@ -45,7 +45,14 @@ jobs:
           include-hidden-files: true
           if-no-files-found: ignore
   # Runs in parallel with cwm-compatibility: a `needs` dependency would add that job's time to every CI run.
+  # The two halves of verify.sh (STUDIO_VERIFY_PART, scripts/lib.sh) run on separate runners, so neither shares a VM
+  # with the other; together they are the whole check.
   verify:
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [dotnet, web]
+    name: verify (${{ matrix.part }})
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -59,7 +66,8 @@ jobs:
           key: lfs-${{ hashFiles(format('{0}/lfs-ids', runner.temp)) }}
           restore-keys: lfs-
       - run: git lfs pull
-      - uses: actions/setup-dotnet@v4
+      - if: matrix.part == 'dotnet'
+        uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
           # NuGet cache keyed on the committed lock files; scripts/build.sh restores
@@ -67,27 +75,33 @@ jobs:
           cache: true
           cache-dependency-path: dotnet/**/packages.lock.json
       # pnpm version comes from package.json "packageManager"; v6+ is required for pnpm 11.
-      - uses: pnpm/action-setup@v6
+      - if: matrix.part == 'web'
+        uses: pnpm/action-setup@v6
       # Same Node major as local development: .node-version (and package.json "engines").
-      - uses: actions/setup-node@v7
+      - if: matrix.part == 'web'
+        uses: actions/setup-node@v7
         with:
           node-version-file: .node-version
           cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      - if: matrix.part == 'web'
+        run: pnpm install --frozen-lockfile
       # Browser tests run headless, so they need only Chromium's headless shell. Cache it per Playwright version;
       # on a hit, skip the install: the runner image already has the system libraries Chromium needs.
       - name: Playwright version
+        if: matrix.part == 'web'
         id: playwright
         run: echo "version=$(node -p "require('playwright/package.json').version")" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@v4
+      - if: matrix.part == 'web'
+        uses: actions/cache@v4
         id: playwright-cache
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
-      - if: steps.playwright-cache.outputs.cache-hit != 'true'
+      - if: matrix.part == 'web' && steps.playwright-cache.outputs.cache-hit != 'true'
         run: pnpm exec playwright install --with-deps --only-shell chromium
       # The same command the Cezar chain gates run — a single definition of "green". CI skips the Vitest tests tagged
       # `perf` (they starve on shared runners); the agents' local verify.sh runs everything.
       - run: bash scripts/verify.sh
         env:
+          STUDIO_VERIFY_PART: ${{ matrix.part }}
           STUDIO_SKIP_PERF: "1"
