@@ -5,7 +5,9 @@ import { useAppStore } from "../store.js";
 import { Icon } from "../ui/Icon.js";
 import { toRenderableWorld } from "../world/renderable-world.js";
 import { getDefaultWorldSession } from "../world/world-session.js";
+import type { Command } from "../shell/commands.js";
 import { MapCanvas } from "./MapCanvas.js";
+import { StartScreen } from "./StartScreen.js";
 
 /**
  * Session messages stay above the canvas of a previously loaded world (which fills the view) and keep receiving
@@ -22,9 +24,10 @@ export interface MapViewProps {
   readonly renderer: string;
   /** World to draw, by reference; defaults to the world loaded by the default session. */
   readonly world?: RenderableWorld | null;
+  readonly commands?: readonly Command[];
 }
 
-export function MapView({ renderer, world }: MapViewProps): React.JSX.Element {
+export function MapView({ renderer, world, commands }: MapViewProps): React.JSX.Element {
   const phase = useAppStore((state) => state.phase);
   const loadingFileName = useAppStore((state) => state.loadingFileName);
   const summary = useAppStore((state) => state.summary);
@@ -75,11 +78,8 @@ export function MapView({ renderer, world }: MapViewProps): React.JSX.Element {
         </p>
       )}
       {drawn !== null && <MapCanvas world={drawn} />}
-      {summary === null && phase === "idle" && (
-        <div className="map-empty">
-          <p className="map-empty-title">No world open</p>
-          <p>Open a .wld file or drop it here.</p>
-        </div>
+      {drawn === null && phase === "idle" && (
+        <StartScreen commands={commands} />
       )}
     </main>
   );

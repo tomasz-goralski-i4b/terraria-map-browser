@@ -1,3 +1,4 @@
+import { useId, useRef } from "react";
 import { ContentPanel } from "../panels/ContentPanel.js";
 import { EntitiesPanel } from "../panels/placeholders.js";
 import { InspectorPanel } from "../panels/InspectorPanel.js";
@@ -6,7 +7,7 @@ import type { Command } from "./commands.js";
 import { WorldPanel, WorldPanelActions } from "../panels/WorldPanel.js";
 import { Section } from "../ui/Section.js";
 import { Splitter } from "../ui/Splitter.js";
-import { DEFAULT_LAYOUT, SECTION_IDS, useLayoutStore, type SectionId } from "./layout-store.js";
+import { DEFAULT_LAYOUT, DOCK_TABS, SECTION_IDS, SECTION_TAB, useLayoutStore, type DockTab, type SectionId } from "./layout-store.js";
 
 interface SectionDefinition {
   readonly title: string;
@@ -23,16 +24,46 @@ const SECTIONS: Readonly<Record<SectionId, SectionDefinition>> = {
   entities: { title: "Entities", body: () => <EntitiesPanel /> },
 };
 
+const TAB_LABELS: Readonly<Record<DockTab, string>> = { world: "World", view: "View" };
+
 export const DOCK_ID = "dock";
 
-/** The right dock: a resizable column of collapsible sections. Hidden entirely with `P`. */
+function DockSection({ id, commands }: { readonly id: SectionId; readonly commands: readonly Command[] }): React.JSX.Element {
+  const open = useLayoutStore((state) => state.sections[id]);
+  const setSectionOpen = useLayoutStore((state) => state.setSectionOpen);
+  const definition = SECTIONS[id];
+  return (
+    <Section
+      title={definition.title}
+      {...(open && definition.actions !== undefined ? { actions: definition.actions(commands) } : {})}
+      open={open}
+      onOpenChange={(next) => {
+        setSectionOpen(id, next);
+      }}
+    >
+      {definition.body(commands)}
+    </Section>
+  );
+}
+
+/**
+ * The right dock (as in image editors): World (what the world is: properties, content, entities) and View (what is
+ * drawn: layers) as tabs, and the Inspector under them, visible with either. Resizable; hidden entirely with `P`.
+ */
 export function Dock({ commands }: { readonly commands: readonly Command[] }): React.JSX.Element | null {
+  const id = useId();
   const hidden = useLayoutStore((state) => state.dockHidden);
   const width = useLayoutStore((state) => state.dockWidth);
   const setWidth = useLayoutStore((state) => state.setDockWidth);
-  const sections = useLayoutStore((state) => state.sections);
-  const setSectionOpen = useLayoutStore((state) => state.setSectionOpen);
+  const tab = useLayoutStore((state) => state.dockTab);
+  const setTab = useLayoutStore((state) => state.setDockTab);
+  const inspectorOpen = useLayoutStore((state) => state.sections.inspector);
+  const tabs = useRef(new Map<DockTab, HTMLButtonElement>());
   if (hidden) return null;
+  const select = (next: DockTab): void => {
+    setTab(next);
+    tabs.current.get(next)?.focus();
+  };
   return (
     <aside id={DOCK_ID} className="dock" aria-label="Panels">
       <Splitter
@@ -44,20 +75,48 @@ export function Dock({ commands }: { readonly commands: readonly Command[] }): R
         controls={DOCK_ID}
         onChange={setWidth}
       />
-      <div className="dock-scroll">
-        {SECTION_IDS.map((id) => (
-          <Section
-            key={id}
-            title={SECTIONS[id].title}
-            {...(sections[id] && SECTIONS[id].actions !== undefined ? { actions: SECTIONS[id].actions(commands) } : {})}
-            open={sections[id]}
-            onOpenChange={(open) => {
-              setSectionOpen(id, open);
+      <div role="tablist" aria-label="Panel groups" className="dock-tabs">
+        {DOCK_TABS.map((candidate, index) => (
+          <button
+            key={candidate}
+            ref={(element) => {
+              if (element === null) tabs.current.delete(candidate);
+              else tabs.current.set(candidate, element);
+            }}
+            type="button"
+            role="tab"
+            id={`${id}-${candidate}`}
+            className="dock-tab"
+            aria-selected={tab === candidate}
+            aria-controls={`${id}-panel`}
+            tabIndex={tab === candidate ? 0 : -1}
+            onClick={() => {
+              setTab(candidate);
+            }}
+            onKeyDown={(event) => {
+              let next: DockTab | undefined;
+              if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
+                const step = event.key === "ArrowRight" ? 1 : -1;
+                next = DOCK_TABS[(index + step + DOCK_TABS.length) % DOCK_TABS.length];
+              } else if (event.key === "Home") next = DOCK_TABS[0];
+              else if (event.key === "End") next = DOCK_TABS.at(-1);
+              if (next !== undefined) {
+                event.preventDefault();
+                select(next);
+              }
             }}
           >
-            {SECTIONS[id].body(commands)}
-          </Section>
+            {TAB_LABELS[candidate]}
+          </button>
         ))}
+      </div>
+      <div id={`${id}-panel`} role="tabpanel" aria-labelledby={`${id}-${tab}`} className="dock-scroll">
+        {SECTION_IDS.filter((section) => section !== "inspector" && SECTION_TAB[section] === tab).map((section) => (
+          <DockSection key={section} id={section} commands={commands} />
+        ))}
+      </div>
+      <div className="dock-inspector" data-open={inspectorOpen}>
+        <DockSection id="inspector" commands={commands} />
       </div>
     </aside>
   );

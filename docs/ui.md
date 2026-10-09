@@ -18,7 +18,7 @@ Code: `apps/web/src/ui/` (primitives), `apps/web/src/shell/` (layout, commands, 
    path, and nothing is hidden behind a hover. Placeholders for future features stay visible but disabled, and they
    say why.
 3. **One source per action.** Every user action is a `Command` in `shell/commands.ts`, with an id, label, group,
-   shortcut, enabled rule and reason. The app menu, tool rail, tooltips, shortcut help (`?`) and command palette
+   shortcut, enabled rule and reason. The menu bar, tool rail, tooltips, shortcut help (`?`) and command palette
    (`Ctrl+K`) are all built from that list. Never wire a shortcut or a menu item by hand.
 4. **Never block input.** Long work runs in a Worker or in slices between frames, and shows its progress *inside the
    panel* that needs it. There are no modal progress dialogs and no spinners over the map.
@@ -30,25 +30,36 @@ Code: `apps/web/src/ui/` (primitives), `apps/web/src/shell/` (layout, commands, 
 ## Layout (desktop, ≥ 1024 px)
 
 ```
-┌ top bar: ☰ app menu · Terraria Map Studio · world name, file, size · Open · assets · ⌘K ◐ ? ▣ ┐
-├ rail ┬ tool options: active tool · its settings ─────────────────────────────────────────────┤
-│ Pan  │                                                               ┊ WORLD          (dock) │
-│ Insp │                       map canvas                              ┊ LAYERS                 │
-│ ──── │            (zoom controls top right; minimap, messages)       ┊ INSPECTOR              │
-│ Brush│                                                               ┊ CONTENT                │
-│ Erase│                                                               ┊ ENTITIES               │
-│ Fill │                                                               ┊                        │
-│ Sel. │                                                               ┊ (splitter ┊ resizes)   │
-│ Pick │                                                               ┊                        │
-│ ──── │                                                               ┊                        │
-│ Obj. │                                                               ┊                        │
-├──────┴───────────────────────────────────────────────────────────────┴────────────────────────┤
-└ status: x, y │ depth │ block · wall · liquid under cursor │          (render stats) │ zoom % ─┘
+┌ top bar: ▦ File View Assets Help ·········· world name · file · size · format ········ assets ⌘K ? ▣ ┐
+├ rail ┬ tool options: active tool · its settings ──────────────────────────────────────────────────────┤
+│ Pan  │                                                               ┊ [World] [View]          (dock) │
+│ Insp │                       map canvas                              ┊ WORLD    (World tab)            │
+│ ──── │      (zoom controls top right; minimap; loading and errors;   ┊ CONTENT                         │
+│ Brush│       with no world: the start screen)                        ┊ ENTITIES                        │
+│ Erase│                                                               ┊   — or —                        │
+│ Fill │                                                               ┊ LAYERS   (View tab)             │
+│ Sel. │                                                               ┊                                 │
+│ Pick │                                          notifications ┐      ┊─────────────────────────────────┤
+│ ──── │                                                        ┘      ┊ INSPECTOR (under either tab)    │
+│ Obj. │                                                               ┊ (splitter ┊ resizes)            │
+├──────┴───────────────────────────────────────────────────────────────┴─────────────────────────────────┤
+└ status: x, y │ depth │ block · wall · liquid under cursor │                (render stats) │ zoom % ───────┘
 ```
 
-- **Top bar** (`shell/TopBar.tsx`) holds the app menu (Open, Recent worlds, Export, Connect assets, view toggles,
-  Reset layout, help), the world's name, file name and size, and the global actions. It holds nothing else. With
-  editing it gains an unsaved-changes dot next to the name and Save / Save as next to Open.
+- **Top bar** (`shell/TopBar.tsx`) holds the menu bar, the open world's name, file, size and format (centred, as an
+  editor's title), the assets button and the global actions. It holds nothing else. A dot next to the name marks
+  unsaved changes (`unsavedChanges` in the app store, set by edit tools, cleared by a save or by opening another
+  world); while it is set, reloading or closing the tab asks first with the browser's own "Leave site?" dialog.
+- **Menu bar** (WAI-ARIA `menubar`, as in code and image editors), built from commands:
+  - *File*: Open World… `Ctrl+O`, Open Folder…, **Worlds ▸** (the remembered folder's worlds, newest first, with size
+    and age; the submenu flies out on hover or `→`), **Open Recent ▸**, Save `Ctrl+S` (disabled until editing),
+    Save As… `Ctrl+Shift+S`, Close World.
+  - *View*: Show panels, Fit world, Actual size, Show render stats, **Theme ▸**, Reset layout.
+  - *Assets*: Connect, Preview sprite sheets, Disconnect.
+  - *Help*: Command palette, Keyboard shortcuts.
+
+  `Alt` + the first letter opens a menu; `←` and `→` move between menus, also while one is open; pointing at another
+  title while a menu is open switches to it. A disabled item shows why on its right.
 - **Tool rail** (`shell/ToolRail.tsx`) is a WAI-ARIA toolbar in three groups:
   - *Navigate*: Pan `H`, Inspect `I`.
   - *Edit*: Brush `B`, Erase `E`, Fill `G`, Select `M`, Pick content `K`.
@@ -60,11 +71,18 @@ Code: `apps/web/src/ui/` (primitives), `apps/web/src/shell/` (layout, commands, 
   settings here: brush size and shape, and the layer mask, i.e. which of block, wall, paint, liquid and wires a stroke
   writes (as TEdit does). A tool never opens a dialog to change a setting.
 - **Map** (`components/MapView.tsx`, `MapCanvas.tsx`) holds the zoom controls (Fit world `F`, 1:1 `1`) in its top
-  right corner; the View menu also has Zoom to 400% (`4`). The minimap (#145) and transient messages (loading,
-  errors) also go over the map; nothing else does.
-- **Dock** (`shell/Dock.tsx`) is an accordion of panel sections. Several sections may be open at once. A splitter
-  resizes the dock (240–640 px; drag it, or use the arrow keys, Shift for bigger steps, Home and End). `P` hides or
-  shows the whole dock.
+  right corner. The minimap (#145) and transient messages (loading, errors) also go over the map. With no world it shows the **start screen** (`components/StartScreen.tsx`),
+  as an editor's start page: Open World, Open Worlds Folder, Connect assets, the folder's worlds and the recent ones,
+  where Terraria keeps worlds, and that files stay on this computer.
+- **Notifications** (`shell/Notifications.tsx`, `notify()` in `shell/notification-store.ts`) report finished
+  background actions (a saved world, a listed folder) in the map's bottom-right corner, never over its middle.
+  Successes close themselves after 6 s; errors stay until closed.
+- **Dock** (`shell/Dock.tsx`) has two tabs, as in image editors (#225): **World**, what the world *is* (World
+  properties, Content, Entities), and **View**, what is *shown* (Layers). The **Inspector** sits under the tabs and is
+  visible with either; open, it takes up to half the dock. World is the default tab: after opening a world it shows
+  what was opened. Inside a tab, sections are an accordion; several may be open at once. A splitter resizes the dock
+  (240–640 px; drag it, or use the arrow keys, Shift for bigger steps, Home and End). `P` hides or shows the whole
+  dock.
 
   `Tab` is **not** used for this, unlike some editors: Tab must keep moving focus for keyboard users.
 - **Status bar** (`shell/StatusBar.tsx`) shows, from left to right:
@@ -72,7 +90,9 @@ Code: `apps/web/src/ui/` (primitives), `apps/web/src/shell/` (layout, commands, 
   - its depth band;
   - its block, wall and liquid in one line;
   - render stats, when turned on from the menu;
-  - the zoom (backing-store pixels per tile × 100 %).
+  - the zoom (backing-store pixels per tile × 100 %). As in image editors, a click turns it into a field: type any
+    percentage and press Enter (or leave the field) to zoom there around the centre of the view, clamped to the
+    supported range (12.5 %–25 600 %, lower only to fit a large world); Escape keeps the zoom.
 
   With editing it also shows the selection size and the brush footprint.
 
@@ -95,21 +115,21 @@ dock becomes a bottom sheet under the map, at most 40 % of the height, and the m
 The brand and the asset button are hidden.
 
 Below 640 px (phones), more is hidden:
-- the command palette, theme and help buttons, and Open's text label (its icon stays);
-- these actions remain in the app menu, including the theme choices.
+- the command palette and help buttons, the app mark and the world's file details;
+- these actions remain in the menus; submenus open under their item instead of flying out.
 
 ### Persisted layout
 
 `shell/layout-store.ts` stores, per browser in `localStorage` (key `terraria-map-studio.layout.v1`):
 - which dock sections are open, and which groups inside them;
-- the dock width and whether the dock is hidden;
+- the dock width, its tab and whether the dock is hidden;
 - each table's column visibility and widths;
 - the theme;
 - whether the Inspector shows empty fields.
 
 Every read and write is wrapped in `try/catch`, and every field is validated on its own. With storage blocked or
-corrupt, the defaults apply and the app works for the visit. **Reset layout** in the app menu restores the defaults
-and removes the stored value. The active tool, sorting and filters are not persisted.
+corrupt, the defaults apply and the app works for the visit. **Reset layout** restores the defaults
+and removes the stored value (View ▸ Reset layout). The active tool, sorting and filters are not persisted.
 
 ## Dock sections
 
@@ -150,14 +170,15 @@ What a layer toggle costs:
 
 ## Theme and tokens
 
-- Dark by default. When the system prefers light (`prefers-color-scheme`), the light theme applies. The theme menu in
-  the top bar can force either theme (`data-theme` on `<html>`).
+- Dark by default. When the system prefers light (`prefers-color-scheme`), the light theme applies. View ▸ Theme can
+  force either theme (`data-theme` on `<html>`).
 - Colours are CSS custom properties defined in `styles.css` and nowhere else:
   - surfaces: `--surface-0` (behind the map) through `--surface-3` (hover);
   - text: `--text-1` through `--text-3`;
   - accent: `--accent` (fills with white text), `--accent-text` (accent as text or icon), `--accent-soft`
     (selection and pressed backgrounds);
-  - `--danger`, `--focus`, `--border` and `--border-strong`.
+  - `--danger` (text) and `--danger-fill` (a destructive button, e.g. Replace), `--success`, `--focus`, `--border`
+    and `--border-strong`.
 
   There is **one accent** colour. A component never contains a colour literal.
 - Text contrast meets WCAG AA in both themes. The axe check in `editor-shell.browser.test.tsx` runs in both.
@@ -184,7 +205,7 @@ Panels compose these primitives, with no ad-hoc styling:
 | `Table` | Virtualised ARIA grid with sortable headers (`aria-sort`; ascending → descending → none), a text filter, extra filters, a column menu (show and hide; `defaultHidden` columns start hidden), a sticky header and keyboard row selection (arrows, Page Up/Down, Home, End, Enter). Columns resize by dragging, or with the arrow keys on the handle, starting from the width shown. The first column takes the space left over until the user sizes it. Column layout is persisted per table id. |
 | `Toggle`, `VisibilityRow` | Switch (`role="switch"`); the eye-icon row of layer lists. |
 | `Splitter` | Focusable `separator` with `aria-valuenow`, `aria-valuemin` and `aria-valuemax`. |
-| `MenuButton` | WAI-ARIA menu button: the arrows, Home, End and Escape work, and focus returns to the button. Items can be actions or checkboxes, with shortcuts shown. |
+| `MenuBar`, `MenuButton`, `MenuList` | WAI-ARIA menubar and menu button over one menu list: the arrows, Home, End and Escape work, and focus returns to the trigger. Items are actions (with an icon, a shortcut or a muted detail), checkboxes, headings or submenus; a submenu opens on hover, `Enter` or `→` and closes with `←` or `Escape`. Hover moves focus, so the pointer and the keyboard show one highlight. |
 
 Tooltips are CSS (`data-tooltip` and `data-tooltip-side`), shown on hover and on keyboard focus after a short delay.
 They cost no layout and need no portal.
@@ -197,16 +218,37 @@ They cost no layout and need no portal.
 - **Focus** is always visible (`:focus-visible`, a 2 px `--focus` outline). Dialogs are native `<dialog>` elements
   opened modal, which trap focus and restore focus when closed. They close on Escape, on a click on the backdrop, or
   with a visible close button, so touch users can always leave them.
-- **ARIA:** accordion (sections), menu (menus), grid (tables), toolbar (tool rail), switch (toggles), dialog, and
-  combobox with listbox (command palette). Landmarks: `banner` (top bar), `navigation` (tools), `main` (map),
+- **ARIA:** menubar and menu (menus), tabs (dock), accordion (sections), grid (tables), toolbar (tool rail), switch
+  (toggles), dialog, and combobox with listbox (command palette). Landmarks: `banner` (top bar), `navigation` (tools), `main` (map),
   `complementary` (dock), `contentinfo` (status bar).
 - **Motion:** `prefers-reduced-motion` turns off transitions and animations; the camera has its own handling (#139).
 - **Long work:** counts and decoding run in a Worker or in slices between frames, with progress shown in the panel.
 
+## What not to do
+
+Every item here shipped once in a pull request (the first version of #233) and was rewritten because it made the app
+look unfinished or less trustworthy. Desktop editors (VS Code, Photoshop, Aseprite) are the reference: if none of
+them would do it, neither do we.
+
+| Don't | Do instead |
+|---|---|
+| Two commands for one action: *Export world…* next to *Save world copy…*. | One command, **Save As…**; variants (Download, Replace) are choices inside its dialog. |
+| Invent the file name and write it without asking (`<name>.copy.wld`). | The user names the file in the dialog. Suggest a free name, preselect it without `.wld`, show the folder it goes to. |
+| Ask for more access than the action needs: open a folder `readwrite` just to list it. | Open and list read-only. Ask for write access on the click that writes (Save), never earlier. |
+| Put a modal with a paragraph and *Don't show again* in front of a system dialog. | Put guidance where people already look: the start screen, an empty submenu, a disabled item's reason. A click on a command does the command. |
+| A dead-end list: a picked folder shown once in a modal of file-name buttons, forgotten on close or reload. | Remembered sources live in the menus (File ▸ Worlds flies out on hover) and on the start screen, and survive a reload (IndexedDB). |
+| A result banner over the middle of the map, with a link styled as a button and a close icon. | Finished background work → a notification in the map's bottom-right corner. A failure of a dialog's action → inside that dialog, next to the button that failed. |
+| Top-bar buttons for file actions (*Open .wld world*, *Open folder…*), two of them with the same icon. | File actions belong to the File menu, with `Ctrl` shortcuts. The top bar holds the menu bar, the title and global toggles only. One icon means one thing (`file` ≠ `folder`). |
+| One-off CSS classes for a single dialog (`.folder-hint-body`, `.world-folder-list`) and `<a class="button">`. | Compose the primitives: `MenuBar`/`MenuList`, `IconButton`, `.dialog-header` / form body / `.dialog-footer`, `notify()`. A link is a link; an action is a `<button>`. |
+| Walls of text and monospace prose in dialogs. | At most three short lines of facts, each with an icon (*Encoded and read back before anything is written*). Monospace only for paths and values. |
+| Promise safety without proving it, or write silently. | Say what will happen before (name, folder, format) and what happened after (*Saved X.wld · 2.7 MiB in “Worlds” · verified*). Only verified bytes reach the disk. |
+| Long disabled reasons that push the item's label out of the menu. | Short reasons (*Open a world first*); the label never truncates, the reason does. |
+| Ship UI checked only by tests. | Look at it: run the preview, open every new menu, dialog and empty state at desktop and phone width, in both themes, before asking for review. |
+
 ## Adding UI
 
 - **A new action:** add a `Command`. It then appears in the menu, the palette and `?`.
-- **A new panel:** add a section id to `SECTION_IDS`, then add its body to `Dock.tsx`.
+- **A new panel:** add a section id to `SECTION_IDS` and its tab to `SECTION_TAB`, then add its body to `Dock.tsx`.
 - **A new list:** use `Table`.
 - **New dependencies:** prefer none. Virtualisation, splitters, menus and tooltips are written in-house. If a UI
   dependency is unavoidable, record it with its reason in `docs/tooling.md`.

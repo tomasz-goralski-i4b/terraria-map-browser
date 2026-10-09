@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { memo, useMemo } from "react";
 import { useLayoutStore } from "../shell/layout-store.js";
 import { getMapController } from "../shell/view-store.js";
 import { useAppStore } from "../store.js";
@@ -68,7 +68,8 @@ export function WorldPanelActions({ commands }: { readonly commands: readonly Co
 }
 
 /** Everything decoded from the save's header and metadata, in collapsible groups. */
-export function WorldPanel({ world }: { readonly world?: WorldFieldsInput | null }): React.JSX.Element {
+// Export status updates the shell's commands; unchanged world properties need no rebuilding for those updates.
+export const WorldPanel = memo(function WorldPanel({ world }: { readonly world?: WorldFieldsInput | null }): React.JSX.Element {
   const summary = useAppStore((state) => state.summary);
   const groupsOpen = useLayoutStore((state) => state.groups);
   const setGroupOpen = useLayoutStore((state) => state.setGroupOpen);
@@ -100,4 +101,4 @@ export function WorldPanel({ world }: { readonly world?: WorldFieldsInput | null
       })}
     </div>
   );
-}
+});
