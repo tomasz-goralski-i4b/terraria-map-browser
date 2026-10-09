@@ -1,8 +1,10 @@
 import { create } from "zustand";
+import { collectTransferList, type WorldTilesResult } from "@studio/world-codec";
 import { useAppStore } from "../store.js";
 import { getDefaultWorldSession } from "./world-session.js";
 import type { ExportResponse } from "./export-protocol.js";
 import type { OpenWorldHandle } from "./world-file.js";
+import { snapshotForExport } from "./export-snapshot.js";
 
 interface Download {
   readonly url: string;
@@ -43,7 +45,10 @@ export function resetWorldExport(): void {
   useExportStore.setState(EMPTY);
 }
 
-function prepare(file: File, signal: AbortSignal): Promise<ArrayBuffer> {
+async function prepare(world: WorldTilesResult, signal: AbortSignal): Promise<ArrayBuffer> {
+  useExportStore.setState({ message: "Preparing world data for export…" });
+  const snapshot = await snapshotForExport(world, signal);
+  if (signal.aborted) throw new DOMException("Export cancelled", "AbortError");
   return new Promise((resolve, reject) => {
     const worker = new Worker(new URL("./export.worker.ts", import.meta.url), { type: "module" });
     const cleanup = (): void => { worker.terminate(); signal.removeEventListener("abort", abort); };
@@ -59,14 +64,16 @@ function prepare(file: File, signal: AbortSignal): Promise<ArrayBuffer> {
     };
     worker.onerror = (event) => { event.preventDefault(); fail(new Error(event.message || "The export Worker failed")); };
     worker.onmessageerror = () => { fail(new Error("The export Worker response could not be read")); };
-    try { worker.postMessage(file); } catch (error) { fail(error instanceof Error ? error : new Error(String(error))); }
+    try { worker.postMessage(snapshot, { transfer: collectTransferList(snapshot) }); }
+    catch (error) { fail(error instanceof Error ? error : new Error(String(error))); }
   });
 }
 
-/** Exports the immutable opened File. Future editing must replace this unchanged-save path. */
+/** Serializes the current CWM through the writer; the same path handles unchanged and edited tiles. */
 export async function exportWorld(): Promise<void> {
   const opened = getDefaultWorldSession().getOpenedFile();
-  if (opened === null || current !== null || useAppStore.getState().phase === "loading") return;
+  const world = getDefaultWorldSession().getLoadedWorld();
+  if (opened === null || world === null || current !== null || useAppStore.getState().phase === "loading") return;
   resetWorldExport();
   const controller = new AbortController();
   current = controller;
@@ -87,7 +94,7 @@ export async function exportWorld(): Promise<void> {
       if (await destination.isSameEntry(opened.handle)) throw new Error("Export refused: choose a different file to protect the original world.");
       if (!active()) return;
     }
-    const output = await prepare(opened.file, controller.signal);
+    const output = await prepare(world, controller.signal);
     if (!active()) return;
     if (destination === null) {
       const url = URL.createObjectURL(new Blob([output], { type: "application/octet-stream" }));

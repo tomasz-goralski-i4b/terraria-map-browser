@@ -29,10 +29,10 @@ the renderer (`@studio/renderer`, framework-free) draws from them.
 
 The service worker precaches the built app shell only. User files (worlds, game assets) are never cached by it.
 
-## Exporting an unchanged world
+## Exporting a world copy
 
-App menu → **Export world…** validates the opened file with the TypeScript writer in a separate Worker and exports
-its exact original bytes, including the original tile encoding. All 18 reader-admitted formats (269–279, 315–319,
+App menu → **Export world…** serializes the current decoded world with the TypeScript writer in a separate Worker.
+The same writer path handles unchanged and edited tile planes. All 18 reader-admitted formats (269–279, 315–319,
 325–326) retain their source version; older-format write validation remains experimental and synthetic-tested.
 Unsupported content and invalid footers show the writer's reason and produce no writable output.
 
@@ -40,5 +40,7 @@ Worlds opened with the system file picker retain their read-only source handle f
 suggests `<file-name>.copy.wld` and refuses the original entry before creating a writable stream. When the save
 picker is unavailable, or the world was opened through the file input or drag-and-drop without a source handle,
 export offers a download link. Opening another world or resetting the session cancels pending exports and releases
-download URLs. The immutable opened `File` stays outside React; only that small File reference is cloned to the
-export Worker, avoiding a main-thread clone of the CWM. This path must be replaced when editing is implemented.
+download URLs. A snapshot of the current CWM and preserved envelope is copied in yielding 1 MiB slices and transferred
+to the Worker, preserving byte-view aliases and leaving the live world's buffers attached. Tile runs may be combined
+into canonical RLE, changing file bytes, lengths and section offsets while preserving all decoded tile values,
+metadata and opaque sections. The generated format-326 fixture also remains byte-identical in the browser test.
