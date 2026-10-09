@@ -67,6 +67,10 @@ export class WorldWorkerClient {
     return new WorldWorkerClient(createWorker);
   }
 
+  save(_world: WorldTilesResult, _options?: { readonly signal?: AbortSignal }): Promise<ArrayBuffer> {
+    return Promise.reject(new Error("not implemented"));
+  }
+
   /** Parses a `File` or transfers an `ArrayBuffer` (which detaches in the caller). Rejects with `WorldWorkerError`. */
   parse(input: File | ArrayBuffer, options?: { readonly signal?: AbortSignal }): Promise<WorldTilesResult> {
     const requestId = this.#nextRequestId++;
