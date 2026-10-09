@@ -587,9 +587,9 @@ predicted**. So a shape only matters through the faces of the centre and of its 
 
 **Drawing** a shaped tile (how the chosen 16 × 16 cell is cut and moved into the tile) is not framing, and the runtime
 observation does not cover it. It is cited from TEdit's drawing code (A8 5909–5949), which draws each shape as eight
-2-pixel columns `i = 0…7` of the chosen cell; sprite mode draws it so (`shapedColumns`,
-`packages/renderer/src/framing/chunk-cells.ts`, and the chunk shader), and the comparison with in-game renders is the
-manual check of #146:
+2-pixel columns `i = 0…7` of the chosen cell. Sprite mode draws it so (`shapedColumns`,
+`packages/renderer/src/framing/chunk-cells.ts`, and the chunk shader). It has **not** been compared with in-game
+renders yet; that comparison is the manual test of #146:
 
 | Shape | Cut corner | Column `i` draws | Whole faces |
 |---|---|---|---|

@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, describe, expect, test } from "vitest";
+import { afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import { createWorld, type BlockShape, type CanonicalWorld } from "@studio/world-model";
 import {
   CHUNK_SIZE, NO_CELL, SPRITE_MIN_ZOOM, createBlockFraming, createChunkCellCache, createMapRenderer, loadFramingDatabase,
@@ -14,6 +14,7 @@ beforeAll(async () => {
 const created: MapRenderer[] = [];
 afterEach(() => {
   for (const renderer of created.splice(0)) renderer.dispose();
+  vi.restoreAllMocks();
 });
 
 function makeRenderer(width: number, height: number): { canvas: HTMLCanvasElement; renderer: MapRenderer } {
@@ -42,9 +43,10 @@ const IRON = 6;
 const SAND = 53;
 const WALL = 2;
 
-/** `T` a dirt slope cut at its NE corner (shape 2), `H` a dirt half block (shape 1), `w` a wall without a block. */
+/** Dirt shapes: `H` half block (1), slopes cut at NE `T` (2), NW `N` (3), SE `R` (4), SW `L` (5). */
 const LEGEND: Readonly<Record<string, readonly [number, BlockShape]>> = {
-  d: [DIRT, "full"], s: [STONE, "full"], S: [SAND, "full"], T: [DIRT, "slopeTopRight"], H: [DIRT, "half"],
+  d: [DIRT, "full"], s: [STONE, "full"], S: [SAND, "full"], H: [DIRT, "half"], T: [DIRT, "slopeTopRight"],
+  N: [DIRT, "slopeTopLeft"], R: [DIRT, "slopeBottomRight"], L: [DIRT, "slopeBottomLeft"],
 };
 
 /** Every tile of row 1 and below has a wall, so the cut parts of shaped blocks show a wall behind them. */
@@ -157,9 +159,9 @@ function draw(world: CanonicalWorld, zoom = ZOOM): { pixels: Uint8Array; rendere
 }
 
 describe("self-framed blocks in sprite mode", () => {
-  test("blocks show their framed cell; a half block and a slope are cut by the shape table over the wall behind", () => {
+  test("blocks show their framed cell; half blocks and slopes are cut by the shape table over the wall behind", () => {
     const world = createWorld(10, 6);
-    stamp(world, 0, 0, ["..........", "..dHddT...", ".dddddddd.", ".ssssssss.", "..........", ".........."]);
+    stamp(world, 0, 0, ["..........", "..dHddTN..", ".dddddddd.", ".ssssssss.", ".RddddddL.", ".........."]);
     const { pixels } = draw(world);
     expect(pixels).toEqual(expectedCanvas(world));
     // Sanity: the half block's top half is the wall, its bottom half the sheet.
@@ -283,5 +285,66 @@ describe("cell caching per chunk", () => {
     renderer.render();
     expect(renderer.stats().framedTiles - before).toBe(9);
     expect(readCanvas(canvas)).toEqual(expectedCanvas(world));
+  });
+});
+
+describe("framing within the upload budget", () => {
+  /** Runs only the callbacks queued for this frame; continuations belong to the next frame. */
+  function animationFrames(): { step: () => void } {
+    let nextId = 1;
+    const pending = new Map<number, FrameRequestCallback>();
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      pending.set(nextId, callback);
+      return nextId++;
+    });
+    vi.spyOn(window, "cancelAnimationFrame").mockImplementation((id) => { pending.delete(id); });
+    return {
+      step: () => {
+        const callbacks = [...pending.values()];
+        pending.clear();
+        for (const callback of callbacks) callback(0);
+      },
+    };
+  }
+
+  test("a resident chunk whose cells did not fit the frame still draws, its self-framed blocks in map colours", () => {
+    const frames = animationFrames();
+    const world = createWorld(CHUNK_SIZE * 2, 16);
+    stamp(world, 0, 0, Array.from({ length: 16 }, (_, y) => (y < 4 ? "." : "s").repeat(CHUNK_SIZE * 2)));
+    const size = { width: 128, height: 128 };
+    const canvas = document.createElement("canvas");
+    Object.assign(canvas, size);
+    const renderer = createMapRenderer(canvas, { maxChunkUploadsPerFrame: 1 });
+    created.push(renderer);
+    renderer.setWorld(renderable(world));
+    renderer.setAtlas(syntheticAtlas());
+    renderer.setFraming(framing);
+    renderer.setSpriteMode(true);
+    // Both chunks resident at a map zoom (render ignores the budget), then one budgeted frame at a sprite zoom.
+    renderer.setCamera({ x: CHUNK_SIZE - 16, y: 0, zoom: 4 });
+    renderer.render();
+    expect(renderer.stats().residentChunks).toBe(2);
+    renderer.setCamera({ x: CHUNK_SIZE - 8, y: 0, zoom: SPRITE_MIN_ZOOM });
+    frames.step();
+    expect(renderer.stats().framedTiles).toBe(CHUNK_SIZE * 16);
+    expect(renderer.stats().visibleChunks).toHaveLength(2);
+    const partly = readCanvas(canvas);
+
+    const reference = makeRenderer(size.width, size.height);
+    reference.renderer.setWorld(renderable(world));
+    reference.renderer.setAtlas(syntheticAtlas());
+    reference.renderer.setSpriteMode(true);
+    reference.renderer.setCamera({ x: CHUNK_SIZE - 8, y: 0, zoom: SPRITE_MIN_ZOOM });
+    reference.renderer.render();
+    const unframed = readCanvas(reference.canvas);
+    const half = (pixels: Uint8Array, right: boolean): Uint8Array[] => Array.from({ length: size.height }, (_, y) =>
+      pixels.slice((y * size.width + (right ? 64 : 0)) * 4, (y * size.width + (right ? 128 : 64)) * 4));
+    // The first chunk (left) shows sprites, the second (right) still its map colours.
+    expect(half(partly, false)).not.toEqual(half(unframed, false));
+    expect(half(partly, true)).toEqual(half(unframed, true));
+
+    frames.step();
+    expect(renderer.stats().framedTiles).toBe(2 * CHUNK_SIZE * 16);
+    expect(half(readCanvas(canvas), true)).not.toEqual(half(unframed, true));
   });
 });

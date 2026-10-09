@@ -19,8 +19,8 @@ export const PLANE_COUNT_8: number = Object.keys(PLANES_8).length;
 
 /**
  * Bits of `uPresent`: optional planes the world has. An absent plane reads as 0 and is never uploaded. `cells` is set
- * only for a chunk pass whose chunks all hold their framed cells (the cell plane, computed by the renderer, not read
- * from the world).
+ * for a chunk pass that draws framed cells (the cell plane, computed by the renderer, not read from the world); each
+ * instance then says whether its chunk's cells are uploaded (CELLS_INSTANCE_BIT).
  */
 export const PRESENT = { flags: 1, frameX: 2, frameY: 4, shape: 8, cells: 16 } as const;
 
@@ -57,6 +57,12 @@ export const SPRITE_MIN_ZOOM = 8;
 /** Sprite pixels across one tile: a frame's cell is scaled into these. */
 const SPRITE_TILE_PIXELS = 16;
 
+/**
+ * Set in an instance's layer attribute when its slot's cell plane holds the chunk's framed cells: a chunk whose cells
+ * are not uploaded yet draws its self-framed blocks in map colours. The slot in the page is the low 16 bits.
+ */
+export const CELLS_INSTANCE_BIT = 0x10000;
+
 /** Vertex attribute locations of the per-chunk instance data, bound before linking. */
 export const RECT_ATTRIBUTE = 0;
 export const LAYER_ATTRIBUTE = 1;
@@ -72,6 +78,7 @@ layout(location = ${String(RECT_ATTRIBUTE)}) in ivec4 aRect;
 layout(location = ${String(LAYER_ATTRIBUTE)}) in int aLayer;
 flat out ivec4 vRect;
 flat out int vLayer;
+flat out int vCells;
 `;
 
 /** Shared by both chunk passes: the colour of one world tile, resolved from its chunk's page layers. */
@@ -111,6 +118,7 @@ uniform isampler2D uSpriteSheets;
 uniform int uSprites;
 flat in ivec4 vRect;
 flat in int vLayer;
+flat in int vCells; // 1 when this chunk's cell plane holds its framed cells (CELLS_INSTANCE_BIT)
 
 const uint ABSENT = 65535u;
 
@@ -169,7 +177,7 @@ ivec4 missingPixel(ivec2 sub) {
 // it away. False without framed cells or a cell (a falling block with nothing below it, or not self-framed), for
 // content sprite mode leaves in map colours, or past the sheet's edge.
 bool cellPixel(ivec4 place, ivec2 at, ivec2 texel, ivec2 sub, out ivec4 color) {
-  if ((uPresent & ${String(PRESENT.cells)}) == 0) return false;
+  if ((uPresent & ${String(PRESENT.cells)}) == 0 || vCells == 0) return false;
   uint cell = plane16(texel, ${String(PLANES_16.cell)});
   if (cell == ${String(NO_CELL)}u || place.w == ${String(SPRITE_STATE.mapColor)}) return false;
   if (place.w == ${String(SPRITE_STATE.missing)}) {
@@ -310,7 +318,8 @@ void main() {
   vec2 screen = (tile - uCamera) * uZoom;
   gl_Position = vec4(screen.x / uViewport.x * 2.0 - 1.0, 1.0 - screen.y / uViewport.y * 2.0, 0.0, 1.0);
   vRect = aRect;
-  vLayer = aLayer;
+  vLayer = aLayer & ${String(CELLS_INSTANCE_BIT - 1)};
+  vCells = (aLayer & ${String(CELLS_INSTANCE_BIT)}) != 0 ? 1 : 0;
 }
 `;
 
@@ -397,7 +406,8 @@ void main() {
   vec2 texel = start + corner * (end - start);
   gl_Position = vec4(texel / uTarget * 2.0 - 1.0, 0.0, 1.0);
   vRect = aRect;
-  vLayer = aLayer;
+  vLayer = aLayer & ${String(CELLS_INSTANCE_BIT - 1)};
+  vCells = (aLayer & ${String(CELLS_INSTANCE_BIT)}) != 0 ? 1 : 0;
 }
 `;
 

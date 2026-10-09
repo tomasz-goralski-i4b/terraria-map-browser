@@ -174,7 +174,7 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
     getBlockFraming().then((framing) => {
       if (!disposed) renderer.setFraming(framing);
     }, (cause: unknown) => {
-      useAssetStore.setState({ notice: `Block sprites are unavailable: ${cause instanceof Error ? cause.message : String(cause)}` });
+      if (!disposed) useAssetStore.setState({ notice: `Block sprites are unavailable: ${cause instanceof Error ? cause.message : String(cause)}` });
     });
 
     const motionPreference = window.matchMedia("(prefers-reduced-motion: reduce)");

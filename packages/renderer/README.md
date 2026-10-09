@@ -119,7 +119,11 @@ exactly the pixels `filterTiles` (below) makes of them. The browser tests assert
   (`src/framing/chunk-cells.ts`) keeps the result per chunk (one `Uint16Array`, `column · 64 + row` or `NO_CELL`,
   column-major) while the chunk stays resident, and the renderer uploads it as the 16-bit `cell` plane of the chunk's
   page; panning over resident chunks frames nothing (`stats().framedTiles`). A chunk uploaded at a map zoom gets its
-  cells, one more upload, when sprites appear. The chunk pass draws cell `(c, r)` from sheet pixels `(18c, 18r)`, cut
+  cells, one more upload, when sprites appear. Framing runs on the main thread, where the planes are, at about 5 ms
+  per 128 × 128 chunk of mixed terrain (Node), so it counts against the upload time budget: a frame frames about one
+  chunk, and a chunk whose cells did not fit yet still draws, its self-framed blocks in map colours (its instance
+  lacks `CELLS_INSTANCE_BIT`). The CPU keeps 32 KiB of cells per framed resident chunk (16 MiB at the 512-chunk
+  baseline). The chunk pass draws cell `(c, r)` from sheet pixels `(18c, 18r)`, cut
   by the tile's shape (the 8-bit `shape` plane) into the eight 2-pixel columns of `shapedColumns` (docs/assets.md,
   "Slopes and half blocks"); the cut-away part shows what lies behind. A block without a cell (a falling block with
   nothing below it, which the database marks unstable) keeps its map colour. `invalidateTiles(tiles)` is the editing

@@ -13,7 +13,7 @@ import type { BlockFraming } from "../framing/frame-block.js";
 import { backgroundColor, contentColor, liquidColors } from "../palette/map-palette.js";
 import type { MapPalette } from "../palette/map-palette.js";
 import {
-  LAYER_ATTRIBUTE, PAGE_APRON, PLANES_16, PLANES_8, PLANE_COUNT_16, PLANE_COUNT_8, PRESENT, RECT_ATTRIBUTE,
+  CELLS_INSTANCE_BIT, LAYER_ATTRIBUTE, PAGE_APRON, PLANES_16, PLANES_8, PLANE_COUNT_16, PLANE_COUNT_8, PRESENT, RECT_ATTRIBUTE,
   RULE_HEADER_ROWS, RULE_ROW, SPRITE_MIN_ZOOM, SPRITE_SHEET_ROW, SPRITE_STATE, chunkFragmentSource, chunkVertexSource, overviewBuildFragmentSource,
   overviewBuildVertexSource, overviewFragmentSource, overviewVertexSource,
 } from "./shaders.js";
@@ -112,8 +112,8 @@ export interface MapRendererStats {
   /** Sprite atlas uploads since creation: one per `setAtlas` with an atlas (and after a context restore). */
   readonly atlasUploads: number;
   /**
-   * Self-framed block tiles framed since creation: a chunk's tiles once on its first sprite-mode upload, and the areas
-   * `invalidateTiles` recomputes.
+   * Tiles framed since creation: every tile of a chunk (air and other content included) once on its first upload at a
+   * sprite zoom, and the cached tiles of the areas `invalidateTiles` recomputes.
    */
   readonly framedTiles: number;
 }
@@ -868,7 +868,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       const originY = chunk.y * CHUNK_SIZE;
       instanceData.set([
         originX, originY, Math.min(CHUNK_SIZE, source.width - originX), Math.min(CHUNK_SIZE, source.height - originY),
-        slot % CHUNKS_PER_PAGE,
+        (slot % CHUNKS_PER_PAGE) | (framedSlots.has(slot) ? CELLS_INSTANCE_BIT : 0),
       ], index * INSTANCE_INTS);
     });
     gl.bindVertexArray(resources.instanceArray);
@@ -1065,15 +1065,13 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
         chunks.set(key, slot);
         if (framed && !framedSlots.has(slot)) {
           // Framed with its upload; a resident chunk's cells are one more upload. Without its cells (the budget is
-          // spent) the chunk is not drawn this frame: its cell layer may hold another chunk's cells.
-          if (!uploaded) {
-            if (!mayUpload()) {
-              loading.pending = true;
-              continue;
-            }
-            uploads++;
+          // spent) the chunk still draws, its self-framed blocks in map colours (its instance lacks CELLS_INSTANCE_BIT).
+          if (uploaded || mayUpload()) {
+            if (!uploaded) uploads++;
+            uploadCells(source, chunk, slot);
+          } else {
+            loading.pending = true;
           }
-          uploadCells(source, chunk, slot);
         }
         out.push([chunk, slot]);
       }
