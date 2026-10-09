@@ -22,7 +22,7 @@ test("byte-identical valid exports agree, with no dump of world data", () => {
 test("plane differences locate column-major coordinates, edge chunks and byte offsets", () => {
   const left = cwm(); const right = Buffer.from(left);
   const payload = 12 + left.readUInt32LE(8);
-  const offset = payload + 14 * 130 * 129 + (129 * 129 + 128) * 2 + 1;
+  const offset = payload + 13 * 130 * 129 + (129 * 129 + 128) * 2 + 1;
   right[offset] = 1;
   assert.match(compareCwm(left, right), new RegExp(`plane flags, chunk \\(1,1\\), coordinate \\(129,128\\), byte offset ${offset}`));
 });
