@@ -450,26 +450,57 @@ describe("the two-pass helper over a tile region", () => {
     expect(framing.depth(21)).toBe(-1);
   });
 
-  test("a five-step relative chain frames the same through a one-tile window as through the whole strip", () => {
-    // Dirt, sand, hardened sand, sandstone, desert fossil, 407 in two rows on a stone floor, each type two wide.
+  test("a five-step relative chain: a change six tiles away reaches the first tile, through a one-tile window too", () => {
+    // Dirt, sand, hardened sand, sandstone, desert fossil, 407: one column each, two rows, on a stone floor.
     const chain = [DIRT, 53, 397, 396, 404, 407];
     for (let k = 0; k + 1 < chain.length; k++) expect(framing.kind(chain[k] ?? -1, chain[k + 1] ?? -1)).toBe("relative");
-    const world = createWorld(24, 8);
-    for (let x = 1; x <= 12; x++) {
-      for (const y of [2, 3]) {
-        world.setTile(x, y, { block: { kind: "vanilla", id: chain[Math.floor((x - 1) / 2)] ?? DIRT }, wires: 0, actuator: false });
-      }
-      world.setTile(x, 4, { block: { kind: "vanilla", id: STONE }, wires: 0, actuator: false });
-    }
-    const whole = new Uint16Array(24 * 8);
-    framing.frameRegion(world, { left: 0, top: 0, width: 24, height: 8 }, whole);
+    const strip = (extended: boolean): CanonicalWorld => {
+      const world = createWorld(18, 12);
+      const put = (x: number, y: number, id: number): void => {
+        world.setTile(x, y, { block: { kind: "vanilla", id }, wires: 0, actuator: false });
+      };
+      chain.forEach((type, k) => { put(2 + k, 4, type); put(2 + k, 5, type); });
+      for (let x = 1; x <= 9; x++) put(x, 6, STONE);
+      if (extended) put(8, 4, 407);
+      return world;
+    };
     const window = new Uint16Array(1);
-    for (let x = 1; x <= 12; x++) {
-      for (const y of [2, 3]) {
-        framing.frameRegion(world, { left: x, top: y, width: 1, height: 1 }, window);
-        expect(window[0], `${String(x)},${String(y)}`).toBe(whole[x * 8 + y]);
+    const first = (world: CanonicalWorld): number => {
+      framing.frameRegion(world, { left: 2, top: 4, width: 1, height: 1 }, window);
+      return window[0] ?? NO_CELL;
+    };
+    for (const world of [strip(false), strip(true)]) {
+      const whole = new Uint16Array(18 * 12);
+      framing.frameRegion(world, { left: 0, top: 0, width: 18, height: 12 }, whole);
+      for (let x = 2; x <= 8; x++) {
+        for (const y of [4, 5]) {
+          framing.frameRegion(world, { left: x, top: y, width: 1, height: 1 }, window);
+          expect(window[0], `${String(x)},${String(y)}`).toBe(whole[x * 12 + y]);
+        }
       }
     }
+    // The tile added at (8, 4) changes the dirt at (2, 4) through the whole chain.
+    expect(first(strip(true))).not.toBe(first(strip(false)));
+  });
+
+  test("reusing the scratch of a larger shaped region for a smaller unshaped one changes nothing", () => {
+    const shaped = createWorld(40, 40);
+    for (let x = 5; x < 35; x++) {
+      for (let y = 20; y < 35; y++) {
+        shaped.setTile(x, y, {
+          block: { kind: "vanilla", id: (x + y) % 3 === 0 ? STONE : DIRT }, wires: 0, actuator: false,
+          ...((x * 7 + y) % 5 === 0 ? { shape: "slopeTopLeft" as const } : {}),
+        });
+      }
+    }
+    const plain = worldOf(["......", "..dd..", "..sdd.", ".ddss.", "......"]);
+    const region = { left: 2, top: 2, width: 6, height: 5 };
+    const fresh = new Uint16Array(30);
+    createBlockFraming(database).frameRegion(plain, region, fresh);
+    framing.frameRegion(shaped, { left: 0, top: 0, width: 40, height: 40 }, new Uint16Array(1600));
+    const reused = new Uint16Array(30);
+    framing.frameRegion(plain, region, reused);
+    expect(reused).toEqual(fresh);
   });
 
   test("a centre that reads a table still applies the edge check to its relatives", () => {

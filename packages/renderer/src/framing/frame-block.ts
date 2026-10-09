@@ -55,7 +55,8 @@ export interface BlockFraming {
   readonly kind: (centre: number, other: number) => BlockKind | null;
   /**
    * The pass a type frames in: 0 without relatives, else one more than its deepest relative (at most 5); −1 when it
-   * is not a self-framed block type. An edit invalidates the cells up to depth + 1 tiles around it.
+   * is not a self-framed block type. An edit at a tile changes cells up to d + 1 tiles around it, d the deepest depth
+   * of the types there (not only the edited type's), so 6 tiles is always enough.
    */
   readonly depth: (type: number) => number;
   /**
