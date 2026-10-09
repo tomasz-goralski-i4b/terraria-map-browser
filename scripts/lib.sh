@@ -16,7 +16,18 @@ if [ -n "${WSL_DISTRO_NAME:-}" ] || [ -e /proc/sys/fs/binfmt_misc/WSLInterop ]; 
   exit 2
 fi
 
-for tool in dotnet pnpm git; do
+# STUDIO_VERIFY_PART=dotnet|web runs one half of build.sh/test.sh/verify.sh; unset runs everything. CI runs the two
+# halves as parallel jobs on separate runners; locally and in agent gates verify.sh stays the whole check.
+case "${STUDIO_VERIFY_PART:-}" in
+  ""|dotnet|web) ;;
+  *) echo "INFRA: STUDIO_VERIFY_PART must be 'dotnet', 'web' or unset, got '$STUDIO_VERIFY_PART'"; exit 2 ;;
+esac
+runs_part() { [ -z "${STUDIO_VERIFY_PART:-}" ] || [ "$STUDIO_VERIFY_PART" = "$1" ]; }
+
+required_tools=(git)
+runs_part dotnet && required_tools+=(dotnet)
+runs_part web && required_tools+=(pnpm)
+for tool in "${required_tools[@]}"; do
   command -v "$tool" >/dev/null 2>&1 || { echo "INFRA: '$tool' is not on PATH"; exit 2; }
 done
 
