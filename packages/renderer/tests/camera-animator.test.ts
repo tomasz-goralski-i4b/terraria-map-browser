@@ -320,6 +320,19 @@ test("dragging during a glide stops the zoom where it is drawn, without a leftov
   expect(advance(100).camera).toEqual(dragged.camera);
 });
 
+test("a wheel notch right after a pinch starts from rest, not with the interrupted glide's velocity", () => {
+  const { animator, advance } = motion();
+  animator.zoom(8, 400, 300);
+  advance(100);
+  animator.zoom(1.01, 400, 300, true);
+  // The notch arrives before the next frame: the pinch ended the glide, so its velocity must not carry on.
+  animator.zoom(Math.exp(-NOTCH), 400, 300);
+  const before = animator.current.zoom;
+  // From rest a spring moves by the square of the time; with the old velocity (≈ 0.011 per ms) it would move ten
+  // times more in this millisecond.
+  expect(Math.abs(Math.log(advance(1).camera.zoom / before))).toBeLessThan(1e-3);
+});
+
 test("wheel and pinch stay at the zoom limit without overshooting it", () => {
   const near: Camera = { ...initial, zoom: MAX_ZOOM * 0.75 };
   const cursor = { x: 123, y: 456 };
@@ -354,11 +367,13 @@ test("zooming in from fit-world moves the camera continuously when the world out
   for (const cursor of [{ x: 3000, y: 150 }, { x: 200, y: 1000 }, { x: 1692, y: 520 }]) {
     const { frames } = replay(fitted, size, bounds, cursor, notches, 3500);
     let before = fitted;
+    // Zooming by f about a point inside the viewport moves the cursor's tile no further than the distance from the
+    // cursor to the farthest viewport corner × |f − 1|; more is a jump.
+    const reach = Math.hypot(Math.max(cursor.x, size.width - cursor.x), Math.max(cursor.y, size.height - cursor.y));
     for (const { camera } of frames) {
-      // A zoom by factor f moves no point of the viewport further than its size × |f − 1|; more is a jump.
       const tile = screenToTile(before, cursor.x, cursor.y);
       const moved = tileToScreen(camera, tile.x, tile.y);
-      const allowed = Math.max(size.width, size.height) * Math.abs(camera.zoom / before.zoom - 1) + 1e-6;
+      const allowed = reach * Math.abs(camera.zoom / before.zoom - 1) + 1e-6;
       expect(Math.hypot(moved.x - cursor.x, moved.y - cursor.y)).toBeLessThanOrEqual(allowed);
       before = camera;
     }

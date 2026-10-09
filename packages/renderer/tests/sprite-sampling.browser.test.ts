@@ -170,6 +170,38 @@ describe("the closest zoom", () => {
   });
 });
 
+describe("the closest zoom far from the origin", () => {
+  test("at a far, fractional camera every sprite pixel is still exactly 16 screen pixels wide", () => {
+    // Float32 camera arithmetic loses precision with distance from the origin; it may shift the sprite, never warp it.
+    const left = 16000;
+    const world = chestWorld(16004, 1, [[left + 1, 0, 0]]);
+    const layers: ChunkLayers = { background: false, walls: false, blocks: true, liquids: false };
+    const width = 3 * MAX_ZOOM;
+    const { canvas, renderer } = makeRenderer(width, 4);
+    renderer.setWorld(world);
+    renderer.setLayers(layers);
+    renderer.setAtlas(columnAtlas());
+    renderer.setSpriteMode(true);
+    for (const fraction of [0.37, 0.5, 0.913]) {
+      renderer.setCamera({ x: left + fraction, y: 0, zoom: MAX_ZOOM });
+      renderer.render();
+      const out = readCanvas(canvas);
+      const runs: number[] = [];
+      let start = -1;
+      for (let x = 0; x <= width; x++) {
+        const red = x < width ? out[x * 4] : -1;
+        const sprite = x < width && out[x * 4 + 3] === 255 && out[x * 4 + 2] === 50;
+        const previous = x > 0 ? out[(x - 1) * 4] : -1;
+        if (start >= 0 && (!sprite || red !== previous)) { runs.push(x - start); start = -1; }
+        if (sprite && start < 0) start = x;
+      }
+      // The tile's 16 columns all appear; the first and last may be cut by the viewport edge, the inner ones are whole.
+      expect(runs.length, `fraction ${String(fraction)}`).toBe(16);
+      for (const run of runs.slice(1, -1)) expect(run, `fraction ${String(fraction)}`).toBe(16);
+    }
+  });
+});
+
 describe("chunk edges", () => {
   test("a pixel whose centre lies on a chunk border shows the sprite pixel on one side of it, never the far edge of a tile", () => {
     // Tile 127 (the last of chunk 0) shows cell (0, 0), tile 128 (the first of chunk 1) cell (18, 0). On the border

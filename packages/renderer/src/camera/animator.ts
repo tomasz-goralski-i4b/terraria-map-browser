@@ -83,6 +83,8 @@ export class CameraAnimator {
     this.anchorTile = screenToTile(base, x, y);
     this.destination = zoomAt(base, zoom, x, y, this.viewport, this.world);
     this.direct = direct;
+    // A direct gesture ends the glide now, so a notch arriving before the next frame starts from rest.
+    if (direct) this.zoomVelocity = 0;
   }
 
   beginDrag(): void {

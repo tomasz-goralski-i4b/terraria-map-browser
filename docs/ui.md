@@ -60,7 +60,8 @@ Code: `apps/web/src/ui/` (primitives), `apps/web/src/shell/` (layout, commands, 
   settings here: brush size and shape, and the layer mask, i.e. which of block, wall, paint, liquid and wires a stroke
   writes (as TEdit does). A tool never opens a dialog to change a setting.
 - **Map** (`components/MapView.tsx`, `MapCanvas.tsx`) holds the zoom controls (Fit world `F`, 1:1 `1`) in its top
-  right corner; the View menu also has Zoom to 400% (`4`). The minimap (#145) and transient messages (loading, errors) also go over the map; nothing else does.
+  right corner; the View menu also has Zoom to 400% (`4`). The minimap (#145) and transient messages (loading,
+  errors) also go over the map; nothing else does.
 - **Dock** (`shell/Dock.tsx`) is an accordion of panel sections. Several sections may be open at once. A splitter
   resizes the dock (240–640 px; drag it, or use the arrow keys, Shift for bigger steps, Home and End). `P` hides or
   shows the whole dock.
