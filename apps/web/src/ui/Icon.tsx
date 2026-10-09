@@ -31,6 +31,8 @@ const PATHS = {
   command: "M5 2.5a2.5 2.5 0 1 0 0 5h6a2.5 2.5 0 1 0 0-5v11a2.5 2.5 0 1 0 0-5H5a2.5 2.5 0 1 0 0 5Z",
   stats: "M2.5 13.5h11M4 11V8M7 11V4M10 11V6.5M13 11V9",
   reset: "M2.5 8a5.5 5.5 0 1 0 1.6-3.9M2.5 2.5v2.5H5",
+  more: "M3.5 8h.01M8 8h.01M12.5 8h.01",
+  warning: "M8 2 14.5 13.5h-13ZM8 6.5v3M8 11.5v.01",
 } as const;
 
 export type IconName = keyof typeof PATHS;

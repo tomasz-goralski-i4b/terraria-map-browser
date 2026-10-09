@@ -11,7 +11,7 @@ import { backgroundColor, contentColor, liquidColors } from "../palette/map-pale
 import type { MapPalette } from "../palette/map-palette.js";
 import {
   LAYER_ATTRIBUTE, PAGE_APRON, PLANES_16, PLANES_8, PLANE_COUNT_16, PLANE_COUNT_8, PRESENT, RECT_ATTRIBUTE,
-  RULE_HEADER_ROWS, RULE_ROW, chunkFragmentSource, chunkVertexSource, overviewBuildFragmentSource,
+  RULE_HEADER_ROWS, RULE_ROW, SPRITE_MIN_ZOOM, SPRITE_SHEET_ROW, SPRITE_STATE, chunkFragmentSource, chunkVertexSource, overviewBuildFragmentSource,
   overviewBuildVertexSource, overviewFragmentSource, overviewVertexSource,
 } from "./shaders.js";
 
@@ -41,6 +41,28 @@ export interface RenderableWorld {
   };
   /** Append-only palette. */
   readonly palette: readonly ContentRef[];
+}
+
+/** One sheet of a sprite atlas: where it lies on its page and the size of its frame cells (docs/assets.md, "Atlas"). */
+export interface SpriteSheetEntry {
+  readonly kind: "tile" | "wall";
+  readonly id: number;
+  readonly page: number;
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+  readonly frameWidth: number;
+  readonly frameHeight: number;
+}
+
+/**
+ * A sprite atlas as the renderer reads it: square RGBA8 pages (`pageSize² × 4` bytes, straight alpha) and the sheets
+ * on them. `@studio/assets`' `SpriteAtlas` has this shape.
+ */
+export interface SpriteAtlasSource {
+  readonly pages: readonly Uint8Array[];
+  readonly index: { readonly pageSize: number; readonly entries: readonly SpriteSheetEntry[] };
 }
 
 export interface MapRendererOptions {
@@ -82,6 +104,8 @@ export interface MapRendererStats {
   readonly residentChunks: number;
   /** Chunks evicted from the cache since creation (to make room for uploads). */
   readonly evictedChunks: number;
+  /** Sprite atlas uploads since creation: one per `setAtlas` with an atlas (and after a context restore). */
+  readonly atlasUploads: number;
 }
 
 export interface MapRenderer {
@@ -89,6 +113,16 @@ export interface MapRenderer {
   /** The viewport is the canvas backing store (`canvas.width` × `canvas.height`). */
   readonly setCamera: (camera: Camera) => void;
   readonly setLayers: (layers: ChunkLayers) => void;
+  /**
+   * The sprite atlas, uploaded at once and kept until replaced; null removes it. Frame-important blocks (a stored
+   * frame) whose content ID has a tile sheet are drawn from it in sprite mode. Throws when the GPU cannot hold it.
+   */
+  readonly setAtlas: (atlas: SpriteAtlasSource | null) => void;
+  /**
+   * Sprite mode: from `SPRITE_MIN_ZOOM` pixels per tile, frame-important blocks show their sprite. A uniform switch:
+   * turning it on or off, or crossing the zoom threshold, uploads nothing.
+   */
+  readonly setSpriteMode: (enabled: boolean) => void;
   /** Integer tile under a canvas pixel, or null outside the world. */
   readonly tileAt: (screenX: number, screenY: number) => { readonly x: number; readonly y: number } | null;
   /** Uploads and draws all visible chunks synchronously. Setters schedule frames with bounded chunk uploads. */
@@ -125,19 +159,30 @@ const INSTANCE_INTS = 5;
 /** The smallest overview factor: one overview texel per 2 × 2 tiles, used below half a pixel per tile. */
 const MIN_OVERVIEW_FACTOR = 2;
 
-// Texture units: 0–1 the chunk page; 2 palette; 3 background and paint colours; 4 map option rules; 5 overview.
-// WebGL2 guarantees 16; the map keeps to at most 10, leaving room for sprite mode's atlas pages and lookup (#91).
+// Texture units: 0–1 the chunk page; 2 palette; 3 background and paint colours; 4 map option rules; 5 overview;
+// 6 sprite atlas pages; 7 sprite sheet lookup. WebGL2 guarantees 16.
 const UNIT_PLANES_16 = 0;
 const UNIT_PLANES_8 = 1;
 const UNIT_PALETTE = 2;
 const UNIT_BACKGROUND = 3;
 const UNIT_RULES = 4;
 const UNIT_OVERVIEW = 5;
-const TEXTURE_UNITS = 6;
+const UNIT_ATLAS = 6;
+const UNIT_SPRITE_SHEETS = 7;
+const TEXTURE_UNITS = 8;
+/**
+ * Tile IDs sprite mode leaves in map colours although they store frames: trees and the giant mushroom (5 Tree,
+ * 72 Giant Mushroom, 323 Palm Tree, 583–589 gem trees, 596, 616 and 634 vanity and ash trees, by the shipped content
+ * names). Their trunk cells are wider than a tile and overlap, their tops and branches come from other sheets, and the
+ * palm tree's frame is not a sheet offset (docs/assets.md, "Special handling": trees are deferred).
+ */
+export const SPRITE_DEFERRED_TILES: ReadonlySet<number> = new Set([5, 72, 323, 583, 584, 585, 586, 587, 588, 589, 596, 616, 634]);
+/** Texels per row of the sprite sheet lookup: two per palette index (SPRITE_SHEET_ROW in shaders.ts). */
+const SPRITE_SHEET_WIDTH = SPRITE_SHEET_ROW * 2;
 
 const TILE_UNIFORMS = [
   "uPlanes16", "uPlanes8", "uPresent", "uPalette", "uBackground", "uRules", "uPaintRow", "uPaintCount", "uPaletteLength",
-  "uLayers", "uLiquids", "uWireColors", "uWireBits", "uWireAlpha",
+  "uLayers", "uLiquids", "uWireColors", "uWireBits", "uWireAlpha", "uAtlas", "uSpriteSheets", "uSprites",
 ] as const;
 const CHUNK_UNIFORMS = [...TILE_UNIFORMS, "uCamera", "uZoom", "uViewport", "uFilter", "uStep", "uWorldSize"] as const;
 const BUILD_UNIFORMS = [...TILE_UNIFORMS, "uFactor", "uTarget"] as const;
@@ -196,6 +241,8 @@ interface GpuResources {
   readonly palette: WebGLTexture;
   /** Map option rules: headers by palette index, then the ranges (see RULE_ROW in shaders.ts). */
   readonly rules: WebGLTexture;
+  /** The sheet of each palette index (SPRITE_SHEET_ROW in shaders.ts); all zero (no sheet) without an atlas. */
+  readonly spriteSheets: WebGLTexture;
 }
 
 /** The overview of one world: a mipmapped RGBA8 texture, one texel per factor × factor tiles, premultiplied. */
@@ -340,6 +387,7 @@ function createResources(gl: WebGL2RenderingContext, rules: RuleTable): GpuResou
     framebuffer: requireValue(gl.createFramebuffer(), "a framebuffer"),
     palette: integerTexture(gl, gl.RGBA8UI, PALETTE_WIDTH, PALETTE_HEIGHT),
     rules: rulesTexture,
+    spriteSheets: integerTexture(gl, gl.RGBA32I, SPRITE_SHEET_WIDTH, PALETTE_HEIGHT),
   };
 }
 
@@ -392,6 +440,13 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   // Rule headers by palette index, written only with a palette that has rules (the texture starts zeroed: no rule).
   const ruleHeaders = rules.headers.size === 0 ? null : new Int32Array(RULE_ROW * RULE_HEADER_ROWS * 4);
   let paletteUploaded = 0;
+  // Sprite mode: the atlas as given, its pages on the GPU, and the sheet lookup by palette index.
+  let atlas: SpriteAtlasSource | null = null;
+  let atlasTexture: WebGLTexture | null = null;
+  let tileSheets = new Map<number, SpriteSheetEntry>();
+  const sheetMirror = new Int32Array(SPRITE_SHEET_WIDTH * PALETTE_HEIGHT * 4);
+  let spriteMode = false;
+  let atlasUploads = 0;
   // The world the plane unpack state (alignment, row length, image height) is set for; null for GL's defaults. Chunk
   // uploads set it once and then only move the skip parameters; other uploads restore the defaults first.
   let unpackWorld: RenderableWorld | null = null;
@@ -488,10 +543,78 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
         ruleHeaders.subarray(firstRow * RULE_ROW * 4),
       );
     }
+    if (atlas !== null) uploadSheets(palette, paletteUploaded, total);
     textureUploads++;
     // Content colours the overview already holds may have been absent (out of range) before this append.
     invalidateOverview();
     paletteUploaded = total;
+  };
+
+  /**
+   * Writes the sheet of palette indices `from` … `to` - 1 into the lookup (whole rows). With an atlas, an index whose
+   * content has a tile sheet gets its place and frame size, deferred content (trees) the map colour, and any other
+   * (newer than the install, mod, unknown) the missing-texture state; the shader only uses it for blocks with a
+   * stored frame. Without an atlas every index has the map colour.
+   */
+  const uploadSheets = (palette: readonly ContentRef[], from: number, to: number): void => {
+    if (to <= from) return;
+    for (let index = from; index < to; index++) {
+      const ref = palette[index];
+      const vanilla = ref?.kind === "vanilla" ? ref.id : undefined;
+      const sheet = vanilla === undefined ? undefined : tileSheets.get(vanilla);
+      const at = ((Math.floor(index / SPRITE_SHEET_ROW) * SPRITE_SHEET_WIDTH) + (index % SPRITE_SHEET_ROW) * 2) * 4;
+      if (sheet !== undefined) {
+        sheetMirror.set([sheet.page, sheet.x, sheet.y, SPRITE_STATE.sheet, sheet.width, sheet.height, sheet.frameWidth, sheet.frameHeight], at);
+      } else {
+        const deferred = atlasTexture === null || (vanilla !== undefined && SPRITE_DEFERRED_TILES.has(vanilla));
+        sheetMirror.set([0, 0, 0, deferred ? SPRITE_STATE.mapColor : SPRITE_STATE.missing, 0, 0, 0, 0], at);
+      }
+    }
+    const firstRow = Math.floor(from / SPRITE_SHEET_ROW);
+    const lastRow = Math.floor((to - 1) / SPRITE_SHEET_ROW);
+    resetUnpack();
+    gl.activeTexture(gl.TEXTURE0 + UNIT_SPRITE_SHEETS);
+    gl.bindTexture(gl.TEXTURE_2D, resources.spriteSheets);
+    gl.texSubImage2D(
+      gl.TEXTURE_2D, 0, 0, firstRow, SPRITE_SHEET_WIDTH, lastRow - firstRow + 1, gl.RGBA_INTEGER, gl.INT,
+      sheetMirror.subarray(firstRow * SPRITE_SHEET_WIDTH * 4),
+    );
+  };
+
+  /** Uploads the atlas pages as one RGBA8 array texture, one layer per page. */
+  const uploadAtlas = (source: SpriteAtlasSource): void => {
+    const { pageSize } = source.index;
+    const pageCount = Math.max(1, source.pages.length);
+    if (pageSize > maxTextureSize || pageCount > (gl.getParameter(gl.MAX_ARRAY_TEXTURE_LAYERS) as number)) {
+      throw new Error(`This GPU cannot hold a sprite atlas of ${String(pageCount)} pages of ${String(pageSize)} pixels`);
+    }
+    resetUnpack();
+    const texture = requireValue(gl.createTexture(), "a texture");
+    gl.activeTexture(gl.TEXTURE0 + UNIT_ATLAS);
+    gl.bindTexture(gl.TEXTURE_2D_ARRAY, texture);
+    gl.texStorage3D(gl.TEXTURE_2D_ARRAY, 1, gl.RGBA8, pageSize, pageSize, pageCount);
+    gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    source.pages.forEach((page, layer) => {
+      gl.texSubImage3D(gl.TEXTURE_2D_ARRAY, 0, 0, 0, layer, pageSize, pageSize, 1, gl.RGBA, gl.UNSIGNED_BYTE, page);
+    });
+    atlasTexture = texture;
+    atlasUploads++;
+  };
+
+  const releaseAtlas = (): void => {
+    if (atlasTexture !== null && !gl.isContextLost()) gl.deleteTexture(atlasTexture);
+    atlasTexture = null;
+  };
+
+  /** Puts `source` on the GPU and rewrites the sheet of every palette index uploaded so far. */
+  const applyAtlas = (source: SpriteAtlasSource | null): void => {
+    releaseAtlas();
+    tileSheets = new Map(source?.index.entries
+      .filter((entry) => entry.kind === "tile" && !SPRITE_DEFERRED_TILES.has(entry.id))
+      .map((entry) => [entry.id, entry]));
+    if (source !== null) uploadAtlas(source);
+    if (world !== null) uploadSheets(world.palette, 0, paletteUploaded);
   };
 
   const allocateSlot = (): number => {
@@ -632,7 +755,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   };
 
   /** Uniforms of the tile colour function shared by both chunk passes. */
-  const setTileUniforms = (uniforms: Readonly<Record<(typeof TILE_UNIFORMS)[number], WebGLUniformLocation>>): void => {
+  const setTileUniforms = (uniforms: Readonly<Record<(typeof TILE_UNIFORMS)[number], WebGLUniformLocation>>, sprites = false): void => {
     gl.uniform1i(uniforms.uPlanes16, UNIT_PLANES_16);
     gl.uniform1i(uniforms.uPlanes8, UNIT_PLANES_8);
     gl.uniform1i(uniforms.uPresent, planeSources?.present ?? 0);
@@ -647,6 +770,9 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     gl.uniform3iv(uniforms.uLiquids, liquidUniform);
     gl.uniform1i(uniforms.uPaintRow, background?.paintRow ?? 0);
     gl.uniform1i(uniforms.uPaintCount, paintCount);
+    gl.uniform1i(uniforms.uAtlas, UNIT_ATLAS);
+    gl.uniform1i(uniforms.uSpriteSheets, UNIT_SPRITE_SHEETS);
+    gl.uniform1i(uniforms.uSprites, sprites ? 1 : 0);
   };
 
   /**
@@ -884,7 +1010,8 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       if (loading.pending && candidate?.filled === true) drawCalls += drawOverview(source, candidate);
       const { chunk: program } = resources;
       gl.useProgram(program.program);
-      setTileUniforms(program.uniforms);
+      // Sprites are a uniform switch: crossing the threshold or toggling the mode uploads nothing.
+      setTileUniforms(program.uniforms, spriteMode && atlasTexture !== null && camera.zoom >= SPRITE_MIN_ZOOM);
       gl.uniform2f(program.uniforms.uCamera, camera.x, camera.y);
       gl.uniform1f(program.uniforms.uZoom, camera.zoom);
       gl.uniform2f(program.uniforms.uViewport, viewport.width, viewport.height);
@@ -898,6 +1025,10 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       gl.bindTexture(gl.TEXTURE_2D, background?.texture ?? null);
       gl.activeTexture(gl.TEXTURE0 + UNIT_RULES);
       gl.bindTexture(gl.TEXTURE_2D, resources.rules);
+      gl.activeTexture(gl.TEXTURE0 + UNIT_ATLAS);
+      gl.bindTexture(gl.TEXTURE_2D_ARRAY, atlasTexture);
+      gl.activeTexture(gl.TEXTURE0 + UNIT_SPRITE_SHEETS);
+      gl.bindTexture(gl.TEXTURE_2D, resources.spriteSheets);
       drawCalls += drawInstances(source, ready);
       const drawnKeys = new Set(ready.map(([chunk]) => keyOf(chunk)));
       drawn = visible.filter((chunk) => drawnKeys.has(keyOf(chunk)));
@@ -937,6 +1068,9 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     background = null;
     overview = null;
     resources = createResources(gl, rules);
+    // The atlas died with the context too: upload it again (its sheets follow the palette's next upload).
+    atlasTexture = null;
+    if (atlas !== null) applyAtlas(atlas);
     schedule();
   };
   canvas.addEventListener("webglcontextlost", onContextLost);
@@ -962,6 +1096,16 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       camera = next;
       schedule();
     },
+    setAtlas: (next) => {
+      if (next === atlas) return;
+      atlas = next;
+      if (!gl.isContextLost()) applyAtlas(next);
+      schedule();
+    },
+    setSpriteMode: (enabled) => {
+      spriteMode = enabled;
+      schedule();
+    },
     setLayers: (next) => {
       const bits = layerBits(next);
       if (bits !== layers && !gl.isContextLost()) invalidateOverview();
@@ -975,7 +1119,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       return x < 0 || y < 0 || x >= world.width || y >= world.height ? null : { x, y };
     },
     render: () => { drawFrame(Infinity, Infinity); },
-    stats: () => ({ textureUploads, drawCalls, visibleChunks: drawn, residentChunks: chunks.size, evictedChunks }),
+    stats: () => ({ textureUploads, drawCalls, visibleChunks: drawn, residentChunks: chunks.size, evictedChunks, atlasUploads }),
     dispose: () => {
       if (disposed) return;
       disposed = true;
@@ -990,6 +1134,8 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
         for (const program of [resources.chunk, resources.build, resources.overview]) gl.deleteProgram(program.program);
         gl.deleteTexture(resources.palette);
         gl.deleteTexture(resources.rules);
+        gl.deleteTexture(resources.spriteSheets);
+        releaseAtlas();
         gl.deleteBuffer(resources.instances);
         gl.deleteVertexArray(resources.instanceArray);
         gl.deleteVertexArray(resources.emptyArray);

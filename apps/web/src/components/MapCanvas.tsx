@@ -3,6 +3,7 @@ import {
   CameraAnimator, clampCamera, createMapRenderer, fitWorld, terrariaMapPalette, visibleChunks, wheelPixels,
 } from "@studio/renderer";
 import type { Camera, MapRenderer, RenderableWorld, Size } from "@studio/renderer";
+import { getDefaultAssetSession, useAssetStore } from "../assets/asset-session.js";
 import { registerMapController, rendererLayers, useViewStore, type ToolId } from "../shell/view-store.js";
 
 const KEY_PAN_PIXELS_PER_MS = 0.384;
@@ -48,6 +49,20 @@ interface MapSession {
 }
 
 /**
+ * Hands the connected Terraria assets' atlas to the renderer and turns sprite mode on with the Sprites layer. Both are
+ * cheap to repeat: the renderer ignores an unchanged atlas, and sprite mode is a uniform.
+ */
+function applySprites(renderer: MapRenderer, shown: boolean): void {
+  try {
+    renderer.setAtlas(getDefaultAssetSession().getAtlas());
+  } catch (error) {
+    // The GPU cannot hold the atlas: the map keeps its colours, and the user learns why.
+    useAssetStore.setState({ notice: error instanceof Error ? error.message : String(error) });
+  }
+  renderer.setSpriteMode(shown);
+}
+
+/**
  * The canvas that owns the renderer and turns input into camera moves; it draws nothing itself. The tile under the
  * pointer and the zoom go to the view store for the status bar; the chrome reaches the camera through the registered
  * map controller.
@@ -59,6 +74,9 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
   const [error, setError] = useState<string | null>(null);
   const tool = useViewStore((state) => state.tool);
   const layers = useViewStore((state) => state.layers);
+  // Every status change may come with another atlas (ready, disconnected, a failed rebuild); the renderer ignores an
+  // unchanged one, so following each change is cheap. A rebuild keeps drawing the previous atlas until it is ready.
+  const assetStatus = useAssetStore((state) => state.status);
   /**
    * The primary press that may become a click (pin a tile): where it went down, and whether it ever left the click
    * slop on its way (an out-and-back drag is still a drag).
@@ -149,6 +167,7 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
     sessionRef.current = session;
     renderer.setWorld(session.world);
     renderer.setLayers(rendererLayers(useViewStore.getState().layers));
+    applySprites(renderer, useViewStore.getState().layers.sprites);
 
     const motionPreference = window.matchMedia("(prefers-reduced-motion: reduce)");
     const updateMotionPreference = (): void => {
@@ -283,6 +302,11 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
     const canvas = canvasRef.current;
     if (canvas !== null) canvas.dataset["layers"] = JSON.stringify(shown);
   }, [layers]);
+
+  useEffect(() => {
+    const renderer = sessionRef.current?.renderer;
+    if (renderer !== undefined) applySprites(renderer, layers.sprites);
+  }, [assetStatus, layers.sprites]);
 
   /** Pins the tile under a backing-store point in the Inspector (Inspect tool). */
   const pinAt = (session: MapSession, point: Point): void => {

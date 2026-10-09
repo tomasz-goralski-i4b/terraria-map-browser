@@ -994,6 +994,18 @@ touches the network; the Worker reports the number of `fetch` calls it saw (alwa
   with an unchanged fingerprint decodes no `.xnb`; any changed, added or removed sheet rebuilds.
 - **Progress and cancellation:** `scan`, `decode` (one event per sheet), `pack` and `store` events; aborting (also during the cache
   write) rejects with an `AbortError` and removes the uncommitted entry, so no partial cache entry exists.
+- **Connecting the folder (`apps/web/src/assets/asset-session.ts`):** *Connect Terraria assets* opens
+  `showDirectoryPicker` (read). The handle is kept in IndexedDB; on the next visit the atlas is rebuilt (normally a
+  cache hit) without a prompt while permission is still granted, a *reconnect* button is offered when the browser wants
+  to ask again, and a refused or revoked permission silently forgets the folder. `<input webkitdirectory>` (*Select
+  folder*) is the fallback where there is no directory picker, and is also offered next to it: Chrome's picker refuses
+  folders it counts as system folders ("contains system files"), which includes everything under `Program Files`,
+  Steam's default install location. `filesToContentDirectory` reads the files directly inside the picked folder's
+  `Images` folder (or the picked folder itself). That input gives no handle, so only the atlas fingerprint is
+  remembered; the next visit loads the atlas from the cache by fingerprint (Worker `load` request) and forgets it
+  silently when it is no longer cached. A folder with no
+  `Tiles_<id>`/`Wall_<id>` sheet is reported as the wrong folder and forgotten. The Worker transfers the atlas pages
+  to the main thread (on one 1.4.5.8 install: 754 tile and 366 wall sheets on 6 pages of 4096², ~7 s cold).
 - **Missing sheets:** an undecodable file or unreadable file is listed in `missing` (name and reason) and the rest is built. The report is stored with the cache
   entry (`missing.json`) and restored on a cache hit. A scan that could not read every matched file is never cached.
 
@@ -1052,6 +1064,10 @@ committed. The .NET decoder (#73) must reproduce the same vectors.
 - Assertions only, no output files: every `Tiles_0…753` and `Wall_1…366` (case-insensitive names) decodes; header
   file size = file length; frame total = decompressed size; reader = `Texture2DReader`, format 0, one level, data
   length = `w × h × 4`; `Tiles_0` is 288 × 270 and `Wall_1` 468 × 180.
+- Sprite mode (#91): `apps/web/tests/terraria-sprites.browser.test.ts` builds an atlas of only the sheets the spawn area of
+  `SCCO1.wld` needs (vitest browser command `buildLocalAtlas`, run on the Node side) and draws that area at 16 pixels
+  per tile: every framed tile there has a sheet, sprites change the picture, and no pixel is the missing-texture
+  checkerboard.
 - Never write decoded pixels into the repository; renders made by hand go to `local-renders/` (gitignored).
 
 ## Open questions

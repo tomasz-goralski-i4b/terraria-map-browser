@@ -35,4 +35,5 @@ export {
   type ContentDirectory,
   type ContentEntry,
 } from "./atlas-build.js";
+export { filesToContentDirectory, type PickedFile } from "./content-files.js";
 export type { AtlasWorkerRequest, AtlasWorkerResponse } from "./atlas-worker-protocol.js";

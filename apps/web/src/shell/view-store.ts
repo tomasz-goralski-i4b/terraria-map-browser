@@ -21,10 +21,12 @@ export interface MapLayers {
   readonly liquids: boolean;
   readonly wires: boolean;
   readonly wireMask: number;
+  /** Frame-important tiles drawn from the connected Terraria assets' sprites (only while an atlas is loaded). */
+  readonly sprites: boolean;
 }
 
 export const DEFAULT_MAP_LAYERS: MapLayers = {
-  background: true, walls: true, blocks: true, liquids: true, wires: true, wireMask: WIRE_LAYER.all,
+  background: true, walls: true, blocks: true, liquids: true, wires: true, wireMask: WIRE_LAYER.all, sprites: true,
 };
 
 /** The layers as the renderer takes them: the wire mask applies only while the group is shown. */
@@ -45,6 +47,8 @@ export interface ViewState {
   readonly helpOpen: boolean;
   readonly paletteOpen: boolean;
   readonly statsVisible: boolean;
+  /** The sprite-sheet preview dialog of the connected Terraria assets. */
+  readonly spritePreviewOpen: boolean;
   readonly setHoverTile: (tile: TilePoint | null) => void;
   readonly setPinnedTile: (tile: TilePoint | null) => void;
   readonly setLayers: (layers: Partial<MapLayers>) => void;
@@ -53,6 +57,7 @@ export interface ViewState {
   readonly setHelpOpen: (open: boolean) => void;
   readonly setPaletteOpen: (open: boolean) => void;
   readonly setStatsVisible: (visible: boolean) => void;
+  readonly setSpritePreviewOpen: (open: boolean) => void;
 }
 
 export const useViewStore = create<ViewState>()((set, get) => ({
@@ -64,6 +69,7 @@ export const useViewStore = create<ViewState>()((set, get) => ({
   helpOpen: false,
   paletteOpen: false,
   statsVisible: false,
+  spritePreviewOpen: false,
   setHoverTile: (tile) => {
     const previous = get().hoverTile;
     if (previous?.x === tile?.x && previous?.y === tile?.y) return;
@@ -86,6 +92,9 @@ export const useViewStore = create<ViewState>()((set, get) => ({
   },
   setPaletteOpen: (open) => {
     set({ paletteOpen: open });
+  },
+  setSpritePreviewOpen: (open) => {
+    set({ spritePreviewOpen: open });
   },
   setStatsVisible: (visible) => {
     set({ statsVisible: visible });

@@ -450,7 +450,8 @@ describe("GPU limits", () => {
         if (location === null) throw new Error(`no location for ${info.name}`);
         const unit = gl.getUniform(program, location) as number;
         units.add(unit);
-        if (ARRAYS.has(info.type)) pageUnits.add(unit);
+        // The sprite atlas (uAtlas) is an array texture too, but not a chunk page.
+        if (ARRAYS.has(info.type) && info.name !== "uAtlas") pageUnits.add(unit);
       }
     }
     expect(units.size).toBeLessThanOrEqual(10);

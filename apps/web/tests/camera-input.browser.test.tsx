@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { render } from "vitest-browser-react";
 import { createMapRenderer, fitWorld, screenToTile } from "@studio/renderer";
 import type { Camera, MapRenderer, RenderableWorld } from "@studio/renderer";
+import { setDefaultAssetSession, useAssetStore, type AssetSession, type AssetStatus } from "../src/assets/asset-session.js";
 import { MapCanvas } from "../src/components/MapCanvas.js";
 import { StatusBar } from "../src/shell/StatusBar.js";
 
@@ -46,14 +47,15 @@ beforeEach(() => {
   Object.defineProperty(media, "matches", { configurable: true, value: false });
   vi.spyOn(window, "matchMedia").mockReturnValue(media);
   renderer = {
-    setWorld: vi.fn(), setCamera: vi.fn((camera: Camera) => { drawn = camera; }), setLayers: vi.fn(),
+    setWorld: vi.fn(), setCamera: vi.fn((camera: Camera) => { drawn = camera; }), setLayers: vi.fn(), setAtlas: vi.fn(),
+    setSpriteMode: vi.fn(),
     tileAt: (x, y) => {
       const tile = screenToTile(drawn, x, y);
       return tile.x < 0 || tile.y < 0 || tile.x >= world.width || tile.y >= world.height
         ? null : { x: Math.floor(tile.x), y: Math.floor(tile.y) };
     },
     render: vi.fn(), dispose: vi.fn(),
-    stats: () => ({ textureUploads: 0, drawCalls: 0, visibleChunks: [], residentChunks: 0, evictedChunks: 0 }),
+    stats: () => ({ textureUploads: 0, drawCalls: 0, visibleChunks: [], residentChunks: 0, evictedChunks: 0, atlasUploads: 0 }),
   };
   vi.mocked(createMapRenderer).mockReturnValue(renderer);
 });
@@ -267,4 +269,53 @@ test("opening another world gives the renderer that world's fitted camera before
   // The renderer's first frame of the new world must not use the previous world's camera: it would start building
   // around the wrong place.
   expect(cameraAtSetWorld).toEqual(fitWorld({ width: canvas().width, height: canvas().height }, other));
+});
+
+test("the map follows the connected atlas, and drops it when the assets are disconnected during a rebuild", async () => {
+  const connected = { pages: [], index: { pageSize: 1, entries: [] } };
+  let atlas: typeof connected | null = connected;
+  setDefaultAssetSession({ getAtlas: () => atlas } as unknown as AssetSession);
+  try {
+    await mount();
+    const ready: AssetStatus = { kind: "ready", folderName: "Images", tileSheets: 0, wallSheets: 0, pages: 0, fromCache: true, missing: [] };
+    act(() => { useAssetStore.setState({ status: ready }); });
+    expect(renderer.setAtlas).toHaveBeenLastCalledWith(connected);
+    act(() => { useAssetStore.setState({ status: { kind: "building", folderName: "Images", progress: null } }); });
+    // Disconnect: the session forgets the atlas and goes back to "none".
+    atlas = null;
+    act(() => { useAssetStore.setState({ status: { kind: "none" } }); });
+    expect(renderer.setAtlas).toHaveBeenLastCalledWith(null);
+  } finally {
+    setDefaultAssetSession(undefined);
+    useAssetStore.setState({ status: { kind: "none" } });
+  }
+});
+
+test("panning and zooming the map read no asset files and rebuild no atlas", async () => {
+  const atlas = { pages: [], index: { pageSize: 1, entries: [] } };
+  const session = {
+    getAtlas: vi.fn(() => atlas), connect: vi.fn(), connectFiles: vi.fn(), reconnect: vi.fn(), restore: vi.fn(),
+    chooseFiles: vi.fn(), disconnect: vi.fn(),
+  };
+  setDefaultAssetSession(session as unknown as AssetSession);
+  try {
+    await mount();
+    act(() => {
+      useAssetStore.setState({ status: { kind: "ready", folderName: "Images", tileSheets: 1, wallSheets: 0, pages: 1, fromCache: true, missing: [] } });
+    });
+    for (let step = 0; step < 30; step++) {
+      pointer("pointerdown", 120, 90);
+      pointer("pointermove", 120 - step * 7, 90 + (step % 5));
+      pointer("pointerup", 120 - step * 7, 90 + (step % 5));
+      wheel(step % 2 === 0 ? -5 : 5);
+      await frame();
+    }
+    for (const read of [session.connect, session.connectFiles, session.reconnect, session.restore, session.chooseFiles]) {
+      expect(read).not.toHaveBeenCalled();
+    }
+    expect(vi.mocked(renderer.setAtlas).mock.calls.every(([given]) => given === atlas)).toBe(true);
+  } finally {
+    setDefaultAssetSession(undefined);
+    useAssetStore.setState({ status: { kind: "none" } });
+  }
 });

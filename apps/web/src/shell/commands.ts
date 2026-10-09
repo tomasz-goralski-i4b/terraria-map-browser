@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import type { IconName } from "../ui/Icon.js";
+import { getDefaultAssetSession, useAssetStore } from "../assets/asset-session.js";
 import { useAppStore } from "../store.js";
 import { chooseWorldFile } from "../world/open-world.js";
 import { WORLD_GROUP_IDS } from "../panels/world-fields.js";
@@ -67,13 +68,13 @@ export function toolCommands(tool: ToolId, setTool: (tool: ToolId) => void): Com
   }));
 }
 
-/** Layer toggles, in the order of the Layers panel, with their shortcuts. */
-export const LAYER_TOGGLES: readonly { readonly layer: Exclude<keyof MapLayers, "wireMask">; readonly label: string; readonly shortcut: string }[] = [
-  { layer: "background", label: "Background", shortcut: "Alt+1" },
-  { layer: "walls", label: "Walls", shortcut: "Alt+2" },
-  { layer: "blocks", label: "Blocks", shortcut: "Alt+3" },
-  { layer: "liquids", label: "Liquids", shortcut: "Alt+4" },
-  { layer: "wires", label: "Wires and actuators", shortcut: "Alt+5" },
+/** Layer toggles, in the order of the Layers panel, with their shortcuts. Sprites has its own row (with the assets). */
+export const LAYER_TOGGLES: readonly { readonly layer: Exclude<keyof MapLayers, "wireMask" | "sprites">; readonly label: string; readonly shortcut: string }[] = [
+  { layer: "background", label: "Background", shortcut: "Alt+2" },
+  { layer: "walls", label: "Walls", shortcut: "Alt+3" },
+  { layer: "blocks", label: "Blocks", shortcut: "Alt+4" },
+  { layer: "liquids", label: "Liquids", shortcut: "Alt+5" },
+  { layer: "wires", label: "Wires and actuators", shortcut: "Alt+6" },
 ];
 
 /** Whether a layer row's eye is open (for wires: the group switch, whatever colours are chosen inside it). */
@@ -104,11 +105,34 @@ export function useCommands(): Command[] {
   const pinnedTile = useViewStore((state) => state.pinnedTile);
   const setPinnedTile = useViewStore((state) => state.setPinnedTile);
   const noWorld = hasWorld ? {} : { disabledReason: "Open a world first" };
+  const assetsBuilding = useAssetStore((state) => state.status.kind === "building" || state.status.kind === "choosing");
+  const assetsReady = useAssetStore((state) => state.status.kind === "ready");
+  const setSpritePreviewOpen = useViewStore((state) => state.setSpritePreviewOpen);
 
   return [
     { id: "file.open", group: "File", label: "Open world…", icon: "open", shortcut: "Control+O", enabled: true, run: chooseWorldFile },
     { id: "file.export", group: "File", label: "Export world…", enabled: false, disabledReason: EDITING_LATER, run: () => undefined },
-    { id: "file.assets", group: "File", label: "Connect Terraria assets…", enabled: false, disabledReason: "Sprite rendering is not available yet", run: () => undefined },
+    {
+      id: "file.assets", group: "File", label: "Connect Terraria assets…", enabled: !assetsBuilding,
+      ...(assetsBuilding ? { disabledReason: "The sprite atlas is being built" } : {}),
+      run: () => {
+        void getDefaultAssetSession().connect();
+      },
+    },
+    {
+      id: "file.disconnectAssets", group: "File", label: "Disconnect Terraria assets", enabled: assetsReady,
+      ...(assetsReady ? {} : { disabledReason: "No Terraria assets are connected" }),
+      run: () => {
+        void getDefaultAssetSession().disconnect();
+      },
+    },
+    {
+      id: "file.sprites", group: "File", label: "Preview sprite sheets…", enabled: assetsReady,
+      ...(assetsReady ? {} : { disabledReason: "Connect Terraria assets first" }),
+      run: () => {
+        setSpritePreviewOpen(true);
+      },
+    },
     {
       id: "view.dock", group: "View", label: "Show panels", icon: "dock", shortcut: "P", enabled: true, checked: !dockHidden,
       run: () => {
@@ -159,6 +183,14 @@ export function useCommands(): Command[] {
         setLayers({ [layer]: !layers[layer] });
       },
     })),
+    {
+      id: "layer.sprites", group: "Layers", label: "Show sprites", shortcut: "Alt+1", enabled: assetsReady,
+      ...(assetsReady ? {} : { disabledReason: "Connect Terraria assets first" }),
+      checked: assetsReady && layers.sprites,
+      run: () => {
+        setLayers({ sprites: !layers.sprites });
+      },
+    },
     ...toolCommands(tool, setTool),
     {
       id: "tool.unpin", group: "Tools", label: "Unpin inspected tile", shortcut: "Escape", enabled: pinnedTile !== null,

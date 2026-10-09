@@ -45,8 +45,7 @@ exactly the pixels `filterTiles` (below) makes of them. The browser tests assert
   winning, and option 0 otherwise. Content without a rule uses its palette colour. The headers are written with the
   palette colours, so building the tables is the only CPU work, once per palette entry.
 - **Texture units.** The chunk pass binds the two page textures, the palette, the background and paint colours, the
-  rules and the overview: 6 of the 16 that WebGL2 guarantees. The map keeps to at most 10, so sprite mode (#91) has
-  room for its atlas pages and lookup. Creating the renderer fails with a clear error if the GPU offers fewer
+  rules and the overview: 6 of the 16 that WebGL2 guarantees. With sprite mode's atlas pages and lookup the map uses 8. Creating the renderer fails with a clear error if the GPU offers fewer
   units or array layers than needed.
 - **Adding a plane** (for example a computed sprite cell, 16-bit): add it to `PLANES_16` (or `PLANES_8`) in
   `src/gpu/shaders.ts`, add its source to `planesOf` in `src/gpu/map-renderer.ts` (with a `PRESENT` bit if it is
@@ -96,6 +95,23 @@ exactly the pixels `filterTiles` (below) makes of them. The browser tests assert
   baseline cache (512 chunks, about 100 MiB) however large the world is. At half a pixel per tile and above the
   cache grows to the visible set, which the viewport bounds. While chunks are still loading there, the overview is
   drawn under them instead of a hole; a complete frame is exact.
+- **Sprite mode (#91).** `setAtlas(atlas)` uploads a sprite atlas (`@studio/assets`' `SpriteAtlas`, square RGBA8 pages)
+  once, as one `RGBA8` array texture with a layer per page; `stats().atlasUploads` counts it. A lookup texture
+  (`RGBA32I`, `SPRITE_SHEET_ROW` in `src/gpu/shaders.ts`) holds per palette index the tile sheet of its content ID
+  (page, place, size, frame size), written with the palette, so it grows when the palette is appended; walls, mod and
+  unknown content and IDs without a sheet are *missing*, trees (`SPRITE_DEFERRED_TILES`: tree trunks, tops and
+  branches are deferred, docs/assets.md) keep their map colour. A missing block with a stored frame is drawn as a
+  generated missing-texture checkerboard (`MISSING_SPRITE_COLORS`, magenta and black, 2 × 2 squares per tile; not a
+  game asset), so content without a sprite stands out; the web app lists it under the Sprites row. `setSpriteMode(true)` makes the chunk pass, from
+  `SPRITE_MIN_ZOOM` (8) pixels per tile, draw a block that has a stored frame (`frameX`, `frameY` ≥ 0: frame-important
+  tiles; the codec stores −1 for the others) and a sheet from that sheet: sprite pixel `sub` (0–15 per axis) of the tile
+  reads sheet pixel `frame + sub × cell / 16`, so a cell larger than 16 × 16 is scaled into the tile (the game's exact
+  draw offsets are deferred, docs/assets.md). Transparent sprite pixels show the wall, else the background, behind
+  them; paint is not applied to sprites; liquids and wires still draw over them. A half-transparent sprite pixel with
+  nothing behind it is the one partly transparent pixel liquids can land on outside map mode: there they use the
+  general straight-alpha rule (`over` in `src/gpu/shaders.ts`, rounded to nearest); map mode stays bit-exact. Everything else, the box filter and
+  the overview keep map colours. The mode is a uniform: switching it or crossing the threshold uploads nothing. The
+  atlas pages use 2 more texture units (8 in all).
 - `tileAt` and anything that reads tile data (names, coordinates) use the camera and the CWM planes, never GPU
   textures, so neither path changes them.
 

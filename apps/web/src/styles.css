@@ -836,7 +836,7 @@ kbd {
   border-top: 1px solid var(--border);
 }
 
-.visibility-row[aria-disabled="true"] .visibility-label {
+.visibility-row[data-disabled="true"] .visibility-label {
   color: var(--text-3);
 }
 
@@ -1396,4 +1396,217 @@ kbd {
     animation-delay: 0s !important;
     transition-duration: 0s !important;
   }
+}
+
+/* ---------- Sprites row (Layers panel) ---------- */
+.sprite-missing {
+  padding: 0 var(--space-2) var(--space-1) calc(var(--space-2) + var(--space-4));
+  font-size: var(--text-small);
+  color: var(--text-2);
+}
+
+.sprite-missing ul {
+  margin: var(--space-1) 0 0;
+  padding-left: var(--space-3);
+  max-height: 160px;
+  overflow: auto;
+}
+
+.row-note {
+  font-size: var(--text-small);
+  color: var(--text-3);
+}
+
+.row-warning {
+  display: inline-flex;
+  color: #e0a030;
+}
+
+.visibility-row .icon-button[aria-haspopup] {
+  width: 24px;
+  height: 24px;
+}
+
+/* The asset button draws the atlas build's progress as a fill behind its label. */
+.assets-button {
+  position: relative;
+  overflow: hidden;
+}
+
+/* One fill for every progress display, so the asset button and the Sprites row move in step. */
+.progress-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: calc(var(--progress, 0) * 100%);
+  background: var(--accent);
+  opacity: 0.35;
+  transition: width 120ms linear;
+  pointer-events: none;
+}
+
+/* Unknown duration: a stripe sweeping back and forth. */
+.progress-fill[data-waiting] {
+  width: 30%;
+  transition: none;
+  animation: progress-wait 1.2s ease-in-out infinite alternate;
+}
+
+@keyframes progress-wait {
+  from { left: 0; }
+  to { left: 70%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progress-fill[data-waiting] {
+    animation: none;
+    width: 100%;
+    opacity: 0.15;
+  }
+}
+
+.progress-bar {
+  position: relative;
+  display: inline-block;
+  overflow: hidden;
+  width: 64px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--surface-3);
+}
+
+.progress-bar .progress-fill {
+  opacity: 1;
+}
+
+.assets-button .button-label {
+  position: relative;
+}
+
+/* ---------- Sprite sheet preview ---------- */
+.sprite-dialog {
+  width: min(1400px, 94vw);
+  height: min(860px, 90vh);
+}
+
+.sprite-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+.sprite-dialog-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.segmented {
+  display: inline-flex;
+}
+
+.segmented .button[aria-pressed="true"] {
+  background: var(--accent);
+  color: #fff;
+}
+
+.sprite-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+}
+
+.sprite-list-pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid var(--border);
+}
+
+.sprite-filter {
+  margin: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--surface-1, transparent);
+  color: var(--text-1);
+}
+
+.sprite-list {
+  flex: 1;
+  overflow: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sprite-list li {
+  display: flex;
+  gap: var(--space-2);
+  padding: 2px var(--space-3);
+  cursor: pointer;
+}
+
+.sprite-list li:hover {
+  background: var(--surface-3);
+}
+
+.sprite-list li[aria-selected="true"] {
+  background: var(--accent);
+  color: #fff;
+}
+
+.sprite-id {
+  min-width: 3ch;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: inherit;
+  opacity: 0.7;
+}
+
+.sprite-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sprite-view-pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+
+.sprite-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+
+.sprite-info {
+  flex: 1;
+  color: var(--text-2);
+}
+
+.sprite-control {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+/* A checkerboard shows which sprite pixels are transparent. */
+.sprite-canvas-wrap {
+  flex: 1;
+  overflow: auto;
+  padding: var(--space-3);
+  background-color: #2a2d33;
+  background-image: conic-gradient(#3a3e46 25%, transparent 0 50%, #3a3e46 0 75%, transparent 0);
+  background-size: 16px 16px;
+}
+
+.sprite-canvas {
+  display: block;
+  image-rendering: pixelated;
 }
