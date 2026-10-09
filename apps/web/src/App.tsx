@@ -65,7 +65,7 @@ export function App({ layoutStorage }: AppProps = {}): React.JSX.Element {
       <TopBar commands={commands} />
       <ToolRail commands={commands} />
       <ToolOptions />
-      <MapView renderer={RENDERER_PACKAGE} />
+      <MapView renderer={RENDERER_PACKAGE} commands={commands} />
       <Dock commands={commands} />
       <StatusBar />
       <HelpOverlay commands={commands} />

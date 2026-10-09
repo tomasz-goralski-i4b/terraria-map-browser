@@ -6,6 +6,7 @@ import { Icon } from "../ui/Icon.js";
 import { toRenderableWorld } from "../world/renderable-world.js";
 import { getDefaultWorldSession } from "../world/world-session.js";
 import { useExportStore } from "../world/export-world.js";
+import type { Command } from "../shell/commands.js";
 import { MapCanvas } from "./MapCanvas.js";
 
 /**
@@ -23,15 +24,17 @@ export interface MapViewProps {
   readonly renderer: string;
   /** World to draw, by reference; defaults to the world loaded by the default session. */
   readonly world?: RenderableWorld | null;
+  readonly commands?: readonly Command[];
 }
 
-export function MapView({ renderer, world }: MapViewProps): React.JSX.Element {
+export function MapView({ renderer, world, commands }: MapViewProps): React.JSX.Element {
   const phase = useAppStore((state) => state.phase);
   const loadingFileName = useAppStore((state) => state.loadingFileName);
   const summary = useAppStore((state) => state.summary);
   const error = useAppStore((state) => state.error);
   const assetNotice = useAssetStore((state) => state.notice);
   const exported = useExportStore();
+  const saveCopy = commands?.find((command) => command.id === "file.saveCopy");
   // A new summary means a newly loaded world; the session is not reactive, the store is.
   const sessionWorld = useMemo(() => (summary === null ? null : loadedRenderableWorld()), [summary]);
   const drawn = world === undefined ? sessionWorld : world;
@@ -72,9 +75,10 @@ export function MapView({ renderer, world }: MapViewProps): React.JSX.Element {
       {exported.error !== null && (
         <p role="alert" className="map-message map-message-error" style={MESSAGE_STYLE}>Could not export world: {exported.error}</p>
       )}
-      {exported.message !== null && (
+      {(exported.message !== null || exported.download !== null) && (
         <p role="status" className="map-message" style={MESSAGE_STYLE}>
           {exported.message}{" "}
+          {exported.canSave && saveCopy !== undefined && <button type="button" className="button" disabled={!saveCopy.enabled} onClick={saveCopy.run}>{saveCopy.label}</button>}{" "}
           {exported.download !== null && <a href={exported.download.url} download={exported.download.name}>Download {exported.download.name}</a>}
         </p>
       )}

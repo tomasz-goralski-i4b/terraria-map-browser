@@ -63,6 +63,7 @@ export function TopBar({ commands }: { readonly commands: readonly Command[] }):
     menuItem(get("file.open")),
     { kind: "action", label: "Recent worlds — not available yet", disabled: true, onSelect: () => undefined },
     menuItem(get("file.export")),
+    menuItem(get("file.saveCopy")),
     { kind: "separator" },
     menuItem(get("file.assets")),
     menuItem(get("file.sprites")),

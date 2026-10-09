@@ -36,10 +36,13 @@ The same writer path handles unchanged and edited tile planes. All 18 reader-adm
 325–326) retain their source version; older-format write validation remains experimental and synthetic-tested.
 Unsupported content and invalid footers show the writer's reason and produce no writable output.
 
-Worlds opened with the system file picker retain their read-only source handle for an `isSameEntry` check. Export
-suggests `<file-name>.copy.wld` and refuses the original entry before creating a writable stream. When the save
-picker is unavailable, or the world was opened through the file input or drag-and-drop without a source handle,
-export offers a download link. Opening another world or resetting the session cancels pending exports and releases
+After successful encoding, **Save world copy…** selects a folder and creates `<file-name>.copy.wld`. Existing files
+are refused; the source identity is checked before any writable stream is created, including after a raced creation.
+The directory picker replaces `showSaveFilePicker`, which can truncate a selected file before returning its handle
+([File System Access §3.4](https://wicg.github.io/file-system-access/#api-showsavefilepicker)). This satisfies the
+original-file protection requirement; a save picker followed by `isSameEntry` cannot satisfy it.
+Download is always available; worlds opened through the file input or drag-and-drop without a source handle, or
+browsers without directory selection, use this fallback. Opening another world or resetting cancels work and releases
 download URLs. A snapshot of the current CWM and preserved envelope is copied in yielding 1 MiB slices and transferred
 to the Worker, preserving byte-view aliases and leaving the live world's buffers attached. Tile runs may be combined
 into canonical RLE, changing file bytes, lengths and section offsets while preserving all decoded tile values,

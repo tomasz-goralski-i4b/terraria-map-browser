@@ -3,7 +3,7 @@ import type { IconName } from "../ui/Icon.js";
 import { getDefaultAssetSession, useAssetStore } from "../assets/asset-session.js";
 import { useAppStore } from "../store.js";
 import { chooseWorldFile } from "../world/open-world.js";
-import { exportWorld, useExportStore } from "../world/export-world.js";
+import { exportWorld, saveWorldCopy, useExportStore } from "../world/export-world.js";
 import { WORLD_GROUP_IDS } from "../panels/world-fields.js";
 import { resetLayout, useLayoutStore, type ThemeChoice } from "./layout-store.js";
 import { getMapController, useViewStore, type MapLayers, type ToolId } from "./view-store.js";
@@ -92,6 +92,7 @@ export function useCommands(): Command[] {
   const hasWorld = useAppStore((state) => state.summary !== null);
   const loadingWorld = useAppStore((state) => state.phase === "loading");
   const exporting = useExportStore((state) => state.busy);
+  const canSave = useExportStore((state) => state.canSave);
   const dockHidden = useLayoutStore((state) => state.dockHidden);
   const setDockHidden = useLayoutStore((state) => state.setDockHidden);
   const theme = useLayoutStore((state) => state.theme);
@@ -118,6 +119,11 @@ export function useCommands(): Command[] {
       id: "file.export", group: "File", label: "Export world…", enabled: hasWorld && !loadingWorld && !exporting,
       ...(!hasWorld ? noWorld : loadingWorld ? { disabledReason: "A world is loading" } : exporting ? { disabledReason: "Export in progress" } : {}),
       run: () => { void exportWorld(); },
+    },
+    {
+      id: "file.saveCopy", group: "File", label: "Save world copy…", enabled: canSave && !exporting,
+      ...(!canSave ? { disabledReason: "Export a world first" } : exporting ? { disabledReason: "Export in progress" } : {}),
+      run: () => { void saveWorldCopy(); },
     },
     {
       id: "file.assets", group: "File", label: "Connect Terraria assets…", enabled: !assetsBuilding,
