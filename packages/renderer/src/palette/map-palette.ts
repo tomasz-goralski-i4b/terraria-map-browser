@@ -10,6 +10,8 @@ export type ContentNameSource = "legend" | "placement" | "symbol" | "unresolved"
 /** Runtime provenance retained independently of the UI's choice of label. Indexed by vanilla content ID. */
 export interface ContentNameMetadata {
   readonly symbols: readonly string[];
+  /** Status of reflected symbols; present does not prove the content is active in the game. */
+  readonly symbolStatus: "present" | "unused" | "ambiguous" | "unavailable";
   readonly mapOptionCount: number;
   /** One source per name, including a label for content without a map colour. */
   readonly nameSources: readonly ContentNameSource[];

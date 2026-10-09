@@ -39,6 +39,11 @@ function Read-ContentNames([Reflection.Assembly]$Game, [string]$TypeName, [Array
     $gaps = New-Object 'Collections.Generic.List[object]'
     for ($id = 0; $id -lt $Lookup.Length; $id++) {
         $aliases = @(if ($symbols.ContainsKey($id)) { $symbols[$id] })
+        $markedUnused = @($aliases | Where-Object { $_ -cmatch 'Unused|Deprecated|Reserved' }).Count -gt 0
+        $symbolStatus = if ($aliases.Count -eq 0) { 'unavailable' }
+            elseif ($aliases.Count -gt 1) { 'ambiguous' }
+            elseif ($markedUnused) { 'unused' }
+            else { 'present' }
         $before = @($names[$id])
         # No map colour does not mean unused: pressure plates and echo blocks are real content.
         if ($before.Count -eq 0 -and $PlacementNames.ContainsKey($id)) {
@@ -48,7 +53,7 @@ function Read-ContentNames([Reflection.Assembly]$Game, [string]$TypeName, [Array
         $first = @($names[$id])
         if (($first.Count -eq 0 -or -not $first[0]) -and $aliases.Count -eq 1) {
             $label = Format-ContentSymbol $aliases[0] $TypeName
-            if ($label -and $aliases[0] -notmatch '^(Unused|Deprecated|Reserved)') {
+            if ($label) {
                 if ($first.Count -eq 0) { $first = @(''); $sources[$id] = @('unresolved') }
                 for ($option = 0; $option -lt $first.Count; $option++) {
                     if (-not $first[$option]) { $first[$option] = $label; $sources[$id][$option] = 'symbol' }
@@ -56,16 +61,19 @@ function Read-ContentNames([Reflection.Assembly]$Game, [string]$TypeName, [Array
                 $names[$id] = $first
             }
         }
-        $metadata.Add(@{ symbols = $aliases; mapOptionCount = [int]$Counts[$id]; nameSources = @($sources[$id]) })
-        if ($before.Count -eq 0 -or @($before | Where-Object { -not $_ }).Count -gt 0) {
+        $metadata.Add(@{ symbols = $aliases; symbolStatus = $symbolStatus; mapOptionCount = [int]$Counts[$id]; nameSources = @($sources[$id]) })
+        if ($markedUnused -or $before.Count -eq 0 -or @($before | Where-Object { -not $_ }).Count -gt 0) {
             $label = if (@($names[$id]).Count -gt 0) { [string]$names[$id][0] } else { '' }
             $reason = if ($label) {
-                if ($before.Count -gt 0 -and $before[0]) { 'empty options retain option-zero fallback' }
+                if ($markedUnused -and $before.Count -gt 0 -and $before[0]) { 'existing name (unused/deprecated/reserved symbol)' }
+                elseif ($markedUnused) { "diagnostic $($sources[$id][0]) fallback (unused/deprecated/reserved)" }
+                elseif ($before.Count -gt 0 -and $before[0]) { 'empty options retain option-zero fallback' }
                 else { "$($sources[$id][0]) fallback" }
             } elseif ($aliases.Count -eq 0) { 'unavailable symbolic metadata' }
             elseif ($aliases.Count -gt 1) { 'ambiguous symbolic aliases' }
-            else { 'unused/deprecated/reserved symbol' }
-            $category = if ($TypeName -eq 'WallID') { 'wall' }
+            else { 'unresolved symbol' }
+            $category = if ($markedUnused) { 'unused/obsolete' }
+                elseif ($TypeName -eq 'WallID') { 'wall' }
                 elseif (($aliases -join ' ') -match 'Grass|MossBrick|Gemspark|Block') { 'terrain' }
                 elseif (($aliases -join ' ') -match 'Plant|Vine|Moss|Cattail|Lily|Oats|Bamboo|Seaweed|Thorn') { 'vegetation' }
                 else { 'object/other' }
@@ -83,6 +91,8 @@ function Format-ContentCoverage([string]$Version, [hashtable]$Data, [string]$Kin
     $lines.Add("Terraria version: $Version. Regenerate with the exporter's -CoveragePath parameter.")
     $named = @($Data.names | Where-Object { @($_).Count -gt 0 -and $_[0] }).Count
     $lines.Add("Named $Kind IDs: $named/$($Data.names.Length). Residual unnamed $Kind IDs: $($Data.names.Length - $named).")
+    $unused = @($Data.metadata | Where-Object { $_.symbolStatus -eq 'unused' }).Count
+    $lines.Add("Unused/obsolete symbolic entries (included above with diagnostic labels): $unused.")
     $lines.Add('')
     $lines.Add('Every ID with an empty legend/placement option is listed below, including content with no map colour.')
     $lines.Add('Category is a triage hint derived from symbol words, not a game taxonomy or proof an ID is used.')
@@ -103,7 +113,7 @@ function Format-NameMetadata([string]$Name, [Array]$Records) {
     foreach ($record in $Records) {
         $symbols = @($record.symbols | ForEach-Object { ConvertTo-Json -InputObject ([string]$_) -Compress }) -join ', '
         $sources = @($record.nameSources | ForEach-Object { ConvertTo-Json -InputObject ([string]$_) -Compress }) -join ', '
-        $lines.Add("    { symbols: [$symbols], mapOptionCount: $($record.mapOptionCount), nameSources: [$sources] },")
+        $lines.Add("    { symbols: [$symbols], symbolStatus: `"$($record.symbolStatus)`", mapOptionCount: $($record.mapOptionCount), nameSources: [$sources] },")
     }
     $lines.Add('  ],')
     return ,$lines.ToArray()

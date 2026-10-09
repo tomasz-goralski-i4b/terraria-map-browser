@@ -147,7 +147,10 @@ The exporter applies this policy, implemented independently in `scripts/map-pale
 - Preserve every nonempty legend or unambiguous placement label exactly. If option zero already has a name,
   leave unnamed nonzero options unchanged; the frontend's existing option-zero fallback remains in effect.
 - If option zero is unnamed, use a symbol only when exactly one public integral constant maps to the ID.
-  Ignore `Count`, out-of-range/nonintegral fields, and symbols marked `Unused`, `Deprecated` or `Reserved`.
+  Ignore `Count` and out-of-range/nonintegral fields. Symbols containing `Unused`, `Deprecated` or `Reserved`
+  anywhere in their name retain readable **diagnostic** labels, with an explicit unused/obsolete classification;
+  they are not reported as ordinary material coverage. For example, `MarbleEchoUnused` and `GraniteEchoUnused`
+  (wall IDs 272 and 273) remain identifiable without being presented as ordinary active walls.
   Missing metadata and multiple aliases retain empty names and appear with their reasons in the report.
 - Split PascalCase, acronym boundaries and underscores into words. Preserve original casing, acronyms and
   numbers; retain dimension tokens such as `2x1`. Do not translate, singularize, reorder words or infer an item
@@ -162,7 +165,8 @@ The exporter applies this policy, implemented independently in `scripts/map-pale
   emit a label at name index zero, without adding a colour or a frame rule. The names table and colour table
   therefore need not have identical option lengths when the colour option count is zero.
 
-`terrariaMapNames.tileMetadata` and `wallMetadata` retain **all** reflected aliases, the original `mapOptionCount` and each emitted
+`terrariaMapNames.tileMetadata` and `wallMetadata` retain **all** reflected aliases, `symbolStatus`
+(`present`, `unused`, `ambiguous`, `unavailable`), the original `mapOptionCount` and each emitted
 label's `nameSources` (`legend`, `placement`, `symbol`, `unresolved`). These records are independent of the
 frontend's display policy. They contain no game implementation, localization asset or item inventory.
 Content, status descriptions and Inspector already share `contentName`, so the generated labels reach all three
@@ -187,7 +191,8 @@ Regenerate both artifacts from the local installation (no worlds are opened):
 Synthetic exporter fixtures cover source precedence, aliases, unavailable metadata, acronym/variant casing,
 JSON escaping and blocks without map colours. Application tests cover every shipped block having a name,
 Grass/Plants in Content/search/status/Inspector, frame-dependent labels, and unknown/mod key fallback.
-Wall fixtures also cover natural-wall formatting, missing metadata, ambiguous aliases and preserved exact option names.
+Wall fixtures also cover natural-wall formatting, missing metadata, ambiguous aliases, suffix-marked unused symbols
+with diagnostic labels and metadata/report classification, and preserved exact option names.
 Application tests cover wall 64 in Content/search/status/Inspector. The opt-in installation test checks all
 block/wall names and the retained original colour-option counts.
 
