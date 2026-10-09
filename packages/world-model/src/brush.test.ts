@@ -3,6 +3,19 @@ import { createWorld } from "./index.js";
 import { BRUSH_LAYER, createBrushHistory } from "./brush.js";
 
 describe("simple vanilla brush", () => {
+  it("rasterizes a three-tile round brush as a plus, shared by paint and erase", () => {
+    const world = createWorld(9, 9);
+    const history = createBrushHistory(world);
+    history.begin({ layer: BRUSH_LAYER.block, id: 1, size: 3, shape: "circle" });
+    history.move(4, 4);
+    expect(history.commit().map(({ x, y }) => [x, y])).toEqual([[3, 4], [4, 3], [4, 4], [4, 5], [5, 4]]);
+    history.begin({ layer: BRUSH_LAYER.block, id: null, size: 3, shape: "circle" });
+    history.move(4, 4);
+    expect(history.commit()).toHaveLength(5);
+    expect(world.tileAt(4, 4).block).toBeUndefined();
+    history.undo();
+    expect(world.tileAt(4, 4).block).toEqual({ kind: "vanilla", id: 1 });
+  });
   it("uses a circular tile mask for both paint and erase, with exact history and edge clipping", () => {
     const world = createWorld(9, 9);
     const history = createBrushHistory(world);

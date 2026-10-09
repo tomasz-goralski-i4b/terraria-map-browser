@@ -6,13 +6,13 @@ export const BRUSH_LAYER = { block: "block", wall: "wall", both: "both" } as con
 export type BrushLayer = (typeof BRUSH_LAYER)[keyof typeof BRUSH_LAYER];
 export const BRUSH_SHAPE = { square: "square", circle: "circle" } as const;
 export type BrushShape = (typeof BRUSH_SHAPE)[keyof typeof BRUSH_SHAPE];
-/** Tile-centre sampling of an inscribed disk; offsets share the square's even-size alignment. */
+/** Tile-centre disk with a quarter-tile inset so a diameter of three rasterizes as a plus. */
 export function brushFootprint(size: number, shape: BrushShape = BRUSH_SHAPE.square): readonly TileCoordinate[] {
   const offset = Math.floor(size / 2);
   const center = (size - 1) / 2;
   const cells: TileCoordinate[] = [];
   for (let x = 0; x < size; x++) for (let y = 0; y < size; y++) {
-    if (shape === BRUSH_SHAPE.circle && Math.hypot(x - center, y - center) > size / 2) continue;
+    if (shape === BRUSH_SHAPE.circle && Math.hypot(x - center, y - center) > size / 2 - 0.25) continue;
     cells.push({ x: x - offset, y: y - offset });
   }
   return cells;

@@ -60,11 +60,13 @@ test("round footprint and optional preview match painting; smoothing trails and 
   pointer("pointermove", 10, 10, 0);
   const footprint = document.querySelector<HTMLElement>(".brush-footprint");
   await expect.poll(() => footprint?.querySelector("path")?.getAttribute("d")?.match(/M/g)?.length).toBe(21);
+  act(() => { useBrushStore.setState({ size: 3 }); });
+  await expect.poll(() => footprint?.querySelector("path")?.getAttribute("d")?.match(/M/g)?.length).toBe(5);
   await page.getByRole("button", { name: "Placement preview", exact: true }).click();
   await expect.poll(() => footprint?.hidden).toBe(true);
   act(() => { pointer("pointerdown", 10, 10); pointer("pointerup", 10, 10, 0); });
-  expect(view.tileAt(8, 8).block).toBeUndefined();
-  expect(view.tileAt(8, 10).block).toEqual({ kind: "vanilla", id: 1 });
+  expect(view.tileAt(9, 9).block).toBeUndefined();
+  expect(view.tileAt(9, 10).block).toEqual({ kind: "vanilla", id: 1 });
   await page.getByRole("button", { name: "Undo", exact: true }).click();
   const smoothing = page.getByRole("slider", { name: "Brush smoothing", exact: true }).element();
   act(() => {
