@@ -256,10 +256,12 @@ describe("variants", () => {
 });
 
 describe("types framed by position", () => {
-  test("large-frame and grass-like types take the database's cells at all 24 positions", () => {
-    const positional = data.blockTypes.filter((type) => block(type).byPosition !== undefined);
-    expect(positional.length).toBeGreaterThanOrEqual(24);
-    for (const type of positional) {
+  const positional = (): number[] => data.blockTypes.filter((type) => block(type).byPosition !== undefined);
+
+  /** Every neighbourhood of air and itself of `types` at all 24 positions against the database; returns the count. */
+  function checkPositions(types: readonly number[]): number {
+    let checked = 0;
+    for (const type of types) {
       const byPosition = block(type).byPosition ?? [];
       for (let b = 0; b < 4; b++) {
         for (let a = 0; a < 6; a++) {
@@ -273,12 +275,29 @@ describe("types framed by position", () => {
             if (digits.includes(2)) continue;
             const expected = tableCell(table, code);
             if (expected === null) continue;
-            expect(asTuple(frameDigits(type, -1, digits, x, y)), `${String(type)} at ${String(a)},${String(b)}`)
-              .toEqual(expected);
+            const actual = asTuple(frameDigits(type, -1, digits, x, y));
+            // expect() only on a mismatch: it costs more than framing the tile.
+            if (actual?.[0] !== expected[0] || actual[1] !== expected[1]) {
+              expect(actual, `${String(type)} at ${String(a)},${String(b)}`).toEqual(expected);
+            }
+            checked++;
           }
         }
       }
     }
+    return checked;
+  }
+
+  test("large-frame and grass-like types take the database's cells at all 24 positions", { tags: ["perf"], timeout: 120_000 }, () => {
+    const types = positional();
+    expect(types.length).toBeGreaterThanOrEqual(24);
+    expect(checkPositions(types)).toBeGreaterThan(types.length * 24 * 200);
+  });
+
+  test("a 3 × 4 and a 2 × 2 large-frame type and grass at all 24 positions (all types: tagged perf)", () => {
+    const types = [273, 409, 2];
+    expect(types.every((type) => positional().includes(type))).toBe(true);
+    expect(checkPositions(types)).toBeGreaterThan(types.length * 24 * 200);
   });
 });
 
