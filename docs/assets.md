@@ -490,11 +490,50 @@ the centre (that side can only be `d` or `x`, because `n` sees the centre as its
 fallback removed the rim. Without the check the centre would draw an open edge against an outline (example 14).
 Examples 8 and 14 show both sides of it (G, R).
 
-**Inputs beyond 3 × 3.** Every tile that is **not** a partner type takes its cell from its 3 × 3. A partner type (dirt,
-ash, snow, …) additionally needs **one bit per relative edge neighbour**: whether that neighbour's cell keeps its rim.
-Implementations frame in **two passes**: first all non-partner tiles from their 3 × 3, then partner tiles from their
-3 × 3 plus those bits. An edit invalidates a 5 × 5 area around the changed tile. R: framing in two passes, in one
-pass and with the game's own range framing gives identical cells.
+**Inputs beyond 3 × 3.** A tile without relatives takes its cell from its 3 × 3. A tile with relatives (dirt beside
+stone, …) additionally needs **one bit per relative edge neighbour**: whether that neighbour's cell keeps its rim.
+Relatives chain (below: up to five steps, dirt → sand → hardened sand → sandstone → desert fossil → 407), so
+implementations frame in **passes by depth**: a type of depth 0 has no relatives, a type of depth `k` frames after its
+relatives, all of depth below `k`. Stone and the ores have depth 0; dirt has depth 5, because sand is one of its
+relatives. What a tile actually reads is the chain present around it: dirt beside stone needs one step (two passes),
+dirt beside sand beside hardened sand needs more. A tile whose chain around it is `k` steps long depends on the tiles up
+to `k + 1` away. An edit therefore changes cells up to `d + 1` tiles around it, where `d` is the deepest depth
+(`BlockFraming.depth`; dirt has 5 because of sand) among the types within 6 tiles of the edit, before and after it.
+Re-framing 13 × 13 tiles costs microseconds, so an editor should simply always invalidate 13 × 13. R:
+framing in two passes, in one pass and with the game's own range framing gives identical cells (for the observed
+pairs).
+
+**Implementation (`frameBlock`, `packages/renderer/src/framing/frame-block.ts`).** The letters come from the
+database, never from a list of types:
+
+- A type **follows the block layout** when its table alone equals the steps above (275 types, among them sand and
+  the other falling types wherever they stand). Grass, moss, gemspark and the 3 × 4 large-frame blocks do not: they
+  read their cells from the database's tables directly. Position-framed types read the table of their position
+  `(x mod 6, y mod 4)` in neighbourhoods of air and themselves.
+- A pair table is **like itself**, **like air** or **partner** when it equals the steps with that letter wherever the
+  game kept the neighbourhood (the extra tables of the falling types differ only where a tile fell). It is a
+  **relative** when the other type sees the centre as its partner and the table connects at corners like itself.
+  Any other pair table is looked up directly. Mud beside dirt is one: mud connects to dirt at every edge, even where
+  dirt's own cell lost its rim, and draws notches toward dirt in its corners, so it follows no letter.
+- **Passes.** The region helper frames each type in the pass after its relatives ("Inputs beyond 3 × 3"), by the
+  types' depth (not the chain present, which would need a search per tile): it frames the tiles up to `k` around the
+  region for the deepest type `k` in it (5 for any region with dirt) and reads one more ring. Every tile is framed
+  once; the passes only re-scan the types.
+- Neighbours that are not self-framed blocks (furniture, platforms, modded or unknown content) count as absent, but
+  they hold up a falling block above them. In a neighbourhood of three or more types, a centre that reads a table
+  directly takes its first neighbour of a table-read type as the other type (else its first partner or relative),
+  reads relatives as itself and every other partner or table-read neighbour as that type: the database tabulates
+  pairs only.
+- For grass, gemspark and the large-frame blocks the database records, in about 230 neighbourhoods **without** the
+  other type, other cells in their pair tables than in their tables alone: the game's result there depends on more
+  than the 3 × 3. `frameBlock` uses the table alone for them.
+- `frameBlock` returns no cell for a falling block with nothing below it (the database's unstable neighbourhoods).
+- A centre that reads a table still applies the edge check to a relative that is not the table's other type: its
+  edge connects only where the relative keeps its rim (mud beside chlorophyte and one of its table types, dirt or
+  668, meets this case).
+- `frameRegion` writes one `Uint16` per tile, the packed cell `column · 64 + row` or `NO_CELL` (0xFFFF), column-major
+  like the CWM planes, so a renderer can keep it as a per-chunk plane. It frames about 120–160 ns per tile in Node
+  (1024 × 1024 mixed terrain), with no per-tile allocations.
 
 ### Variant
 

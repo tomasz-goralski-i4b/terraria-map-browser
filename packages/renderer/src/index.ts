@@ -24,3 +24,7 @@ export type {
   BlockFramingData, BlockRelation, Cell, FramingDatabase, FramingDatabaseData, WallFramingData,
 } from "./framing/framing-database.js";
 export { terrariaFramingData } from "./framing/terraria-framing.generated.js";
+export { NOT_VANILLA, NO_CELL, createBlockFraming } from "./framing/frame-block.js";
+export type {
+  BlockFraming, BlockFramingInput, BlockKind, BlockRegion, SheetCell,
+} from "./framing/frame-block.js";
