@@ -25,16 +25,16 @@ describe("screen ↔ tile conversion", () => {
 });
 
 describe("zoom", () => {
-  test.each([[0.01, MIN_ZOOM], [100, MAX_ZOOM], [2, 2]])("clampZoom(%f) = %f", (input, expected) => {
+  test.each([[0.01, MIN_ZOOM], [1000, MAX_ZOOM], [2, 2]])("clampZoom(%f) = %f", (input, expected) => {
     expect(clampZoom(input)).toBe(expected);
   });
 
-  test("the limits are 1/8 and 64 pixels per tile", () => {
+  test("the limits are 1/8 and 256 pixels per tile", () => {
     expect(MIN_ZOOM).toBe(0.125);
-    expect(MAX_ZOOM).toBe(64);
+    expect(MAX_ZOOM).toBe(256);
   });
 
-  test.each([[2, 300, 200], [8, 0, 0], [0.5, 799, 599], [16, 400, 300], [64, 123, 456]])(
+  test.each([[2, 300, 200], [8, 0, 0], [0.5, 799, 599], [16, 400, 300], [64, 123, 456], [256, 10, 20]])(
     "zoomAt(%f) at pointer (%i, %i) keeps the tile under the pointer fixed",
     (zoom, sx, sy) => {
       const camera: Camera = { x: 3000, y: 1000, zoom: 1 };

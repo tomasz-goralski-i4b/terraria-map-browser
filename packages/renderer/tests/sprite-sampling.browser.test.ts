@@ -144,8 +144,9 @@ describe("sprite sampling by zoom", () => {
 });
 
 describe("the closest zoom", () => {
-  test(`at ${String(MAX_ZOOM)} px per tile a sprite pixel covers exactly 4 × 4 screen pixels`, () => {
-    expect(MAX_ZOOM).toBe(64);
+  test(`at ${String(MAX_ZOOM)} px per tile a sprite pixel covers exactly 16 × 16 screen pixels`, () => {
+    expect(MAX_ZOOM).toBe(256);
+    const scale = MAX_ZOOM / 16;
     const world = chestWorld(2, 1, [[0, 0, 0], [1, 0, 18]]);
     const layers: ChunkLayers = { background: false, walls: false, blocks: true, liquids: false };
     const { canvas, renderer } = makeRenderer(2 * MAX_ZOOM, MAX_ZOOM);
@@ -156,15 +157,16 @@ describe("the closest zoom", () => {
     renderer.setCamera({ x: 0, y: 0, zoom: MAX_ZOOM });
     renderer.render();
     const out = readCanvas(canvas);
+    // Nearest sampling: screen pixel (x, y) shows sprite pixel (x / 16, y / 16) of the tile's cell, nothing blended.
+    const expected = new Uint8Array(out.length);
     for (let y = 0; y < MAX_ZOOM; y++) {
       for (let x = 0; x < 2 * MAX_ZOOM; x++) {
-        // Nearest sampling: screen pixel (x, y) shows sprite pixel (x / 4, y / 4) of the tile's cell, nothing blended.
-        const column = (x < MAX_ZOOM ? 0 : 18) + Math.floor((x % MAX_ZOOM) / 4);
-        const at = (y * 2 * MAX_ZOOM + x) * 4;
-        expect([out[at], out[at + 1], out[at + 2], out[at + 3]], `(${String(x)}, ${String(y)})`)
-          .toEqual([(column * 7) % 256, 100 + Math.floor(y / 4), 50, 255]);
+        const column = (x < MAX_ZOOM ? 0 : 18) + Math.floor((x % MAX_ZOOM) / scale);
+        expected.set([(column * 7) % 256, 100 + Math.floor(y / scale), 50, 255], (y * 2 * MAX_ZOOM + x) * 4);
       }
     }
+    // One comparison of the whole canvas: 131 072 per-pixel assertions would dominate the suite's run time.
+    expect(out).toEqual(expected);
   });
 });
 

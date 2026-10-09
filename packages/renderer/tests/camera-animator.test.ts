@@ -320,8 +320,8 @@ test("dragging during a glide stops the zoom where it is drawn, without a leftov
   expect(advance(100).camera).toEqual(dragged.camera);
 });
 
-test("wheel and pinch stay at the 64 px per tile limit without overshooting it", () => {
-  const near: Camera = { ...initial, zoom: 48 };
+test("wheel and pinch stay at the zoom limit without overshooting it", () => {
+  const near: Camera = { ...initial, zoom: MAX_ZOOM * 0.75 };
   const cursor = { x: 123, y: 456 };
   const tile = screenToTile(near, cursor.x, cursor.y);
   const burst = Array.from({ length: 12 }, (_, notch) => ({ time: notch * 20, factor: Math.exp(NOTCH) }));
