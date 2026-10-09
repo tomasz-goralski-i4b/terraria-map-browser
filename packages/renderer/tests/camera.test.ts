@@ -29,12 +29,12 @@ describe("zoom", () => {
     expect(clampZoom(input)).toBe(expected);
   });
 
-  test("the limits are 1/8 and 16 pixels per tile", () => {
+  test("the limits are 1/8 and 64 pixels per tile", () => {
     expect(MIN_ZOOM).toBe(0.125);
-    expect(MAX_ZOOM).toBe(16);
+    expect(MAX_ZOOM).toBe(64);
   });
 
-  test.each([[2, 300, 200], [8, 0, 0], [0.5, 799, 599], [16, 400, 300]])(
+  test.each([[2, 300, 200], [8, 0, 0], [0.5, 799, 599], [16, 400, 300], [64, 123, 456]])(
     "zoomAt(%f) at pointer (%i, %i) keeps the tile under the pointer fixed",
     (zoom, sx, sy) => {
       const camera: Camera = { x: 3000, y: 1000, zoom: 1 };
@@ -50,6 +50,7 @@ describe("zoom", () => {
   test("zoomAt clamps the requested zoom", () => {
     const camera: Camera = { x: 3000, y: 1000, zoom: 1 };
     expect(zoomAt(camera, 1000, 400, 300, viewport, world).zoom).toBe(MAX_ZOOM);
+    expect(zoomAt({ ...camera, zoom: MAX_ZOOM }, 2 * MAX_ZOOM, 400, 300, viewport, world)).toEqual({ ...camera, zoom: MAX_ZOOM });
     expect(zoomAt(camera, 0.0001, 400, 300, viewport, world).zoom).toBe(viewport.width / world.width);
   });
 });

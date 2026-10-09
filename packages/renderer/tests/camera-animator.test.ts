@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 import { CameraAnimator, wheelPixels } from "../src/camera/animator.js";
-import { clampCamera, screenToTile } from "../src/camera/camera.js";
-import type { Camera } from "../src/camera/camera.js";
+import { MAX_ZOOM, clampCamera, fitWorld, screenToTile, tileToScreen } from "../src/camera/camera.js";
+import type { Camera, Size } from "../src/camera/camera.js";
 
 const world = { width: 8400, height: 2400 };
 const viewport = { width: 800, height: 600 };
@@ -188,4 +188,178 @@ test("held-key pan during eased zoom preserves the zoom target until settled", (
   animator.keyPan(0, 0);
   expect(advance(2000)).toEqual({ camera: animator.target, settled: true });
   expect(animator.current.zoom).toBe(2);
+});
+
+/**
+ * Milliseconds between the 162 wheel events of the Chrome trace behind #231 (CMCR1, a mouse wheel turned in and out
+ * irregularly): p10 33 ms, p50 83 ms, p90 250 ms.
+ */
+const TRACE_GAPS = [
+  51.2, 183.3, 133.2, 233.2, 600.4, 166.3, 99.9, 150.1, 100.1, 66.5, 83.4, 170.8, 112.8, 66.5, 66.5, 33.4, 83.4, 50,
+  66.6, 16.8, 16.8, 266.5, 83.7, 83.2, 55.3, 44.9, 83.6, 832.9, 66.2, 133.3, 116.7, 166.6, 33.3, 16.7, 50.1, 66.7,
+  33.2, 100, 250.1, 16.6, 350, 83.3, 133.4, 66.6, 67, 149.8, 83.3, 83.3, 1133.3, 50, 33.4, 83.4, 100, 66.6, 100.1,
+  283.3, 117, 83.2, 66.5, 100, 100, 66.7, 83.4, 266.7, 50.2, 49.8, 50, 49.8, 100.1, 100, 116.7, 66.6, 416.8, 50,
+  416.6, 183.4, 116.7, 83.3, 100, 100.1, 116.7, 350, 33.3, 100, 183.3, 116.8, 83.2, 66.7, 133.4, 83.3, 116.8, 49.9,
+  283.3, 66.8, 216.8, 83, 166.7, 116.8, 133.3, 66.8, 49.9, 300, 49.9, 83.4, 66.7, 66.9, 83.4, 66.5, 83.3, 133.4,
+  16.5, 666.7, 33.4, 249.9, 133.3, 33.4, 50, 150.1, 467, 33.4, 83.1, 83.2, 50.2, 83.4, 83.1, 100.1, 400.1, 33.1,
+  33.3, 50, 83.5, 83.3, 66.7, 66.5, 66.7, 66.7, 100, 216.7, 33.2, 50, 33.4, 50, 50, 49.9, 33.3, 50.1, 83.4, 400,
+  33.5, 83.2, 66.6, 50, 50.1, 133.3, 16.6, 16.8, 33.2, 50, 50.1, 33.2, 66.7,
+];
+/** One wheel notch (100 px at the map's 0.0015 per pixel) in log-zoom. */
+const NOTCH = 0.15;
+const FRAME_MS = 1000 / 60;
+
+interface Notch { readonly time: number; readonly factor: number }
+
+/** The trace's notches; the direction flips after every pause longer than 300 ms, so the zoom stays in range. */
+function traceNotches(): Notch[] {
+  const notches: Notch[] = [{ time: 0, factor: Math.exp(NOTCH) }];
+  let time = 0;
+  let direction = 1;
+  for (const gap of TRACE_GAPS) {
+    time += gap;
+    if (gap > 300) direction = -direction;
+    notches.push({ time, factor: Math.exp(direction * NOTCH) });
+  }
+  return notches;
+}
+
+interface ReplayFrame { readonly time: number; readonly camera: Camera; readonly target: Camera; readonly settled: boolean }
+
+/** Wheel notches at a still cursor, delivered at their own times and drawn by 60 Hz frames until `until` ms. */
+function replay(camera: Camera, size: Size, bounds: Size, cursor: { x: number; y: number }, notches: readonly Notch[], until: number) {
+  let time = 0;
+  const animator = new CameraAnimator(camera, size, bounds, () => time);
+  const frames: ReplayFrame[] = [];
+  let next = 0;
+  for (let frame = 1; frame * FRAME_MS <= until; frame++) {
+    const at = frame * FRAME_MS;
+    for (let notch = notches[next]; notch !== undefined && notch.time <= at; notch = notches[++next]) {
+      time = notch.time;
+      animator.zoom(notch.factor, cursor.x, cursor.y);
+    }
+    time = at;
+    const { camera: drawn, settled } = animator.step();
+    frames.push({ time, camera: drawn, target: animator.target, settled });
+  }
+  return { animator, frames };
+}
+
+test("replayed irregular wheel input zooms smoothly, keeps up with the wheel and settles soon after it", () => {
+  const notches = traceNotches();
+  const last = notches.at(-1)?.time ?? 0;
+  const bounds = { width: 100_000, height: 100_000 };
+  const start: Camera = { x: 50_000, y: 50_000, zoom: 2 };
+  const cursor = { x: 300, y: 200 };
+  const { frames } = replay(start, viewport, bounds, cursor, notches, last + 400);
+  const tile = screenToTile(start, cursor.x, cursor.y);
+  const speeds: number[] = [];
+  let previous = start.zoom;
+  let lag = 0;
+  let during = 0;
+  for (const { time, camera, target } of frames) {
+    speeds.push(Math.log(camera.zoom / previous));
+    previous = camera.zoom;
+    if (time <= last) {
+      lag += Math.abs(Math.log(target.zoom / camera.zoom)) / NOTCH;
+      during++;
+    }
+    // The tile under the still cursor stays under it through every notch.
+    const under = screenToTile(camera, cursor.x, cursor.y);
+    expect(under.x).toBeCloseTo(tile.x, 6);
+    expect(under.y).toBeCloseTo(tile.y, 6);
+  }
+  let jerk = 0;
+  for (let frame = 1; frame < speeds.length; frame++) jerk += Math.abs((speeds[frame] ?? 0) - (speeds[frame - 1] ?? 0));
+  const end = frames.at(-1);
+  // Mean frame-to-frame change of the zoom speed (the old per-notch glide: 0.0118).
+  expect(jerk / (speeds.length - 1)).toBeLessThanOrEqual(0.003);
+  expect(Math.max(...speeds.map((speed) => Math.exp(Math.abs(speed)) - 1))).toBeLessThanOrEqual(0.1);
+  expect(lag / during).toBeLessThanOrEqual(1);
+  // Within 400 ms of the last notch the zoom is within 0.1 % of the target.
+  expect(Math.abs(Math.log((end?.camera.zoom ?? 0) / (end?.target.zoom ?? 1)))).toBeLessThanOrEqual(1e-3);
+});
+
+test("a glide arrives at the target exactly and stops requesting frames", () => {
+  const notches = traceNotches().slice(0, 5);
+  const { animator, frames } = replay(initial, viewport, world, { x: 300, y: 200 }, notches, 2000);
+  expect(frames.at(-1)?.settled).toBe(true);
+  expect(animator.current).toEqual(animator.target);
+});
+
+test("a notch from rest starts the zoom gently instead of jumping", () => {
+  const { animator, advance } = motion();
+  animator.zoom(Math.exp(NOTCH), 400, 300);
+  const first = Math.log(advance(FRAME_MS).camera.zoom / initial.zoom);
+  const second = Math.log(advance(FRAME_MS).camera.zoom / initial.zoom);
+  const third = Math.log(advance(FRAME_MS).camera.zoom / initial.zoom) - second;
+  expect(first).toBeGreaterThan(0);
+  // The speed builds up over the first frames (the glide has a velocity) instead of peaking in the first one.
+  expect(third).toBeGreaterThan(first);
+});
+
+test("an idle animator does not count the time before a notch as glide time", () => {
+  const { animator, advance, elapse } = motion();
+  elapse(5000);
+  animator.zoom(Math.exp(NOTCH), 400, 300);
+  const step = advance(FRAME_MS);
+  expect(step.settled).toBe(false);
+  expect(Math.log(step.camera.zoom / initial.zoom)).toBeLessThan(NOTCH / 4);
+});
+
+test("dragging during a glide stops the zoom where it is drawn, without a leftover velocity", () => {
+  const { animator, advance } = motion();
+  animator.zoom(4, 400, 300);
+  advance(50);
+  animator.beginDrag();
+  animator.drag(-10, 0);
+  const dragged = advance(16);
+  expect(dragged.settled).toBe(true);
+  expect(advance(100).camera).toEqual(dragged.camera);
+});
+
+test("wheel and pinch stay at the 64 px per tile limit without overshooting it", () => {
+  const near: Camera = { ...initial, zoom: 48 };
+  const cursor = { x: 123, y: 456 };
+  const tile = screenToTile(near, cursor.x, cursor.y);
+  const burst = Array.from({ length: 12 }, (_, notch) => ({ time: notch * 20, factor: Math.exp(NOTCH) }));
+  const { animator, frames } = replay(near, viewport, world, cursor, burst, 1500);
+  let previous = near.zoom;
+  for (const { camera } of frames) {
+    expect(camera.zoom).toBeLessThanOrEqual(MAX_ZOOM);
+    expect(camera.zoom).toBeGreaterThanOrEqual(previous);
+    previous = camera.zoom;
+    const under = screenToTile(camera, cursor.x, cursor.y);
+    expect(under.x).toBeCloseTo(tile.x, 6);
+    expect(under.y).toBeCloseTo(tile.y, 6);
+  }
+  expect(frames.at(-1)?.settled).toBe(true);
+  expect(animator.current.zoom).toBe(MAX_ZOOM);
+  const resting = animator.current;
+  animator.zoom(Math.exp(NOTCH), cursor.x, cursor.y);
+  expect(animator.step()).toEqual({ camera: resting, settled: true });
+  animator.zoom(1.5, cursor.x, cursor.y, true);
+  expect(animator.step()).toEqual({ camera: resting, settled: true });
+});
+
+test("zooming in from fit-world moves the camera continuously when the world outgrows the viewport", () => {
+  const size = { width: 3385, height: 1041 };
+  const bounds = { width: 16400, height: 4800 };
+  const fitted = fitWorld(size, bounds);
+  // At fit-world the world is shorter than the viewport; the first notches make it fill the viewport vertically.
+  expect(bounds.height * fitted.zoom).toBeLessThan(size.height);
+  const notches = traceNotches().slice(5, 28).map((notch) => ({ time: notch.time - 1000, factor: Math.exp(NOTCH) }));
+  for (const cursor of [{ x: 3000, y: 150 }, { x: 200, y: 1000 }, { x: 1692, y: 520 }]) {
+    const { frames } = replay(fitted, size, bounds, cursor, notches, 3500);
+    let before = fitted;
+    for (const { camera } of frames) {
+      // A zoom by factor f moves no point of the viewport further than its size × |f − 1|; more is a jump.
+      const tile = screenToTile(before, cursor.x, cursor.y);
+      const moved = tileToScreen(camera, tile.x, tile.y);
+      const allowed = Math.max(size.width, size.height) * Math.abs(camera.zoom / before.zoom - 1) + 1e-6;
+      expect(Math.hypot(moved.x - cursor.x, moved.y - cursor.y)).toBeLessThanOrEqual(allowed);
+      before = camera;
+    }
+    expect(before.zoom).toBeGreaterThan(size.height / bounds.height);
+  }
 });
