@@ -126,6 +126,14 @@ test("the Inspector names the frame-selected altar and its paint", async () => {
   expect(rows()).toContainEqual(["Block paint", "Deep Cyan Paint"]);
 });
 
+test("the Inspector names a natural jungle wall instead of its runtime key", async () => {
+  const world = createWorld(4, 3);
+  world.setTile(2, 1, { wall: { kind: "vanilla", id: 64 }, wires: 0, actuator: false });
+  await render(<InspectorPanel world={inspectorWorld(world)} />);
+  useViewStore.getState().setPinnedTile({ x: 2, y: 1 });
+  await expect.poll(rows).toContainEqual(["Wall", "Natural Jungle Wall"]);
+});
+
 test("a tile of a chest also shows the chest, whose slots open over the map as a grid or a list", async () => {
   const world = createWorld(4, 3);
   for (const [x, y] of [[1, 0], [2, 0], [1, 1], [2, 1]] as const) world.setTile(x, y, { block: { kind: "vanilla", id: 21 }, frameX: 36, frameY: 0, wires: 0, actuator: false });

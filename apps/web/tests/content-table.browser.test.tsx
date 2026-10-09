@@ -113,6 +113,19 @@ test("vegetation is named and searchable by name, hidden key and kind", async ()
   }
 });
 
+test("natural jungle walls are named and searchable by name, hidden key and kind", async () => {
+  const jungle: ContentWorld = {
+    planes: { block: new Uint16Array(1).fill(NONE), wall: Uint16Array.from([0]), liquid: new Uint8Array(1) },
+    palette: [{ kind: "vanilla", id: 64 }],
+  };
+  await render(<ContentPanel world={jungle} />);
+  expect(headers()).not.toContain("ID");
+  for (const query of ["Jungle", "vanilla:64", "wall"]) {
+    await page.getByRole("searchbox", { name: "Filter Content" }).fill(query);
+    await expect.poll(() => bodyRows().map((row) => row[0])).toEqual(["Natural Jungle Wall"]);
+  }
+});
+
 test("kind text finds modded walls even when their internal name has no wall suffix", async () => {
   const moddedWorld: ContentWorld = {
     planes: {

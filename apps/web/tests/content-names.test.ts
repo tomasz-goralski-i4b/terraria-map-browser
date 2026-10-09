@@ -42,6 +42,11 @@ test("every shipped vanilla block has a name while unknown and modded content ke
 });
 
 test("wall names use option zero independently of the block's frame", () => {
+  expect(contentName({ kind: "vanilla", id: 64 }, "wall")).toBe("Natural Jungle Wall");
+  expect(describeTile({ block: { kind: "vanilla", id: 2 }, wall: { kind: "vanilla", id: 64 }, wires: 0, actuator: false })).toBe("Grass · Natural Jungle Wall");
+  for (let id = 0; id < terrariaMapNames.walls.length; id++) {
+    expect(contentName({ kind: "vanilla", id }, "wall"), `wall ${String(id)}`).not.toBe(`vanilla:${String(id)}`);
+  }
   expect(contentName({ kind: "vanilla", id: 1 }, "wall")).toBe("Stone Wall");
   expect(describeTile({
     block: { kind: "vanilla", id: 26 }, frameX: 54, frameY: 18,

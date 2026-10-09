@@ -54,7 +54,11 @@ test("exports every map option of each content ID as a TypeScript module", { ski
         { symbols: ["Grass"], mapOptionCount: 1, nameSources: ["symbol"] },
         { symbols: ["Plants"], mapOptionCount: 0, nameSources: ["symbol"] },
       ],
-      walls: [[], ["Stone Wall", "Aether \"Crystal\"\nWall"]],
+      walls: [["None"], ["Stone Wall", "Aether \"Crystal\"\nWall"]],
+      wallMetadata: [
+        { symbols: ["None"], mapOptionCount: 0, nameSources: ["symbol"] },
+        { symbols: ["Stone"], mapOptionCount: 2, nameSources: ["placement", "legend"] },
+      ],
       liquids: ["Water", "Lava", "Honey", "Shimmer"],
       paints: ["", "Red Paint", "Blue Paint"],
     });
@@ -64,6 +68,23 @@ test("exports every map option of each content ID as a TypeScript module", { ski
     assert.match(coverage, /Named block IDs: 4\/4/);
   });
 });
+
+for (const [scenario, expected] of [
+  ["natural-wall", ["Natural Jungle Wall"]],
+  ["missing-wall-symbols", []],
+  ["ambiguous-wall-symbols", []],
+]) {
+  test(`wall naming handles ${scenario} while retaining exact existing option labels`, { skip: !available && "PowerShell is not installed" }, async () => {
+    await withTempDirectory(async (directory) => {
+      const result = runPowerShell("scripts/map-palette/fixture-export.ps1", ["-Directory", directory, "-Scenario", scenario]);
+      assert.equal(result.status, 0, result.stderr);
+      const names = (await import(pathToFileURL(join(directory, "synthetic-map-palette.ts")).href)).terrariaMapNames;
+      assert.deepEqual(names.walls[0], expected);
+      assert.deepEqual(names.walls[1], ["Stone Wall", "Aether \"Crystal\"\nWall"]);
+      assert.equal(names.wallMetadata[0].mapOptionCount, 0);
+    });
+  });
+}
 
 for (const [scenario, expected, symbols] of [
   ["missing-symbols", [[""], []], [[], []]],
@@ -117,6 +138,8 @@ test("exports the palette of a local Terraria installation", {
     assert.ok(names.tiles.every((options) => options[0]?.length > 0));
     assert.equal(names.walls[1][0], "Stone Wall");
     assert.equal(names.walls[2][0], "Natural Dirt Wall");
+    assert.equal(names.walls[64][0], "Natural Jungle Wall");
+    assert.ok(names.walls.every((options) => options[0]?.length > 0));
     assert.deepEqual(names.tiles[26], ["Demon Altar", "Crimson Altar"]);
     assert.deepEqual(names.liquids, ["Water", "Lava", "Honey", "Shimmer"]);
     assert.equal(names.paints[19], "Deep Cyan Paint");
@@ -125,6 +148,7 @@ test("exports the palette of a local Terraria installation", {
     assert.equal(names.paints.length, palette.paints.length);
     assert.deepEqual(names.tiles.map((options) => options.length), palette.tiles.map((options) => Math.max(1, options.length)));
     assert.deepEqual(names.tileMetadata.map((entry) => entry.mapOptionCount), palette.tiles.map((options) => options.length));
-    assert.deepEqual(names.walls.map((options) => options.length), palette.walls.map((options) => options.length));
+    assert.deepEqual(names.walls.map((options) => options.length), palette.walls.map((options) => Math.max(1, options.length)));
+    assert.deepEqual(names.wallMetadata.map((entry) => entry.mapOptionCount), palette.walls.map((options) => options.length));
   });
 });

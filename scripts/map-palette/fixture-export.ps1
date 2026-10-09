@@ -50,6 +50,7 @@ namespace Terraria {
     }
 }
 namespace Terraria.ID {
+    public static class WallID { public const ushort Count = 2; public const ushort None = 0; public const ushort Stone = 1; }
     public static class TileID { public const ushort Count = 4; public const ushort Dirt = 0; public const ushort DemonAltar = 1; public const ushort Grass = 2; public const ushort Plants = 3; }
     public static class ItemID { public const int Count = 31; }
     public static class PaintID { public const byte None = 0; public const byte RedPaint = 1; public const byte BluePaint = 2; }
@@ -127,5 +128,8 @@ if ($Scenario -eq 'item-failure') { $source = $source.Replace('Name = "";', 'if 
 if ($Scenario -eq 'missing-symbols') { $source = $source.Replace('class TileID ', 'class BlockIdentifiers ') }
 if ($Scenario -eq 'ambiguous-symbols') { $source = $source.Replace('public const ushort Grass = 2;', 'public const ushort Grass = 2; public const ushort MeadowGrass = 2;') }
 if ($Scenario -eq 'symbol-casing') { $source = $source.Replace('public const ushort Grass = 2;', 'public const ushort HallowedPlants2 = 2;').Replace('public const ushort Plants = 3;', 'public const ushort UFOAnchor = 3;') }
+if ($Scenario -eq 'natural-wall') { $source = $source.Replace('public const ushort None = 0;', 'public const ushort JungleUnsafe = 0;') }
+if ($Scenario -eq 'missing-wall-symbols') { $source = $source.Replace('class WallID ', 'class WallIdentifiers ') }
+if ($Scenario -eq 'ambiguous-wall-symbols') { $source = $source.Replace('public const ushort None = 0;', 'public const ushort JungleUnsafe = 0; public const ushort FlowerUnsafe = 0;') }
 Add-Type -TypeDefinition $source -OutputAssembly $assemblyPath
 & (Join-Path $PSScriptRoot 'export.ps1') -TerrariaAssembly $assemblyPath -OutputPath (Join-Path $Directory 'synthetic-map-palette.ts') -CoveragePath (Join-Path $Directory 'name-coverage.md')
