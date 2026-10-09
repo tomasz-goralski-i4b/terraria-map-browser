@@ -70,7 +70,8 @@ test.each([269, 270, 271, 272, 273, 274, 275, 276, 277, 278, 279, 315, 316, 317,
     expect(restored.header).toEqual(world.header);
     expect(restored.metadata).toEqual(world.metadata);
     expect(restored.details).toEqual(world.details);
-    expect(restored.entities).toEqual(world.entities);
+    expect(Object.values(restored.entities).map((section) => section.data)).toEqual(Object.values(world.entities).map((section) => section.data));
+    expect(restored.envelope.opaqueSections.map(({ name, bytes }) => ({ name, bytes }))).toEqual(world.envelope.opaqueSections.map(({ name, bytes }) => ({ name, bytes })));
     expect(restored.planes).toEqual(world.planes);
     expect(restored.palette).toEqual(world.palette);
     expect(world).toEqual(before);
