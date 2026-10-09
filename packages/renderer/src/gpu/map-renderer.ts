@@ -14,7 +14,7 @@ import { backgroundColor, contentColor, liquidColors } from "../palette/map-pale
 import type { MapPalette } from "../palette/map-palette.js";
 import {
   CELLS_INSTANCE_BIT, LAYER_ATTRIBUTE, PAGE_APRON, PLANES_16, PLANES_8, PLANE_COUNT_16, PLANE_COUNT_8, PRESENT, RECT_ATTRIBUTE,
-  RULE_HEADER_ROWS, RULE_ROW, SPRITE_MIN_ZOOM, SPRITE_SHEET_ROW, SPRITE_STATE, chunkFragmentSource, chunkVertexSource, overviewBuildFragmentSource,
+  RULE_HEADER_ROWS, RULE_ROW, SPRITE_MIN_ZOOM, SPRITE_SHEET_ROW, spriteSampling, SPRITE_STATE, chunkFragmentSource, chunkVertexSource, overviewBuildFragmentSource,
   overviewBuildVertexSource, overviewFragmentSource, overviewVertexSource,
 } from "./shaders.js";
 
@@ -206,6 +206,7 @@ const SPRITE_SHEET_WIDTH = SPRITE_SHEET_ROW * 2;
 const TILE_UNIFORMS = [
   "uPlanes16", "uPlanes8", "uPresent", "uPalette", "uBackground", "uRules", "uPaintRow", "uPaintCount", "uPaletteLength",
   "uLayers", "uLiquids", "uWireColors", "uWireBits", "uWireAlpha", "uAtlas", "uSpriteSheets", "uSprites",
+  "uSpriteSamples", "uSpriteStep", "uSpriteWeight",
 ] as const;
 const CHUNK_UNIFORMS = [...TILE_UNIFORMS, "uCamera", "uZoom", "uViewport", "uFilter", "uStep", "uWorldSize"] as const;
 const BUILD_UNIFORMS = [...TILE_UNIFORMS, "uFactor", "uTarget"] as const;
@@ -855,6 +856,10 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     gl.uniform1i(uniforms.uAtlas, UNIT_ATLAS);
     gl.uniform1i(uniforms.uSpriteSheets, UNIT_SPRITE_SHEETS);
     gl.uniform1i(uniforms.uSprites, sprites ? 1 : 0);
+    const sampling = spriteSampling(camera.zoom);
+    gl.uniform1i(uniforms.uSpriteSamples, sampling.samples);
+    gl.uniform1f(uniforms.uSpriteStep, sampling.step);
+    gl.uniform1i(uniforms.uSpriteWeight, sampling.weight);
   };
 
   /**

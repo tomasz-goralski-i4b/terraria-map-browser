@@ -103,10 +103,21 @@ exactly the pixels `filterTiles` (below) makes of them. The browser tests assert
   branches are deferred, docs/assets.md) keep their map colour. A missing block with a stored frame is drawn as a
   generated missing-texture checkerboard (`MISSING_SPRITE_COLORS`, magenta and black, 2 × 2 squares per tile; not a
   game asset), so content without a sprite stands out; the web app lists it under the Sprites row. `setSpriteMode(true)` makes the chunk pass, from
-  `SPRITE_MIN_ZOOM` (8) pixels per tile, draw a block that has a stored frame (`frameX`, `frameY` ≥ 0: frame-important
+  `SPRITE_MIN_ZOOM` (5) pixels per tile, draw a block that has a stored frame (`frameX`, `frameY` ≥ 0: frame-important
   tiles; the codec stores −1 for the others) and a sheet from that sheet: sprite pixel `sub` (0–15 per axis) of the tile
   reads sheet pixel `frame + sub × cell / 16`, so a cell larger than 16 × 16 is scaled into the tile (the game's exact
-  draw offsets are deferred, docs/assets.md). Transparent sprite pixels show the wall, else the background, behind
+  draw offsets are deferred, docs/assets.md).
+  - **Zoom (#146).** Sprites start at `SPRITE_MIN_ZOOM` (5 pixels per tile, 500 %) and fade in over the block's map
+    colour until `SPRITE_FULL_ZOOM` (7.5, 750 %), by `spriteSampling(zoom).weight`, so crossing the threshold is not
+    a jump. Below 16 pixels per tile a screen pixel covers more than one sprite pixel: it is the straight-alpha mean
+    of `samples × samples` sprite pixels spread over its footprint (`16 / zoom` sprite pixels; 2 × 2 at 8–15, up to
+    4 × 4 at 5), kept inside the tile's own cell so neighbouring cells never bleed in; from 16 pixels per tile it is
+    one sprite pixel, as before. This is what keeps non-integer zooms (1377 %) from shimmering.
+  - **Chunk borders.** Each chunk is its own quad; a pixel on the border can compute the tile just across it (the
+    quad's edge and the pixel's position round apart). The pass then keeps the chunk's own tile and moves the sprite
+    position to that tile's near edge, so the border never shows the far edge of a tile.
+
+  Transparent sprite pixels show the wall, else the background, behind
   them; paint is not applied to sprites; liquids and wires still draw over them. A half-transparent sprite pixel with
   nothing behind it is the one partly transparent pixel liquids can land on outside map mode: there they use the
   general straight-alpha rule (`over` in `src/gpu/shaders.ts`, rounded to nearest); map mode stays bit-exact. Everything else, the box filter and

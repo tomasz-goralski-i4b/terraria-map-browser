@@ -51,11 +51,29 @@ export const SPRITE_STATE = {
 /** The missing-texture checkerboard: magenta and black squares, 2 × 2 per tile. Generated, not a game asset. */
 export const MISSING_SPRITE_COLORS: readonly (readonly [number, number, number])[] = [[255, 0, 255], [0, 0, 0]];
 
-/** Pixels per tile from which sprite mode samples the atlas instead of the map colour. */
-export const SPRITE_MIN_ZOOM = 8;
-
 /** Sprite pixels across one tile: a frame's cell is scaled into these. */
 const SPRITE_TILE_PIXELS = 16;
+
+/** Pixels per tile from which sprite mode samples the atlas: below SPRITE_FULL_ZOOM it fades in over the map colour. */
+export const SPRITE_MIN_ZOOM = 5;
+/** Pixels per tile from which sprites are drawn whole, without the map colour. */
+export const SPRITE_FULL_ZOOM = 7.5;
+/** At most this many sprite samples per axis and screen pixel (4 × 4 at SPRITE_MIN_ZOOM). */
+const MAX_SPRITE_SAMPLES = 4;
+
+/**
+ * How the chunk pass samples sprites at `zoom` pixels per tile: `samples` × `samples` sprite samples per screen pixel,
+ * `step` sprite pixels apart in total per axis (the pixel's footprint, 16 / zoom), averaged within the tile, so a sprite
+ * shown smaller than its 16 × 16 pixels is downscaled rather than point-sampled; and the sprite's `weight` (0–256)
+ * over the map colour, rising linearly from SPRITE_MIN_ZOOM to SPRITE_FULL_ZOOM.
+ */
+export function spriteSampling(zoom: number): { readonly samples: number; readonly step: number; readonly weight: number } {
+  const step = SPRITE_TILE_PIXELS / zoom;
+  const samples = Math.min(MAX_SPRITE_SAMPLES, Math.max(1, Math.ceil(step - 1e-9)));
+  const fade = (zoom - SPRITE_MIN_ZOOM) / (SPRITE_FULL_ZOOM - SPRITE_MIN_ZOOM);
+  return { samples, step, weight: Math.round(256 * Math.min(1, Math.max(0, fade))) };
+}
+
 
 /**
  * Set in an instance's layer attribute when its slot's cell plane holds the chunk's framed cells: a chunk whose cells
@@ -116,6 +134,10 @@ uniform ivec3 uLiquids[4]; // colours of CWM liquid kinds 1–4
 uniform sampler2DArray uAtlas;
 uniform isampler2D uSpriteSheets;
 uniform int uSprites;
+// spriteSampling(): samples per axis, their footprint in sprite pixels, and the sprite's weight over the map colour.
+uniform int uSpriteSamples;
+uniform float uSpriteStep;
+uniform int uSpriteWeight;
 flat in ivec4 vRect;
 flat in int vLayer;
 flat in int vCells; // 1 when this chunk's cell plane holds its framed cells (CELLS_INSTANCE_BIT)
@@ -228,6 +250,30 @@ bool spritePixel(uint index, ivec2 texel, ivec2 sub, out ivec4 color) {
   return true;
 }
 
+// The sprite of a block over the footprint of a screen pixel centred on sprite pixel position centre (0–16 per axis,
+// relative to the tile): the straight-alpha mean of uSpriteSamples² sprite pixels evenly spread over uSpriteStep sprite
+// pixels, kept inside the tile. One sample (16 pixels per tile and above) is spritePixel at the centre.
+bool spriteSample(uint index, ivec2 texel, vec2 centre, out ivec4 color) {
+  int count = uSpriteSamples;
+  ivec4 sum = ivec4(0);
+  for (int y = 0; y < ${String(MAX_SPRITE_SAMPLES)}; y++) {
+    if (y >= count) break;
+    for (int x = 0; x < ${String(MAX_SPRITE_SAMPLES)}; x++) {
+      if (x >= count) break;
+      vec2 at = centre + ((vec2(x, y) + 0.5) / float(count) - 0.5) * uSpriteStep;
+      ivec2 sub = clamp(ivec2(floor(at)), ivec2(0), ivec2(${String(SPRITE_TILE_PIXELS - 1)}));
+      ivec4 sampled;
+      if (!spritePixel(index, texel, sub, sampled)) return false;
+      sum += ivec4(sampled.rgb * sampled.a, sampled.a);
+    }
+  }
+  int samples = count * count;
+  color = sum.a == 0
+    ? ivec4(0)
+    : ivec4((2 * sum.rgb + sum.a) / (2 * sum.a), (2 * sum.a + samples) / (2 * samples));
+  return true;
+}
+
 bool paletteColor(uint index, int xOffset, out ivec3 color) {
   if (index == ABSENT || int(index) >= uPaletteLength) return false;
   color = ivec3(texelFetch(uPalette, ivec2(int(index) % 256 + xOffset, int(index) / 256), 0).rgb);
@@ -247,10 +293,11 @@ ivec4 over(ivec4 top, ivec4 below) {
 }
 
 // Straight-alpha RGBA (0–255) of a tile relative to the instance's chunk origin, apron included (-1 to the chunk size).
-// Only the planes the enabled layers need are read. With uSprites, sub is the sprite pixel (0–15 per axis) within the
-// tile: a block with a stored frame or a framed cell, and a sheet, shows that sheet's pixel, over the wall or
-// background behind it.
-ivec4 localColorAt(ivec2 local, ivec2 sub) {
+// Only the planes the enabled layers need are read. With uSprites, sub is the sprite pixel position (0–16 per axis)
+// within the tile of the screen pixel's centre: a block with a stored frame or a framed cell, and a sheet, shows that
+// sheet's pixels there (spriteSample), over the wall or background behind it, faded in over its map colour by
+// uSpriteWeight.
+ivec4 localColorAt(ivec2 local, vec2 sub) {
   ivec2 texel = ivec2(local.y + ${String(PAGE_APRON)}, local.x + ${String(PAGE_APRON)});
   int tileY = vRect.y + local.y;
 
@@ -261,16 +308,22 @@ ivec4 localColorAt(ivec2 local, ivec2 sub) {
   uint wall = (uLayers & 2) != 0 ? plane16(texel, ${String(PLANES_16.wall)}) : ABSENT;
   ivec4 sprite = ivec4(0);
   bool blockShown = paletteColor(block, 0, content);
-  bool hasSprite = blockShown && uSprites != 0 && spritePixel(block, texel, sub, sprite);
+  bool hasSprite = blockShown && uSprites != 0 && spriteSample(block, texel, sub, sprite);
+  // The block's map colour: shown without a sprite, and faded out under a sprite below SPRITE_FULL_ZOOM.
+  ivec4 mapped = blockShown
+    ? ivec4(painted(blockColor(block, content, texel), int(plane8(texel, ${String(PLANES_8.paint)})), false), 255)
+    : ivec4(0);
   if (blockShown && !hasSprite) {
-    content = blockColor(block, content, texel);
-    color = ivec4(painted(content, int(plane8(texel, ${String(PLANES_8.paint)})), false), 255);
+    color = mapped;
   } else {
     if (paletteColor(wall, 256, content)) {
       color = ivec4(painted(content, int(plane8(texel, ${String(PLANES_8.wallPaint)})), true), 255);
     }
-    // A sprite pixel over what lies behind it (paint is not applied to sprites).
-    if (hasSprite) color = over(sprite, color);
+    // A sprite over what lies behind it (paint is not applied to sprites).
+    if (hasSprite) {
+      color = over(sprite, color);
+      if (uSpriteWeight < 256) color = (mapped * (256 - uSpriteWeight) + color * uSpriteWeight + 128) / 256;
+    }
   }
 
   if ((uLayers & 8) != 0) {
@@ -297,7 +350,7 @@ ivec4 localColorAt(ivec2 local, ivec2 sub) {
 }
 
 ivec4 localColor(ivec2 local) {
-  return localColorAt(local, ivec2(0));
+  return localColorAt(local, vec2(0.0));
 }
 
 // Straight-alpha RGBA (0–255) of a tile inside the instance's chunk; tiles outside it are clamped to its edge.
@@ -376,12 +429,15 @@ ivec4 filtered(ivec2 pixel) {
   return ivec4(ivec3((2u * sum + alpha) / (2u * alpha)), int((2u * alpha + area) / (2u * area)));
 }
 
-// The tile under a pixel, and with sprites the sprite pixel within it.
+// The tile under a pixel, and with sprites the sprite position within it. A pixel this chunk's quad covers can compute
+// a tile just across the chunk's border (the quad's edge and this position are rounded apart): its centre then lies on
+// the border, so it is the nearest edge of the chunk's own tile, not the far side of it.
 ivec4 pointColor(vec2 screen) {
   vec2 world = uCamera + screen / uZoom;
-  ivec2 tile = ivec2(floor(world));
-  ivec2 sub = clamp(ivec2(floor(fract(world) * ${String(SPRITE_TILE_PIXELS)}.0)), ivec2(0), ivec2(${String(SPRITE_TILE_PIXELS - 1)}));
-  return localColorAt(clamp(tile - vRect.xy, ivec2(0), vRect.zw - 1), sub);
+  ivec2 local = ivec2(floor(world)) - vRect.xy;
+  ivec2 inside = clamp(local, ivec2(0), vRect.zw - 1);
+  vec2 sub = fract(world) * ${String(SPRITE_TILE_PIXELS)}.0 + vec2(local - inside) * ${String(SPRITE_TILE_PIXELS)}.0;
+  return localColorAt(inside, clamp(sub, vec2(0.0), vec2(${String(SPRITE_TILE_PIXELS)}.0)));
 }
 
 void main() {

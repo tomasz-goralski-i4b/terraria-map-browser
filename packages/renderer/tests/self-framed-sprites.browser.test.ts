@@ -324,7 +324,8 @@ describe("framing within the upload budget", () => {
     renderer.setCamera({ x: CHUNK_SIZE - 16, y: 0, zoom: 4 });
     renderer.render();
     expect(renderer.stats().residentChunks).toBe(2);
-    renderer.setCamera({ x: CHUNK_SIZE - 8, y: 0, zoom: SPRITE_MIN_ZOOM });
+    // 8 pixels per tile: sprites are whole there (SPRITE_FULL_ZOOM), so framed and unframed chunks differ.
+    renderer.setCamera({ x: CHUNK_SIZE - 8, y: 0, zoom: 8 });
     frames.step();
     expect(renderer.stats().framedTiles).toBe(CHUNK_SIZE * 16);
     expect(renderer.stats().visibleChunks).toHaveLength(2);
@@ -334,7 +335,7 @@ describe("framing within the upload budget", () => {
     reference.renderer.setWorld(renderable(world));
     reference.renderer.setAtlas(syntheticAtlas());
     reference.renderer.setSpriteMode(true);
-    reference.renderer.setCamera({ x: CHUNK_SIZE - 8, y: 0, zoom: SPRITE_MIN_ZOOM });
+    reference.renderer.setCamera({ x: CHUNK_SIZE - 8, y: 0, zoom: 8 });
     reference.renderer.render();
     const unframed = readCanvas(reference.canvas);
     const half = (pixels: Uint8Array, right: boolean): Uint8Array[] => Array.from({ length: size.height }, (_, y) =>
