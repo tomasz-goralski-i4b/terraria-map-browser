@@ -131,5 +131,6 @@ if ($Scenario -eq 'symbol-casing') { $source = $source.Replace('public const ush
 if ($Scenario -eq 'natural-wall') { $source = $source.Replace('public const ushort None = 0;', 'public const ushort JungleUnsafe = 0;') }
 if ($Scenario -eq 'missing-wall-symbols') { $source = $source.Replace('class WallID ', 'class WallIdentifiers ') }
 if ($Scenario -eq 'ambiguous-wall-symbols') { $source = $source.Replace('public const ushort None = 0;', 'public const ushort JungleUnsafe = 0; public const ushort FlowerUnsafe = 0;') }
+if ($Scenario -eq 'unused-wall-symbol') { $source = $source.Replace('public const ushort None = 0;', 'public const ushort MarbleEchoUnused = 0;') }
 Add-Type -TypeDefinition $source -OutputAssembly $assemblyPath
 & (Join-Path $PSScriptRoot 'export.ps1') -TerrariaAssembly $assemblyPath -OutputPath (Join-Path $Directory 'synthetic-map-palette.ts') -CoveragePath (Join-Path $Directory 'name-coverage.md')

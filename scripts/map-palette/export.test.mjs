@@ -49,15 +49,15 @@ test("exports every map option of each content ID as a TypeScript module", { ski
       gameVersion: "1.4.5.8",
       tiles: [["Dirt Block"], ["Demon Altar", "Crimson Altar"], ["Grass"], ["Plants"]],
       tileMetadata: [
-        { symbols: ["Dirt"], mapOptionCount: 1, nameSources: ["placement"] },
-        { symbols: ["DemonAltar"], mapOptionCount: 2, nameSources: ["legend", "legend"] },
-        { symbols: ["Grass"], mapOptionCount: 1, nameSources: ["symbol"] },
-        { symbols: ["Plants"], mapOptionCount: 0, nameSources: ["symbol"] },
+        { symbols: ["Dirt"], symbolStatus: "present", mapOptionCount: 1, nameSources: ["placement"] },
+        { symbols: ["DemonAltar"], symbolStatus: "present", mapOptionCount: 2, nameSources: ["legend", "legend"] },
+        { symbols: ["Grass"], symbolStatus: "present", mapOptionCount: 1, nameSources: ["symbol"] },
+        { symbols: ["Plants"], symbolStatus: "present", mapOptionCount: 0, nameSources: ["symbol"] },
       ],
       walls: [["None"], ["Stone Wall", "Aether \"Crystal\"\nWall"]],
       wallMetadata: [
-        { symbols: ["None"], mapOptionCount: 0, nameSources: ["symbol"] },
-        { symbols: ["Stone"], mapOptionCount: 2, nameSources: ["placement", "legend"] },
+        { symbols: ["None"], symbolStatus: "present", mapOptionCount: 0, nameSources: ["symbol"] },
+        { symbols: ["Stone"], symbolStatus: "present", mapOptionCount: 2, nameSources: ["placement", "legend"] },
       ],
       liquids: ["Water", "Lava", "Honey", "Shimmer"],
       paints: ["", "Red Paint", "Blue Paint"],
@@ -66,6 +66,17 @@ test("exports every map option of each content ID as a TypeScript module", { ski
     assert.match(coverage, /\| 2 \| Grass \| terrain \|/);
     assert.match(coverage, /\| 3 \| Plants \| vegetation \|/);
     assert.match(coverage, /Named block IDs: 4\/4/);
+  });
+});
+
+test("suffix-marked unused walls retain diagnostic names and explicit metadata/report classification", { skip: !available && "PowerShell is not installed" }, async () => {
+  await withTempDirectory(async (directory) => {
+    const result = runPowerShell("scripts/map-palette/fixture-export.ps1", ["-Directory", directory, "-Scenario", "unused-wall-symbol"]);
+    assert.equal(result.status, 0, result.stderr);
+    const names = (await import(pathToFileURL(join(directory, "synthetic-map-palette.ts")).href)).terrariaMapNames;
+    assert.deepEqual(names.walls[0], ["Marble Echo Unused Wall"]);
+    assert.equal(names.wallMetadata[0].symbolStatus, "unused");
+    assert.match(readFileSync(join(directory, "name-coverage.md"), "utf8"), /\| 0 \| MarbleEchoUnused \| unused\/obsolete \|/);
   });
 });
 
