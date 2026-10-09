@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { readWorldTiles, WorldWorkerClient, WorldWorkerError } from "../src/index.js";
-import { writerWorld } from "./writer-support.js";
+import { writerSource, writerWorld } from "./writer-support.js";
 
 const clients: WorldWorkerClient[] = [];
 function client(probe = false): { client: WorldWorkerClient; worker: Worker } {
@@ -17,6 +17,21 @@ function client(probe = false): { client: WorldWorkerClient; worker: Worker } {
 afterEach(() => { clients.splice(0).forEach((created) => { created.dispose(); }); });
 
 describe("Worker save", () => {
+  it.each([269, 270, 271, 272, 273, 274, 275, 276, 277, 278, 279, 315, 316, 317, 318, 319, 325, 326])(
+    "saves format %i in its source version through a real Worker", async (version) => {
+      const { client: created } = client();
+      const source = writerSource(2, 4, undefined, version);
+      const world = await created.parse(source.slice().buffer);
+      const before = structuredClone(world);
+      expect(new Uint8Array(await created.save(world))).toEqual(source);
+      expect(world).toEqual(before);
+      Object.assign(world, { palette: [{ kind: "vanilla", id: 1 }] });
+      world.planes.block[5] = 0;
+      const saved = await created.parse(await created.save(world));
+      expect(saved.header.version).toBe(version);
+      expect(saved.planes).toEqual(world.planes);
+    },
+  );
   it.each([
     { kind: "unknown", runtimeId: 900 },
     { kind: "mod", mod: "CalamityMod", internalName: "AstralStone", runtimeId: 900 },

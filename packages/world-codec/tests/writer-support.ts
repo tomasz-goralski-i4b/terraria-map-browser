@@ -15,9 +15,11 @@ export function emptyColumns(width: number, height: number): number[] {
 }
 
 /** Complete synthetic source with a valid name/id footer; no production encoding helpers. */
-export function writerSource(width = 2, height = 4, tiles = emptyColumns(width, height)): Uint8Array<ArrayBuffer> {
-  const metadata = buildMetadata({ width, height }).bytes;
-  const wrapped = wrapMetadata(metadata, tiles.length);
+export function writerSource(width = 2, height = 4, tiles = emptyColumns(width, height), version = 326): Uint8Array<ArrayBuffer> {
+  // Released layouts are selected independently of the production profile registry.
+  const layout = version < 315 ? "1.4.4" : version < 325 ? "1.4.5" : "1.4.5-lightning";
+  const metadata = buildMetadata({ width, height, layout }).bytes;
+  const wrapped = wrapMetadata(metadata, tiles.length, version);
   const bytes = new Uint8Array(wrapped.length + 5);
   bytes.set(wrapped);
   const view = new DataView(bytes.buffer);

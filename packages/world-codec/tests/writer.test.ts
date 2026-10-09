@@ -196,7 +196,7 @@ describe("world save", () => {
     const world = writerWorld();
     switch (change) {
       case "missing envelope": Reflect.deleteProperty(world, "envelope"); break;
-      case "other format": Object.assign(world.header, { version: 325 }); break;
+      case "other format": Object.assign(world.header, { version: 327 }); break;
       case "header edit": Object.assign(world.header, { revision: 3 }); break;
       case "details edit": Object.assign(world.details.spawnAndLandmarks.spawn, { x: 1 }); break;
       case "entity edit": Object.assign(world.entities.Chests, { error: { code: "MalformedSection", offset: 1, message: "edited chest" } }); break;
