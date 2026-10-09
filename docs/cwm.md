@@ -81,6 +81,35 @@ The output must be a new file; an existing file or symbolic link is an argument 
 An existing directory is an I/O error, detected before creating a staging file.
 Generated files belong only in temporary or artifact directories and must never be committed.
 
+`@studio/world-codec` exports the pure `serializeCwm(world, schemaVersion = 1)` function. It accepts the
+existing parsed header, metadata, shared palette and planes (structurally `CwmBinaryWorld`), returning a
+fresh `Uint8Array` without modifying its input. A `readWorldTiles` result can be passed directly. Mod
+references and nullable legacy metadata are also representable; game modes map to their numeric summary
+values, including an unknown mode's raw value. Invalid dimensions, plane element types/lengths and
+requested schema versions reject explicitly before output allocation. Palette entries retain their supplied
+order; callers constructing planes themselves must follow the first-appearance rule above.
+
+CWM v1 serialization does not gate game versions: `formatVersion` records the source version while the
+framing and plane layout remain the same. The corpus entry point uses the TS reader's supported formats
+(currently 269–279, 315–319 and 325–326). All have synthetic parse/export coverage; the five generated
+manifest fixtures provide golden header and plane-digest evidence for 326.
+
+After `bash scripts/build.sh`, CI can export the generated test corpus using only TypeScript:
+
+```bash
+output=$(mktemp -d)
+node packages/world-codec/dist/node/export-cwm-corpus.js packages/test-fixtures/worlds "$output"
+```
+
+The Node entry point lives in a separate TypeScript project under `src/node`; the browser-safe codec API
+never imports it. It reads `manifest.json` and writes one `<world-name>.cwm` per listed fixture into the
+supplied existing output directory. Source fixtures and their goldens are protected destinations, including
+directory aliases; existing output files or links are never overwritten. It stages the entire corpus before
+publishing files and removes its staging directory on success or failure. Output contains no source paths,
+timestamps or other environment fields. Exit codes are 0 (success), 2 (arguments/manifest or existing
+output), and 1 (format/I/O failure); diagnostics go to stderr. No .NET process is invoked, and these
+temporary CWM outputs are never fixtures or committed goldens.
+
 ## TypeScript model API
 
 `packages/world-model` exports `createWorld(width, height, { maxBytes? })`. Dimensions must be positive
