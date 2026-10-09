@@ -3,6 +3,7 @@ import type { IconName } from "../ui/Icon.js";
 import { getDefaultAssetSession, useAssetStore } from "../assets/asset-session.js";
 import { useAppStore } from "../store.js";
 import { chooseWorldFile } from "../world/open-world.js";
+import { exportWorld, useExportStore } from "../world/export-world.js";
 import { WORLD_GROUP_IDS } from "../panels/world-fields.js";
 import { resetLayout, useLayoutStore, type ThemeChoice } from "./layout-store.js";
 import { getMapController, useViewStore, type MapLayers, type ToolId } from "./view-store.js";
@@ -89,6 +90,8 @@ const THEME_LABELS: Readonly<Record<ThemeChoice, string>> = { system: "Theme: fo
 /** The app's commands with their current state. */
 export function useCommands(): Command[] {
   const hasWorld = useAppStore((state) => state.summary !== null);
+  const loadingWorld = useAppStore((state) => state.phase === "loading");
+  const exporting = useExportStore((state) => state.busy);
   const dockHidden = useLayoutStore((state) => state.dockHidden);
   const setDockHidden = useLayoutStore((state) => state.setDockHidden);
   const theme = useLayoutStore((state) => state.theme);
@@ -111,7 +114,11 @@ export function useCommands(): Command[] {
 
   return [
     { id: "file.open", group: "File", label: "Open world…", icon: "open", shortcut: "Control+O", enabled: true, run: chooseWorldFile },
-    { id: "file.export", group: "File", label: "Export world…", enabled: false, disabledReason: EDITING_LATER, run: () => undefined },
+    {
+      id: "file.export", group: "File", label: "Export world…", enabled: hasWorld && !loadingWorld && !exporting,
+      ...(!hasWorld ? noWorld : loadingWorld ? { disabledReason: "A world is loading" } : exporting ? { disabledReason: "Export in progress" } : {}),
+      run: () => { void exportWorld(); },
+    },
     {
       id: "file.assets", group: "File", label: "Connect Terraria assets…", enabled: !assetsBuilding,
       ...(assetsBuilding ? { disabledReason: "The sprite atlas is being built" } : {}),

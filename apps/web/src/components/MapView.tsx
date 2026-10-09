@@ -5,6 +5,7 @@ import { useAppStore } from "../store.js";
 import { Icon } from "../ui/Icon.js";
 import { toRenderableWorld } from "../world/renderable-world.js";
 import { getDefaultWorldSession } from "../world/world-session.js";
+import { useExportStore } from "../world/export-world.js";
 import { MapCanvas } from "./MapCanvas.js";
 
 /**
@@ -30,6 +31,7 @@ export function MapView({ renderer, world }: MapViewProps): React.JSX.Element {
   const summary = useAppStore((state) => state.summary);
   const error = useAppStore((state) => state.error);
   const assetNotice = useAssetStore((state) => state.notice);
+  const exported = useExportStore();
   // A new summary means a newly loaded world; the session is not reactive, the store is.
   const sessionWorld = useMemo(() => (summary === null ? null : loadedRenderableWorld()), [summary]);
   const drawn = world === undefined ? sessionWorld : world;
@@ -65,6 +67,15 @@ export function MapView({ renderer, world }: MapViewProps): React.JSX.Element {
       {phase === "failed" && error !== null && (
         <p role="alert" className="map-message map-message-error" style={MESSAGE_STYLE}>
           Could not open {error.fileName}: {error.code} at offset {error.offset}. {error.message}
+        </p>
+      )}
+      {exported.error !== null && (
+        <p role="alert" className="map-message map-message-error" style={MESSAGE_STYLE}>Could not export world: {exported.error}</p>
+      )}
+      {exported.message !== null && (
+        <p role="status" className="map-message" style={MESSAGE_STYLE}>
+          {exported.message}{" "}
+          {exported.download !== null && <a href={exported.download.url} download={exported.download.name}>Download {exported.download.name}</a>}
         </p>
       )}
       {assetNotice !== null && (

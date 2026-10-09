@@ -4,6 +4,7 @@ import { commands, page } from "vitest/browser";
 import { render } from "vitest-browser-react";
 import { App } from "../src/App.js";
 import { exportWorld } from "../src/world/export-world.js";
+import { resetWorldExport, useExportStore } from "../src/world/export-world.js";
 import { getDefaultWorldSession } from "../src/world/world-session.js";
 import { writerSource } from "./support/export-source.js";
 import "./support/commands.js";
@@ -138,6 +139,39 @@ test("a late picker result after opening another world never creates a file", as
   await exporting;
   expect(createWritable).not.toHaveBeenCalled();
   expect(document.querySelector("a[download]")).toBeNull();
+});
+
+test("an export Worker crash reports an error without creating a writable file", async () => {
+  await render(<App />);
+  await open(writerSource());
+  const saved = destination();
+  const terminate = vi.fn();
+  class CrashingWorker {
+    onerror: ((event: { message: string; preventDefault(): void }) => void) | null = null;
+    terminate = terminate;
+    postMessage(): void {
+      queueMicrotask(() => { this.onerror?.({ message: "Export Worker stopped unexpectedly", preventDefault: () => undefined }); });
+    }
+  }
+  vi.stubGlobal("Worker", CrashingWorker);
+  await exportWorld();
+  await expect.element(page.getByRole("alert")).toMatchTextContent("Export Worker stopped unexpectedly");
+  expect(terminate).toHaveBeenCalledOnce();
+  expect(saved.createWritable).not.toHaveBeenCalled();
+  expect(useExportStore.getState().busy).toBe(false);
+});
+
+test("resetting the world releases its download URL and export state", async () => {
+  await render(<App />);
+  await open(writerSource());
+  vi.stubGlobal("showSaveFilePicker", undefined);
+  await exportWorld();
+  const url = useExportStore.getState().download?.url;
+  expect(url).toBeDefined();
+  resetWorldExport();
+  await expect.element(page.getByRole("link", { name: "Download SCCO1.copy.wld" })).not.toBeInTheDocument();
+  await expect(fetch(url ?? "")).rejects.toThrow();
+  expect(useExportStore.getState()).toEqual({ busy: false, message: null, error: null, download: null });
 });
 
 test("exporting a generated Small world causes no main-thread task over 100 ms", async () => {

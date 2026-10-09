@@ -1,5 +1,7 @@
 import { WorldWorkerClient, WorldWorkerError, type WorldTilesResult } from "@studio/world-codec";
 import { useAppStore, type LoadError } from "../store.js";
+import { resetWorldExport } from "./export-world.js";
+import type { OpenedWorldFile, OpenWorldHandle } from "./world-file.js";
 
 /** Small display facts about the loaded world; the planes and palette themselves stay outside React and the store. */
 export interface WorldSummary {
@@ -23,13 +25,14 @@ export interface WorldParser {
 
 export interface WorldSession {
   /** Parses `file` in the Worker; a failure or cancel keeps the previous world. */
-  readonly open: (file: File) => Promise<void>;
+  readonly open: (file: File, handle?: OpenWorldHandle) => Promise<void>;
   /** Cancels a parse in progress and returns to the previous state. */
   readonly cancel: () => void;
   /** Cancels a parse in progress and forgets the loaded world. */
   readonly reset: () => void;
   /** The loaded world (planes, palette, metadata) as a plain reference, not React state. */
   readonly getLoadedWorld: () => WorldTilesResult | null;
+  readonly getOpenedFile: () => OpenedWorldFile | null;
 }
 
 function summarize(world: WorldTilesResult, file: File): WorldSummary {
@@ -55,13 +58,15 @@ function toLoadError(error: unknown, fileName: string): LoadError {
 
 export function createWorldSession(parser: WorldParser): WorldSession {
   let loaded: WorldTilesResult | null = null;
+  let openedFile: OpenedWorldFile | null = null;
   let current: AbortController | null = null;
 
   const cancel = (): void => {
     current?.abort();
   };
 
-  const open = async (file: File): Promise<void> => {
+  const open = async (file: File, handle?: OpenWorldHandle): Promise<void> => {
+    resetWorldExport();
     current?.abort();
     const controller = new AbortController();
     current = controller;
@@ -71,6 +76,7 @@ export function createWorldSession(parser: WorldParser): WorldSession {
       const world = await parser.parse(file, { signal: controller.signal });
       if (current !== controller) return;
       loaded = world;
+      openedFile = { file, handle: handle ?? null };
       useAppStore.getState().setLoaded(summarize(world, file));
     } catch (error) {
       // A superseded request is settled by the newer open; only the latest one reports.
@@ -83,11 +89,14 @@ export function createWorldSession(parser: WorldParser): WorldSession {
   };
 
   const reset = (): void => {
+    resetWorldExport();
     cancel();
+    current = null;
     loaded = null;
+    openedFile = null;
   };
 
-  return { open, cancel, reset, getLoadedWorld: () => loaded };
+  return { open, cancel, reset, getLoadedWorld: () => loaded, getOpenedFile: () => openedFile };
 }
 
 let defaultSession: WorldSession | undefined;

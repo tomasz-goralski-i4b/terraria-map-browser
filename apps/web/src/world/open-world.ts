@@ -1,19 +1,20 @@
 import { getDefaultWorldSession } from "./world-session.js";
+import type { OpenedWorldFile, OpenWorldHandle } from "./world-file.js";
 
 interface FilePickerWindow {
   showOpenFilePicker?: (options: {
     readonly multiple: false;
     readonly types: readonly { readonly description: string; readonly accept: Record<string, readonly string[]> }[];
-  }) => Promise<readonly { getFile(): Promise<File> }[]>;
+  }) => Promise<readonly OpenWorldHandle[]>;
 }
 
-async function pickWithFilePicker(picker: NonNullable<FilePickerWindow["showOpenFilePicker"]>): Promise<File | null> {
+async function pickWithFilePicker(picker: NonNullable<FilePickerWindow["showOpenFilePicker"]>): Promise<OpenedWorldFile | null> {
   try {
     const [handle] = await picker({
       multiple: false,
       types: [{ description: "Terraria world", accept: { "application/octet-stream": [".wld"] } }],
     });
-    return (await handle?.getFile()) ?? null;
+    return handle === undefined ? null : { file: await handle.getFile(), handle };
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") return null; // the user closed the picker
     throw error;
@@ -34,7 +35,7 @@ export function chooseWorldFile(): void {
     fallbackInput?.click();
     return;
   }
-  void pickWithFilePicker(picker).then((file) => {
-    if (file !== null) void getDefaultWorldSession().open(file);
+  void pickWithFilePicker(picker.bind(window)).then((opened) => {
+    if (opened !== null && opened.handle !== null) void getDefaultWorldSession().open(opened.file, opened.handle);
   });
 }
