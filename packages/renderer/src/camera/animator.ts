@@ -10,7 +10,8 @@ const PAN_DECAY_PER_MS = 0.008;
 /** The spring settles on the target below this log-zoom distance (a sub-pixel step on a 4K viewport). */
 const ZOOM_EPSILON = 1e-4;
 const VELOCITY_EPSILON = 0.005;
-const RELEASE_WINDOW_MS = 100;
+/** Release velocity: the last ~2 frames of a drag, so the glide continues at the speed the map was last moving. */
+const RELEASE_WINDOW_MS = 40;
 
 interface Point { readonly x: number; readonly y: number }
 interface DragSegment { readonly start: number; readonly end: number; readonly dx: number; readonly dy: number }

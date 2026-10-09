@@ -93,7 +93,29 @@ test("a flick decays monotonically to zero and stops requesting frames", () => {
   expect(animator.current.x).toBeGreaterThan(initial.x + 40);
 });
 
-test("release uses only the recent 100 ms and a paused drag has no stale velocity", () => {
+test.each([
+  ["speeding up", [2, 4, 6, 8, 10, 12, 14, 16, 18, 20]],
+  ["slowing down", [20, 20, 20, 20, 20, 20, 16, 12, 9, 7]],
+])("a flick %s glides on at the speed of its last frames, without a kick or a brake at release", (_name, deltas) => {
+  // As in the #231 follow-up trace: one pointermove per 60 Hz frame, ~10 moves, released right after the last.
+  const run = motion();
+  run.animator.beginDrag();
+  let last = 0;
+  for (const delta of deltas) {
+    run.elapse(FRAME_MS - 0.5);
+    run.animator.drag(-delta, 0);
+    const before = run.animator.current.x;
+    last = run.advance(0.5).camera.x - before;
+  }
+  run.animator.endDrag();
+  const before = run.animator.current.x;
+  const first = run.advance(FRAME_MS).camera.x - before;
+  // The first glide frame moves about as far as the last drag frame did (within a quarter).
+  expect(first / last).toBeGreaterThan(0.75);
+  expect(first / last).toBeLessThan(1.25);
+});
+
+test("release uses only the recent 40 ms and a paused drag has no stale velocity", () => {
   const run = motion();
   run.animator.beginDrag();
   run.elapse(50);
@@ -103,7 +125,7 @@ test("release uses only the recent 100 ms and a paused drag has no stale velocit
   run.elapse(50);
   run.animator.drag(-20, 0);
   run.animator.endDrag();
-  expect(run.animator.velocity.x).toBeCloseTo(-(10 * (50 / 150) + 20) / 100, 9);
+  expect(run.animator.velocity.x).toBeCloseTo(-20 / 50, 9);
   run.animator.beginDrag();
   run.elapse(20);
   run.animator.drag(-40, 0);
