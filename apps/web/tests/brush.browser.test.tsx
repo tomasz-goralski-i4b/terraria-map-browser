@@ -23,7 +23,7 @@ function Shortcuts(): null {
 }
 function stoneCount(): string | undefined {
   const grid = page.getByRole("grid", { name: "Content", exact: true }).element();
-  const column = [...grid.querySelectorAll("[role=columnheader]")].findIndex((header) => header.textContent?.startsWith("Tiles"));
+  const column = [...grid.querySelectorAll("[role=columnheader]")].findIndex((header) => header.textContent.startsWith("Tiles"));
   const row = page.getByRole("row").filter({ hasText: "Stone Block" }).element();
   return row.querySelectorAll("[role=gridcell]")[column]?.textContent;
 }
