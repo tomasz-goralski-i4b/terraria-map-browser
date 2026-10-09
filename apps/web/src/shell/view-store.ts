@@ -107,6 +107,8 @@ export interface MapController {
   readonly centerOn: (x: number, y: number) => void;
   readonly fitWorld: () => void;
   readonly actualSize: () => void;
+  /** Glides to `zoom` backing-store pixels per tile around the centre of the view. */
+  readonly zoomTo: (zoom: number) => void;
   /** Moves the camera at once (no glide), clamped to the world; the editor's "go to" and tests use it. */
   readonly jumpTo: (camera: Camera) => void;
   /** Draws a complete frame now (all visible chunks), so the canvas can be read back in the same task. */

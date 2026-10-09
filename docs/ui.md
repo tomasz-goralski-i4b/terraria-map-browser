@@ -53,7 +53,7 @@ Code: `apps/web/src/ui/` (primitives), `apps/web/src/shell/` (layout, commands, 
   - *File*: Open World… `Ctrl+O`, Open Folder…, **Worlds ▸** (the remembered folder's worlds, newest first, with size
     and age; the submenu flies out on hover or `→`), **Open Recent ▸**, Save `Ctrl+S` (disabled until editing),
     Save As… `Ctrl+Shift+S`, Close World.
-  - *View*: Show panels, Fit world, Actual size, Show render stats, **Theme ▸**, Reset layout.
+  - *View*: Show panels, Fit world, Actual size, Zoom to 400%, Show render stats, **Theme ▸**, Reset layout.
   - *Assets*: Connect, Preview sprite sheets, Disconnect.
   - *Help*: Command palette, Keyboard shortcuts.
 
@@ -70,7 +70,7 @@ Code: `apps/web/src/ui/` (primitives), `apps/web/src/shell/` (layout, commands, 
   settings here: brush size and shape, and the layer mask, i.e. which of block, wall, paint, liquid and wires a stroke
   writes (as TEdit does). A tool never opens a dialog to change a setting.
 - **Map** (`components/MapView.tsx`, `MapCanvas.tsx`) holds the zoom controls (Fit world `F`, 1:1 `1`) in its top
-  right corner. The minimap (#145) and transient messages (loading, errors) also go over the map. With no world it
+  right corner; View ▸ Zoom to 400% (`4`) is next to them in the menu. The minimap (#145) and transient messages (loading, errors) also go over the map. With no world it
   shows the **start screen** (`components/StartScreen.tsx`), as an editor's start page: Open World, Open Worlds Folder,
   Connect assets, the folder's worlds and the recent ones, where Terraria keeps worlds, and that files stay on this
   computer.

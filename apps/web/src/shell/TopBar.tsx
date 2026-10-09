@@ -139,6 +139,7 @@ export function TopBar({ commands }: { readonly commands: readonly Command[] }):
         { kind: "separator" },
         menuItem(get("view.fit")),
         menuItem(get("view.actual")),
+        menuItem(get("view.zoom400")),
         { kind: "separator" },
         menuItem(get("view.stats")),
         { kind: "submenu", label: "Theme", icon: "theme", items: commands.filter((command) => command.id.startsWith("view.theme.")).map(menuItem) },

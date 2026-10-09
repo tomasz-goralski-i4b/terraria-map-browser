@@ -1,11 +1,17 @@
 import { clampCamera, panBy, screenToTile, zoomAt } from "./camera.js";
 import type { Camera, Size } from "./camera.js";
 
-const ZOOM_DECAY_PER_MS = 0.024;
+/**
+ * Stiffness of the critically damped zoom spring (rad/ms): within 2 % of a step in about 290 ms, within 0.1 % of the
+ * target about 380 ms after the last notch of a replayed wheel trace (#231).
+ */
+const ZOOM_SPRING_PER_MS = 0.02;
 const PAN_DECAY_PER_MS = 0.008;
-const ZOOM_EPSILON = 1e-7;
+/** The spring settles on the target below this log-zoom distance (a sub-pixel step on a 4K viewport). */
+const ZOOM_EPSILON = 1e-4;
 const VELOCITY_EPSILON = 0.005;
-const RELEASE_WINDOW_MS = 100;
+/** Release velocity: the last ~2 frames of a drag, so the glide continues at the speed the map was last moving. */
+const RELEASE_WINDOW_MS = 40;
 
 interface Point { readonly x: number; readonly y: number }
 interface DragSegment { readonly start: number; readonly end: number; readonly dx: number; readonly dy: number }
@@ -28,6 +34,8 @@ export class CameraAnimator {
   private reduced = false;
   private anchor: Point = STILL;
   private anchorTile: Point = STILL;
+  /** Log-zoom per millisecond; it carries over between notches so they blend into one motion. */
+  private zoomVelocity = 0;
   private kinetic: Point = STILL;
   private held: Point = STILL;
   private dragStart = 0;
@@ -54,6 +62,7 @@ export class CameraAnimator {
     this.drawn = clampCamera(camera, viewport, world);
     this.destination = this.drawn;
     this.direct = false;
+    this.zoomVelocity = 0;
     this.cancelMotion();
     this.segments.length = 0;
     this.lastStep = this.now();
@@ -65,6 +74,8 @@ export class CameraAnimator {
   }
 
   zoom(factor: number, x: number, y: number, direct = false): void {
+    // A glide in progress keeps its clock (the next frame moves on from the last one); an idle one starts now.
+    if (direct || (this.zoomVelocity === 0 && this.drawn.zoom === this.destination.zoom)) this.lastStep = this.now();
     this.cancelMotion();
     // Pending direct gestures already contain the accumulated pan/pinch; eased retargets anchor to the drawn view.
     const base = this.direct ? this.destination : this.drawn;
@@ -73,12 +84,13 @@ export class CameraAnimator {
     this.anchorTile = screenToTile(base, x, y);
     this.destination = zoomAt(base, zoom, x, y, this.viewport, this.world);
     this.direct = direct;
-    this.lastStep = this.now();
+    // A direct gesture ends the glide now, so a notch arriving before the next frame starts from rest.
+    if (direct) this.zoomVelocity = 0;
   }
 
   beginDrag(): void {
     this.cancelMotion();
-    if (!this.direct) this.destination = this.drawn;
+    this.settleZoom();
     this.segments.length = 0;
     this.dragStart = this.now();
     this.lastDrag = this.dragStart;
@@ -112,9 +124,16 @@ export class CameraAnimator {
   }
 
   pan(dx: number, dy: number): void {
-    if (!this.direct) this.destination = this.drawn;
+    this.settleZoom();
     this.destination = panBy(this.destination, dx, dy, this.viewport, this.world);
     this.direct = true;
+  }
+
+  /** A direct gesture takes over from the drawn view: an unfinished zoom glide stops there, velocity included. */
+  private settleZoom(): void {
+    if (this.direct) return;
+    this.destination = this.drawn;
+    this.zoomVelocity = 0;
   }
 
   keyPan(x: number, y: number): void {
@@ -135,18 +154,26 @@ export class CameraAnimator {
     if (this.direct || this.reduced) {
       this.drawn = this.destination;
       this.direct = false;
+      this.zoomVelocity = 0;
     } else {
-      const difference = Math.log(this.destination.zoom / this.drawn.zoom);
-      if (difference === 0) this.drawn = this.destination;
-      else {
-        const remaining = difference * Math.exp(-ZOOM_DECAY_PER_MS * dt);
-        if (Math.abs(remaining) <= ZOOM_EPSILON) this.drawn = this.destination;
-        else {
-          const zoom = this.destination.zoom * Math.exp(-remaining);
-          this.drawn = clampCamera({
-            x: this.anchorTile.x - this.anchor.x / zoom, y: this.anchorTile.y - this.anchor.y / zoom, zoom,
-          }, this.viewport, this.world);
-        }
+      // A critically damped spring on log-zoom, integrated in closed form so frame subdivision does not change it.
+      const offset = Math.log(this.drawn.zoom / this.destination.zoom);
+      const spring = ZOOM_SPRING_PER_MS;
+      const decay = Math.exp(-spring * dt);
+      const drive = this.zoomVelocity + spring * offset;
+      const remaining = (offset + drive * dt) * decay;
+      const velocity = (this.zoomVelocity - spring * drive * dt) * decay;
+      // Never past the target (it may be the zoom limit): crossing it, or coming close and slow, is arriving.
+      if (offset === 0 || remaining * offset <= 0
+        || (Math.abs(remaining) <= ZOOM_EPSILON && Math.abs(velocity) <= ZOOM_EPSILON * spring)) {
+        this.drawn = this.destination;
+        this.zoomVelocity = 0;
+      } else {
+        const zoom = this.destination.zoom * Math.exp(remaining);
+        this.zoomVelocity = velocity;
+        this.drawn = clampCamera({
+          x: this.anchorTile.x - this.anchor.x / zoom, y: this.anchorTile.y - this.anchor.y / zoom, zoom,
+        }, this.viewport, this.world);
       }
     }
 
