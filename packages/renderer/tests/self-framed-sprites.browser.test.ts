@@ -309,6 +309,42 @@ describe("cell caching per chunk", () => {
   });
 });
 
+describe("uploads after an edit", () => {
+  test("an edited tile uploads only the rectangle around it, of its planes and cells, and draws it", () => {
+    const world = createWorld(30, 20);
+    stamp(world, 0, 0, Array.from({ length: 20 }, (_, y) => (y === 0 || y === 19 ? ".".repeat(30) : `.${"s".repeat(28)}.`)));
+    const { canvas, renderer } = makeRenderer(world.width * ZOOM, world.height * ZOOM);
+    renderer.setWorld(renderable(world));
+    renderer.setLayers(ALL);
+    renderer.setAtlas(syntheticAtlas());
+    renderer.setFraming(framing);
+    renderer.setSpriteMode(true);
+    renderer.setCamera({ x: 0, y: 0, zoom: ZOOM });
+    renderer.render();
+    const sizes: number[] = [];
+    const realTexSubImage3D = Object.getOwnPropertyDescriptor(WebGL2RenderingContext.prototype, "texSubImage3D")?.value as
+      (this: WebGL2RenderingContext, ...args: unknown[]) => void;
+    const upload = vi.spyOn(WebGL2RenderingContext.prototype, "texSubImage3D").mockImplementation(
+      function (this: WebGL2RenderingContext, ...args: unknown[]): void {
+        sizes.push(Number(args[5]) * Number(args[6]));
+        realTexSubImage3D.apply(this, args);
+      },
+    );
+    try {
+      world.setTile(14, 9, { block: { kind: "vanilla", id: IRON }, wall: { kind: "vanilla", id: WALL }, wires: 0, actuator: false });
+      renderer.invalidateTiles([{ x: 14, y: 9 }]);
+      renderer.render();
+    } finally {
+      upload.mockRestore();
+    }
+    // The tile's planes with the apron around it (3 × 3), the 3 × 3 block cells it changes and the 3 × 3 wall cells,
+    // within the apron (5 × 5): never the whole chunk (30 × 20 tiles and its apron).
+    expect(sizes.length).toBeGreaterThan(0);
+    expect(Math.max(...sizes)).toBeLessThanOrEqual(25);
+    expectClose(readCanvas(canvas), expectedCanvas(world), world.width * ZOOM);
+  });
+});
+
 describe("framing within the upload budget", () => {
   /** Runs only the callbacks queued for this frame; continuations belong to the next frame. */
   function animationFrames(): { step: () => void } {
