@@ -288,9 +288,51 @@ describe("sprite mode", () => {
       });
       await nextFrame();
       expect(await nextFrame()).toEqual(expectedCanvas(world, ALL, ZOOM, false));
+      expect(renderer.stats().spritesPreparing).toBe(true);
       linked = true;
       await nextFrame();
       expect(await nextFrame()).toEqual(expectedCanvas(world, ALL, ZOOM, true));
+      expect(renderer.stats().spritesPreparing).toBe(false);
+    } finally {
+      extension.mockRestore();
+      parameter.mockRestore();
+    }
+  });
+
+  test("the renderer reports while it prepares the sprite program, also when no frame is at a sprite zoom", async () => {
+    const COMPLETION_STATUS = 0x91b1;
+    let linked = false;
+    const prototype = WebGL2RenderingContext.prototype;
+    const realExtension = Object.getOwnPropertyDescriptor(prototype, "getExtension")?.value as
+      (this: WebGL2RenderingContext, name: string) => unknown;
+    const realParameter = Object.getOwnPropertyDescriptor(prototype, "getProgramParameter")?.value as
+      (this: WebGL2RenderingContext, program: WebGLProgram, name: number) => unknown;
+    const extension = vi.spyOn(prototype, "getExtension").mockImplementation(
+      function (this: WebGL2RenderingContext, name: string): unknown {
+        return name === "KHR_parallel_shader_compile" ? { COMPLETION_STATUS_KHR: COMPLETION_STATUS } : realExtension.call(this, name);
+      },
+    );
+    const parameter = vi.spyOn(prototype, "getProgramParameter").mockImplementation(
+      function (this: WebGL2RenderingContext, program: WebGLProgram, name: number): unknown {
+        return name === COMPLETION_STATUS ? linked : realParameter.call(this, program, name);
+      },
+    );
+    try {
+      const heard: boolean[] = [];
+      const canvas = document.createElement("canvas");
+      canvas.width = 8;
+      canvas.height = 8;
+      const renderer = createMapRenderer(canvas, { onSpritesPreparing: (preparing) => heard.push(preparing) });
+      created.push(renderer);
+      renderer.setWorld(spriteWorld());
+      // A map-colour zoom: no frame asks for the sprite program.
+      renderer.setCamera({ x: 0, y: 0, zoom: 1 });
+      renderer.setAtlas(syntheticAtlas());
+      expect(heard).toEqual([true]);
+      expect(renderer.stats().spritesPreparing).toBe(true);
+      linked = true;
+      await vi.waitFor(() => { expect(heard).toEqual([true, false]); }, { timeout: 2000 });
+      expect(renderer.stats().spritesPreparing).toBe(false);
     } finally {
       extension.mockRestore();
       parameter.mockRestore();
