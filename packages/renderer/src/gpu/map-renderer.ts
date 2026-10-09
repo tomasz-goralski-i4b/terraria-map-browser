@@ -144,8 +144,8 @@ export interface MapRenderer {
   readonly setSpriteMode: (enabled: boolean) => void;
   /**
    * The block framing (`createBlockFraming`): with it, sprite mode also draws self-framed blocks (dirt, stone, ores,
-   * grass, …) with the cell their neighbours give them, half blocks and slopes cut by their shape, and
-   * (through its `walls`) walls with theirs: a 32 × 32 cell centred on the tile, overhanging 8 pixels, below the blocks. A chunk is
+   * grass, …) with the cell their neighbours give them, half blocks and slopes cut by their shape, and (through its
+   * `walls`) walls with theirs: a 32 × 32 cell centred on the tile, overhanging 8 pixels, below the blocks. A chunk is
    * framed on its first upload at a sprite zoom and keeps its cells while it stays resident; null draws them in map
    * colours.
    */
