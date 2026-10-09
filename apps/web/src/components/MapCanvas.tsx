@@ -5,6 +5,7 @@ import {
 import type { Camera, MapRenderer, RenderableWorld, Size } from "@studio/renderer";
 import { getDefaultAssetSession, useAssetStore } from "../assets/asset-session.js";
 import { registerMapController, rendererLayers, useViewStore, type ToolId } from "../shell/view-store.js";
+import { getBlockFraming } from "../world/block-framing.js";
 
 const KEY_PAN_PIXELS_PER_MS = 0.384;
 const KEY_ZOOM_FACTOR = 1.25;
@@ -168,6 +169,13 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
     renderer.setWorld(session.world);
     renderer.setLayers(rendererLayers(useViewStore.getState().layers));
     applySprites(renderer, useViewStore.getState().layers.sprites);
+    // Self-framed blocks (dirt, stone, ores, grass, …) keep their map colours until the framing database is inflated.
+    let disposed = false;
+    getBlockFraming().then((framing) => {
+      if (!disposed) renderer.setFraming(framing);
+    }, (cause: unknown) => {
+      if (!disposed) useAssetStore.setState({ notice: `Block sprites are unavailable: ${cause instanceof Error ? cause.message : String(cause)}` });
+    });
 
     const motionPreference = window.matchMedia("(prefers-reduced-motion: reduce)");
     const updateMotionPreference = (): void => {
@@ -253,6 +261,7 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
       window.removeEventListener("blur", stopMotion);
       motionPreference.removeEventListener("change", updateMotionPreference);
       if (frame !== null) window.cancelAnimationFrame(frame);
+      disposed = true;
       renderer.dispose();
       sessionRef.current = null;
     };

@@ -7,6 +7,7 @@ import type { Camera, MapRenderer, RenderableWorld } from "@studio/renderer";
 import { setDefaultAssetSession, useAssetStore, type AssetSession, type AssetStatus } from "../src/assets/asset-session.js";
 import { MapCanvas } from "../src/components/MapCanvas.js";
 import { StatusBar } from "../src/shell/StatusBar.js";
+import { getBlockFraming } from "../src/world/block-framing.js";
 
 vi.mock("@studio/renderer", async (original) => {
   const module = await original<typeof import("@studio/renderer")>();
@@ -48,14 +49,14 @@ beforeEach(() => {
   vi.spyOn(window, "matchMedia").mockReturnValue(media);
   renderer = {
     setWorld: vi.fn(), setCamera: vi.fn((camera: Camera) => { drawn = camera; }), setLayers: vi.fn(), setAtlas: vi.fn(),
-    setSpriteMode: vi.fn(),
+    setSpriteMode: vi.fn(), setFraming: vi.fn(), invalidateTiles: vi.fn(),
     tileAt: (x, y) => {
       const tile = screenToTile(drawn, x, y);
       return tile.x < 0 || tile.y < 0 || tile.x >= world.width || tile.y >= world.height
         ? null : { x: Math.floor(tile.x), y: Math.floor(tile.y) };
     },
     render: vi.fn(), dispose: vi.fn(),
-    stats: () => ({ textureUploads: 0, drawCalls: 0, visibleChunks: [], residentChunks: 0, evictedChunks: 0, atlasUploads: 0 }),
+    stats: () => ({ textureUploads: 0, drawCalls: 0, visibleChunks: [], residentChunks: 0, evictedChunks: 0, atlasUploads: 0, framedTiles: 0 }),
   };
   vi.mocked(createMapRenderer).mockReturnValue(renderer);
 });
@@ -289,6 +290,12 @@ test("the map follows the connected atlas, and drops it when the assets are disc
     setDefaultAssetSession(undefined);
     useAssetStore.setState({ status: { kind: "none" } });
   }
+});
+
+test("the map hands the shipped block framing to the renderer once, for self-framed block sprites", async () => {
+  await mount();
+  await vi.waitFor(() => { expect(renderer.setFraming).toHaveBeenCalledTimes(1); });
+  expect(renderer.setFraming).toHaveBeenCalledWith(await getBlockFraming());
 });
 
 test("panning and zooming the map read no asset files and rebuild no atlas", async () => {

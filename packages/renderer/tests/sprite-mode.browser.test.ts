@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, test } from "vitest";
-import { MISSING_SPRITE_COLORS, SPRITE_MIN_ZOOM, createMapRenderer, liquidColors, renderChunk } from "../src/index.js";
+import {
+  MISSING_SPRITE_COLORS, SPRITE_MIN_ZOOM, createMapRenderer, liquidColors, renderChunk, spriteSampling,
+} from "../src/index.js";
 import type { ChunkLayers, MapRenderer, RenderableWorld, SpriteAtlasSource } from "../src/index.js";
 
 const created: MapRenderer[] = [];
@@ -144,6 +146,36 @@ function pixelAt(pixels: Uint8Array, index: number): Rgba {
 }
 
 /**
+ * The sprite of canvas pixel (px, py) at `zoom` pixels per tile, as the chunk pass samples it (spriteSampling): the
+ * straight-alpha mean of samples² sprite pixels spread over the pixel's footprint, kept inside the tile; `pixel` is
+ * the sprite's colour at sprite pixel (sx, sy) of the tile.
+ */
+function sampled(zoom: number, px: number, py: number, pixel: (sx: number, sy: number) => Rgba): Rgba {
+  const { samples, step } = spriteSampling(zoom);
+  const at = (p: number, k: number): number => {
+    const centre = (((p % zoom) + 0.5) * 16) / zoom;
+    return Math.min(15, Math.max(0, Math.floor(centre + ((k + 0.5) / samples - 0.5) * step)));
+  };
+  let red = 0;
+  let green = 0;
+  let blue = 0;
+  let alpha = 0;
+  for (let ky = 0; ky < samples; ky++) {
+    for (let kx = 0; kx < samples; kx++) {
+      const [r, g, b, a] = pixel(at(px, kx), at(py, ky));
+      red += r * a;
+      green += g * a;
+      blue += b * a;
+      alpha += a;
+    }
+  }
+  const count = samples * samples;
+  if (alpha === 0) return [0, 0, 0, 0];
+  const mean = (sum: number): number => Math.floor((2 * sum + alpha) / (2 * alpha));
+  return [mean(red), mean(green), mean(blue), Math.floor((2 * alpha + count) / (2 * count))];
+}
+
+/**
  * The expected canvas at `zoom` (an integer) pixels per tile, computed on the CPU. Without sprites it is each tile's
  * map colour; with them a tile that has a sheet shows the sheet pixel `frame + sub × cell / 16` of its sprite pixel
  * `sub`, over the map colour of what lies behind, with the liquid over that.
@@ -162,19 +194,17 @@ function expectedCanvas(world: RenderableWorld, layers: ChunkLayers, zoom: numbe
       const missing = sprites && layers.blocks && TILES.some(([x, y, id]) => x === tx && y === ty && id === NO_SHEET);
       if (missing) {
         // Content with a stored frame but no sheet: the missing-texture checkerboard, 2 × 2 squares per tile.
-        const sub = (p: number): number => Math.floor((((p % zoom) + 0.5) * 16) / zoom);
-        const square = (Math.floor(sub(px) / 8) + Math.floor(sub(py) / 8)) % 2;
-        color = [...(MISSING_SPRITE_COLORS[square] ?? [0, 0, 0]), 255] as unknown as Rgba;
+        color = sampled(zoom, px, py, (sx, sy) =>
+          [...(MISSING_SPRITE_COLORS[(Math.floor(sx / 8) + Math.floor(sy / 8)) % 2] ?? [0, 0, 0]), 255] as unknown as Rgba);
       }
       const placed = sprites && layers.blocks ? TILES.find(([x, y]) => x === tx && y === ty) : undefined;
       const sheetIndex = placed === undefined ? -1 : [CHEST, TORCH].indexOf(placed[2]);
       const sheet = SHEETS[sheetIndex];
       if (placed !== undefined && sheet !== undefined) {
-        // Sampled at the pixel centre.
-        const sub = (p: number): number => Math.floor((((p % zoom) + 0.5) * 16) / zoom);
-        const sx = placed[3] + Math.floor((sub(px) * sheet.frameWidth) / 16);
-        const sy = placed[4] + Math.floor((sub(py) * sheet.frameHeight) / 16);
-        color = over(sheetPixel(sheetIndex, sx, sy), pixelAt(behind, tile));
+        const sprite = sampled(zoom, px, py, (sx, sy) => sheetPixel(
+          sheetIndex, placed[3] + Math.floor((sx * sheet.frameWidth) / 16), placed[4] + Math.floor((sy * sheet.frameHeight) / 16),
+        ));
+        color = over(sprite, pixelAt(behind, tile));
         if (layers.liquids && tx === WATER_TILE[0] && ty === WATER_TILE[1]) {
           color = over([water[0], water[1], water[2], WATER_AMOUNT], color);
         }
@@ -198,7 +228,8 @@ function draw(world: RenderableWorld, zoom: number, layers: ChunkLayers, sprites
 }
 
 describe("sprite mode", () => {
-  test.each([ZOOM, SPRITE_MIN_ZOOM])(
+  // At 8 pixels per tile a canvas pixel is the mean of 2 × 2 sprite pixels.
+  test.each([ZOOM, 8])(
     "at %i pixels per tile frame-important tiles show the atlas cell their frames select, or the missing-texture checkerboard without a sheet; other blocks, trees and walls keep their map colour",
     (zoom) => {
       const world = spriteWorld();
