@@ -48,19 +48,23 @@ test("exports every map option of each content ID as a TypeScript module", { ski
     assert.deepEqual(names, {
       gameVersion: "1.4.5.8",
       tiles: [["Dirt Block"], ["Demon Altar", "Crimson Altar"], ["Grass"], ["Plants"]],
-      tileMetadata: [
+      walls: [["None"], ["Stone Wall", "Aether \"Crystal\"\nWall"]],
+      liquids: ["Water", "Lava", "Honey", "Shimmer"],
+      paints: ["", "Red Paint", "Blue Paint"],
+    });
+    const metadata = (await import(pathToFileURL(file).href)).terrariaMapMetadata;
+    assert.deepEqual(metadata, {
+      gameVersion: "1.4.5.8",
+      tiles: [
         { symbols: ["Dirt"], symbolStatus: "present", mapOptionCount: 1, nameSources: ["placement"] },
         { symbols: ["DemonAltar"], symbolStatus: "present", mapOptionCount: 2, nameSources: ["legend", "legend"] },
         { symbols: ["Grass"], symbolStatus: "present", mapOptionCount: 1, nameSources: ["symbol"] },
         { symbols: ["Plants"], symbolStatus: "present", mapOptionCount: 0, nameSources: ["symbol"] },
       ],
-      walls: [["None"], ["Stone Wall", "Aether \"Crystal\"\nWall"]],
-      wallMetadata: [
+      walls: [
         { symbols: ["None"], symbolStatus: "present", mapOptionCount: 0, nameSources: ["symbol"] },
         { symbols: ["Stone"], symbolStatus: "present", mapOptionCount: 2, nameSources: ["placement", "legend"] },
       ],
-      liquids: ["Water", "Lava", "Honey", "Shimmer"],
-      paints: ["", "Red Paint", "Blue Paint"],
     });
     const coverage = readFileSync(join(directory, "name-coverage.md"), "utf8");
     assert.match(coverage, /\| 2 \| Grass \| terrain \|/);
@@ -73,9 +77,9 @@ test("suffix-marked unused walls retain diagnostic names and explicit metadata/r
   await withTempDirectory(async (directory) => {
     const result = runPowerShell("scripts/map-palette/fixture-export.ps1", ["-Directory", directory, "-Scenario", "unused-wall-symbol"]);
     assert.equal(result.status, 0, result.stderr);
-    const names = (await import(pathToFileURL(join(directory, "synthetic-map-palette.ts")).href)).terrariaMapNames;
+    const { terrariaMapNames: names, terrariaMapMetadata: metadata } = await import(pathToFileURL(join(directory, "synthetic-map-palette.ts")).href);
     assert.deepEqual(names.walls[0], ["Marble Echo Unused Wall"]);
-    assert.equal(names.wallMetadata[0].symbolStatus, "unused");
+    assert.equal(metadata.walls[0].symbolStatus, "unused");
     assert.match(readFileSync(join(directory, "name-coverage.md"), "utf8"), /\| 0 \| MarbleEchoUnused \| unused\/obsolete \|/);
   });
 });
@@ -89,10 +93,10 @@ for (const [scenario, expected] of [
     await withTempDirectory(async (directory) => {
       const result = runPowerShell("scripts/map-palette/fixture-export.ps1", ["-Directory", directory, "-Scenario", scenario]);
       assert.equal(result.status, 0, result.stderr);
-      const names = (await import(pathToFileURL(join(directory, "synthetic-map-palette.ts")).href)).terrariaMapNames;
+      const { terrariaMapNames: names, terrariaMapMetadata: metadata } = await import(pathToFileURL(join(directory, "synthetic-map-palette.ts")).href);
       assert.deepEqual(names.walls[0], expected);
       assert.deepEqual(names.walls[1], ["Stone Wall", "Aether \"Crystal\"\nWall"]);
-      assert.equal(names.wallMetadata[0].mapOptionCount, 0);
+      assert.equal(metadata.walls[0].mapOptionCount, 0);
     });
   });
 }
@@ -106,10 +110,10 @@ for (const [scenario, expected, symbols] of [
     await withTempDirectory(async (directory) => {
       const result = runPowerShell("scripts/map-palette/fixture-export.ps1", ["-Directory", directory, "-Scenario", scenario]);
       assert.equal(result.status, 0, result.stderr);
-      const names = (await import(pathToFileURL(join(directory, "synthetic-map-palette.ts")).href)).terrariaMapNames;
+      const { terrariaMapNames: names, terrariaMapMetadata: metadata } = await import(pathToFileURL(join(directory, "synthetic-map-palette.ts")).href);
       assert.deepEqual(names.tiles.slice(0, 2), [["Dirt Block"], ["Demon Altar", "Crimson Altar"]]);
       assert.deepEqual(names.tiles.slice(2), expected);
-      assert.deepEqual(names.tileMetadata.slice(2).map((entry) => entry.symbols), symbols);
+      assert.deepEqual(metadata.tiles.slice(2).map((entry) => entry.symbols), symbols);
       const coverage = readFileSync(join(directory, "name-coverage.md"), "utf8");
       if (scenario === "missing-symbols") assert.match(coverage, /unavailable symbolic metadata/);
       if (scenario === "ambiguous-symbols") assert.match(coverage, /ambiguous symbolic aliases/);
@@ -141,7 +145,7 @@ test("exports the palette of a local Terraria installation", {
     assert.equal(palette.liquids.length, 4);
     assert.equal(palette.background.sky.length, 256);
     assert.ok(palette.paints.length >= 31);
-    const names = (await import(pathToFileURL(file).href)).terrariaMapNames;
+    const { terrariaMapNames: names, terrariaMapMetadata: metadata } = await import(pathToFileURL(file).href);
     assert.equal(names.gameVersion, palette.gameVersion);
     assert.equal(names.tiles[0][0], "Dirt Block");
     assert.equal(names.tiles[2][0], "Grass");
@@ -158,8 +162,8 @@ test("exports the palette of a local Terraria installation", {
     assert.equal(names.paints[30], "Negative Paint");
     assert.equal(names.paints.length, palette.paints.length);
     assert.deepEqual(names.tiles.map((options) => options.length), palette.tiles.map((options) => Math.max(1, options.length)));
-    assert.deepEqual(names.tileMetadata.map((entry) => entry.mapOptionCount), palette.tiles.map((options) => options.length));
+    assert.deepEqual(metadata.tiles.map((entry) => entry.mapOptionCount), palette.tiles.map((options) => options.length));
     assert.deepEqual(names.walls.map((options) => options.length), palette.walls.map((options) => Math.max(1, options.length)));
-    assert.deepEqual(names.wallMetadata.map((entry) => entry.mapOptionCount), palette.walls.map((options) => options.length));
+    assert.deepEqual(metadata.walls.map((entry) => entry.mapOptionCount), palette.walls.map((options) => options.length));
   });
 });
