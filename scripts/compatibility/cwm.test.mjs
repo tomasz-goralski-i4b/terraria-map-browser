@@ -114,6 +114,7 @@ test("CI always runs the differential job and preserves bounded failure reports"
   assert.match(compatibility, /pnpm -s typecheck/);
   assert.match(compatibility, /run: node scripts\/compatibility\/cwm.mjs/);
   assert.match(compatibility, /if: failure\(\)[\s\S]*actions\/upload-artifact@v4[\s\S]*path: \.tdd\/cwm-\*\/report.txt/);
+  assert.match(compatibility, /include-hidden-files: true/);
   assert.doesNotMatch(compatibility, /continue-on-error|paths-ignore/);
   assert.match(workflow.split("  verify:")[1], /needs: cwm-compatibility/);
 });
