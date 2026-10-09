@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { ContentRef } from "@studio/world-model";
-import { contentWithoutSprite } from "../src/assets/sprite-coverage.js";
+import { contentWithoutSprite, wallsWithoutSprite } from "../src/assets/sprite-coverage.js";
 
 const ABSENT = 0xffff;
 
@@ -30,5 +30,23 @@ describe("contentWithoutSprite", () => {
   test("is empty when every framed content has a sheet, or the world stores no frames", () => {
     expect(contentWithoutSprite(planes([[0, 0], [4, -1]]), palette, new Set([21]))).toEqual([]);
     expect(contentWithoutSprite({ block: Uint16Array.from([1, 2]) }, palette, new Set())).toEqual([]);
+  });
+});
+
+describe("wallsWithoutSprite", () => {
+  const walls: readonly ContentRef[] = [
+    { kind: "vanilla", id: 1 }, // 0 stone wall: has a sheet
+    { kind: "vanilla", id: 900 }, // 1 newer than the install: no sheet
+    { kind: "mod", mod: "Calamity", internalName: "Panel" }, // 2 mod wall: framed by nobody, keeps its map colour
+    { kind: "vanilla", id: 901 }, // 3 no sheet, but never placed
+  ];
+
+  test("lists the vanilla walls placed without a wall sheet, once each, in palette order", () => {
+    const wall = Uint16Array.from([0, 1, 2, 1, ABSENT]);
+    expect(wallsWithoutSprite(wall, walls, new Set([1]))).toEqual([walls[1]]);
+  });
+
+  test("is empty when every placed vanilla wall has a sheet", () => {
+    expect(wallsWithoutSprite(Uint16Array.from([0, 2, ABSENT]), walls, new Set([1]))).toEqual([]);
   });
 });
