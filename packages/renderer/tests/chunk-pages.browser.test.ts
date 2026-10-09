@@ -333,7 +333,7 @@ describe("map option rules across the renderer's lifecycle", () => {
     expect(wrong.slice(0, 5), `${String(wrong.length)} pixels differ`).toEqual([]);
   }
 
-  test("a renderer created on the canvas of a disposed one draws ruled content exactly", () => {
+  test("a renderer created on the canvas of a disposed one draws ruled content exactly", { tags: ["perf"] }, () => {
     const first = setup(300, 200, { mapPalette: syntheticMapPalette });
     first.renderer.setWorld(fullWorld(300, 200));
     first.renderer.setLayers(layers);
@@ -581,7 +581,7 @@ describe("cost of a layer toggle", () => {
     return frames;
   }
 
-  test("a 16000 × 4000 world at Fit world takes at most a third of the frames of main's chunk preparation", () => {
+  test("a 16000 × 4000 world at Fit world takes at most a third of the frames of main's chunk preparation", { tags: ["perf"] }, () => {
     // Plane contents only matter to main's preparation: alternate rows of plain and ruled blocks (a chest, tile 21),
     // over planes sharing one buffer.
     const width = 16000;

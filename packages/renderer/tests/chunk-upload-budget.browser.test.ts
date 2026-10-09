@@ -66,7 +66,7 @@ describe("scheduled chunk upload budget", () => {
   const camera = fitWorld(viewport, large);
   const visible = visibleChunks(camera, viewport, large);
 
-  test.each([32, 127])("each fitted Large-world frame uploads at most %i chunks", (budget) => {
+  test.each([32, 127])("each fitted Large-world frame uploads at most %i chunks", { tags: ["perf"] }, (budget) => {
     const frames = animationFrames();
     const { renderer } = setup(viewport.width, viewport.height, { maxChunkUploadsPerFrame: budget });
     renderer.setWorld(large);
@@ -140,7 +140,7 @@ describe("scheduled chunk upload budget", () => {
     expect(firstFrameUploads({ maxUploadMillisecondsPerFrame: 50 })).toBeGreaterThan(uploads);
   });
 
-  test("continuations complete the Large world with synchronous pixels and then stop scheduling", () => {
+  test("continuations complete the Large world with synchronous pixels and then stop scheduling", { tags: ["perf"] }, () => {
     const frames = animationFrames();
     const { renderer, pixels } = setup(viewport.width, viewport.height, { maxChunkUploadsPerFrame: 127 });
     renderer.setWorld(large);
@@ -197,7 +197,7 @@ describe("scheduled chunk upload budget", () => {
     expect(frames.pending.size).toBe(0);
   });
 
-  test("a fitted modded world keeps bounded uploads, a bounded cache and no re-uploads across repeated zoom changes", () => {
+  test("a fitted modded world keeps bounded uploads, a bounded cache and no re-uploads across repeated zoom changes", { tags: ["perf"] }, () => {
     const frames = animationFrames();
     const world = terrain(10000, 3000);
     const moddedViewport = { width: 1250, height: 375 };

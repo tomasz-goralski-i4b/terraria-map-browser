@@ -228,7 +228,7 @@ describe("overview below half a pixel per tile", () => {
     expect(pixel(10, 10)).toEqual(contentColor(palette[0], "block"));
   });
 
-  test("zoomed-out views do not grow the chunk cache, and reused cache slots build each chunk from its own data", () => {
+  test("zoomed-out views do not grow the chunk cache, and reused cache slots build each chunk from its own data", { tags: ["perf"] }, () => {
     // Every chunk is uniform, coloured by (x + 2y) % 3 so that horizontal and vertical neighbours differ.
     const colorIndex = (chunkX: number, chunkY: number): number => (chunkX + 2 * chunkY) % 3;
     const large = blocks(8400, 2400, (x, y) => colorIndex(Math.floor(x / 128), Math.floor(y / 128)));
