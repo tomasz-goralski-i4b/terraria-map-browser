@@ -54,6 +54,7 @@ class TileEncoder {
     this.world = world;
     if (world.palette.length > NO_CONTENT) unsupported("palette exceeds 65535 entries");
     this.ids = new Int32Array(world.palette.length);
+    this.ids.fill(-1); // Sparse palette entries must never default to vanilla dirt.
     world.palette.forEach((ref, index) => {
       if (ref.kind !== "vanilla" || !Number.isInteger(ref.id) || ref.id < 0 || ref.id > 65535) unsupported("only vanilla content references can be written");
       this.ids[index] = ref.id;
@@ -69,22 +70,22 @@ class TileEncoder {
     return this.output;
   }
 
-  private fail(reason: string): never {
+  private fail(reason: string, tile = this.tile): never {
     const height = this.world.metadata.height;
-    throw new WorldFormatError("UnencodableTile", 0, reason, { x: Math.floor(this.tile / height), y: this.tile % height });
+    throw new WorldFormatError("UnencodableTile", 0, reason, { x: Math.floor(tile / height), y: tile % height });
   }
 
-  private content(value: number): number {
+  private content(value: number, tile = this.tile): number {
     if (value === NO_CONTENT) return -1;
     const id = this.ids[value];
-    if (id === undefined) this.fail("missing palette entry");
+    if (id === undefined || id < 0) this.fail("missing palette entry", tile);
     return id;
   }
 
   private equal(first: number, next: number): boolean {
     const { planes } = this.world;
-    if (this.content(planes.block[first] ?? NO_CONTENT) !== this.content(planes.block[next] ?? NO_CONTENT) ||
-      this.content(planes.wall[first] ?? NO_CONTENT) !== this.content(planes.wall[next] ?? NO_CONTENT)) return false;
+    if (this.content(planes.block[first] ?? NO_CONTENT, first) !== this.content(planes.block[next] ?? NO_CONTENT, next) ||
+      this.content(planes.wall[first] ?? NO_CONTENT, first) !== this.content(planes.wall[next] ?? NO_CONTENT, next)) return false;
     return planes.frameX[first] === planes.frameX[next] && planes.frameY[first] === planes.frameY[next] &&
       planes.paint[first] === planes.paint[next] && planes.wallPaint[first] === planes.wallPaint[next] &&
       planes.liquid[first] === planes.liquid[next] && planes.liquidAmount[first] === planes.liquidAmount[next] &&
@@ -107,9 +108,7 @@ class TileEncoder {
         if (block !== 520 && block !== 423) {
           const limit = Math.min(height - y - 1, 32767);
           while (run < limit) {
-            // Invalid palette indices in a neighbour must report that neighbour's coordinate.
-            this.tile = x * height + y + run + 1;
-            if (!this.equal(x * height + y, this.tile)) break;
+            if (!this.equal(this.tile, this.tile + run + 1)) break;
             run++;
           }
         }
