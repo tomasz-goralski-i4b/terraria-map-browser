@@ -6,9 +6,9 @@ const scope = globalThis as unknown as {
 const original = scope.postMessage.bind(scope);
 
 scope.postMessage = (message, options) => {
-  const parsed = message as { type?: string; result?: { planes: Record<string, ArrayBufferView> } };
+  const parsed = message as { type?: string; result?: { planes: Record<string, ArrayBufferView>; envelope: { source: Uint8Array } } };
   const buffers = parsed.type === "parsed" && parsed.result !== undefined
-    ? [...new Set(Object.values(parsed.result.planes).map((plane) => plane.buffer))]
+    ? [...new Set([...Object.values(parsed.result.planes).map((plane) => plane.buffer), parsed.result.envelope.source.buffer])]
     : [];
   original(message, options);
   if (buffers.length > 0) {

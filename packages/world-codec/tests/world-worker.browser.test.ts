@@ -144,8 +144,9 @@ describe("world Worker", () => {
     const bytes = await loadWorld("SCCO1.wld");
     const expected = readWorldTiles(bytes.slice());
     const actual = await newClient().parse(bytes.buffer.slice(0));
-    const { planes: expectedPlanes, palette: expectedPalette, ...expectedRest } = expected;
-    const { planes: actualPlanes, palette: actualPalette, ...actualRest } = actual;
+    const { planes: expectedPlanes, palette: expectedPalette, envelope: expectedEnvelope, ...expectedRest } = expected;
+    const { planes: actualPlanes, palette: actualPalette, envelope: actualEnvelope, ...actualRest } = actual;
+    expect(firstMismatch(actualEnvelope.source, expectedEnvelope.source)).toBe(-1);
     expect(actualRest).toEqual(expectedRest);
     expect(expected.entities.Chests.data?.entries).toHaveLength(190);
     expect(actual.entities.Chests.data?.entries).toHaveLength(190);
@@ -178,9 +179,16 @@ describe("world Worker", () => {
       probe,
       new Promise<never>((_, reject) => window.setTimeout(() => { reject(new Error("no probe report")); }, 5_000)),
     ]);
-    expect(report.uniqueBuffers).toBeGreaterThan(0);
+    expect(report.uniqueBuffers).toBe(11);
     expect(report.detached.every(Boolean)).toBe(true);
     expect(firstMismatch(result.planes.block, expected.planes.block)).toBe(-1);
+    expect(result.envelope.source.byteLength).toBe(bytes.length);
+    expect(firstMismatch(result.envelope.source, bytes)).toBe(-1);
+    for (const span of [result.envelope.fileHeader, result.envelope.metadata, result.envelope.tiles,
+      ...result.envelope.opaqueSections.map((section) => section.bytes), result.envelope.footer,
+      result.envelope.frameImportantBits, result.sections.frameImportantBits]) {
+      expect(span.buffer).toBe(result.envelope.source.buffer);
+    }
   });
 
   it("parse_DetachedInputBuffer_RejectsWithWorldWorkerError_ReleasesAbortListener_AndLaterParseWorks", async () => {

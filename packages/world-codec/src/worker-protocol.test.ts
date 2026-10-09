@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { collectTransferList, type TilePlanes, type WorldTilesResult } from "./index.js";
 
 function resultWith(planes: TilePlanes): WorldTilesResult {
-  return { planes, palette: [] } as unknown as WorldTilesResult;
+  return { planes, palette: [], envelope: { source: new Uint8Array(167) } } as unknown as WorldTilesResult;
 }
 
 function planes(shared?: ArrayBuffer): TilePlanes {
@@ -24,14 +24,14 @@ function planes(shared?: ArrayBuffer): TilePlanes {
 describe("collectTransferList", () => {
   it("collectTransferList_TenDistinctPlanes_ListsEachBufferOnce", () => {
     const list = collectTransferList(resultWith(planes()));
-    expect(list).toHaveLength(10);
-    expect(new Set(list).size).toBe(10);
+    expect(list).toHaveLength(11);
+    expect(new Set(list).size).toBe(11);
   });
 
   it("collectTransferList_PlanesShareOneBuffer_ListsItOnce", () => {
     const shared = new ArrayBuffer(4);
     const list = collectTransferList(resultWith(planes(shared)));
     expect(list.filter((buffer) => buffer === shared)).toHaveLength(1);
-    expect(list).toHaveLength(9);
+    expect(list).toHaveLength(10);
   });
 });
