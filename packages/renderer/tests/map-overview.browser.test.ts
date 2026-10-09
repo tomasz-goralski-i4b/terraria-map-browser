@@ -228,7 +228,7 @@ describe("overview below half a pixel per tile", () => {
     expect(pixel(10, 10)).toEqual(contentColor(palette[0], "block"));
   });
 
-  test("zoomed-out views do not grow the chunk cache, and reused cache slots build each chunk from its own data", { tags: ["perf"] }, () => {
+  test("zoomed-out views do not grow the chunk cache, and reused cache slots build each chunk from its own data", { tags: ["perf"], timeout: 60_000 }, () => {
     // Every chunk is uniform, coloured by (x + 2y) % 3 so that horizontal and vertical neighbours differ.
     const colorIndex = (chunkX: number, chunkY: number): number => (chunkX + 2 * chunkY) % 3;
     const large = blocks(8400, 2400, (x, y) => colorIndex(Math.floor(x / 128), Math.floor(y / 128)));
@@ -255,7 +255,7 @@ describe("overview below half a pixel per tile", () => {
       expect([...pixels.subarray((y * viewport.width + x) * 4, (y * viewport.width + x) * 4 + 4)], `chunk ${String(chunk.x)},${String(chunk.y)}`)
         .toEqual(expected);
     }
-  }, 60_000);
+  });
 
   test("chunks still loading after zooming in show the overview instead of a hole, then the exact chunks", () => {
     // The zoomed-in area is a checkerboard: the overview (a mean) differs from every exact pixel.
@@ -292,7 +292,7 @@ describe("overview below half a pixel per tile", () => {
     expect(differing).toBe(0);
   });
 
-  test("a layer change sweeps out from the centre of the view: no blank, no chunk ahead of the front, within budget", { tags: ["perf"] }, () => {
+  test("a layer change sweeps out from the centre of the view: no blank, no chunk ahead of the front, within budget", { tags: ["perf"], timeout: 60_000 }, () => {
     // 128 uniform chunks in two colours, all visible, in a cache of 16: the rebuild re-uploads evicted chunks.
     const colorIndex = (chunkX: number, chunkY: number): number => 1 + ((chunkX + chunkY) % 2);
     const world = blocks(2048, 1024, (x, y) => colorIndex(Math.floor(x / 128), Math.floor(y / 128)));
@@ -351,7 +351,7 @@ describe("overview below half a pixel per tile", () => {
     let differing = 0;
     for (let index = 0; index < actual.length; index++) if (actual[index] !== expected[index]) differing++;
     expect(differing).toBe(0);
-  }, 60_000);
+  });
 
   test("tileAt is independent of the overview", () => {
     const { renderer } = setup(512, 256);

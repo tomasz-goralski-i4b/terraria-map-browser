@@ -581,7 +581,7 @@ describe("cost of a layer toggle", () => {
     return frames;
   }
 
-  test("a 16000 × 4000 world at Fit world takes at most a third of the frames of main's chunk preparation", { tags: ["perf"] }, () => {
+  test("a 16000 × 4000 world at Fit world takes at most a third of the frames of main's chunk preparation", { tags: ["perf"], timeout: 120_000 }, () => {
     // Plane contents only matter to main's preparation: alternate rows of plain and ruled blocks (a chest, tile 21),
     // over planes sharing one buffer.
     const width = 16000;
@@ -609,5 +609,5 @@ describe("cost of a layer toggle", () => {
     expect(main).toBeGreaterThan(100);
     expect(main).toBeLessThan(170);
     expect(current * 3).toBeLessThanOrEqual(main);
-  }, 120_000);
+  });
 });

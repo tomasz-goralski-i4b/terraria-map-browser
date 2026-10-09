@@ -66,7 +66,7 @@ describe("scheduled chunk upload budget", () => {
   const camera = fitWorld(viewport, large);
   const visible = visibleChunks(camera, viewport, large);
 
-  test.each([32, 127])("each fitted Large-world frame uploads at most %i chunks", { tags: ["perf"] }, (budget) => {
+  test.each([32, 127])("each fitted Large-world frame uploads at most %i chunks", { tags: ["perf"], timeout: 60_000 }, (budget) => {
     const frames = animationFrames();
     const { renderer } = setup(viewport.width, viewport.height, { maxChunkUploadsPerFrame: budget });
     renderer.setWorld(large);
@@ -87,7 +87,7 @@ describe("scheduled chunk upload budget", () => {
     }
     expect(renderer.stats().visibleChunks).toEqual(visible);
     expect(frames.pending.size).toBe(0);
-  }, 60_000);
+  });
 
   test("the default budget draws a Large world over several frames", () => {
     const frames = animationFrames();
@@ -140,7 +140,7 @@ describe("scheduled chunk upload budget", () => {
     expect(firstFrameUploads({ maxUploadMillisecondsPerFrame: 50 })).toBeGreaterThan(uploads);
   });
 
-  test("continuations complete the Large world with synchronous pixels and then stop scheduling", { tags: ["perf"] }, () => {
+  test("continuations complete the Large world with synchronous pixels and then stop scheduling", { tags: ["perf"], timeout: 60_000 }, () => {
     const frames = animationFrames();
     const { renderer, pixels } = setup(viewport.width, viewport.height, { maxChunkUploadsPerFrame: 127 });
     renderer.setWorld(large);
@@ -163,7 +163,7 @@ describe("scheduled chunk upload budget", () => {
     // The reference setters queued a frame; disposal removes it without affecting the completed renderer.
     reference.renderer.dispose();
     expect(frames.pending.size).toBe(0);
-  }, 60_000);
+  });
 
   test("scheduled frames stop with a complete map when visible chunks exceed cache capacity", () => {
     const frames = animationFrames();
@@ -197,7 +197,7 @@ describe("scheduled chunk upload budget", () => {
     expect(frames.pending.size).toBe(0);
   });
 
-  test("a fitted modded world keeps bounded uploads, a bounded cache and no re-uploads across repeated zoom changes", { tags: ["perf"] }, () => {
+  test("a fitted modded world keeps bounded uploads, a bounded cache and no re-uploads across repeated zoom changes", { tags: ["perf"], timeout: 60_000 }, () => {
     const frames = animationFrames();
     const world = terrain(10000, 3000);
     const moddedViewport = { width: 1250, height: 375 };
@@ -239,7 +239,7 @@ describe("scheduled chunk upload budget", () => {
       else expect(beforeFit).toBe(afterFirstCycle);
     }
     expect(deleted).not.toHaveBeenCalled();
-  }, 60_000);
+  });
 
   test.each([false, true])("changing worlds resets the grown cache capacity (clear first: %s)", (clearFirst) => {
     const frames = animationFrames();
