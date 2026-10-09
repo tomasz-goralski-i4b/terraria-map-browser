@@ -201,6 +201,40 @@ describe("wall framing", () => {
   });
 });
 
+describe("framing many walls at once", () => {
+  test("frameRegion gives every tile cellAt's cell, with counting blocks, other blocks and modded content", () => {
+    const world = wallWorld(40, 30);
+    const blocks: readonly (ContentRef | null)[] = [
+      null, { kind: "vanilla", id: 54 }, { kind: "vanilla", id: 1 }, { kind: "vanilla", id: 748 },
+      { kind: "mod", mod: "Example", internalName: "Crate" },
+    ];
+    for (let x = 0; x < 40; x++) {
+      for (let y = 0; y < 30; y++) {
+        const hash = Math.imul(x, 73856093) ^ Math.imul(y, 19349663);
+        const wall = (hash >>> 3) % 5 === 0 ? null : [1, 2, 185, 4][(hash >>> 6) % 4] ?? null;
+        put(world, x, y, wall, blocks[(hash >>> 9) % blocks.length] ?? null);
+      }
+    }
+    world.setTile(7, 7, { wall: { kind: "mod", mod: "Example", internalName: "Panel" }, wires: 0, actuator: false });
+    const out = new Uint16Array(40 * 30);
+    walls.frameRegion(world, { left: 0, top: 0, width: 40, height: 30 }, out);
+    for (let x = 0; x < 40; x++) for (let y = 0; y < 30; y++) expect(out[x * 30 + y], `(${String(x)}, ${String(y)})`).toBe(walls.cellAt(world, x, y));
+  });
+
+  test("content added to the world's palette after a region was framed is framed too", () => {
+    const world = wallWorld(6, 6);
+    put(world, 2, 2, 1);
+    const out = new Uint16Array(36);
+    walls.frameRegion(world, { left: 0, top: 0, width: 6, height: 6 }, out);
+    // A new wall type and a new counting block type join the palette.
+    put(world, 3, 2, 5);
+    put(world, 2, 3, null, { kind: "vanilla", id: 459 });
+    walls.frameRegion(world, { left: 0, top: 0, width: 6, height: 6 }, out);
+    expect(out[3 * 6 + 2]).toBe(walls.wallCell(5, WALL_SIDE.west, 3, 2));
+    expect(out[2 * 6 + 2]).toBe(walls.wallCell(1, WALL_SIDE.east | WALL_SIDE.south, 2, 2));
+  });
+});
+
 describe("wall source rectangles", () => {
   test("a wall cell is 32 × 32 at 36 pixels per cell (docs/assets.md, worked examples 5 and 6); NO_CELL has none", () => {
     expect(wallSourceRect(9 * 64 + 3)).toEqual({ x: 324, y: 108, width: 32, height: 32 });
