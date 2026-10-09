@@ -93,6 +93,16 @@ save:
   bits), the metadata section, each of sections 3–10 as a separate named `OpaqueSection` (kept apart from the tile
   planes), and the footer. The footer is validated as in "Footer (M2)" before the envelope is returned; `Read`
   keeps ignoring it. The envelope holds no reference to the stream or path, so it stays valid after both are gone.
+- **TypeScript preservation.** `readWorldTiles` returns `WorldTilesResult.envelope` (`WorldEnvelope`): the
+  borrowed input `source`, `fileHeader` (including the section table), raw `metadata`, original `tiles`, eight
+  named `opaqueSections` with boundaries, `footer`, and `frameImportantBits`. Every byte view shares the source
+  buffer; a subview input keeps its byte offset and excludes bytes outside that view. `original` holds separate
+  decoded header, metadata and details snapshots for a future writer to compare with edits. Callers must leave
+  source bytes unchanged. Header/table validation and exact metadata/tile consumption prove the boundaries;
+  opaque payload failures remain local to the entity reader. This preservation API does not yet validate footer
+  contents or grant write support: a future TS writer must enforce the footer and supported-write rules above.
+  The Worker transfers the source buffer once alongside the CWM plane buffers through `collectTransferList`,
+  keeping all byte-view aliases intact on the receiving thread.
 - **W-S1 Sections 3–10.** The bytes from `pointer[2]` to `pointer[10]` are copied as **one** span. No section in
   this range stores an absolute file offset: every reader of them is sequential and is only checked against the
   pointer at its end (T8, lines 1438-1498), so moving the span does not change its meaning. They do store tile

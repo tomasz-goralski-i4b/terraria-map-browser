@@ -22,5 +22,6 @@ export {
   type EntityDataBySection, type EntitySectionName, type EntitySectionFailure, type EntitySectionResult, type WorldEntities,
 } from "./entities.js";
 export { readWorldTiles, type TileContentRef, type TilePlanes, type WorldTilesResult } from "./tiles.js";
+export { type WorldEnvelope, type OpaqueWorldSection } from "./envelope.js";
 export { collectTransferList, type WorldWorkerFailure, type WorldWorkerRequest, type WorldWorkerResponse } from "./worker-protocol.js";
 export { WorldWorkerClient, WorldWorkerError } from "./world-worker-client.js";

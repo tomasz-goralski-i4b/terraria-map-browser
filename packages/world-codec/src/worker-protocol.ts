@@ -18,15 +18,16 @@ export interface WorldWorkerFailure {
   readonly message: string;
 }
 
-/** Worker → main thread. Plane buffers travel in the transfer list, never as per-tile objects. */
+/** Worker → main thread. Planes and the retained source buffer travel in the transfer list. */
 export type WorldWorkerResponse =
   | { readonly type: "parsed"; readonly requestId: number; readonly result: WorldTilesResult }
   | { readonly type: "failed"; readonly requestId: number; readonly error: WorldWorkerFailure };
 
-/** Every unique plane ArrayBuffer of `result`, once each, for `postMessage(..., { transfer })`. */
+/** Every unique plane and envelope source ArrayBuffer, once each, for `postMessage(..., { transfer })`. */
 export function collectTransferList(result: WorldTilesResult): ArrayBuffer[] {
   const unique = new Set<ArrayBuffer>();
   const planes: ArrayBufferView[] = Object.values<ArrayBufferView>(result.planes as unknown as Record<string, ArrayBufferView>);
   for (const plane of planes) unique.add(plane.buffer as ArrayBuffer);
+  unique.add(result.envelope.source.buffer as ArrayBuffer);
   return [...unique];
 }

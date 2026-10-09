@@ -156,7 +156,7 @@ export function readWorldHeader(bytes: Uint8Array): WorldHeader {
   if (reader.length < headerEnd) {
     throw truncatedError(reader);
   }
-  const frameImportantBits = reader.readBytes(FRAME_BITS_OFFSET, frameBytes);
+  const frameImportantBits = bytes.subarray(FRAME_BITS_OFFSET, headerEnd);
   const pointers = readPointers(reader, headerEnd);
   const sectionStarts = [0, ...pointers, reader.length];
   const makeBoundary = (index: number): SectionBoundary => ({
