@@ -15,7 +15,8 @@
   },
   "types": "./dist/index.d.ts",
   "scripts": {
-    "build": "tsc -b",
+    "build": "tsc -b . src/node",
+    "export:cwm-corpus": "node dist/node/export-cwm-corpus.js",
     "lint": "eslint src tests --max-warnings=0",
     "test": "pnpm --dir ../.. exec vitest run --project @studio/world-codec",
     "test:browser": "pnpm --dir ../.. exec vitest run --project @studio/world-codec/browser"

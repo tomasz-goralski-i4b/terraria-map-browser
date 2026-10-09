@@ -3,6 +3,7 @@
   "references": [
     { "path": "packages/world-model" },
     { "path": "packages/world-codec" },
+    { "path": "packages/world-codec/src/node" },
     { "path": "packages/world-codec/tests" },
     { "path": "packages/world-codec/tests/fixtures" },
     { "path": "packages/assets" },

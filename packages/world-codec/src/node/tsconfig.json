@@ -1,0 +1,12 @@
+{
+  "extends": "../../../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "../../dist/node",
+    "lib": ["ES2024", "DOM"],
+    "types": ["node"],
+    "isolatedDeclarations": true
+  },
+  "include": ["*.ts"],
+  "references": [{ "path": "../.." }]
+}
