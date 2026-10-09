@@ -239,6 +239,9 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
       actualSize: () => {
         zoomBy(1 / session.animator.target.zoom);
       },
+      zoomTo: (zoom) => {
+        zoomBy(zoom / session.animator.target.zoom);
+      },
       jumpTo: (camera) => {
         if (session.viewport.width === 0) return;
         session.keys.clear();

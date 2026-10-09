@@ -7,6 +7,7 @@ import type { Camera, MapRenderer, RenderableWorld } from "@studio/renderer";
 import { setDefaultAssetSession, useAssetStore, type AssetSession, type AssetStatus } from "../src/assets/asset-session.js";
 import { MapCanvas } from "../src/components/MapCanvas.js";
 import { StatusBar } from "../src/shell/StatusBar.js";
+import { getMapController } from "../src/shell/view-store.js";
 import { getBlockFraming } from "../src/world/block-framing.js";
 
 vi.mock("@studio/renderer", async (original) => {
@@ -252,6 +253,21 @@ test("a live reduced-motion change finishes easing and unmount cancels pending f
   await view.unmount();
   expect(frames.size).toBe(0);
   expect(renderer.dispose).toHaveBeenCalledOnce();
+});
+
+test("zoom to 400 % glides to 4 px per tile around the centre of the view", async () => {
+  await mount();
+  const centre = { x: canvas().width / 2, y: canvas().height / 2 };
+  const tile = screenToTile(drawn, centre.x, centre.y);
+  getMapController()?.zoomTo(4);
+  await frame();
+  expect(drawn.zoom).toBeGreaterThan(1);
+  expect(drawn.zoom).toBeLessThan(4);
+  await frame(2000);
+  expect(drawn.zoom).toBe(4);
+  expect(screenToTile(drawn, centre.x, centre.y).x).toBeCloseTo(tile.x, 6);
+  expect(screenToTile(drawn, centre.x, centre.y).y).toBeCloseTo(tile.y, 6);
+  expect(frames.size).toBe(0);
 });
 
 test("opening another world gives the renderer that world's fitted camera before the world itself", async () => {

@@ -223,11 +223,11 @@ test("the wheel zooms around the pointer, keeping the tile under it fixed", asyn
   expect(same.y).toBeCloseTo(tile.y, 6);
 });
 
-test("zoom stays within 1/8 and 16 pixels per tile", async () => {
+test("zoom stays within 1/8 and 256 pixels per tile", async () => {
   await mountMap();
   for (let i = 0; i < 60; i++) wheel(200, 150, -100);
   await settle();
-  expect(camera().zoom).toBe(16);
+  expect(camera().zoom).toBe(256);
   for (let i = 0; i < 120; i++) wheel(200, 150, 100);
   await settle();
   expect(camera().zoom).toBe(0.125);

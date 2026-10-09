@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "vitest";
 import {
-  SPRITE_FULL_ZOOM, SPRITE_MIN_ZOOM, createMapRenderer, renderChunk, spriteSampling,
+  MAX_ZOOM, SPRITE_FULL_ZOOM, SPRITE_MIN_ZOOM, createMapRenderer, renderChunk, spriteSampling,
 } from "../src/index.js";
 import type { ChunkLayers, MapRenderer, RenderableWorld, SpriteAtlasSource } from "../src/index.js";
 
@@ -139,6 +139,65 @@ describe("sprite sampling by zoom", () => {
         const at = (y * 2 * zoom + x) * 4;
         expect([out[at], out[at + 1], out[at + 2], out[at + 3]], `(${String(x)}, ${String(y)})`).toEqual([red, green, 50, 255]);
       }
+    }
+  });
+});
+
+describe("the closest zoom", () => {
+  test(`at ${String(MAX_ZOOM)} px per tile a sprite pixel covers exactly 16 × 16 screen pixels`, () => {
+    expect(MAX_ZOOM).toBe(256);
+    const scale = MAX_ZOOM / 16;
+    const world = chestWorld(2, 1, [[0, 0, 0], [1, 0, 18]]);
+    const layers: ChunkLayers = { background: false, walls: false, blocks: true, liquids: false };
+    const { canvas, renderer } = makeRenderer(2 * MAX_ZOOM, MAX_ZOOM);
+    renderer.setWorld(world);
+    renderer.setLayers(layers);
+    renderer.setAtlas(columnAtlas());
+    renderer.setSpriteMode(true);
+    renderer.setCamera({ x: 0, y: 0, zoom: MAX_ZOOM });
+    renderer.render();
+    const out = readCanvas(canvas);
+    // Nearest sampling: screen pixel (x, y) shows sprite pixel (x / 16, y / 16) of the tile's cell, nothing blended.
+    const expected = new Uint8Array(out.length);
+    for (let y = 0; y < MAX_ZOOM; y++) {
+      for (let x = 0; x < 2 * MAX_ZOOM; x++) {
+        const column = (x < MAX_ZOOM ? 0 : 18) + Math.floor((x % MAX_ZOOM) / scale);
+        expected.set([(column * 7) % 256, 100 + Math.floor(y / scale), 50, 255], (y * 2 * MAX_ZOOM + x) * 4);
+      }
+    }
+    // One comparison of the whole canvas: 131 072 per-pixel assertions would dominate the suite's run time.
+    expect(out).toEqual(expected);
+  });
+});
+
+describe("the closest zoom far from the origin", () => {
+  test("at a far, fractional camera every sprite pixel is still exactly 16 screen pixels wide", () => {
+    // Float32 camera arithmetic loses precision with distance from the origin; it may shift the sprite, never warp it.
+    const left = 16000;
+    const world = chestWorld(16004, 1, [[left + 1, 0, 0]]);
+    const layers: ChunkLayers = { background: false, walls: false, blocks: true, liquids: false };
+    const width = 3 * MAX_ZOOM;
+    const { canvas, renderer } = makeRenderer(width, 4);
+    renderer.setWorld(world);
+    renderer.setLayers(layers);
+    renderer.setAtlas(columnAtlas());
+    renderer.setSpriteMode(true);
+    for (const fraction of [0.37, 0.5, 0.913]) {
+      renderer.setCamera({ x: left + fraction, y: 0, zoom: MAX_ZOOM });
+      renderer.render();
+      const out = readCanvas(canvas);
+      const runs: number[] = [];
+      let start = -1;
+      for (let x = 0; x <= width; x++) {
+        const red = x < width ? out[x * 4] : -1;
+        const sprite = x < width && out[x * 4 + 3] === 255 && out[x * 4 + 2] === 50;
+        const previous = x > 0 ? out[(x - 1) * 4] : -1;
+        if (start >= 0 && (!sprite || red !== previous)) { runs.push(x - start); start = -1; }
+        if (sprite && start < 0) start = x;
+      }
+      // The tile's 16 columns all appear; the first and last may be cut by the viewport edge, the inner ones are whole.
+      expect(runs.length, `fraction ${String(fraction)}`).toBe(16);
+      for (const run of runs.slice(1, -1)) expect(run, `fraction ${String(fraction)}`).toBe(16);
     }
   });
 });
