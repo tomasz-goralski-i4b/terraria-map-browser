@@ -133,57 +133,49 @@ export function createChunkCellCache(world: FramingWorld, framing: BlockFraming,
 
   const invalidate = (tiles: Iterable<{ readonly x: number; readonly y: number }>): readonly BlockRegion[] => {
     const regions: BlockRegion[] = [];
-    // Per cached chunk: which of its tiles to recompute, so overlapping areas frame each tile once.
-    const marks = new Map<number, Uint8Array>();
     for (const { x, y } of tiles) {
       if (x < 0 || y < 0 || x >= width || y >= height) continue;
       const reach = Math.max(0, depthAround(x, y)) + 1;
       const left = Math.max(0, x - reach);
       const top = Math.max(0, y - reach);
-      const region = {
+      regions.push({
         left, top, width: Math.min(width, x + reach + 1) - left, height: Math.min(height, y + reach + 1) - top,
-      };
-      regions.push(region);
-      for (let tx = region.left; tx < region.left + region.width; tx++) {
-        for (let ty = region.top; ty < region.top + region.height; ty++) {
-          const key = Math.floor(ty / chunkSize) * chunksX + Math.floor(tx / chunkSize);
-          if (!chunks.has(key)) continue;
-          let mark = marks.get(key);
-          if (mark === undefined) {
-            mark = new Uint8Array(chunkSize * chunkSize);
-            marks.set(key, mark);
-          }
-          mark[(tx % chunkSize) * chunkSize + (ty % chunkSize)] = 1;
-        }
-      }
+      });
     }
-    for (const [key, mark] of marks) {
-      const target = chunks.get(key);
-      if (target === undefined) continue;
-      const chunk = regionOf({ x: key % chunksX, y: Math.floor(key / chunksX) });
-      // Frame the marked tiles' bounding box once, then copy only the marked tiles.
-      let minX = chunkSize;
-      let minY = chunkSize;
-      let maxX = -1;
-      let maxY = -1;
-      for (let i = 0; i < chunk.width; i++) {
-        for (let j = 0; j < chunk.height; j++) {
-          if (mark[i * chunkSize + j] !== 1) continue;
-          minX = Math.min(minX, i);
-          minY = Math.min(minY, j);
-          maxX = Math.max(maxX, i);
-          maxY = Math.max(maxY, j);
-        }
-      }
-      if (maxX < 0) continue;
-      const box = { left: chunk.left + minX, top: chunk.top + minY, width: maxX - minX + 1, height: maxY - minY + 1 };
-      if (scratch.length < box.width * box.height) scratch = new Uint16Array(box.width * box.height);
-      framing.frameRegion(world, box, scratch);
-      for (let i = minX; i <= maxX; i++) {
-        for (let j = minY; j <= maxY; j++) {
-          if (mark[i * chunkSize + j] !== 1) continue;
-          target[i * chunk.height + j] = scratch[(i - minX) * box.height + (j - minY)] ?? NO_CELL;
-          framedTiles++;
+    // Each area is framed on its own (sparse edits never frame the box between them), clipped to every cached chunk
+    // it covers; a tile that overlapping areas share is written once.
+    const written = new Map<number, Uint8Array>();
+    for (const region of regions) {
+      const right = region.left + region.width;
+      const bottom = region.top + region.height;
+      for (let cx = Math.floor(region.left / chunkSize); cx * chunkSize < right; cx++) {
+        for (let cy = Math.floor(region.top / chunkSize); cy * chunkSize < bottom; cy++) {
+          const key = cy * chunksX + cx;
+          const target = chunks.get(key);
+          if (target === undefined) continue;
+          const chunk = regionOf({ x: cx, y: cy });
+          const left = Math.max(region.left, chunk.left);
+          const top = Math.max(region.top, chunk.top);
+          const box = {
+            left, top,
+            width: Math.min(right, chunk.left + chunk.width) - left, height: Math.min(bottom, chunk.top + chunk.height) - top,
+          };
+          let done = written.get(key);
+          if (done === undefined) {
+            done = new Uint8Array(chunk.width * chunk.height);
+            written.set(key, done);
+          }
+          if (scratch.length < box.width * box.height) scratch = new Uint16Array(box.width * box.height);
+          framing.frameRegion(world, box, scratch);
+          for (let i = 0; i < box.width; i++) {
+            for (let j = 0; j < box.height; j++) {
+              const at = (box.left - chunk.left + i) * chunk.height + (box.top - chunk.top + j);
+              if (done[at] === 1) continue;
+              done[at] = 1;
+              target[at] = scratch[i * box.height + j] ?? NO_CELL;
+              framedTiles++;
+            }
+          }
         }
       }
     }

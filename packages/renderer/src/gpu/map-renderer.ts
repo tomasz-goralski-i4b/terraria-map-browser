@@ -129,8 +129,10 @@ export interface MapRenderer {
    */
   readonly setAtlas: (atlas: SpriteAtlasSource | null) => void;
   /**
-   * Sprite mode: from `SPRITE_MIN_ZOOM` pixels per tile, frame-important blocks show their sprite. A uniform switch:
-   * turning it on or off, or crossing the zoom threshold, uploads nothing.
+   * Sprite mode: from `SPRITE_MIN_ZOOM` pixels per tile, frame-important blocks show their sprite (and, with a framing,
+   * self-framed blocks their framed cell). A uniform switch: turning it on or off, or crossing the zoom threshold,
+   * uploads no chunk planes and no atlas. The one exception is a resident chunk's first draw at a sprite zoom with a
+   * framing, which frames it and uploads its cells once (`setFraming`).
    */
   readonly setSpriteMode: (enabled: boolean) => void;
   /**
@@ -1129,7 +1131,8 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       if (loading.pending && candidate?.filled === true) drawCalls += drawOverview(source, candidate);
       const { chunk: program } = resources;
       gl.useProgram(program.program);
-      // Sprites are a uniform switch: crossing the threshold or toggling the mode uploads nothing.
+      // Sprites are a uniform switch: crossing the threshold or toggling the mode uploads no planes and no atlas (only a
+      // resident chunk's cells, once, on its first draw at a sprite zoom with a framing).
       setTileUniforms(program.uniforms, sprites, framed);
       gl.uniform2f(program.uniforms.uCamera, camera.x, camera.y);
       gl.uniform1f(program.uniforms.uZoom, camera.zoom);

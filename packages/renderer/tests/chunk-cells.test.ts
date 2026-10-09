@@ -234,34 +234,52 @@ describe("chunk cell cache", () => {
    * Invalidation recomputes the cached cells of the (2d + 3)² area around a changed tile, d the deepest depth of the
    * types within 6 tiles of it, and nothing else: cells outside it keep a sentinel written into the cache.
    */
-  function invalidateOne(fill: string, x: number, y: number): { recomputed: number; framed: number } {
-    const world = worldOf(40, 40);
-    stamp(world, 0, 0, Array.from({ length: 40 }, () => fill.repeat(40)));
-    const cache = createChunkCellCache(world, framing, 8);
+  function invalidateMany(
+    fill: string, edits: readonly (readonly [number, number])[], size = 40, chunkSize = 8,
+  ): { recomputed: number; framed: number; regions: number; area: number } {
+    const world = worldOf(size, size);
+    stamp(world, 0, 0, Array.from({ length: size }, () => fill.repeat(size)));
+    // Counts the tiles every frameRegion call frames, to show that no area beyond the invalidated ones is framed.
+    let area = 0;
+    const counted: BlockFraming = {
+      ...framing,
+      frameRegion: (target, region, out) => {
+        area += region.width * region.height;
+        framing.frameRegion(target, region, out);
+      },
+    };
+    const cache = createChunkCellCache(world, counted, chunkSize);
+    const per = size / chunkSize;
     const chunks: { x: number; y: number }[] = [];
-    for (let cx = 0; cx < 5; cx++) for (let cy = 0; cy < 5; cy++) chunks.push({ x: cx, y: cy });
+    for (let cx = 0; cx < per; cx++) for (let cy = 0; cy < per; cy++) chunks.push({ x: cx, y: cy });
     const fresh = chunks.map((chunk) => Uint16Array.from(cache.cells(chunk)));
     const SENTINEL = 0xfffe;
     for (const chunk of chunks) cache.cells(chunk).fill(SENTINEL);
     const before = cache.framedTiles;
-    world.setTile(x, y, { block: { kind: "vanilla", id: IRON }, wires: 0, actuator: false });
-    const regions = cache.invalidate([{ x, y }]);
+    for (const [x, y] of edits) world.setTile(x, y, { block: { kind: "vanilla", id: IRON }, wires: 0, actuator: false });
+    area = 0;
+    const regions = cache.invalidate(edits.map(([x, y]) => ({ x, y })));
     const framed = cache.framedTiles - before;
     let recomputed = 0;
-    const whole = new Uint16Array(world.width * world.height);
-    framing.frameRegion(world, { left: 0, top: 0, width: 40, height: 40 }, whole);
+    const whole = new Uint16Array(size * size);
+    framing.frameRegion(world, { left: 0, top: 0, width: size, height: size }, whole);
     chunks.forEach((chunk, index) => {
       const cells = cache.cells(chunk);
-      for (let i = 0; i < 64; i++) {
-        const tx = chunk.x * 8 + Math.floor(i / 8);
-        const ty = chunk.y * 8 + (i % 8);
+      for (let i = 0; i < chunkSize * chunkSize; i++) {
+        const tx = chunk.x * chunkSize + Math.floor(i / chunkSize);
+        const ty = chunk.y * chunkSize + (i % chunkSize);
         if (cells[i] === SENTINEL) continue;
         recomputed++;
-        expect(cells[i], `(${String(tx)}, ${String(ty)})`).toBe(whole[tx * 40 + ty]);
+        expect(cells[i], `(${String(tx)}, ${String(ty)})`).toBe(whole[tx * size + ty]);
       }
-      expect(fresh[index]?.length).toBe(64);
+      expect(fresh[index]?.length).toBe(chunkSize * chunkSize);
     });
-    expect(regions.reduce((sum, region) => sum + region.width * region.height, 0)).toBe(recomputed);
+    return { recomputed, framed, regions: regions.reduce((sum, region) => sum + region.width * region.height, 0), area };
+  }
+
+  function invalidateOne(fill: string, x: number, y: number): { recomputed: number; framed: number } {
+    const { recomputed, framed, regions } = invalidateMany(fill, [[x, y]]);
+    expect(regions).toBe(recomputed);
     return { recomputed, framed };
   }
 
@@ -277,6 +295,16 @@ describe("chunk cell cache", () => {
   test("invalidation across a chunk corner and at the world's edge stays inside the world and the cached chunks", () => {
     expect(invalidateOne("s", 15, 16)).toEqual({ recomputed: 9, framed: 9 });
     expect(invalidateOne("d", 0, 39)).toEqual({ recomputed: 49, framed: 49 });
+  });
+
+  test("a batch of overlapping edits across a chunk border writes each cached tile of the union once", () => {
+    // Three stone edits whose 3 × 3 areas overlap on the corner of four 8-tile chunks: their union is 4 × 4 less
+    // the corner (14, 17) that none covers.
+    expect(invalidateMany("s", [[15, 15], [16, 16], [16, 15]])).toEqual({ recomputed: 15, framed: 15, regions: 27, area: 27 });
+  });
+
+  test("sparse edits in one chunk frame only their own areas, not the box between them", () => {
+    expect(invalidateMany("s", [[16, 16], [112, 112]], 128, 128)).toEqual({ recomputed: 18, framed: 18, regions: 18, area: 18 });
   });
 
   test("invalidation leaves chunks that were never framed alone: they frame lazily later", () => {

@@ -110,7 +110,9 @@ exactly the pixels `filterTiles` (below) makes of them. The browser tests assert
   them; paint is not applied to sprites; liquids and wires still draw over them. A half-transparent sprite pixel with
   nothing behind it is the one partly transparent pixel liquids can land on outside map mode: there they use the
   general straight-alpha rule (`over` in `src/gpu/shaders.ts`, rounded to nearest); map mode stays bit-exact. Everything else, the box filter and
-  the overview keep map colours. The mode is a uniform: switching it or crossing the threshold uploads nothing. The
+  the overview keep map colours. The mode is a uniform: switching it or crossing the threshold uploads no chunk planes and no atlas (the
+  one exception is a resident chunk's cells, uploaded once on its first draw at a sprite zoom with a framing; see
+  below). The
   atlas pages use 2 more texture units (8 in all).
 - **Self-framed blocks in sprite mode (#146).** Blocks the `.wld` stores no frame for (dirt, stone, ores, sand, grass,
   moss, gemspark, large-frame blocks, …) take their cell from their neighbours. With `setFraming(createBlockFraming(db))`
