@@ -1,7 +1,7 @@
 # ADR 0003 — Vanilla format profiles
 
 - **Status:** Proposed (2026-10-08)
-- **Affects:** `packages/world-codec` (TS reader), `docs/file-format/compatibility.md`; the .NET codec only through
+- **Affects:** `packages/world-codec` (TS reader and same-format vanilla writer), `docs/file-format/compatibility.md`; the .NET codec only through
   the residual-shape correction
 
 ## Context
@@ -20,7 +20,7 @@ stores admitted ranges and the thresholds at which fields/variants appear. One s
 profile and normalizes results into CWM. Truly different legacy layouts may later get separate family readers.
 
 The TS reader admits 269–279, 315–319 and 325–326. Header layout and tile decoding stay shared; metadata
-uses the selected field-presence profile. Entity layout differences are described but not decoded. Unknown
+uses the selected field-presence profile. Entity decoders use the profile's old/new layout gates. Unknown
 gaps/future versions remain errors. Evidence is explicit per profile: generated-world fixtures for 326,
 independent synthetic coverage for the other formats (plus an opt-in local check against real worlds that is
 never part of CI).
@@ -30,9 +30,12 @@ active blocks: vanilla's writer can emit them. This correction applies to every 
 format-326 .NET reader/writer; see the [observation](../file-format/tiles.md#residual-shapes-are-vanilla-data).
 It is not a mod- or version-specific exception.
 
-Read and write capabilities are separate. This decision does not expand .NET or writer version support,
-downgrade worlds or interpret mod sidecars. Additional formats remain experimental until an independent .NET
-implementation and generated-world differential evidence are available.
+Read and write capabilities retain separate evidence. The TS supported vanilla writer now accepts the same
+admitted versions while retaining the source header, metadata and entity bytes and applying source-profile
+content limits to CWM tile encoding. It does not convert versions, edit metadata/entities or interpret mod
+sidecars; unknown/modded references fail explicitly. The .NET world codec/writer remain at 326. Additional
+formats remain experimental until an independent .NET implementation and generated-world differential
+evidence are available; synthetic write tests do not promote their evidence classification.
 
 ## Relationship to ADR 0001
 

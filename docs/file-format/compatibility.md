@@ -14,12 +14,12 @@ the decision.
 Admission is a deliberate list of known released ranges, separate from structural feature thresholds.
 Knowing that a field appeared in 284 does not imply that every number from 284 onward is a supported release.
 
-| Format numbers | Desktop game family | TS viewer read | Evidence in this implementation |
+| Format numbers | Desktop game family | TS read / same-format vanilla write | Evidence in this implementation |
 |---|---|---|---|
-| 269–279 | 1.4.4 through 1.4.4.9 | Experimental | Independent generated metadata/tile vectors for every number; 279 also passes the [local world check](#local-world-check) |
-| 315–319 | 1.4.5.0 through 1.4.5.6 | Experimental | Independent generated metadata/tile vectors for every number |
-| 325 | 1.4.5.7 | Experimental | Independent generated metadata/tile vectors |
-| 326 | 1.4.5.8 | Existing supported read | Five generated-world fixtures plus shared vectors |
+| 269–279 | 1.4.4 through 1.4.4.9 | Experimental | Independent generated read/write vectors for every number and old entity layouts; 279 also passes the read-only [local world check](#local-world-check) |
+| 315–319 | 1.4.5.0 through 1.4.5.6 | Experimental | Independent generated read/write vectors for every number and newer entity layouts |
+| 325 | 1.4.5.7 | Experimental | Independent generated read/write vectors |
+| 326 | 1.4.5.8 | Supported subset | Five generated-world fixtures plus shared vectors |
 | ≤ 268 | Earlier layouts | Rejected | Additional field/section/tile layouts are not implemented |
 | 280–314, 320–324 | No admitted release in this scope | Rejected | Feature thresholds alone are not evidence of a compatible released file |
 | ≥ 327 | Unknown/future | Rejected | Never silently interpreted using the last known layout |
@@ -130,10 +130,18 @@ not assigning a separate parser to every patch. No unsupported legacy family is 
 
 ## Reading versus writing
 
-The TS viewer only reads additional formats. It does not convert the input to 326 or modify any source world.
-The .NET writer still rejects non-326 worlds. Older-format saving will need target-profile field emission,
-content representability checks and preservation of opaque sections; a successful read is not permission
-to serialize using a different layout. Unsupported downgrade fields/content must not be silently dropped.
+The TS codec can save the [supported vanilla subset](writer.md#typescript-supported-write-subset-57) in every
+reader-admitted format. It retains the source version, dimensions, metadata, frame-important data and opaque
+sections, re-encodes only the CWM tile planes, and relocates section pointers. No metadata/entity layout is
+converted or re-emitted. Block and wall representability uses the source profile's vanilla limits, even when
+the source declares a larger frame table. Unknown/modded references and version conversion fail explicitly;
+there is no downgrade or partial export. The Worker returns a fresh buffer and exposes no source overwrite.
+
+Every admitted version has independent synthetic byte-identity, edited round-trip, old/new entity-preservation,
+content-boundary, span-relocation and real Worker save tests. Only 326 has the five generated-world fixture
+save proofs; the older formats retain experimental evidence and do not claim in-game or .NET output parity.
+The .NET world writer remains limited to 326. Additional reader admission requires matching write-layout and
+preservation evidence before it can expand this same-format write API.
 
 ## Extending coverage
 

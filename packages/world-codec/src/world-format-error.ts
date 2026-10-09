@@ -6,6 +6,10 @@ export type WorldFormatErrorKind =
   | "MalformedSectionTable"
   | "MalformedMetadata"
   | "MalformedTiles"
+  | "UnsupportedWrite"
+  | "UnencodableTile"
+  | "MalformedFooter"
+  | "InconsistentFooter"
   | "MalformedSection";
 
 type WorldFormatDiagnostic =
