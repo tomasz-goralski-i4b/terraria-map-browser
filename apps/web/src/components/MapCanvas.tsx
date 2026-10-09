@@ -3,10 +3,12 @@ import {
   CameraAnimator, clampCamera, createMapRenderer, fitWorld, terrariaMapPalette, visibleChunks, wheelPixels,
 } from "@studio/renderer";
 import type { Camera, MapRenderer, RenderableWorld, Size } from "@studio/renderer";
+import { brushFootprint } from "@studio/world-model";
 import { getDefaultAssetSession, useAssetStore } from "../assets/asset-session.js";
 import { registerMapController, rendererLayers, useViewStore, type ToolId } from "../shell/view-store.js";
 import { getBlockFraming } from "../world/block-framing.js";
 import { beginBrush, finishBrush, moveBrush, subscribeBrushChanges, useBrushStore } from "../world/brush-session.js";
+import { createBrushStabilizer } from "../world/brush-stabilizer.js";
 
 const KEY_PAN_PIXELS_PER_MS = 0.384;
 const KEY_ZOOM_FACTOR = 1.25;
@@ -86,9 +88,16 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
    */
   const pressRef = useRef<{ readonly at: Point; moved: boolean } | null>(null);
   const brushPointer = useRef<number | null>(null);
+  const brushTrail = useRef<{
+    readonly filter: ReturnType<typeof createBrushStabilizer>;
+    readonly strength: number;
+    point: Point | null;
+    time: number;
+  } | null>(null);
   const cancelDrawing = (): void => {
     finishBrush(true);
     brushPointer.current = null;
+    brushTrail.current = null;
   };
 
   /** Canvas backing-store pixels of a point in CSS pixels relative to the canvas, at the current canvas geometry. */
@@ -106,21 +115,31 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
     const selected = useViewStore.getState().tool;
     const brush = useBrushStore.getState();
     if (footprint !== null) {
-      const show = tile !== null && (selected === "brush" || selected === "erase") && brush.reason === null && session.pointers.size === 0;
+      const trail = brushTrail.current;
+      const placement = trail === null ? hover : trail.point === null ? null : toBacking(trail.point);
+      const target = placement === null ? null : session.renderer.tileAt(placement.x, placement.y);
+      const show = target !== null && brush.placementPreview && (selected === "brush" || selected === "erase") && brush.reason === null && session.pointers.size === 0;
       footprint.hidden = !show;
       const canvas = canvasRef.current;
       if (show && canvas !== null) {
         const offset = Math.floor(brush.size / 2);
-        const left = Math.max(0, tile.x - offset);
-        const top = Math.max(0, tile.y - offset);
-        const right = Math.min(session.world.width, tile.x - offset + brush.size);
-        const bottom = Math.min(session.world.height, tile.y - offset + brush.size);
+        const left = Math.max(0, target.x - offset);
+        const top = Math.max(0, target.y - offset);
+        const right = Math.min(session.world.width, target.x - offset + brush.size);
+        const bottom = Math.min(session.world.height, target.y - offset + brush.size);
         const scaleX = session.camera.zoom * canvas.clientWidth / canvas.width;
         const scaleY = session.camera.zoom * canvas.clientHeight / canvas.height;
         footprint.style.left = `${String((left - session.camera.x) * scaleX)}px`;
         footprint.style.top = `${String((top - session.camera.y) * scaleY)}px`;
         footprint.style.width = `${String((right - left) * scaleX)}px`;
         footprint.style.height = `${String((bottom - top) * scaleY)}px`;
+        const svg = footprint.querySelector("svg");
+        svg?.setAttribute("viewBox", `0 0 ${String(right - left)} ${String(bottom - top)}`);
+        footprint.querySelector("path")?.setAttribute("d", brushFootprint(brush.size, brush.shape).filter((cell) => {
+          const x = target.x + cell.x;
+          const y = target.y + cell.y;
+          return x >= left && x < right && y >= top && y < bottom;
+        }).map((cell) => `M${String(target.x + cell.x - left)} ${String(target.y + cell.y - top)}h1v1h-1z`).join(""));
       }
     }
     const previous = session.hoverTile;
@@ -128,6 +147,12 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
     session.hoverTile = tile;
     useViewStore.getState().setHoverTile(tile);
   }, [toBacking]);
+
+  const drawBrushPoint = (session: MapSession, local: Point | null): void => {
+    const point = local === null ? null : toBacking(local);
+    const tile = point === null ? null : session.renderer.tileAt(point.x, point.y);
+    moveBrush(tile?.x ?? -1, tile?.y ?? -1);
+  };
 
   const applyCamera = useCallback((session: MapSession, camera: Camera): void => {
     session.camera = camera;
@@ -185,16 +210,29 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
             session.animator.reset(first ? fitWorld(size, session.world) : clampCamera(session.animator.current, size, session.world), size, session.world);
           }
           const { camera, settled } = session.animator.step();
+          const trail = brushTrail.current;
+          let brushSettled = true;
+          if (trail !== null && useBrushStore.getState().active) {
+            const now = performance.now();
+            const sample = trail.filter.step(now - trail.time);
+            trail.time = now;
+            trail.point = sample.point;
+            brushSettled = sample.settled;
+            drawBrushPoint(session, sample.point);
+          }
           if (session.cameraDirty || camera.x !== session.camera.x || camera.y !== session.camera.y || camera.zoom !== session.camera.zoom) {
             session.cameraDirty = false;
             applyCamera(session, camera);
           } else refreshHover(session);
-          if (!settled) session.requestFrame();
+          if (!settled || !brushSettled) session.requestFrame();
         });
       },
     };
     sessionRef.current = session;
-    const unsubscribeBrushOptions = useBrushStore.subscribe(() => { session.requestFrame(); });
+    const unsubscribeBrushOptions = useBrushStore.subscribe((state) => {
+      if (!state.active) { brushTrail.current = null; brushPointer.current = null; }
+      session.requestFrame();
+    });
     const unsubscribeTool = useViewStore.subscribe((state, previous) => {
       if (state.tool !== previous.tool) session.requestFrame();
     });
@@ -392,7 +430,12 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
         session.animator.cancelMotion();
         session.keys.clear();
         brushPointer.current = event.pointerId;
+        const local = localPoint(event.clientX, event.clientY);
+        const strength = useBrushStore.getState().smoothing;
+        brushTrail.current = { filter: createBrushStabilizer(local, strength), strength, point: local, time: performance.now() };
+        session.hover = local;
         moveBrush(tile.x, tile.y);
+        session.requestFrame();
         try {
           event.currentTarget.setPointerCapture(event.pointerId);
         } catch {
@@ -420,9 +463,28 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
     withSession((session) => {
       const local = localPoint(event.clientX, event.clientY);
       if (brushPointer.current === event.pointerId) {
+        if ((event.pointerType === "mouse" || event.pointerType === "pen") && event.buttons !== 1) {
+          cancelDrawing();
+          if (event.buttons !== 0) {
+            session.animator.beginDrag();
+            session.pointers.set(event.pointerId, local);
+            pressRef.current = null;
+            event.currentTarget.style.cursor = "grabbing";
+          }
+          session.hover = local;
+          session.requestFrame();
+          return;
+        }
         const point = toBacking(local);
         const tile = session.renderer.tileAt(point.x, point.y);
-        moveBrush(tile?.x ?? -1, tile?.y ?? -1);
+        const trail = brushTrail.current;
+        if (trail !== null) {
+          trail.filter.move(tile === null ? null : local);
+          if (trail.strength === 0 || tile === null) {
+            trail.point = tile === null ? null : local;
+            drawBrushPoint(session, trail.point);
+          }
+        }
         session.hover = local;
         session.requestFrame();
         return;
@@ -459,9 +521,10 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
     withSession((session) => {
       if (brushPointer.current === event.pointerId) {
         if (event.type === "pointerup") {
-          const point = toBacking(localPoint(event.clientX, event.clientY));
-          const tile = session.renderer.tileAt(point.x, point.y);
-          moveBrush(tile?.x ?? -1, tile?.y ?? -1);
+          const local = localPoint(event.clientX, event.clientY);
+          const point = toBacking(local);
+          brushTrail.current?.filter.move(session.renderer.tileAt(point.x, point.y) === null ? null : local);
+          drawBrushPoint(session, brushTrail.current?.filter.finish() ?? null);
         }
         finishBrush(event.type !== "pointerup");
         brushPointer.current = null;
@@ -557,7 +620,7 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
           });
         }}
       />
-      <div ref={footprintRef} className="brush-footprint" aria-hidden="true" hidden style={{ position: "absolute", pointerEvents: "none" }} />
+      <div ref={footprintRef} className="brush-footprint" aria-hidden="true" hidden style={{ position: "absolute", pointerEvents: "none" }}><svg width="100%" height="100%"><path /></svg></div>
       <div className="map-controls" style={CONTROLS_STYLE}>
         <button
           type="button"

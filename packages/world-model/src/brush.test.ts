@@ -3,6 +3,24 @@ import { createWorld } from "./index.js";
 import { BRUSH_LAYER, createBrushHistory } from "./brush.js";
 
 describe("simple vanilla brush", () => {
+  it("uses a circular tile mask for both paint and erase, with exact history and edge clipping", () => {
+    const world = createWorld(9, 9);
+    const history = createBrushHistory(world);
+    history.begin({ layer: BRUSH_LAYER.both, blockId: 1, wallId: 4, size: 5, shape: "circle" });
+    history.move(4, 4);
+    expect(history.commit()).toHaveLength(21);
+    expect(world.tileAt(2, 2).block).toBeUndefined();
+    expect(world.tileAt(2, 4).block).toEqual({ kind: "vanilla", id: 1 });
+    history.begin({ layer: BRUSH_LAYER.both, blockId: null, wallId: null, size: 5, shape: "circle" });
+    history.move(4, 4);
+    expect(history.commit()).toHaveLength(21);
+    history.undo();
+    expect(world.tileAt(4, 4).wall).toEqual({ kind: "vanilla", id: 4 });
+    history.undo();
+    history.begin({ layer: BRUSH_LAYER.block, id: 38, size: 5, shape: "circle" });
+    history.move(0, 0);
+    expect(history.commit()).toHaveLength(8);
+  });
   it("paints and erases both layers as one atomic stroke and one byte-exact undo entry", () => {
     const world = createWorld(5, 5);
     world.setTile(2, 2, { block: { kind: "vanilla", id: 0 }, wall: { kind: "vanilla", id: 2 }, wires: 9, actuator: true });

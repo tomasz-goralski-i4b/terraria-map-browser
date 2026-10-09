@@ -648,9 +648,14 @@ kbd {
 .brush-segments button:disabled { opacity: .5; }
 .brush-segments button:focus-visible { outline-offset: -2px; }
 .brush-material { width: 104px; height: 24px; padding: 0 var(--space-1); font: inherit; color: var(--text-1); }
-.brush-size.text-input { width: 46px; height: 24px; padding: 0 var(--space-1); font-variant-numeric: tabular-nums; }
-.brush-shape-preview { display: grid; place-items: center; width: 18px; height: 18px; border: 1px solid var(--border); }
-.brush-shape-preview span { width: 14px; height: 14px; background: var(--text-2); }
+.brush-slider { width: 72px; margin: 0; accent-color: var(--accent-text); cursor: pointer; }
+.brush-slider:disabled { cursor: default; opacity: .5; }
+.brush-size-value, .brush-smoothing-value { color: var(--text-2); font-variant-numeric: tabular-nums; }
+.brush-size-value { min-width: 35px; }
+.brush-smoothing-value { min-width: 28px; }
+.brush-shape-icon { display: block; width: 11px; height: 11px; border: 1px solid currentColor; }
+.brush-shape-icon[data-shape="circle"] { border-radius: 50%; }
+.brush-option-preview .icon-button { width: 26px; height: 26px; }
 .tool-options-history { display: inline-flex; gap: 2px; margin-left: auto; padding-left: var(--space-3); border-left: 1px solid var(--border); }
 .tool-options-history .icon-button { width: 26px; height: 26px; }
 
@@ -667,7 +672,9 @@ kbd {
   background: var(--surface-0);
 }
 
-.brush-footprint { box-sizing: border-box; border: 1px solid var(--text-1); outline: 1px solid var(--surface-0); z-index: 1; }
+.brush-footprint { z-index: 1; }
+.brush-footprint svg { overflow: visible; }
+.brush-footprint path { fill: var(--accent-soft); stroke: var(--text-1); stroke-width: 1; vector-effect: non-scaling-stroke; }
 
 .map-message {
   display: flex;
@@ -1555,7 +1562,8 @@ kbd {
   .brush-layer-options { order: 1; }
   .brush-layer-options > .brush-option-label { display: none; }
   .brush-option-size { order: 2; }
-  .brush-option-size .brush-size-unit, .brush-option-size .brush-shape-preview { display: none; }
+  .brush-option-shape { order: 2; }
+  .brush-option-smoothing, .brush-option-preview { order: 3; }
   .brush-option-materials { order: 3; }
   .brush-material { width: 96px; }
   .tool-options-history { order: 4; }

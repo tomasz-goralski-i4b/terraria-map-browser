@@ -1,4 +1,4 @@
-export { createBrushHistory, BRUSH_BLOCKS, BRUSH_WALLS, BRUSH_LAYER, type BrushLayer, type BrushOptions, type BrushHistory, type TileCoordinate, type TileDiff } from "./brush.js";
+export { createBrushHistory, brushFootprint, BRUSH_BLOCKS, BRUSH_WALLS, BRUSH_LAYER, BRUSH_SHAPE, type BrushShape, type BrushLayer, type BrushOptions, type BrushHistory, type TileCoordinate, type TileDiff } from "./brush.js";
 
 /** A stable reference to world content — vanilla, mod, or an unknown runtime ID. */
 export type ContentRef =

@@ -1,5 +1,5 @@
 import { isFrameImportant, SUPPORTED_VANILLA_FORMATS, type WorldTilesResult } from "@studio/world-codec";
-import { BRUSH_BLOCKS, BRUSH_LAYER, createBrushHistory, type BrushLayer, type BrushHistory, type BrushOptions, type TileDiff } from "@studio/world-model";
+import { BRUSH_BLOCKS, BRUSH_LAYER, BRUSH_SHAPE, createBrushHistory, type BrushShape, type BrushLayer, type BrushHistory, type BrushOptions, type TileDiff } from "@studio/world-model";
 import { create } from "zustand";
 import { canonicalWorldOf } from "./canonical-world.js";
 import { useAppStore } from "../store.js";
@@ -46,6 +46,9 @@ interface BrushState {
   readonly blockId: number;
   readonly wallId: number;
   readonly size: number;
+  readonly shape: BrushShape;
+  readonly placementPreview: boolean;
+  readonly smoothing: number;
   readonly reason: string | null;
   readonly canUndo: boolean;
   readonly canRedo: boolean;
@@ -54,6 +57,7 @@ interface BrushState {
 }
 export const useBrushStore = create<BrushState>()(() => ({
   layer: BRUSH_LAYER.block, blockId: 1, wallId: 1, size: 1, reason: "Open a vanilla world first",
+  shape: BRUSH_SHAPE.square, placementPreview: true, smoothing: 0,
   canUndo: false, canRedo: false, active: false, revision: 0,
 }));
 let loaded: WorldTilesResult | null = null;
@@ -89,10 +93,10 @@ export function beginBrush(erase: boolean): boolean {
   if (loaded === null || useBrushStore.getState().reason !== null || useBrushStore.getState().active || editingLocked()) return false;
   history ??= createWorldBrush(loaded);
   if (history === null) return false;
-  const { layer, blockId, wallId, size } = useBrushStore.getState();
+  const { layer, blockId, wallId, size, shape } = useBrushStore.getState();
   const options: BrushOptions = layer === BRUSH_LAYER.both
-    ? { layer, blockId: erase ? null : blockId, wallId: erase ? null : wallId, size }
-    : { layer, id: erase ? null : layer === BRUSH_LAYER.block ? blockId : wallId, size };
+    ? { layer, blockId: erase ? null : blockId, wallId: erase ? null : wallId, size, shape }
+    : { layer, id: erase ? null : layer === BRUSH_LAYER.block ? blockId : wallId, size, shape };
   history.begin(options);
   dirtyBeforeStroke = useAppStore.getState().unsavedChanges;
   useBrushStore.setState({ active: true, canUndo: false, canRedo: false });

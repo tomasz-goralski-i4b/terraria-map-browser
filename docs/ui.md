@@ -71,9 +71,10 @@ Code: `apps/web/src/ui/` (primitives), `apps/web/src/shell/` (layout, commands, 
 - **Tool options bar** (`shell/ToolOptions.tsx`) shows the active tool's name and settings. Edit tools put their
   settings here: brush size and shape, and the layer mask, i.e. which of block, wall, paint, liquid and wires a stroke
   writes (as TEdit does). A tool never opens a dialog to change a setting. The first brush uses a compact
-  Blocks / Walls / Both target control, independent material fields for Both, square size 1–9 and Undo/Redo
+  Blocks / Walls / Both target control, independent material fields for Both, square/round shape, a size slider
+  with 1–9 world tiles across, optional placement preview, a smoothing slider (Off to 100%) and Undo/Redo
   from the shared command registry. Erase keeps the same target and size controls without material fields.
-  On narrow screens the fields wrap into two rows; controls remain visible rather than moving into a menu.
+  On narrow screens the fields wrap into compact rows; controls remain visible rather than moving into a menu.
 - **Map** (`components/MapView.tsx`, `MapCanvas.tsx`) holds the zoom controls (Fit world `F`, 1:1 `1`) in its top
   right corner. The minimap (#145) and transient messages (loading, errors) also go over the map. With no world it shows the **start screen** (`components/StartScreen.tsx`),
   as an editor's start page: Open World, Open Worlds Folder, Connect assets, the folder's worlds and the recent ones,

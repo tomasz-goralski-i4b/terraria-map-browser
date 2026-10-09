@@ -35,12 +35,75 @@ afterEach(() => {
   useAppStore.setState({ phase: "idle", unsavedChanges: false });
 });
 
+test("round footprint and optional preview match painting; smoothing trails and flushes without a delayed cancelled stroke", async () => {
+  const world = readWorldTiles(brushSource(64, 32, Array.from({ length: 64 }, () => [0x40, 31]).flat()));
+  const view = canonicalWorldOf(world);
+  setBrushWorld(world);
+  useAppStore.setState({ phase: "loaded", unsavedChanges: false });
+  useBrushStore.setState({ layer: BRUSH_LAYER.block, blockId: 1, size: 5, shape: "square", smoothing: 0, placementPreview: true });
+  useViewStore.setState({ tool: "brush" });
+  await render(<><ToolOptions /><div style={{ position: "relative", width: 256, height: 256 }}><MapCanvas world={toRenderableWorld(world)} /></div></>);
+  const canvas = document.querySelector("canvas");
+  if (canvas === null) throw new Error("World map canvas is missing");
+  await expect.poll(() => canvas.dataset["camera"]).toBeDefined();
+  getMapController()?.jumpTo({ x: 0, y: 0, zoom: 8 });
+  const pointer = (type: string, x: number, y: number, buttons = 1, button = 0): void => {
+    const camera = JSON.parse(canvas.dataset["camera"] ?? "null") as Camera;
+    const rect = canvas.getBoundingClientRect();
+    canvas.dispatchEvent(new PointerEvent(type, {
+      pointerId: 7, pointerType: "mouse", isPrimary: true, button, buttons, bubbles: true,
+      clientX: rect.left + (x + 0.5 - camera.x) * camera.zoom * canvas.clientWidth / canvas.width,
+      clientY: rect.top + (y + 0.5 - camera.y) * camera.zoom * canvas.clientHeight / canvas.height,
+    }));
+  };
+  await page.getByRole("button", { name: "Round brush", exact: true }).click();
+  pointer("pointermove", 10, 10, 0);
+  const footprint = document.querySelector<HTMLElement>(".brush-footprint");
+  await expect.poll(() => footprint?.querySelector("path")?.getAttribute("d")?.match(/M/g)?.length).toBe(21);
+  await page.getByRole("button", { name: "Placement preview", exact: true }).click();
+  await expect.poll(() => footprint?.hidden).toBe(true);
+  act(() => { pointer("pointerdown", 10, 10); pointer("pointerup", 10, 10, 0); });
+  expect(view.tileAt(8, 8).block).toBeUndefined();
+  expect(view.tileAt(8, 10).block).toEqual({ kind: "vanilla", id: 1 });
+  await page.getByRole("button", { name: "Undo", exact: true }).click();
+  const smoothing = page.getByRole("slider", { name: "Brush smoothing", exact: true }).element();
+  act(() => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(smoothing, "100");
+    smoothing.dispatchEvent(new Event("input", { bubbles: true }));
+    useBrushStore.setState({ size: 1 });
+    pointer("pointerdown", 4, 10);
+    pointer("pointermove", 20, 10);
+  });
+  expect(useBrushStore.getState().smoothing).toBe(100);
+  expect(view.tileAt(4, 10).block).toEqual({ kind: "vanilla", id: 1 });
+  expect(view.tileAt(20, 10).block).toBeUndefined();
+  await expect.poll(() => view.tileAt(5, 10).block).toEqual({ kind: "vanilla", id: 1 });
+  act(() => { pointer("pointerup", 20, 10, 0); });
+  expect(view.tileAt(20, 10).block).toEqual({ kind: "vanilla", id: 1 });
+  await page.getByRole("button", { name: "Undo", exact: true }).click();
+  for (let x = 4; x <= 20; x++) expect(view.tileAt(x, 10).block).toBeUndefined();
+  act(() => { pointer("pointerdown", 4, 12); pointer("pointermove", 20, 12); window.dispatchEvent(new Event("blur")); });
+  await new Promise<void>((resolve) => { requestAnimationFrame(() => { requestAnimationFrame(() => { resolve(); }); }); });
+  for (let x = 4; x <= 20; x++) expect(view.tileAt(x, 12).block).toBeUndefined();
+  expect(useBrushStore.getState().active).toBe(false);
+  // A chord emits moves with changed buttons, not another pointerdown/up for each button.
+  act(() => {
+    useBrushStore.setState({ smoothing: 0 });
+    pointer("pointerdown", 4, 14, 1);
+    pointer("pointermove", 5, 14, 3, 2);
+    pointer("pointermove", 6, 14, 2, 0);
+    pointer("pointerup", 6, 14, 0, 2);
+  });
+  for (let x = 4; x <= 6; x++) expect(view.tileAt(x, 14).block).toBeUndefined();
+  expect(useBrushStore.getState().active).toBe(false);
+});
+
 test("Both offers independent materials, paints/erases one footprint and previews its exact clipped size", async () => {
   const world = readWorldTiles(brushSource(64, 16, Array.from({ length: 64 }, () => [0x40, 15]).flat()));
   const view = canonicalWorldOf(world);
   setBrushWorld(world);
   useAppStore.setState({ phase: "loaded", unsavedChanges: false });
-  useBrushStore.setState({ layer: BRUSH_LAYER.block, blockId: 1, wallId: 1, size: 1 });
+  useBrushStore.setState({ layer: BRUSH_LAYER.block, blockId: 1, wallId: 1, size: 1, shape: "square", smoothing: 0, placementPreview: true });
   useViewStore.setState({ tool: "brush" });
   await render(<><Shortcuts /><ToolOptions /><div style={{ position: "relative", width: 128, height: 128 }}><MapCanvas world={toRenderableWorld(world)} /></div></>);
   const canvas = document.querySelector("canvas");
@@ -51,7 +114,8 @@ test("Both offers independent materials, paints/erases one footprint and preview
   await expect.element(page.getByRole("button", { name: "Both", exact: true })).toHaveAttribute("aria-pressed", "true");
   await page.getByRole("combobox", { name: "Block material" }).selectOptions("38");
   await page.getByRole("combobox", { name: "Wall material" }).selectOptions("4");
-  await page.getByRole("spinbutton", { name: "Brush size" }).fill("3");
+  const sizeSlider = page.getByRole("slider", { name: "Brush size", exact: true }).element();
+  act(() => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(sizeSlider, "3"); sizeSlider.dispatchEvent(new Event("input", { bubbles: true })); });
   const pointer = (type: string, x: number, y: number): void => {
     const camera = JSON.parse(canvas.dataset["camera"] ?? "null") as Camera;
     const rect = canvas.getBoundingClientRect();
@@ -92,7 +156,7 @@ test("pointer strokes update only their chunk; controls, keyboard history and ca
   view.setTile(300, 3, { block: { kind: "vanilla", id: 1 }, wall: { kind: "vanilla", id: 4 }, wires: 0, actuator: false });
   setBrushWorld(world);
   useAppStore.setState({ phase: "loaded", unsavedChanges: false });
-  useBrushStore.setState({ layer: "block", blockId: 1, wallId: 4, size: 1 });
+  useBrushStore.setState({ layer: "block", blockId: 1, wallId: 4, size: 1, shape: "square", smoothing: 0, placementPreview: true });
   useViewStore.setState({ tool: "brush" });
   useViewStore.setState({ pinnedTile: { x: 40, y: 3 } });
   await render(<><Shortcuts /><ToolOptions /><InspectorPanel world={view} /><ContentPanel world={world} /><div style={{ position: "relative", width: 384, height: 128 }}><MapCanvas world={toRenderableWorld(world)} /></div></>);
