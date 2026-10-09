@@ -1,9 +1,12 @@
 import { getDefaultWorldSession } from "./world-session.js";
-import type { OpenedWorldFile, OpenWorldHandle } from "./world-file.js";
+import { WORLD_PICKER_LOCATION, type OpenedWorldFile, type OpenWorldHandle } from "./world-file.js";
+import { folderForWorld } from "./world-folder.js";
+import { useAppStore } from "../store.js";
 
 interface FilePickerWindow {
   showOpenFilePicker?: (options: {
     readonly multiple: false;
+    readonly excludeAcceptAllOption: true;
     readonly types: readonly { readonly description: string; readonly accept: Record<string, readonly string[]> }[];
   }) => Promise<readonly OpenWorldHandle[]>;
 }
@@ -11,8 +14,10 @@ interface FilePickerWindow {
 async function pickWithFilePicker(picker: NonNullable<FilePickerWindow["showOpenFilePicker"]>): Promise<OpenedWorldFile | null> {
   try {
     const [handle] = await picker({
+      ...WORLD_PICKER_LOCATION,
       multiple: false,
-      types: [{ description: "Terraria world", accept: { "application/octet-stream": [".wld"] } }],
+      excludeAcceptAllOption: true,
+      types: [{ description: "Terraria world (.wld)", accept: { "application/x-terraria-world": [".wld"] } }],
     });
     return handle === undefined ? null : { file: await handle.getFile(), handle };
   } catch (error) {
@@ -35,7 +40,12 @@ export function chooseWorldFile(): void {
     fallbackInput?.click();
     return;
   }
-  void pickWithFilePicker(picker.bind(window)).then((opened) => {
-    if (opened !== null && opened.handle !== null) void getDefaultWorldSession().open(opened.file, opened.handle);
+  void pickWithFilePicker(picker.bind(window)).then(async (opened) => {
+    if (opened !== null && opened.handle !== null) {
+      const directory = await folderForWorld(opened.handle);
+      await getDefaultWorldSession().open(opened.file, opened.handle, directory ?? undefined);
+    }
+  }).catch((error: unknown) => {
+    useAppStore.getState().setFailed({ code: "Internal", offset: 0, fileName: "Selected world", message: error instanceof Error ? error.message : String(error) });
   });
 }

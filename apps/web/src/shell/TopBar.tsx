@@ -61,6 +61,7 @@ export function TopBar({ commands }: { readonly commands: readonly Command[] }):
 
   const appMenu: MenuItem[] = [
     menuItem(get("file.open")),
+    menuItem(get("file.openFolder")),
     { kind: "action", label: "Recent worlds — not available yet", disabled: true, onSelect: () => undefined },
     menuItem(get("file.export")),
     menuItem(get("file.saveCopy")),
@@ -80,6 +81,7 @@ export function TopBar({ commands }: { readonly commands: readonly Command[] }):
   const themeMenu = themeMenuItems(commands);
   const dock = get("view.dock");
   const open = get("file.open");
+  const openFolder = get("file.openFolder");
   const assets = get("file.assets");
   const assetButton = assetsButton(assetStatus);
 
@@ -101,6 +103,9 @@ export function TopBar({ commands }: { readonly commands: readonly Command[] }):
         <button type="button" className="button button-primary" aria-label="Open .wld world" aria-keyshortcuts={open.shortcut} onClick={open.run}>
           <Icon name="open" />
           <span className="button-label">Open .wld world</span>
+        </button>
+        <button type="button" className="button world-folder-button" aria-label={openFolder.label} disabled={!openFolder.enabled} title={openFolder.disabledReason} onClick={openFolder.run}>
+          <Icon name="open" /><span className="button-label">{openFolder.label}</span>
         </button>
         <button
           type="button" className="button assets-button" aria-disabled={assetButton.inactive || !assets.enabled || undefined}

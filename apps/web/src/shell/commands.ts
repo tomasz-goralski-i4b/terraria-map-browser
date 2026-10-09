@@ -3,6 +3,7 @@ import type { IconName } from "../ui/Icon.js";
 import { getDefaultAssetSession, useAssetStore } from "../assets/asset-session.js";
 import { useAppStore } from "../store.js";
 import { chooseWorldFile } from "../world/open-world.js";
+import { chooseWorldFolder } from "../world/world-folder.js";
 import { exportWorld, saveWorldCopy, useExportStore } from "../world/export-world.js";
 import { WORLD_GROUP_IDS } from "../panels/world-fields.js";
 import { resetLayout, useLayoutStore, type ThemeChoice } from "./layout-store.js";
@@ -92,7 +93,6 @@ export function useCommands(): Command[] {
   const hasWorld = useAppStore((state) => state.summary !== null);
   const loadingWorld = useAppStore((state) => state.phase === "loading");
   const exporting = useExportStore((state) => state.busy);
-  const canSave = useExportStore((state) => state.canSave);
   const dockHidden = useLayoutStore((state) => state.dockHidden);
   const setDockHidden = useLayoutStore((state) => state.setDockHidden);
   const theme = useLayoutStore((state) => state.theme);
@@ -116,13 +116,19 @@ export function useCommands(): Command[] {
   return [
     { id: "file.open", group: "File", label: "Open world…", icon: "open", shortcut: "Control+O", enabled: true, run: chooseWorldFile },
     {
+      id: "file.openFolder", group: "File", label: "Open folder…", icon: "open",
+      enabled: "showDirectoryPicker" in window && typeof window.showDirectoryPicker === "function",
+      ...("showDirectoryPicker" in window && typeof window.showDirectoryPicker === "function" ? {} : { disabledReason: "Folder access is unavailable in this browser" }),
+      run: () => { void chooseWorldFolder(); },
+    },
+    {
       id: "file.export", group: "File", label: "Export world…", enabled: hasWorld && !loadingWorld && !exporting,
       ...(!hasWorld ? noWorld : loadingWorld ? { disabledReason: "A world is loading" } : exporting ? { disabledReason: "Export in progress" } : {}),
       run: () => { void exportWorld(); },
     },
     {
-      id: "file.saveCopy", group: "File", label: "Save world copy…", enabled: canSave && !exporting,
-      ...(!canSave ? { disabledReason: "Export a world first" } : exporting ? { disabledReason: "Export in progress" } : {}),
+      id: "file.saveCopy", group: "File", label: "Save world copy…", enabled: hasWorld && !loadingWorld && !exporting,
+      ...(!hasWorld ? noWorld : loadingWorld ? { disabledReason: "A world is loading" } : exporting ? { disabledReason: "Save in progress" } : {}),
       run: () => { void saveWorldCopy(); },
     },
     {

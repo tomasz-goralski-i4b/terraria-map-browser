@@ -5,7 +5,7 @@ import { useAppStore } from "../store.js";
 import { Icon } from "../ui/Icon.js";
 import { toRenderableWorld } from "../world/renderable-world.js";
 import { getDefaultWorldSession } from "../world/world-session.js";
-import { useExportStore } from "../world/export-world.js";
+import { resetWorldExport, useExportStore } from "../world/export-world.js";
 import type { Command } from "../shell/commands.js";
 import { MapCanvas } from "./MapCanvas.js";
 
@@ -73,13 +73,17 @@ export function MapView({ renderer, world, commands }: MapViewProps): React.JSX.
         </p>
       )}
       {exported.error !== null && (
-        <p role="alert" className="map-message map-message-error" style={MESSAGE_STYLE}>Could not export world: {exported.error}</p>
+        <p role="alert" className="map-message map-message-error" style={MESSAGE_STYLE}>
+          Could not export world: {exported.error}
+          <button type="button" className="icon-button" aria-label="Close export" onClick={resetWorldExport}><Icon name="close" /></button>
+        </p>
       )}
       {(exported.message !== null || exported.download !== null) && (
         <p role="status" className="map-message" style={MESSAGE_STYLE}>
           {exported.message}{" "}
           {exported.canSave && saveCopy !== undefined && <button type="button" className="button" disabled={!saveCopy.enabled} onClick={saveCopy.run}>{saveCopy.label}</button>}{" "}
-          {exported.download !== null && <a href={exported.download.url} download={exported.download.name}>Download {exported.download.name}</a>}
+          {exported.download !== null && <a className="button" href={exported.download.url} download={exported.download.name}>Download {exported.download.name}</a>}
+          {exported.error === null && <button type="button" className="icon-button" aria-label="Close export" onClick={resetWorldExport}><Icon name="close" /></button>}
         </p>
       )}
       {assetNotice !== null && (

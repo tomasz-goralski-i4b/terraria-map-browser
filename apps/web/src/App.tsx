@@ -3,6 +3,10 @@ import { RENDERER_PACKAGE } from "@studio/renderer";
 import { getDefaultAssetSession, useAssetStore } from "./assets/asset-session.js";
 import { SpritePreviewDialog } from "./panels/SpritePreviewDialog.js";
 import { MapView } from "./components/MapView.js";
+import { WorldFolderDialog } from "./components/WorldFolderDialog.js";
+import { resetWorldFolder } from "./world/world-folder.js";
+import { WorldFolderHint } from "./components/WorldFolderHint.js";
+import { closeFolderHint } from "./world/world-directory-picker.js";
 import { useCommands, useGlobalShortcuts } from "./shell/commands.js";
 import { CommandPalette, HelpOverlay } from "./shell/dialogs.js";
 import { Dock } from "./shell/Dock.js";
@@ -49,6 +53,8 @@ export function App({ layoutStorage }: AppProps = {}): React.JSX.Element {
   // A freshly mounted app starts with no world: the session and store are module-level singletons.
   useEffect(() => {
     resetDefaultWorldSession();
+    resetWorldFolder();
+    closeFolderHint();
   }, []);
   // The Content folder of an earlier visit is reconnected without a prompt where the browser still allows it.
   useEffect(() => {
@@ -71,6 +77,8 @@ export function App({ layoutStorage }: AppProps = {}): React.JSX.Element {
       <HelpOverlay commands={commands} />
       <CommandPalette commands={commands} />
       <SpritePreview />
+      <WorldFolderDialog />
+      <WorldFolderHint />
     </div>
   );
 }

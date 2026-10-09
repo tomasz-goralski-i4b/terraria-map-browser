@@ -1,5 +1,5 @@
 // @module-tag perf -- UI flows and long-task bounds run locally (docs/tooling.md).
-import { afterEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { commands, page } from "vitest/browser";
 import { render } from "vitest-browser-react";
 import { App } from "../src/App.js";
@@ -10,8 +10,10 @@ import { readWorldTiles, writeWorld } from "@studio/world-codec";
 import { writerSource } from "./support/export-source.js";
 import "./support/commands.js";
 import "../src/styles.css";
+import { useAppStore } from "../src/store.js";
 
-afterEach(() => { vi.unstubAllGlobals(); });
+beforeEach(() => { localStorage.setItem("terraria-world-folder-hint-hidden", "1"); });
+afterEach(() => { vi.unstubAllGlobals(); localStorage.removeItem("terraria-world-folder-hint-hidden"); });
 
 async function open(bytes: Uint8Array<ArrayBuffer>, name = "SCCO1.wld", withHandle = true): Promise<void> {
   const file = new File([bytes], name);
@@ -29,7 +31,7 @@ function directoryFor(handle: unknown): ReturnType<typeof vi.fn> {
 
 async function exportAndSave(): Promise<void> {
   await exportWorld();
-  await saveWorldCopy();
+  if (useExportStore.getState().download !== null) await saveWorldCopy();
 }
 
 function destination(): { writes: ArrayBuffer[]; createWritable: ReturnType<typeof vi.fn>; close: ReturnType<typeof vi.fn>; getFileHandle: ReturnType<typeof vi.fn>; picker: ReturnType<typeof vi.fn>; unsafePicker: ReturnType<typeof vi.fn> } {
@@ -94,14 +96,25 @@ test.each([269, 270, 271, 272, 273, 274, 275, 276, 277, 278, 279, 315, 316, 317,
   },
 );
 
-test("the Export world command is available after opening a world", async () => {
+test("Export world offers clearly named folder and download destinations", async () => {
   await render(<App />);
   await open(writerSource());
   const saved = destination();
   await page.getByRole("button", { name: "App menu", exact: true }).click();
   await page.getByRole("menuitem", { name: "Export world…", exact: true }).click();
+  await expect.element(page.getByRole("link", { name: "Download SCCO1.copy.wld" })).toBeVisible();
   await page.getByRole("button", { name: "Save world copy…", exact: true }).click();
   await expect.poll(() => saved.close.mock.calls.length).toBe(1);
+});
+
+test("the native Terraria world filter admits .wld without a generic binary MIME type", async () => {
+  await render(<App />);
+  const picker = vi.fn().mockRejectedValue(new DOMException("Picker closed", "AbortError"));
+  vi.stubGlobal("showOpenFilePicker", picker);
+  await page.getByRole("button", { name: "Open .wld world", exact: true }).click();
+  expect(picker).toHaveBeenCalledWith({ id: "terraria-worlds", startIn: "documents", multiple: false, excludeAcceptAllOption: true,
+    types: [{ description: "Terraria world (.wld)", accept: { "application/x-terraria-world": [".wld"] } }],
+  });
 });
 
 test("writer rejection shows its reason and never creates a writable destination", async () => {
@@ -253,6 +266,138 @@ test("resetting the world releases its download URL and export state", async () 
   await expect.element(page.getByRole("link", { name: "Download SCCO1.copy.wld" })).not.toBeInTheDocument();
   await expect(fetch(url ?? "")).rejects.toThrow();
   expect(useExportStore.getState()).toEqual({ busy: false, message: null, error: null, download: null, canSave: false });
+});
+
+test("Save world copy works immediately after Open world without an Export step", async () => {
+  await render(<App />);
+  await open(writerSource());
+  const saved = destination();
+  await page.getByRole("button", { name: "App menu", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Save world copy…", exact: true }).click();
+  await expect.poll(() => saved.close.mock.calls.length).toBe(1);
+  expect(saved.picker).toHaveBeenCalledOnce();
+  const world = getDefaultWorldSession().getLoadedWorld();
+  if (world === null) throw new Error("SCCO1 should be loaded before saving its copy");
+  expect(new Uint8Array(saved.writes[0] ?? new ArrayBuffer(0))).toEqual(new Uint8Array(writeWorld(world)));
+});
+
+test("Save world copy serializes current edits even after an earlier export was prepared", async () => {
+  await render(<App />);
+  await open(writerSource());
+  await exportWorld();
+  const world = getDefaultWorldSession().getLoadedWorld();
+  if (world === null) throw new Error("SCCO1 should be loaded before changing its tiles");
+  Object.assign(world, { palette: [{ kind: "vanilla", id: 1 }] });
+  world.planes.block[5] = 0;
+  world.planes.paint[5] = 29;
+  const saved = destination();
+  await saveWorldCopy();
+  const restored = readWorldTiles(new Uint8Array(saved.writes[0] ?? new ArrayBuffer(0)));
+  expect(restored.planes.block).toEqual(world.planes.block);
+  expect(restored.planes.paint).toEqual(world.planes.paint);
+  expect(restored.palette).toEqual(world.palette);
+});
+
+test("Open folder remembers the destination for direct Save world copy", async () => {
+  const bytes = writerSource();
+  const source = { kind: "file", name: "SCCO1.wld", getFile: () => Promise.resolve(new File([bytes], "SCCO1.wld")) };
+  const saved = destination();
+  const folder = {
+    name: "Terraria Worlds", getFileHandle: saved.getFileHandle,
+    values: async function* () {
+      yield { kind: "directory", name: "Backups" };
+      yield { kind: "file", name: "Worlds.txt", getFile: () => Promise.resolve(new File([], "Worlds.txt")) };
+      yield await Promise.resolve(source);
+    },
+  };
+  saved.picker.mockResolvedValue(folder);
+  await render(<App />);
+  await page.getByRole("button", { name: "Open folder…", exact: true }).click();
+  await expect.element(page.getByRole("dialog", { name: "Worlds in Terraria Worlds" })).toBeVisible();
+  await expect.element(page.getByRole("button", { name: "Open Worlds.txt", exact: true })).not.toBeInTheDocument();
+  await page.getByRole("button", { name: "Open SCCO1.wld", exact: true }).click();
+  await expect.element(page.getByRole("region", { name: "World", exact: true })).toMatchTextContent("SCCR1");
+  await page.getByRole("button", { name: "App menu", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Save world copy…", exact: true }).click();
+  await expect.poll(() => saved.close.mock.calls.length).toBe(1);
+  expect(saved.picker).toHaveBeenCalledOnce();
+  expect(saved.picker).toHaveBeenCalledWith({ id: "terraria-worlds", startIn: "documents", mode: "readwrite" });
+  const world = getDefaultWorldSession().getLoadedWorld();
+  if (world === null) throw new Error("SCCO1 should be loaded from Terraria Worlds before saving");
+  expect(new Uint8Array(saved.writes[0] ?? new ArrayBuffer(0))).toEqual(new Uint8Array(writeWorld(world)));
+});
+
+test("the export result can be closed without closing the world", async () => {
+  await render(<App />);
+  await open(writerSource());
+  await exportWorld();
+  const world = getDefaultWorldSession().getLoadedWorld();
+  const url = useExportStore.getState().download?.url;
+  await page.getByRole("button", { name: "Close export", exact: true }).click();
+  await expect.element(page.getByRole("link", { name: "Download SCCO1.copy.wld" })).not.toBeInTheDocument();
+  await expect(fetch(url ?? "")).rejects.toThrow();
+  expect(getDefaultWorldSession().getLoadedWorld()).toBe(world);
+});
+
+test("the folder world chooser can be closed", async () => {
+  vi.stubGlobal("showDirectoryPicker", vi.fn().mockResolvedValue({
+    name: "Terraria Worlds", values: async function* () { yield await Promise.resolve({ kind: "directory", name: "Backups" }); },
+  }));
+  await render(<App />);
+  await page.getByRole("button", { name: "Open folder…", exact: true }).click();
+  await expect.element(page.getByRole("dialog", { name: "Worlds in Terraria Worlds" })).toBeVisible();
+  await page.getByRole("button", { name: "Close folder", exact: true }).click();
+  await expect.poll(() => document.querySelector<HTMLDialogElement>('dialog[aria-label="Worlds in Terraria Worlds"]')?.open).toBe(false);
+  expect(getDefaultWorldSession().getLoadedWorld()).toBeNull();
+});
+
+test("a later folder-world selection wins when an earlier file lookup completes first", async () => {
+  let resolveEarlier: ((file: File) => void) | undefined;
+  let resolveLater: ((file: File) => void) | undefined;
+  const earlier = { kind: "file", name: "SCCO1.wld", getFile: vi.fn(() => new Promise<File>((resolve) => { resolveEarlier = resolve; })) };
+  const later = { kind: "file", name: "CrimsonObservatory.wld", getFile: vi.fn(() => new Promise<File>((resolve) => { resolveLater = resolve; })) };
+  vi.stubGlobal("showDirectoryPicker", vi.fn().mockResolvedValue({
+    name: "Terraria Worlds", values: async function* () { yield earlier; yield await Promise.resolve(later); },
+  }));
+  await render(<App />);
+  await page.getByRole("button", { name: "Open folder…", exact: true }).click();
+  await page.getByRole("button", { name: "Open SCCO1.wld", exact: true }).click();
+  await page.getByRole("button", { name: "Open CrimsonObservatory.wld", exact: true }).click();
+  resolveEarlier?.(new File([writerSource()], "SCCO1.wld"));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(useAppStore.getState().phase).toBe("idle");
+  resolveLater?.(new File([writerSource()], "CrimsonObservatory.wld"));
+  await expect.poll(() => getDefaultWorldSession().getOpenedFile()?.file.name).toBe("CrimsonObservatory.wld");
+});
+
+test("the first folder picker explains Terraria's default path and can remember dismissal", async () => {
+  localStorage.removeItem("terraria-world-folder-hint-hidden");
+  const picker = vi.fn().mockRejectedValue(new DOMException("Selection cancelled", "AbortError"));
+  vi.stubGlobal("showDirectoryPicker", picker);
+  await render(<App />);
+  await page.getByRole("button", { name: "Open folder…", exact: true }).click();
+  await expect.element(page.getByRole("dialog", { name: "Choose your Terraria worlds folder" })).toBeVisible();
+  await expect.element(page.getByText("Documents\\My Games\\Terraria\\Worlds", { exact: true })).toBeVisible();
+  expect(picker).not.toHaveBeenCalled();
+  await page.getByRole("checkbox", { name: "Don't show again", exact: true }).click();
+  await page.getByRole("button", { name: "Choose folder…", exact: true }).click();
+  expect(picker).toHaveBeenCalledWith({ id: "terraria-worlds", startIn: "documents", mode: "readwrite" });
+  expect(localStorage.getItem("terraria-world-folder-hint-hidden")).toBe("1");
+  await page.getByRole("button", { name: "Open folder…", exact: true }).click();
+  await expect.poll(() => picker.mock.calls.length).toBe(2);
+  await expect.poll(() => document.querySelector<HTMLDialogElement>('dialog[aria-label="Choose your Terraria worlds folder"]')?.open).toBe(false);
+});
+
+test("closing the first-folder explanation never opens the system picker", async () => {
+  localStorage.removeItem("terraria-world-folder-hint-hidden");
+  const picker = vi.fn();
+  vi.stubGlobal("showDirectoryPicker", picker);
+  await render(<App />);
+  await page.getByRole("button", { name: "Open folder…", exact: true }).click();
+  await page.getByRole("button", { name: "Close folder explanation", exact: true }).click();
+  await expect.poll(() => document.querySelector<HTMLDialogElement>('dialog[aria-label="Choose your Terraria worlds folder"]')?.open).toBe(false);
+  expect(picker).not.toHaveBeenCalled();
+  expect(localStorage.getItem("terraria-world-folder-hint-hidden")).toBeNull();
 });
 
 test("exporting a generated Small world causes no main-thread task over 100 ms", async () => {
