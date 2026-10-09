@@ -70,16 +70,18 @@ const MAX_SPRITE_SAMPLES = 2;
  * How the chunk pass samples sprites at `zoom` pixels per tile: `samples` × `samples` sprite samples per screen pixel,
  * `step` sprite pixels apart in total per axis (the pixel's footprint, 16 / zoom), averaged within the tile, so a sprite
  * shown smaller than its 16 × 16 pixels is downscaled rather than point-sampled; and the sprite's `weight` (0–256)
- * over the map colour, rising linearly from SPRITE_MIN_ZOOM to SPRITE_FULL_ZOOM. From 2 sprite pixels per screen pixel
- * (8 pixels per tile) down, the samples read `level` 1, the half-resolution atlas (halfAtlasFragmentSource): a sample
- * stands for the 2 × 2 sprite pixels around it, so 2 × 2 samples cover the footprint down to SPRITE_MIN_ZOOM.
+ * over the map colour, rising linearly from SPRITE_MIN_ZOOM to SPRITE_FULL_ZOOM. Below 16 pixels per tile the samples
+ * read `level` 1, the half-resolution atlas (halfAtlasFragmentSource), each texel one art pixel: the game's art is
+ * drawn at twice its resolution, 2 × 2 sprite pixels per art pixel. Down to 8 pixels per tile a screen pixel covers at
+ * most one art pixel and shows the one under its centre (averaging two sprite pixels instead would mix two art pixels
+ * in some tiles and not in others, by how the screen pixels fall on the tile); below, 2 × 2 art pixels are averaged.
  */
 export function spriteSampling(zoom: number): {
   readonly samples: number; readonly step: number; readonly level: number; readonly weight: number;
 } {
   const step = SPRITE_TILE_PIXELS / zoom;
-  const level = step >= 2 - 1e-9 ? 1 : 0;
-  const samples = Math.min(MAX_SPRITE_SAMPLES, Math.max(1, Math.ceil(step / 2 ** level - 1e-9)));
+  const level = step > 1 + 1e-9 ? 1 : 0;
+  const samples = step > 2 + 1e-9 ? MAX_SPRITE_SAMPLES : 1;
   const fade = (zoom - SPRITE_MIN_ZOOM) / (SPRITE_FULL_ZOOM - SPRITE_MIN_ZOOM);
   return { samples, step, level, weight: Math.round(256 * Math.min(1, Math.max(0, fade))) };
 }
