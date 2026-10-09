@@ -44,8 +44,8 @@ jobs:
           path: .tdd/cwm-*/report.txt
           include-hidden-files: true
           if-no-files-found: ignore
+  # Runs in parallel with cwm-compatibility: a `needs` dependency would add that job's time to every CI run.
   verify:
-    needs: cwm-compatibility
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

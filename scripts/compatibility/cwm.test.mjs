@@ -116,7 +116,8 @@ test("CI always runs the differential job and preserves bounded failure reports"
   assert.match(compatibility, /if: failure\(\)[\s\S]*actions\/upload-artifact@v4[\s\S]*path: \.tdd\/cwm-\*\/report.txt/);
   assert.match(compatibility, /include-hidden-files: true/);
   assert.doesNotMatch(compatibility, /continue-on-error|paths-ignore/);
-  assert.match(workflow.split("  verify:")[1], /needs: cwm-compatibility/);
+  // Independent jobs run in parallel; serializing verify behind this one only lengthens CI.
+  assert.doesNotMatch(workflow.split("  verify:")[1], /needs:/);
 });
 
 test("missing fixtures, exporter failures and invalid manifests fail instead of skipping", async (t) => {
