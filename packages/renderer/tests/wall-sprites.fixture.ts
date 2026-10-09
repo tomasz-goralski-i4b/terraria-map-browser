@@ -64,6 +64,44 @@ export function mismatches(actual: Uint8Array, expected: Uint8Array, width: numb
   return out;
 }
 
+/**
+ * The straight-alpha mean of `colors` as the chunk pass takes it, in integers: colour weighted by alpha, both rounded
+ * to nearest. A texel of the half-resolution atlas is this mean of its 2 × 2 sprite pixels.
+ */
+export function meanOf(colors: readonly Rgba[]): Rgba {
+  let alpha = 0;
+  const sum = [0, 0, 0];
+  for (const color of colors) {
+    for (let k = 0; k < 3; k++) sum[k] = (sum[k] ?? 0) + (color[k] ?? 0) * color[3];
+    alpha += color[3];
+  }
+  if (alpha === 0) return [0, 0, 0, 0];
+  const mean = (value: number): number => Math.floor((2 * value + alpha) / (2 * alpha));
+  return [mean(sum[0] ?? 0), mean(sum[1] ?? 0), mean(sum[2] ?? 0), Math.floor((2 * alpha + colors.length) / (2 * colors.length))];
+}
+
+/** The half-resolution atlas texel holding sheet pixel (x, y) of a sheet at an even atlas position: the mean of its 2 × 2. */
+export function halfTexel(pixel: (x: number, y: number) => Rgba, x: number, y: number): Rgba {
+  const left = x - (x & 1);
+  const top = y - (y & 1);
+  return meanOf([pixel(left, top), pixel(left + 1, top), pixel(left, top + 1), pixel(left + 1, top + 1)]);
+}
+
+/**
+ * The sprite pixels a screen pixel samples at `zoom` pixels per tile (spriteSampling), its centre at sprite position
+ * (cx, cy) of its tile (0–16 per axis): samples × samples positions spread over the footprint, kept inside the tile,
+ * each passed to `read` with the sampling level. At level 1 a position stands for the 2 × 2 block of sprite pixels it
+ * lies in, passed as the block's even top-left.
+ */
+export function samplePositions(zoom: number, cx: number, cy: number, read: (sx: number, sy: number, level: number) => void): void {
+  const { samples, step, level } = spriteSampling(zoom);
+  const at = (centre: number, k: number): number => {
+    const sub = Math.min(15, Math.max(0, Math.floor(centre + ((k + 0.5) / samples - 0.5) * step)));
+    return level === 1 ? sub - (sub & 1) : sub;
+  };
+  for (let y = 0; y < samples; y++) for (let x = 0; x < samples; x++) read(at(cx, x), at(cy, y), level);
+}
+
 /** Expects `actual` within one unit of `expected` in every channel (mismatches). */
 export function expectClose(actual: Uint8Array, expected: Uint8Array, width: number): void {
   const found = mismatches(actual, expected, width);
@@ -100,7 +138,7 @@ export interface WallLayerInput {
  * row, each over the ones before. A wall without a cell (not vanilla) shows its map colour on its own tile; a wall
  * without a sheet the missing-texture checkerboard there.
  */
-export function wallSprites(input: WallLayerInput, tx: number, ty: number, sx: number, sy: number): Premultiplied {
+export function wallSprites(input: WallLayerInput, tx: number, ty: number, sx: number, sy: number, level = 0): Premultiplied {
   const { world, sheets } = input;
   const { width, height } = world;
   const dx = sx < 8 ? -1 : 1;
@@ -129,7 +167,10 @@ export function wallSprites(input: WallLayerInput, tx: number, ty: number, sx: n
       const px = (cell >> 6) * STRIDE + sx + OVERHANG - 16 * ox;
       const py = (cell & 63) * STRIDE + sy + OVERHANG - 16 * oy;
       if (px >= entry.width || py >= entry.height) continue;
-      color = onTop(premultiply(input.sheetPixel(sheet, px, py)), color);
+      const pixel = level === 1
+        ? halfTexel((x, y) => input.sheetPixel(sheet, x, y), px, py)
+        : input.sheetPixel(sheet, px, py);
+      color = onTop(premultiply(pixel), color);
     }
   }
   return color;
@@ -142,25 +183,22 @@ export function wallLayerPixel(input: WallLayerInput, tx: number, ty: number, sx
 
 /**
  * The wall layer of screen pixel (px, py) at `zoom` pixels per tile with the camera at the world's origin, as the chunk
- * pass samples it (spriteSampling): the straight-alpha mean of samples × samples wall sprite pixels spread over the
- * pixel's footprint inside its tile, over the background, mixed with the walls' map colour by the sprite weight.
+ * pass samples it (samplePositions): the straight-alpha mean of the wall sprites at the samples (of the half-resolution
+ * atlas at level 1), over the background, mixed with the walls' map colour by the sprite weight.
  */
 export function wallScreenPixel(input: WallLayerInput, zoom: number, px: number, py: number): Rgba {
-  const { samples, step, weight } = spriteSampling(zoom);
+  const { weight } = spriteSampling(zoom);
   const wx = (px + 0.5) / zoom;
   const wy = (py + 0.5) / zoom;
   const tx = Math.floor(wx);
   const ty = Math.floor(wy);
   let sum: Premultiplied = [0, 0, 0, 0];
-  for (let y = 0; y < samples; y++) {
-    for (let x = 0; x < samples; x++) {
-      const at = (centre: number, k: number): number =>
-        Math.min(15, Math.max(0, Math.floor(centre * 16 + ((k + 0.5) / samples - 0.5) * step)));
-      const sampled = wallSprites(input, tx, ty, at(wx - tx, x), at(wy - ty, y));
-      sum = [sum[0] + sampled[0], sum[1] + sampled[1], sum[2] + sampled[2], sum[3] + sampled[3]];
-    }
-  }
-  const n = samples * samples;
+  let n = 0;
+  samplePositions(zoom, (wx - tx) * 16, (wy - ty) * 16, (sx, sy, level) => {
+    const sampled = wallSprites(input, tx, ty, sx, sy, level);
+    sum = [sum[0] + sampled[0], sum[1] + sampled[1], sum[2] + sampled[2], sum[3] + sampled[3]];
+    n++;
+  });
   const mean = straight([sum[0] / n, sum[1] / n, sum[2] / n, sum[3] / n]);
   const layer = over(mean, pixelAt(input.background, (ty * input.world.width + tx) * 4));
   if (weight >= 256) return layer;

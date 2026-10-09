@@ -3,6 +3,7 @@ import {
   MISSING_SPRITE_COLORS, SPRITE_MIN_ZOOM, createMapRenderer, liquidColors, renderChunk, spriteSampling,
 } from "../src/index.js";
 import type { ChunkLayers, MapRenderer, RenderableWorld, SpriteAtlasSource } from "../src/index.js";
+import { halfTexel, meanOf, samplePositions } from "./wall-sprites.fixture.js";
 
 const created: MapRenderer[] = [];
 afterEach(() => {
@@ -146,33 +147,15 @@ function pixelAt(pixels: Uint8Array, index: number): Rgba {
 }
 
 /**
- * The sprite of canvas pixel (px, py) at `zoom` pixels per tile, as the chunk pass samples it (spriteSampling): the
- * straight-alpha mean of samples² sprite pixels spread over the pixel's footprint, kept inside the tile; `pixel` is
- * the sprite's colour at sprite pixel (sx, sy) of the tile.
+ * The sprite of canvas pixel (px, py) at `zoom` (an integer) pixels per tile, as the chunk pass samples it
+ * (samplePositions): the straight-alpha mean of its samples; `pixel` is the sprite's colour at sprite pixel (sx, sy) of
+ * the tile at level 0, and at level 1 that of the half-resolution texel the sample (an even sx, sy) reads.
  */
-function sampled(zoom: number, px: number, py: number, pixel: (sx: number, sy: number) => Rgba): Rgba {
-  const { samples, step } = spriteSampling(zoom);
-  const at = (p: number, k: number): number => {
-    const centre = (((p % zoom) + 0.5) * 16) / zoom;
-    return Math.min(15, Math.max(0, Math.floor(centre + ((k + 0.5) / samples - 0.5) * step)));
-  };
-  let red = 0;
-  let green = 0;
-  let blue = 0;
-  let alpha = 0;
-  for (let ky = 0; ky < samples; ky++) {
-    for (let kx = 0; kx < samples; kx++) {
-      const [r, g, b, a] = pixel(at(px, kx), at(py, ky));
-      red += r * a;
-      green += g * a;
-      blue += b * a;
-      alpha += a;
-    }
-  }
-  const count = samples * samples;
-  if (alpha === 0) return [0, 0, 0, 0];
-  const mean = (sum: number): number => Math.floor((2 * sum + alpha) / (2 * alpha));
-  return [mean(red), mean(green), mean(blue), Math.floor((2 * alpha + count) / (2 * count))];
+function sampled(zoom: number, px: number, py: number, pixel: (sx: number, sy: number, level: number) => Rgba): Rgba {
+  const centre = (p: number): number => (((p % zoom) + 0.5) * 16) / zoom;
+  const colors: Rgba[] = [];
+  samplePositions(zoom, centre(px), centre(py), (sx, sy, level) => colors.push(pixel(sx, sy, level)));
+  return meanOf(colors);
 }
 
 /**
@@ -201,9 +184,12 @@ function expectedCanvas(world: RenderableWorld, layers: ChunkLayers, zoom: numbe
       const sheetIndex = placed === undefined ? -1 : [CHEST, TORCH].indexOf(placed[2]);
       const sheet = SHEETS[sheetIndex];
       if (placed !== undefined && sheet !== undefined) {
-        const sprite = sampled(zoom, px, py, (sx, sy) => sheetPixel(
-          sheetIndex, placed[3] + Math.floor((sx * sheet.frameWidth) / 16), placed[4] + Math.floor((sy * sheet.frameHeight) / 16),
-        ));
+        // The sheet pixel of sprite pixel (sx, sy); at level 1 the half-resolution texel holding it.
+        const sprite = sampled(zoom, px, py, (sx, sy, level) => {
+          const x = placed[3] + Math.floor((sx * sheet.frameWidth) / 16);
+          const y = placed[4] + Math.floor((sy * sheet.frameHeight) / 16);
+          return level === 1 ? halfTexel((hx, hy) => sheetPixel(sheetIndex, hx, hy), x, y) : sheetPixel(sheetIndex, x, y);
+        });
         color = over(sprite, pixelAt(behind, tile));
         if (layers.liquids && tx === WATER_TILE[0] && ty === WATER_TILE[1]) {
           color = over([water[0], water[1], water[2], WATER_AMOUNT], color);
@@ -228,7 +214,7 @@ function draw(world: RenderableWorld, zoom: number, layers: ChunkLayers, sprites
 }
 
 describe("sprite mode", () => {
-  // At 8 pixels per tile a canvas pixel is the mean of 2 × 2 sprite pixels.
+  // At 8 pixels per tile a canvas pixel reads the half-resolution atlas once: the mean of 2 × 2 sprite pixels.
   test.each([ZOOM, 8])(
     "at %i pixels per tile frame-important tiles show the atlas cell their frames select, or the missing-texture checkerboard without a sheet; other blocks, trees and walls keep their map colour",
     (zoom) => {

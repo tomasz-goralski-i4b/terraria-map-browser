@@ -222,8 +222,9 @@ describe("walls in sprite mode", () => {
   });
 
   test.each([
-    ["8 pixels per tile: 2 × 2 samples, sprites whole", 8],
-    ["6.4 pixels per tile: 3 × 3 samples, faded in over the map colours", 6.4],
+    ["12.8 pixels per tile: 2 × 2 samples, sprites whole", 12.8],
+    ["8 pixels per tile: one sample of the half-resolution atlas", 8],
+    ["6.4 pixels per tile: 2 × 2 samples of the half-resolution atlas, faded in over the map colours", 6.4],
   ])("below 16 pixels per tile the wall layer is sampled and faded like block sprites (%s)", (_name, zoom) => {
     const world = createWorld(12, 8);
     stamp(world, 0, 0, SCENE);

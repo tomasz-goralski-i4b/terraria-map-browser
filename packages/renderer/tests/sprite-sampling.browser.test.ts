@@ -80,13 +80,16 @@ describe("sprite sampling by zoom", () => {
   test(`sprites start at ${String(SPRITE_MIN_ZOOM * 100)}% and are whole from ${String(SPRITE_FULL_ZOOM * 100)}%`, () => {
     expect(SPRITE_MIN_ZOOM).toBe(5);
     expect(SPRITE_FULL_ZOOM).toBe(7.5);
-    expect(spriteSampling(5)).toEqual({ samples: 4, step: 3.2, weight: 0 });
-    expect(spriteSampling(6)).toEqual({ samples: 3, step: 16 / 6, weight: 102 });
-    expect(spriteSampling(7.5)).toEqual({ samples: 3, step: 16 / 7.5, weight: 256 });
-    expect(spriteSampling(8)).toEqual({ samples: 2, step: 2, weight: 256 });
-    expect(spriteSampling(13.77)).toEqual({ samples: 2, step: 16 / 13.77, weight: 256 });
-    expect(spriteSampling(16)).toEqual({ samples: 1, step: 1, weight: 256 });
-    expect(spriteSampling(64)).toEqual({ samples: 1, step: 0.25, weight: 256 });
+    // From 2 sprite pixels per screen pixel (8 pixels per tile) down, samples read the half-resolution atlas (level 1),
+    // each texel the mean of 2 × 2 sprite pixels: at most 2 × 2 samples per screen pixel at any zoom.
+    expect(spriteSampling(5)).toEqual({ samples: 2, step: 3.2, level: 1, weight: 0 });
+    expect(spriteSampling(6)).toEqual({ samples: 2, step: 16 / 6, level: 1, weight: 102 });
+    expect(spriteSampling(7.5)).toEqual({ samples: 2, step: 16 / 7.5, level: 1, weight: 256 });
+    expect(spriteSampling(8)).toEqual({ samples: 1, step: 2, level: 1, weight: 256 });
+    expect(spriteSampling(8.5)).toEqual({ samples: 2, step: 16 / 8.5, level: 0, weight: 256 });
+    expect(spriteSampling(13.77)).toEqual({ samples: 2, step: 16 / 13.77, level: 0, weight: 256 });
+    expect(spriteSampling(16)).toEqual({ samples: 1, step: 1, level: 0, weight: 256 });
+    expect(spriteSampling(64)).toEqual({ samples: 1, step: 0.25, level: 0, weight: 256 });
   });
 
   test("between the two zooms a sprite fades in over its map colour by the zoom", { tags: ["perf"], timeout: 60_000 }, () => {
