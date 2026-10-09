@@ -117,3 +117,43 @@ test("variants are random when a frame is reset and kept otherwise", { skip }, (
   assert.ok(new Set(result.observed.variants.resetSamples).size >= 2);
   assert.equal(new Set(result.observed.variants.keptSamples).size, 1);
 });
+
+test("the committed framing database matches the installed game (3 000 random samples)", { skip }, async () => {
+  const { loadFramingDatabase } = await import("../../packages/renderer/dist/framing/framing-database.js");
+  const { terrariaFramingData } = await import("../../packages/renderer/dist/framing/terraria-framing.generated.js");
+  const database = await loadFramingDatabase(terrariaFramingData);
+  // A fixed pseudo-random sample: centre, other (or none), neighbourhood, variant.
+  let seed = 20261009;
+  const next = (limit) => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed % limit; };
+  const samples = [];
+  const expected = [];
+  while (samples.length < 3000) {
+    const centre = database.blockTypes[next(database.blockTypes.length)];
+    const other = next(4) === 0 ? null : database.blockTypes[next(database.blockTypes.length)];
+    if (other === centre) continue;
+    const code = next(6561);
+    const variant = next(3);
+    const base = database.blockCell(centre, other, code);
+    const cell = base === null ? null : database.blockVariant(centre, base, variant);
+    if (cell === null) continue;
+    samples.push([centre, other ?? -1, code, variant]);
+    expected.push(cell);
+  }
+  const directory = mkdtempSync(join(tmpdir(), "terraria-framing-check-"));
+  try {
+    const input = join(directory, "samples.json");
+    const output = join(directory, "checked.json");
+    writeFileSync(input, JSON.stringify(samples));
+    spawnSync(powershell, [
+      "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", resolve("scripts/framing/observe.ps1"),
+      "-TerrariaAssembly", assembly, "-Mode", "Check", "-CasesPath", input, "-OutputPath", output,
+    ], { encoding: "utf8" });
+    const checked = JSON.parse(readFileSync(output, "utf8"));
+    assert.equal(checked.gameVersion, database.gameVersion, "the database was generated from another game version");
+    const differing = samples.flatMap((sample, index) => (JSON.stringify(checked.cells[index]) === JSON.stringify(expected[index])
+      ? [] : [`[centre, other, code, variant] ${JSON.stringify(sample)}: game ${JSON.stringify(checked.cells[index])}, database ${JSON.stringify(expected[index])}`]));
+    assert.deepEqual(differing, [], `${String(differing.length)} of ${String(samples.length)} samples differ`);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
