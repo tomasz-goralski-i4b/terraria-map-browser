@@ -29,7 +29,8 @@ docs/assets.md ("Tile framing") specifies.
   "Measuring the sheet" lists which sheets share stone's layout). No JSON copied from TEdit. Coralstone (315) is
   framed like stone (O6); hellstone takes ash as partner; moss is framed like stone over rows 0–14 until O8 is
   answered; large-frame ids use the default variant until O4 is answered.
-- Shapes are ignored for the cell choice (M4 rule).
+- Shapes by the face rule of docs/assets.md ("Slopes and half blocks", R): a side connects only when the centre's
+  face and the neighbour's face toward it are whole. Shaped corner neighbours count by presence.
 
 ## Out of scope
 - Drawing, slopes/half-block drawing, grass rules, gemspark 8-way, large-frame patterns, rows 15–21 of the grass
@@ -180,9 +181,9 @@ catalogue and the in-game observations.
 
 ## Scope
 - Extend the framing function of the block implementation: grass ids select from the measured grass catalogue
-  (docs/assets.md, "Grass and moss sheets"); moss is framed like stone over rows 0–14, which H8 supports against
-  stone (whether rows 15–21 are ever used stays open, O8); large-frame ids keep the default variant until their
-  pattern over the six interior cells is observed (O4 is still open after H9).
+  (docs/assets.md, "Grass and moss sheets"); moss uses its own selection including rows 15–21, the same beside stone and dirt
+  (R, O8; restate it from the framing observer, scripts/framing); the 24 large-frame ids take the observed position
+  patterns of docs/assets.md ("Variant"; R, O4).
 - Corrupt and crimson jungle grass (661, 662) take **mud** as partner (G, H10/O10).
 
 ## Out of scope
