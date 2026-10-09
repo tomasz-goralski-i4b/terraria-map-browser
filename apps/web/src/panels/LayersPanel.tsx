@@ -1,6 +1,11 @@
+import { useMemo } from "react";
 import type { MissingSheet } from "@studio/assets";
 import { WIRE_COLORS, WIRE_LAYER } from "@studio/renderer";
 import { buildFraction, getDefaultAssetSession, useAssetStore, type AssetStatus } from "../assets/asset-session.js";
+import { contentWithoutSprite } from "../assets/sprite-coverage.js";
+import { useAppStore } from "../store.js";
+import { contentKey, contentName } from "../world/content-names.js";
+import { getDefaultWorldSession } from "../world/world-session.js";
 import { commandById, LAYER_TOGGLES, layerShown, type Command } from "../shell/commands.js";
 import { useViewStore } from "../shell/view-store.js";
 import { Icon } from "../ui/Icon.js";
@@ -75,6 +80,33 @@ function spritesMenu(status: AssetStatus): MenuItem[] {
   }
 }
 
+/**
+ * The open world's content drawn as the missing-texture checkerboard (placed with a frame, no sheet in the atlas),
+ * listed once under the Sprites row. Nothing while the list is empty, without assets or without a world.
+ */
+function SpritelessContent(): React.JSX.Element | null {
+  const status = useAssetStore((state) => state.status);
+  const summary = useAppStore((state) => state.summary);
+  const missing = useMemo(() => {
+    const world = summary === null ? null : getDefaultWorldSession().getLoadedWorld();
+    const atlas = status.kind === "ready" ? getDefaultAssetSession().getAtlas() : null;
+    if (world === null || atlas === null) return [];
+    const sheets = new Set(atlas.index.entries.filter((entry) => entry.kind === "tile").map((entry) => entry.id));
+    return contentWithoutSprite(world.planes, world.palette, sheets);
+  }, [status, summary]);
+  if (missing.length === 0) return null;
+  return (
+    <details className="sprite-missing">
+      <summary>
+        {missing.length} {missing.length === 1 ? "type has" : "types have"} no sprite (shown as a magenta checkerboard)
+      </summary>
+      <ul>
+        {missing.map((ref) => <li key={contentKey(ref)}>{contentName(ref, "block")} <code>{contentKey(ref)}</code></li>)}
+      </ul>
+    </details>
+  );
+}
+
 /** The Sprites layer row: the same eye row as the other layers, with the Terraria assets' state and actions inline. */
 function SpritesRow({ command }: { readonly command: Command }): React.JSX.Element {
   const status = useAssetStore((state) => state.status);
@@ -96,6 +128,7 @@ export function LayersPanel({ commands }: { readonly commands: readonly Command[
   return (
     <div className="layers-panel" role="group" aria-label="Map layers">
       <SpritesRow command={commandById(commands, "layer.sprites")} />
+      <SpritelessContent />
       {LAYER_TOGGLES.map(({ layer, label, shortcut }) => {
         const command = commandById(commands, `layer.${layer}`);
         return (

@@ -28,9 +28,22 @@ export const RULE_HEADER_ROWS = 256;
 
 /**
  * Sprite sheet lookup texture (RGBA32I): two texels per palette index, at (index % 256 × 2 + k, index / 256):
- * k = 0 (atlas page, x, y, 1 when the entry has a sheet), k = 1 (sheet width, height, frame width, frame height).
+ * k = 0 (atlas page, x, y, state: SPRITE_STATE), k = 1 (sheet width, height, frame width, frame height).
  */
 export const SPRITE_SHEET_ROW = 256;
+
+/** The state of a palette index in the sprite sheet lookup. */
+export const SPRITE_STATE = {
+  /** No sprite: the map colour (no atlas, or content sprite mode defers, such as trees). */
+  mapColor: 0,
+  /** Drawn from its sheet. */
+  sheet: 1,
+  /** No sheet in the atlas (newer than the install, mod, unknown): the missing-texture checkerboard. */
+  missing: 2,
+} as const;
+
+/** The missing-texture checkerboard: magenta and black squares, 2 × 2 per tile. Generated, not a game asset. */
+export const MISSING_SPRITE_COLORS: readonly (readonly [number, number, number])[] = [[255, 0, 255], [0, 0, 0]];
 
 /** Pixels per tile from which sprite mode samples the atlas instead of the map colour. */
 export const SPRITE_MIN_ZOOM = 8;
@@ -139,7 +152,8 @@ ivec3 painted(ivec3 base, int paint, bool wall) {
 }
 
 // The atlas pixel of a block with a stored frame at sprite pixel sub (0–15 per axis) of its tile: the frame's cell,
-// scaled into the tile. False without a stored frame (frames of -1), a sheet, or past the sheet's edge.
+// scaled into the tile, or the missing-texture checkerboard for content without a sheet. False without a stored frame
+// (frames of -1), for content sprite mode leaves in map colours, or past the sheet's edge.
 bool spritePixel(uint index, ivec2 texel, ivec2 sub, out ivec4 color) {
   if ((uPresent & ${String(PRESENT.frameX | PRESENT.frameY)}) != ${String(PRESENT.frameX | PRESENT.frameY)}) return false;
   ivec2 stored = ivec2(
@@ -148,7 +162,12 @@ bool spritePixel(uint index, ivec2 texel, ivec2 sub, out ivec4 color) {
   if (stored.x < 0 || stored.y < 0) return false;
   ivec2 at = ivec2(int(index) % ${String(SPRITE_SHEET_ROW)} * 2, int(index) / ${String(SPRITE_SHEET_ROW)});
   ivec4 place = texelFetch(uSpriteSheets, at, 0);
-  if (place.w == 0) return false;
+  if (place.w == ${String(SPRITE_STATE.mapColor)}) return false;
+  if (place.w == ${String(SPRITE_STATE.missing)}) {
+    bool first = ((sub.x / ${String(SPRITE_TILE_PIXELS / 2)} + sub.y / ${String(SPRITE_TILE_PIXELS / 2)}) & 1) == 0;
+    color = ivec4(first ? ivec3(${MISSING_SPRITE_COLORS[0]?.join(", ") ?? "0"}) : ivec3(${MISSING_SPRITE_COLORS[1]?.join(", ") ?? "0"}), 255);
+    return true;
+  }
   ivec4 size = texelFetch(uSpriteSheets, at + ivec2(1, 0), 0);
   ivec2 pixel = stored + sub * size.zw / ${String(SPRITE_TILE_PIXELS)};
   if (any(greaterThanEqual(pixel, size.xy))) return false;

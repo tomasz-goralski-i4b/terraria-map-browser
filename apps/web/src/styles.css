@@ -1399,6 +1399,19 @@ kbd {
 }
 
 /* ---------- Sprites row (Layers panel) ---------- */
+.sprite-missing {
+  padding: 0 var(--space-2) var(--space-1) calc(var(--space-2) + var(--space-4));
+  font-size: var(--text-small);
+  color: var(--text-2);
+}
+
+.sprite-missing ul {
+  margin: var(--space-1) 0 0;
+  padding-left: var(--space-3);
+  max-height: 160px;
+  overflow: auto;
+}
+
 .row-note {
   font-size: var(--text-small);
   color: var(--text-3);

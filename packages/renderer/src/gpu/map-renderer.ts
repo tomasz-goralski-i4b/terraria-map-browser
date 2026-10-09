@@ -11,7 +11,7 @@ import { backgroundColor, contentColor, liquidColors } from "../palette/map-pale
 import type { MapPalette } from "../palette/map-palette.js";
 import {
   LAYER_ATTRIBUTE, PAGE_APRON, PLANES_16, PLANES_8, PLANE_COUNT_16, PLANE_COUNT_8, PRESENT, RECT_ATTRIBUTE,
-  RULE_HEADER_ROWS, RULE_ROW, SPRITE_MIN_ZOOM, SPRITE_SHEET_ROW, chunkFragmentSource, chunkVertexSource, overviewBuildFragmentSource,
+  RULE_HEADER_ROWS, RULE_ROW, SPRITE_MIN_ZOOM, SPRITE_SHEET_ROW, SPRITE_STATE, chunkFragmentSource, chunkVertexSource, overviewBuildFragmentSource,
   overviewBuildVertexSource, overviewFragmentSource, overviewVertexSource,
 } from "./shaders.js";
 
@@ -176,7 +176,7 @@ const TEXTURE_UNITS = 8;
  * names). Their trunk cells are wider than a tile and overlap, their tops and branches come from other sheets, and the
  * palm tree's frame is not a sheet offset (docs/assets.md, "Special handling": trees are deferred).
  */
-const SPRITE_DEFERRED_TILES: ReadonlySet<number> = new Set([5, 72, 323, 583, 584, 585, 586, 587, 588, 589, 596, 616, 634]);
+export const SPRITE_DEFERRED_TILES: ReadonlySet<number> = new Set([5, 72, 323, 583, 584, 585, 586, 587, 588, 589, 596, 616, 634]);
 /** Texels per row of the sprite sheet lookup: two per palette index (SPRITE_SHEET_ROW in shaders.ts). */
 const SPRITE_SHEET_WIDTH = SPRITE_SHEET_ROW * 2;
 
@@ -551,18 +551,24 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   };
 
   /**
-   * Writes the sheet of palette indices `from` … `to` - 1 into the lookup (whole rows): an index whose content has a
-   * tile sheet in the atlas gets its place and frame size, any other index (walls, mod, unknown, no sheet) none.
+   * Writes the sheet of palette indices `from` … `to` - 1 into the lookup (whole rows). With an atlas, an index whose
+   * content has a tile sheet gets its place and frame size, deferred content (trees) the map colour, and any other
+   * (newer than the install, mod, unknown) the missing-texture state; the shader only uses it for blocks with a
+   * stored frame. Without an atlas every index has the map colour.
    */
   const uploadSheets = (palette: readonly ContentRef[], from: number, to: number): void => {
     if (to <= from) return;
     for (let index = from; index < to; index++) {
       const ref = palette[index];
-      const sheet = ref?.kind === "vanilla" ? tileSheets.get(ref.id) : undefined;
+      const vanilla = ref?.kind === "vanilla" ? ref.id : undefined;
+      const sheet = vanilla === undefined ? undefined : tileSheets.get(vanilla);
       const at = ((Math.floor(index / SPRITE_SHEET_ROW) * SPRITE_SHEET_WIDTH) + (index % SPRITE_SHEET_ROW) * 2) * 4;
-      sheetMirror.set(sheet === undefined
-        ? [0, 0, 0, 0, 0, 0, 0, 0]
-        : [sheet.page, sheet.x, sheet.y, 1, sheet.width, sheet.height, sheet.frameWidth, sheet.frameHeight], at);
+      if (sheet !== undefined) {
+        sheetMirror.set([sheet.page, sheet.x, sheet.y, SPRITE_STATE.sheet, sheet.width, sheet.height, sheet.frameWidth, sheet.frameHeight], at);
+      } else {
+        const deferred = atlasTexture === null || (vanilla !== undefined && SPRITE_DEFERRED_TILES.has(vanilla));
+        sheetMirror.set([0, 0, 0, deferred ? SPRITE_STATE.mapColor : SPRITE_STATE.missing, 0, 0, 0, 0], at);
+      }
     }
     const firstRow = Math.floor(from / SPRITE_SHEET_ROW);
     const lastRow = Math.floor((to - 1) / SPRITE_SHEET_ROW);

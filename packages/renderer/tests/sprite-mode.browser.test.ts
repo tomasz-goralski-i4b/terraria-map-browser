@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "vitest";
-import { SPRITE_MIN_ZOOM, createMapRenderer, liquidColors, renderChunk } from "../src/index.js";
+import { MISSING_SPRITE_COLORS, SPRITE_MIN_ZOOM, createMapRenderer, liquidColors, renderChunk } from "../src/index.js";
 import type { ChunkLayers, MapRenderer, RenderableWorld, SpriteAtlasSource } from "../src/index.js";
 
 const created: MapRenderer[] = [];
@@ -158,6 +158,13 @@ function expectedCanvas(world: RenderableWorld, layers: ChunkLayers, zoom: numbe
       const ty = Math.floor(py / zoom);
       const tile = (ty * WIDTH + tx) * 4;
       let color = pixelAt(map, tile);
+      const missing = sprites && layers.blocks && TILES.some(([x, y, id]) => x === tx && y === ty && id === NO_SHEET);
+      if (missing) {
+        // Content with a stored frame but no sheet: the missing-texture checkerboard, 2 × 2 squares per tile.
+        const sub = (p: number): number => Math.floor((((p % zoom) + 0.5) * 16) / zoom);
+        const square = (Math.floor(sub(px) / 8) + Math.floor(sub(py) / 8)) % 2;
+        color = [...(MISSING_SPRITE_COLORS[square] ?? [0, 0, 0]), 255] as unknown as Rgba;
+      }
       const placed = sprites && layers.blocks ? TILES.find(([x, y]) => x === tx && y === ty) : undefined;
       const sheetIndex = placed === undefined ? -1 : [CHEST, TORCH].indexOf(placed[2]);
       const sheet = SHEETS[sheetIndex];
@@ -191,7 +198,7 @@ function draw(world: RenderableWorld, zoom: number, layers: ChunkLayers, sprites
 
 describe("sprite mode", () => {
   test.each([ZOOM, SPRITE_MIN_ZOOM])(
-    "at %i pixels per tile frame-important tiles show the atlas cell their frames select; other blocks, trees and walls keep their map colour",
+    "at %i pixels per tile frame-important tiles show the atlas cell their frames select, or the missing-texture checkerboard without a sheet; other blocks, trees and walls keep their map colour",
     (zoom) => {
       const world = spriteWorld();
       expect(draw(world, zoom, ALL, true)).toEqual(expectedCanvas(world, ALL, zoom, true));

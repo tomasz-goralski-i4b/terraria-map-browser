@@ -99,8 +99,10 @@ exactly the pixels `filterTiles` (below) makes of them. The browser tests assert
   once, as one `RGBA8` array texture with a layer per page; `stats().atlasUploads` counts it. A lookup texture
   (`RGBA32I`, `SPRITE_SHEET_ROW` in `src/gpu/shaders.ts`) holds per palette index the tile sheet of its content ID
   (page, place, size, frame size), written with the palette, so it grows when the palette is appended; walls, mod and
-  unknown content, IDs without a sheet and trees (`SPRITE_DEFERRED_TILES`: tree trunks, tops and branches are
-  deferred, docs/assets.md) have none. `setSpriteMode(true)` makes the chunk pass, from
+  unknown content and IDs without a sheet are *missing*, trees (`SPRITE_DEFERRED_TILES`: tree trunks, tops and
+  branches are deferred, docs/assets.md) keep their map colour. A missing block with a stored frame is drawn as a
+  generated missing-texture checkerboard (`MISSING_SPRITE_COLORS`, magenta and black, 2 × 2 squares per tile; not a
+  game asset), so content without a sprite stands out; the web app lists it under the Sprites row. `setSpriteMode(true)` makes the chunk pass, from
   `SPRITE_MIN_ZOOM` (8) pixels per tile, draw a block that has a stored frame (`frameX`, `frameY` ≥ 0: frame-important
   tiles; the codec stores −1 for the others) and a sheet from that sheet: sprite pixel `sub` (0–15 per axis) of the tile
   reads sheet pixel `frame + sub × cell / 16`, so a cell larger than 16 × 16 is scaled into the tile (the game's exact
