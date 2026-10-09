@@ -86,8 +86,10 @@ describe("sprite sampling by zoom", () => {
     expect(spriteSampling(6)).toEqual({ samples: 2, step: 16 / 6, level: 1, weight: 102 });
     expect(spriteSampling(7.5)).toEqual({ samples: 2, step: 16 / 7.5, level: 1, weight: 256 });
     expect(spriteSampling(8)).toEqual({ samples: 1, step: 2, level: 1, weight: 256 });
-    expect(spriteSampling(8.5)).toEqual({ samples: 2, step: 16 / 8.5, level: 0, weight: 256 });
-    expect(spriteSampling(13.77)).toEqual({ samples: 2, step: 16 / 13.77, level: 0, weight: 256 });
+    // Between 8 and 16 pixels per tile a screen pixel covers at most one art pixel (2 × 2 sprite pixels: the game's art
+    // is drawn at twice its resolution) and shows the one under its centre.
+    expect(spriteSampling(8.5)).toEqual({ samples: 1, step: 16 / 8.5, level: 1, weight: 256 });
+    expect(spriteSampling(13.77)).toEqual({ samples: 1, step: 16 / 13.77, level: 1, weight: 256 });
     expect(spriteSampling(16)).toEqual({ samples: 1, step: 1, level: 0, weight: 256 });
     expect(spriteSampling(64)).toEqual({ samples: 1, step: 0.25, level: 0, weight: 256 });
   });
@@ -144,6 +146,47 @@ describe("sprite sampling by zoom", () => {
       }
     }
   });
+});
+
+describe("art drawn at twice its resolution", () => {
+  /** A sheet whose art pixels are 2 × 2 sprite pixels, as the game's: a distinct colour per art pixel, opaque. */
+  function doubledAtlas(): SpriteAtlasSource {
+    const page = new Uint8Array(PAGE * PAGE * 4);
+    for (let y = 0; y < SHEET.height; y++) {
+      for (let x = 0; x < SHEET.width; x++) page.set(doubledPixel(x >> 1, y >> 1), ((SHEET.y + y) * PAGE + SHEET.x + x) * 4);
+    }
+    return { pages: [page], index: { pageSize: PAGE, entries: [SHEET] } };
+  }
+  function doubledPixel(ax: number, ay: number): readonly [number, number, number, number] {
+    return [(ax * 29) % 256, (ay * 31 + 7) % 256, (ax * ay * 13 + 50) % 256, 255];
+  }
+
+  test.each([8.1, 9, 10, 11.3, 13.77, 15.5])(
+    "at %s pixels per tile every screen pixel shows one art pixel unmixed: no tile is sharper than another",
+    (zoom) => {
+      const world = chestWorld(12, 1, Array.from({ length: 12 }, (_, x) => [x, 0, 0] as const));
+      const layers: ChunkLayers = { background: false, walls: false, blocks: true, liquids: false };
+      const { canvas, renderer } = makeRenderer(Math.floor(12 * zoom), Math.floor(zoom));
+      renderer.setWorld(world);
+      renderer.setLayers(layers);
+      renderer.setAtlas(doubledAtlas());
+      renderer.setSpriteMode(true);
+      renderer.setCamera({ x: 0, y: 0, zoom });
+      renderer.render();
+      const out = readCanvas(canvas);
+      const art = new Set<string>();
+      for (let ay = 0; ay < 8; ay++) for (let ax = 0; ax < 8; ax++) art.add(doubledPixel(ax, ay).join());
+      const mixed: string[] = [];
+      for (let y = 0; y < canvas.height; y++) {
+        for (let x = 0; x < canvas.width; x++) {
+          const at = (y * canvas.width + x) * 4;
+          const color = [out[at], out[at + 1], out[at + 2], out[at + 3]].join();
+          if (!art.has(color)) mixed.push(`(${String(x)}, ${String(y)}) ${color}`);
+        }
+      }
+      expect(mixed.slice(0, 5), `${String(mixed.length)} mixed pixels`).toEqual([]);
+    },
+  );
 });
 
 describe("the closest zoom", () => {

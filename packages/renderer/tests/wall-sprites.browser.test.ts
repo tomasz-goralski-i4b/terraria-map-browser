@@ -222,7 +222,7 @@ describe("walls in sprite mode", () => {
   });
 
   test.each([
-    ["12.8 pixels per tile: 2 × 2 samples, sprites whole", 12.8],
+    ["12.8 pixels per tile: the art pixel under each screen pixel, sprites whole", 12.8],
     ["8 pixels per tile: one sample of the half-resolution atlas", 8],
     ["6.4 pixels per tile: 2 × 2 samples of the half-resolution atlas, faded in over the map colours", 6.4],
   ])("below 16 pixels per tile the wall layer is sampled and faded like block sprites (%s)", (_name, zoom) => {
