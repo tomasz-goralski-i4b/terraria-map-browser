@@ -1,4 +1,4 @@
-import type { CanonicalWorld } from "@studio/world-model";
+import type { CanonicalWorld, ContentRef } from "@studio/world-model";
 import { AIR, OWN, PARTNER, cellSide, chooseBlockCell } from "./block-rules.js";
 import type { FramingDatabase } from "./framing-database.js";
 
@@ -367,11 +367,22 @@ export function createBlockFraming(database: FramingDatabase): BlockFraming {
   let keptPasses = new Int8Array(0);
   let keptReferences = new Int16Array(0);
 
+  // CWM palette → tile id per entry (NOT_VANILLA for modded and unknown content). Palettes are append-only, so a
+  // cached mapping stays valid and is extended when entries were added.
+  const paletteIds = new WeakMap<readonly ContentRef[], Int32Array>();
+  function vanillaIds(palette: readonly ContentRef[]): Int32Array {
+    const cached = paletteIds.get(palette);
+    if (cached?.length === palette.length) return cached;
+    const ids = new Int32Array(palette.length);
+    palette.forEach((ref, index) => { ids[index] = ref.kind === "vanilla" ? ref.id : NOT_VANILLA; });
+    paletteIds.set(palette, ids);
+    return ids;
+  }
+
   function frameRegion(world: CanonicalWorld, region: BlockRegion, out: Uint16Array): void {
     out.fill(NO_CELL);
     const { width, height, planes, palette } = world;
-    const vanilla = new Int32Array(palette.length);
-    palette.forEach((ref, index) => { vanilla[index] = ref.kind === "vanilla" ? ref.id : NOT_VANILLA; });
+    const vanilla = vanillaIds(palette);
     // A tile of pass p reads cells of pass p − 1 one tile away, and so on: the deepest type in the region sets how
     // far around it to frame.
     let margin = 0;

@@ -581,7 +581,8 @@ describe("the two-pass helper over a tile region", () => {
     const region = { left: 0, top: 0, width: size, height: size };
     const first = new Uint16Array(size * size);
     const second = new Uint16Array(size * size);
-    framing.frameRegion(world, region, first);
+    // Warm up: the first calls derive the types' tables and let the engine optimise the loops.
+    for (let call = 0; call < 3; call++) framing.frameRegion(world, region, first);
     const objects = await allocationCount(() => { framing.frameRegion(world, region, second); }, "frameRegion");
     expect(second).toEqual(first);
     expect(first.filter((cell) => cell !== NO_CELL).length).toBeGreaterThan(size * size / 2);
