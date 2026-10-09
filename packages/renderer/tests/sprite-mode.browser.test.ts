@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import {
   MISSING_SPRITE_COLORS, SPRITE_MIN_ZOOM, createMapRenderer, liquidColors, renderChunk, spriteSampling,
 } from "../src/index.js";
@@ -251,6 +251,47 @@ describe("sprite mode", () => {
     const expected = expectedCanvas(world, ALL, ZOOM, false);
     expect(draw(world, ZOOM, ALL, true, false)).toEqual(expected);
     expect(draw(world, ZOOM, ALL, false)).toEqual(expected);
+  });
+
+  test("animation frames drawn while the sprite program is still being linked show map colours, then sprites", async () => {
+    // KHR_parallel_shader_compile: the renderer links the sprite program without waiting for it and asks whether it is
+    // done (COMPLETION_STATUS_KHR) before each frame. Stubbed (software GL lacks it) and held back until `linked`.
+    const COMPLETION_STATUS = 0x91b1;
+    let linked = false;
+    const prototype = WebGL2RenderingContext.prototype;
+    const realExtension = prototype.getExtension;
+    const realParameter = prototype.getProgramParameter;
+    const extension = vi.spyOn(prototype, "getExtension").mockImplementation(
+      function (this: WebGL2RenderingContext, name: string): unknown {
+        return name === "KHR_parallel_shader_compile" ? { COMPLETION_STATUS_KHR: COMPLETION_STATUS } : realExtension.call(this, name);
+      },
+    );
+    const parameter = vi.spyOn(prototype, "getProgramParameter").mockImplementation(
+      function (this: WebGL2RenderingContext, program: WebGLProgram, name: number): unknown {
+        return name === COMPLETION_STATUS ? linked : realParameter.call(this, program, name);
+      },
+    );
+    try {
+      const world = spriteWorld();
+      const { canvas, renderer } = makeRenderer(WIDTH * ZOOM, HEIGHT * ZOOM);
+      renderer.setWorld(world);
+      renderer.setLayers(ALL);
+      renderer.setSpriteMode(true);
+      renderer.setCamera({ x: 0, y: 0, zoom: ZOOM });
+      renderer.setAtlas(syntheticAtlas());
+      // Read inside a later animation frame callback: after the renderer's own, before the canvas is presented.
+      const nextFrame = (): Promise<Uint8Array> => new Promise((resolve) => {
+        requestAnimationFrame(() => { resolve(readCanvas(canvas)); });
+      });
+      await nextFrame();
+      expect(await nextFrame()).toEqual(expectedCanvas(world, ALL, ZOOM, false));
+      linked = true;
+      await nextFrame();
+      expect(await nextFrame()).toEqual(expectedCanvas(world, ALL, ZOOM, true));
+    } finally {
+      extension.mockRestore();
+      parameter.mockRestore();
+    }
   });
 
   test("switching sprite mode and crossing the threshold upload no chunk; the atlas is uploaded once per setAtlas", () => {
