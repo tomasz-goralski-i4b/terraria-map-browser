@@ -305,14 +305,15 @@ test("the dock tabs follow the arrow keys, Home and End", async () => {
   await userEvent.keyboard("{Home}");
   await expect.element(world).toHaveAttribute("aria-selected", "true");
   await userEvent.keyboard("{End}");
-  await expect.element(view).toHaveAttribute("aria-selected", "true");
-  // The Inspector stays visible with either tab.
+  await expect.element(page.getByRole("tab", { name: "Swatches" })).toHaveAttribute("aria-selected", "true");
+  await expect.element(page.getByRole("tabpanel")).toMatchTextContent("Open a vanilla world first");
+  // The Inspector stays visible with any tab.
   await expect.element(page.getByRole("region", { name: "Inspector" })).toBeVisible();
 });
 
 test("every dock section opens and closes from the keyboard", async () => {
   await render(<App layoutStorage={storage} />);
-  for (const [tab, name] of [["World", "World"], ["World", "Content"], ["World", "Entities"], ["World", "Inspector"], ["View", "Layers"], ["View", "Inspector"]] as const) {
+  for (const [tab, name] of [["World", "World"], ["World", "Content"], ["World", "Entities"], ["World", "Inspector"], ["View", "Layers"], ["View", "Inspector"], ["Swatches", "Swatches"]] as const) {
     await dockTab(tab);
     const toggle = sectionToggle(name);
     const before = toggle.getAttribute("aria-expanded");

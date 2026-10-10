@@ -3,6 +3,7 @@ import { readWorldTiles } from "@studio/world-codec";
 import { useAppStore } from "../src/store.js";
 import { beginBrush, finishBrush, moveBrush, redoBrush, setBrushWorld, undoBrush, useBrushStore } from "../src/world/brush-session.js";
 import { canonicalWorldOf } from "../src/world/canonical-world.js";
+import { setDiscardConfirmer } from "../src/world/discard-guard.js";
 import { useSaveStore } from "../src/world/save-world.js";
 import { createWorldSession, type WorldParser } from "../src/world/world-session.js";
 import { brushSource } from "./support/brush-source.js";
@@ -82,6 +83,8 @@ test("successful replacement clears history; failed and cancelled replacements r
     options?.signal?.addEventListener("abort", () => { reject(new DOMException("Open cancelled", "AbortError")); });
   }));
   const opening = session.open(file);
+  // With unsaved edits the open first asks; cancel once the replacement is being read.
+  await vi.waitFor(() => { expect(parse).toHaveBeenCalledTimes(3); });
   session.cancel();
   await opening;
   expect(useBrushStore.getState().canUndo).toBe(true);
@@ -94,15 +97,43 @@ test("successful replacement clears history; failed and cancelled replacements r
   expect(useBrushStore.getState().reason).toBe("Open a vanilla world first");
 });
 
-test("the header frame-important flag protects even an otherwise whitelisted stone block", () => {
+test("a chest footprint stays as it is while the rest of the stroke erases", () => {
   const world = readWorldTiles(source());
   const view = canonicalWorldOf(world);
-  view.setTile(2, 2, { block: { kind: "vanilla", id: 1 }, frameX: 18, frameY: 0, wires: 0, actuator: false });
-  world.sections.frameImportantBits[0] = (world.sections.frameImportantBits[0] ?? 0) | 2;
+  for (let x = 0; x < 8; x++) view.setTile(x, 5, { block: { kind: "vanilla", id: 1 }, wires: 0, actuator: false });
+  Object.assign(world.entities.Chests, { data: { entries: [{ x: 1, y: 3, name: "", slotCount: 40, items: [] }] } });
   setBrushWorld(world);
   expect(beginBrush(true)).toBe(true);
-  moveBrush(2, 2);
+  moveBrush(0, 5);
+  moveBrush(7, 5);
   finishBrush();
-  expect(view.tileAt(2, 2).block).toEqual({ kind: "vanilla", id: 1 });
-  expect(useBrushStore.getState().canUndo).toBe(false);
+  for (let x = 0; x <= 3; x++) expect(view.tileAt(x, 5).block).toEqual({ kind: "vanilla", id: 1 });
+  for (let x = 4; x < 8; x++) expect(view.tileAt(x, 5).block).toBeUndefined();
+  expect(useBrushStore.getState().canUndo).toBe(true);
+});
+
+test("opening another world with unsaved edits asks first; declining keeps the world and its history", async () => {
+  const world = readWorldTiles(source());
+  const other = readWorldTiles(source());
+  const parse = vi.fn<WorldParser["parse"]>().mockResolvedValueOnce(world).mockResolvedValue(other);
+  const session = createWorldSession({ parse });
+  const file = new File([source()], "EvergreenReach.wld");
+  await session.open(file);
+  paint(2, 2);
+  const answers = [false, true];
+  const confirm = vi.fn(() => Promise.resolve(answers.shift() ?? false));
+  setDiscardConfirmer(confirm);
+  try {
+    await session.open(file);
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(session.getLoadedWorld()).toBe(world);
+    expect(useBrushStore.getState().canUndo).toBe(true);
+    await session.open(file);
+    expect(session.getLoadedWorld()).toBe(other);
+    expect(useBrushStore.getState().canUndo).toBe(false);
+    await session.open(file);
+    expect(confirm).toHaveBeenCalledTimes(2);
+  } finally {
+    setDiscardConfirmer(null);
+  }
 });

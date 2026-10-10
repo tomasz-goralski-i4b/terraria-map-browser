@@ -134,6 +134,31 @@ describe("brush", () => {
     expect(planeBytes(world)).toEqual(painted);
   });
 
+  it("covers exactly the union of whole footprints along a winding, fast stroke", () => {
+    for (const shape of ["square", "circle"] as const) {
+      const world = createWorld(60, 50);
+      const history = createBrushHistory(world);
+      const points = [[10, 10], [11, 11], [30, 14], [25, 40], [26, 39], [50, 20], [49, 20], [5, 45]] as const;
+      const changed = stroke(history, { block: place(1), size: 7, shape }, ...points);
+      const expected = new Set<string>();
+      for (let i = 0; i < points.length; i++) {
+        const [x1, y1] = points[i] ?? [0, 0];
+        const [x0, y0] = points[i - 1] ?? [x1, y1];
+        const steps = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0), 1);
+        for (let step = 0; step <= steps; step++) {
+          const cx = Math.round(x0 + (x1 - x0) * step / steps);
+          const cy = Math.round(y0 + (y1 - y0) * step / steps);
+          for (let x = 0; x < 60; x++) for (let y = 0; y < 50; y++) {
+            const inSquare = Math.abs(x - cx + 0.5) <= 3.5 && Math.abs(y - cy + 0.5) <= 3.5;
+            const inCircle = Math.hypot(x - cx, y - cy) <= 3.25;
+            if (shape === "square" ? inSquare && x - cx >= -3 && x - cx <= 3 && y - cy >= -3 && y - cy <= 3 : inCircle) expected.add(`${String(x)},${String(y)}`);
+          }
+        }
+      }
+      expect(new Set(changed.map(({ x, y }) => `${String(x)},${String(y)}`)), shape).toEqual(expected);
+    }
+  });
+
   it("cancels strokes, and drops redo only after an effective new stroke", () => {
     const world = createWorld(6, 6);
     world.setTile(3, 3, { block: { kind: "vanilla", id: 30 }, wall: { kind: "vanilla", id: 4 }, wires: 2, actuator: false });

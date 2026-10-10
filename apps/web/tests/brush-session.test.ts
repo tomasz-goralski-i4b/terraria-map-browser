@@ -35,7 +35,7 @@ test.each(SUPPORTED_VANILLA_FORMATS)("brush edits export current state and reloa
   expect(reloaded).toMatchObject({ block: { kind: "vanilla", id: 38 }, paint: 12, wall: { kind: "vanilla", id: 4 }, wallPaint: 25 });
 });
 
-test("ordinary blocks around a tile never protect it: stone paints beside grass, ores and sand, and erases them", () => {
+test("blocks around a tile never protect it: stone paints beside grass, ores and sand, and erases them", () => {
   const world = emptyWorld(5, 3);
   const view = canonicalWorldOf(world);
   view.setTile(0, 1, block(2));
@@ -59,23 +59,24 @@ test("ordinary blocks around a tile never protect it: stone paints beside grass,
   for (const x of [0, 1, 2]) expect(view.tileAt(x, 1).block).toBeUndefined();
 });
 
-test("objects are protected with both layers; their supports and attachments only from block edits", () => {
+test("objects without entity records protect nothing: grass under plants erases, a torch is painted over", () => {
   const world = emptyWorld(5, 5);
   const view = canonicalWorldOf(world);
-  view.setTile(2, 2, block(4, { frameX: 0, frameY: 0 }));
-  for (const [x, y] of [[2, 3], [1, 2], [3, 2]] as const) view.setTile(x, y, block(1));
+  for (let x = 0; x < 5; x++) {
+    view.setTile(x, 2, block(3, { frameX: 18 * x, frameY: 0 }));
+    view.setTile(x, 3, block(2));
+  }
+  view.setTile(2, 1, block(4, { frameX: 0, frameY: 0 }));
   const history = createWorldBrush(world);
-  history?.begin({ block: { kind: "erase" }, size: 3 });
+  history?.begin({ block: { kind: "erase" }, size: 1 });
+  history?.move(0, 3);
+  history?.move(4, 3);
+  expect(history?.commit()).toHaveLength(5);
+  history?.begin({ block: place(1), wall: place(1), size: 3 });
   history?.move(2, 2);
-  expect(history?.commit()).toEqual([]);
-  history?.begin({ wall: place(1), size: 3 });
-  history?.move(2, 2);
-  expect(history?.commit().map(({ x, y }) => `${String(x)},${String(y)}`).sort()).toEqual(
-    ["1,1", "1,2", "1,3", "2,1", "2,3", "3,1", "3,2", "3,3"]);
-  expect(view.tileAt(2, 2).wall).toBeUndefined();
-  history?.begin({ block: place(0), size: 1 });
-  history?.move(2, 4);
-  expect(history?.commit()).toHaveLength(1);
+  expect(history?.commit()).toHaveLength(9);
+  expect(view.tileAt(2, 1)).toEqual({ ...block(1), wall: { kind: "vanilla", id: 1 } });
+  expect(view.tileAt(2, 2).frameX).toBeUndefined();
 });
 
 test("protects chest footprints including air and refuses unknown content or undecoded entity sections", () => {
