@@ -41,6 +41,11 @@ export class ThumbnailSource {
     this.framing = framing;
   }
 
+  /** A cache lookup only: undefined means it has not been built yet, null means the colour fallback. */
+  cachedMaterial(layer: BrushContentLayer, ref: ContentRef): Thumbnail | null | undefined {
+    return ref.kind === "vanilla" ? this.cells.get(`${layer}:${String(ref.id)}`) : undefined;
+  }
+
   material(layer: BrushContentLayer, ref: ContentRef): Thumbnail | null {
     if (ref.kind !== "vanilla") return null;
     const key = `${layer}:${String(ref.id)}`;

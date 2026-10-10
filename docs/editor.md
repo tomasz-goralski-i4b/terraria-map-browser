@@ -83,16 +83,20 @@ edited.
 
 ## Swatches and palettes
 
-With Terraria assets connected, Blocks and Walls show sprite thumbnails instead of map colours. Blocks use one
+With Terraria assets connected and Sprites enabled, Blocks and Walls show sprite thumbnails instead of map colours.
+Turning Sprites off restores colours across Swatches, Brush chips and Inspector without disconnecting assets.
+Blocks use one
 16 × 16 interior cell at position (0, 0), selected by the framing database with eight identical neighbours;
 position-dependent types use the database's cell at that position. Walls consistently use the central 16 × 16
-pixels of their interior cell, excluding the 8-pixel overhang. Paint remains a corner mark; walls stay round.
+pixels of their interior cell, excluding the 8-pixel overhang. Paint remains a corner mark. Sprite thumbnails fill
+the existing swatch squares; the grid's wall swatches keep the same shape as blocks.
 Only visible swatches request thumbnails, in idle callbacks with a 250 ms timeout so an active map cannot starve
-the work. The small pixel cache is shared with Brush chips
+the work. Already cached material thumbnails appear immediately when changing categories or enabling Sprites,
+without an observer or idle delay. The small pixel cache is shared with Brush chips
 and replaced when assets reconnect or disconnect. Missing sheets and unavailable framing keep the map-colour
 fallback, including the theme's checkerboard for missing map colours.
 
-The Swatches tab lists Blocks, Walls or Paints as a grid of sprites or map colours (walls round, painted swatches with the paint
+The Swatches tab lists Blocks, Walls or Paints as a grid of sprites or map colours (painted swatches with the paint
 in a corner) or as a list of names, filtered by name or id. Its source is All materials, Recently used (the last 16
 swatches painted with) or a custom palette. Custom palettes hold swatches, a material with its paint, and are kept in
 the browser (`localStorage`):

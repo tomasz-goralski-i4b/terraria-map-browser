@@ -1145,8 +1145,8 @@ Editor thumbnails (`apps/web/src/assets/thumbnails.ts`) use the same block and w
 as the chunk pass. Material thumbnails select one interior cell; Inspector thumbnails select the actual cell
 from the world's neighbours or the stored, wrapped frame of frame-important blocks. Walls are always cropped to
 their 16 × 16 centre. Pixels are copied directly from the atlas page, so no decoded sheet is allocated or retained.
-Canvases store native cell pixels using `putImageData`; CSS `image-rendering: pixelated` displays square cells
-at native CSS size without interpolation. Larger object cells are cropped to their top-left 16 × 16;
+Canvases store native cell pixels using `putImageData`; CSS `image-rendering: pixelated` fills the existing swatch
+boxes without interpolating colours. Larger object cells are cropped to their top-left 16 × 16;
 shorter cells retain their native height. Paint remains a corner mark.
 
 ## Open questions

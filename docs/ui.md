@@ -72,7 +72,7 @@ Code: `apps/web/src/ui/` (primitives), `apps/web/src/shell/` (layout, commands, 
   The rail is one Tab stop; the arrow keys move inside it. The active tool shows as pressed. Brush and Erase
   are available for supported vanilla worlds; the remaining edit tools show their unavailable reason.
 - **Tool options bar** (`shell/ToolOptions.tsx`) shows the active tool's name and settings. Its material chips show
-  sprites when assets are ready, using the same interior thumbnails as the Swatches tab.
+  sprites when assets are ready and Sprites is enabled, using the same interior thumbnails as the Swatches tab.
   Disconnecting assets or a missing sheet restores map colours; paint corners and accessible names are unchanged.
   Edit tools put their settings here: brush size and shape, and the layer mask, i.e. which of block, wall, paint,
   liquid and wires a stroke writes (as TEdit does). A tool never opens a dialog to change a setting. Brush shows,
@@ -103,9 +103,9 @@ Code: `apps/web/src/ui/` (primitives), `apps/web/src/shell/` (layout, commands, 
 
   `Tab` is **not** used for this, unlike some editors: Tab must keep moving focus for keyboard users.
 
-  Inspector Block and Wall rows show vanilla map-colour swatches. With connected assets they show the pinned tile's
-  actual framed cell: stored frames for objects, neighbours for self-framed blocks and walls. Missing sheets or
-  unavailable framing keep map colours; unknown content remains text only. Paint corners, round wall swatches,
+  Inspector Block and Wall rows show vanilla map-colour swatches. With connected assets and Sprites enabled they
+  show the pinned tile's actual framed cell: stored frames for objects, neighbours for self-framed blocks and walls. Missing sheets or
+  unavailable framing or disabling Sprites keeps map colours; unknown content remains text only. Paint corners,
   copy text and accessible names remain unchanged.
 
 - **Status bar** (`shell/StatusBar.tsx`) shows, from left to right:
