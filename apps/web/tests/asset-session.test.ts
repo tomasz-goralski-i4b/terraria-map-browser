@@ -157,6 +157,25 @@ describe("connecting a Content folder", () => {
     expect(remembered.source).toEqual({ kind: "files", folderName: "Content", fingerprint: "f" });
   });
 
+  test("the folder input sends every sheet the atlas holds: tree tops and branches, mushroom caps, wires and the actuator", async () => {
+    const builder = new ManualBuilder();
+    const session = createAssetSession({ builder, remembered: new MemoryRemembered(), pickDirectory: null, openFolderInput: vi.fn() });
+    const names = [
+      "Tiles_5.xnb", "Wall_1.xnb", "Tree_Tops_0.xnb", "Tree_Branches_31.xnb", "Shroom_Tops.xnb", "WiresNew.xnb", "Actuator.xnb",
+      "Wires.xnb", "Wall_Outline.xnb", "Tiles_5_0.xnb",
+    ];
+    const files = names.map((name) => {
+      const file = new File([], name);
+      Object.defineProperty(file, "webkitRelativePath", { value: `Content/Images/${name}` });
+      return file;
+    });
+    const connecting = session.connectFiles(files);
+    await settle();
+    expect((builder.last().source as readonly File[]).map((file) => file.name)).toEqual(names.slice(0, 7));
+    builder.last().resolve(result());
+    await connecting;
+  });
+
   test("Select folder opens the folder input even where there is a directory picker (Chrome refuses Program Files)", () => {
     const openFolderInput = vi.fn();
     const pickDirectory = vi.fn();
