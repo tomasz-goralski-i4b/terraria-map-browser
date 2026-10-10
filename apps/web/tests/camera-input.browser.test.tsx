@@ -170,6 +170,7 @@ test("sixty drag events write camera hooks once per frame and only commit for ch
     expect(renderer.setCamera).toHaveBeenCalledOnce();
     expect(mutations).toHaveLength(1);
     expect(commits).toBe(before); // The cave tile follows the captured pointer during a drag.
+    time += 100; // Released after a pause: no flick glide moves the map under the pointer.
     pointer("pointerup", 140, 150);
     pointer("pointermove", 160, 150);
     await frame();
