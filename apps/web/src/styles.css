@@ -739,6 +739,7 @@ kbd {
 .swatches-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(26px, 1fr)); gap: 3px; padding: 2px; }
 .swatches-grid[data-mode="list"] { grid-template-columns: 1fr; gap: 0; }
 .swatch-button {
+  position: relative;
   display: flex; align-items: center; justify-content: center; gap: var(--space-2); aspect-ratio: 1; padding: 0;
   border: 0; border-radius: 4px; background: transparent; color: var(--text-1); font: inherit; cursor: pointer;
 }
