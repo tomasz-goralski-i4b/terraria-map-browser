@@ -2,7 +2,7 @@ import { expect, test } from "vitest";
 import type { Tile, WorldPlanes } from "@studio/world-model";
 import { readWorldTiles, writeWorld, SUPPORTED_VANILLA_FORMATS } from "@studio/world-codec";
 import { brushMaterials } from "../src/world/brush-materials.js";
-import { createWorldBrush } from "../src/world/brush-session.js";
+import { brushOptions, createWorldBrush, useBrushStore } from "../src/world/brush-session.js";
 import { canonicalWorldOf } from "../src/world/canonical-world.js";
 import { verifyWrittenWorld } from "../src/world/verify-written.js";
 import { brushSource } from "./support/brush-source.js";
@@ -139,4 +139,19 @@ test("materials are the world format's self-framed blocks and walls; objects and
   for (const options of [{ block: place(21) }, { block: place(700) }, { wall: place(360) }, { block: place(1, 31) }]) {
     expect(() => { history?.begin({ ...options, size: 1 }); }).toThrow(RangeError);
   }
+});
+
+test("smoothing shapes blocks that can be hammered; ropes, objects and the edges of entity footprints stay as they are", () => {
+  const world = emptyWorld(8, 6);
+  const view = canonicalWorldOf(world);
+  for (let x = 0; x < 8; x++) view.setTile(x, 5, block(1));
+  view.setTile(1, 4, block(213));
+  view.setTile(6, 4, block(4, { frameX: 0, frameY: 0 }));
+  const history = createWorldBrush(world);
+  history?.begin({ block: place(0), size: 1, smooth: true });
+  history?.move(2, 4);
+  history?.move(5, 4);
+  history?.commit();
+  expect([1, 2, 3, 4, 5, 6].map((x) => view.tileAt(x, 4).shape ?? "full")).toEqual(["full", "slopeTopLeft", "full", "full", "slopeTopRight", "full"]);
+  expect(brushOptions({ ...useBrushStore.getState(), smooth: true }, true)).toMatchObject({ smooth: true });
 });
