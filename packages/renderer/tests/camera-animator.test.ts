@@ -491,3 +491,25 @@ test("irregular pointer input never steps the map back while dragging one way", 
     previous = x;
   }
 });
+
+test("a 1000 Hz drag with timestamps rounded to 1 ms (pairs sharing one) glides on at the drag's speed", () => {
+  let time = 0;
+  const animator = new CameraAnimator({ ...initial, zoom: 4 }, viewport, world, () => time);
+  animator.beginDrag();
+  const moves: number[] = [];
+  let previous = animator.current.x;
+  for (let frame = 1; frame <= 20; frame++) {
+    time = frame * 16;
+    // Two samples per millisecond stamp: half the moves have no duration of their own.
+    for (let ms = (frame - 1) * 16 + 1; ms <= frame * 16; ms += 2) {
+      animator.drag(-1, 0, ms);
+      animator.drag(-1, 0, ms);
+    }
+    const x = animator.step(time).camera.x;
+    moves.push((x - previous) * 4);
+    previous = x;
+  }
+  for (const move of moves.slice(3)) expect(move).toBeCloseTo(16, 0);
+  animator.endDrag(false, 320);
+  expect(animator.velocity.x).toBeCloseTo(-1, 1);
+});

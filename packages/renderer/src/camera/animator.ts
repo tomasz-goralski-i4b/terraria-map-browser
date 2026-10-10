@@ -23,6 +23,8 @@ const RESAMPLE_INTERVALS = 1.25;
 const MAX_RESAMPLE_LATENCY_MS = 20;
 /** The recent event intervals the delay follows. */
 const RESAMPLE_HISTORY = 4;
+/** At most this many samples are kept: without frames (a hidden tab) the shown time does not move on to prune them. */
+const MAX_PATH_SAMPLES = 64;
 
 interface Point { readonly x: number; readonly y: number }
 interface DragSegment { readonly start: number; readonly end: number; readonly dx: number; readonly dy: number }
@@ -145,11 +147,16 @@ export class CameraAnimator {
     if (this.path.length === 0) this.path.push(last);
     this.path.push({ time: end, x: last.x + dx, y: last.y + dy });
     // Samples before the one at or just before the shown time are never read again (a few stay for the intervals).
-    while (this.path.length > RESAMPLE_HISTORY + 1 && (this.path[1]?.time ?? Infinity) <= this.sampledAt) this.path.shift();
+    while (this.path.length > MAX_PATH_SAMPLES
+      || (this.path.length > RESAMPLE_HISTORY + 1 && (this.path[1]?.time ?? Infinity) <= this.sampledAt)) this.path.shift();
     let intervals = 0;
     let count = 0;
-    for (let index = this.path.length - 1; index > 0 && count < RESAMPLE_HISTORY; index--, count++) {
-      intervals += Math.min(MAX_RESAMPLE_LATENCY_MS, (this.path[index]?.time ?? 0) - (this.path[index - 1]?.time ?? 0));
+    for (let index = this.path.length - 1; index > 0 && count < RESAMPLE_HISTORY; index--) {
+      const interval = (this.path[index]?.time ?? 0) - (this.path[index - 1]?.time ?? 0);
+      // Samples sharing a timestamp (coalesced, or a browser's 1 ms rounding) are one sample for the event rate.
+      if (interval <= 0) continue;
+      intervals += Math.min(MAX_RESAMPLE_LATENCY_MS, interval);
+      count++;
     }
     this.latency = Math.min(MAX_RESAMPLE_LATENCY_MS, count === 0 ? 0 : RESAMPLE_INTERVALS * intervals / count);
   }
@@ -163,7 +170,9 @@ export class CameraAnimator {
     if (!cancel && !this.reduced && duration > 0) {
       for (const segment of this.segments) {
         const overlap = Math.max(0, Math.min(end, segment.end) - Math.max(start, segment.start));
-        const fraction = segment.end > segment.start ? overlap / (segment.end - segment.start) : 0;
+        // A move without duration (a timestamp shared with the previous one) counts in full inside the window.
+        const fraction = segment.end > segment.start ? overlap / (segment.end - segment.start)
+          : segment.end >= start && segment.end <= end ? 1 : 0;
         dx += segment.dx * fraction;
         dy += segment.dy * fraction;
       }

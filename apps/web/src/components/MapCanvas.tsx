@@ -601,7 +601,7 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
           // Another button joined (or the primary one was released unseen): keep the stroke; a held button pans.
           endStroke();
           if (event.buttons !== 0) {
-            session.animator.beginDrag();
+            session.animator.beginDrag(event.timeStamp);
             session.pointers.set(event.pointerId, local);
             pressRef.current = null;
             event.currentTarget.style.cursor = "grabbing";
@@ -639,14 +639,17 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
       if (other === undefined) {
         // Every pointer sample since the last event, with its own timestamp, so the animator can resample the drag
         // to frame time (browsers coalesce the moves of a frame into one event).
-        const coalesced = event.nativeEvent.getCoalescedEvents();
+        // getCoalescedEvents is missing outside secure contexts (a LAN dev server) and in older Safari.
+        const coalesced = typeof event.nativeEvent.getCoalescedEvents === "function" ? event.nativeEvent.getCoalescedEvents() : [];
         const rect = event.currentTarget.getBoundingClientRect();
         let from = previous;
-        for (const sample of coalesced.length === 0 ? [event.nativeEvent] : coalesced) {
-          const to = toBacking({ x: sample.clientX - rect.left, y: sample.clientY - rect.top });
+        coalesced.forEach((sample, index) => {
+          // The last sample ends where the stored pointer does, so rounding between them cannot add up over a drag.
+          const to = index === coalesced.length - 1 ? point : toBacking({ x: sample.clientX - rect.left, y: sample.clientY - rect.top });
           session.animator.drag(to.x - from.x, to.y - from.y, sample.timeStamp);
           from = to;
-        }
+        });
+        if (coalesced.length === 0) session.animator.drag(point.x - previous.x, point.y - previous.y, event.timeStamp);
         queueCamera(session);
         return;
       }
