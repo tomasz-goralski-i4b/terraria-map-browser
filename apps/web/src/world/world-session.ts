@@ -4,7 +4,7 @@ import { resetWorldSave } from "./save-world.js";
 import { finishBrush, setBrushWorld } from "./brush-session.js";
 import { confirmDiscardChanges } from "./discard-guard.js";
 import type { OpenedWorldFile, OpenWorldHandle, WorldSaveDirectory } from "./world-file.js";
-import { setPropertiesWorld, propertyReadOnly, type PropertyValue } from "./world-properties.js";
+import { setPropertiesWorld, propertyReadOnly, checkPropertyRange, type PropertyValue } from "./world-properties.js";
 import { resizeWorld } from "./resize-world.js";
 
 /** Small display facts about the loaded world; the planes and palette themselves stay outside React and the store. */
@@ -118,9 +118,12 @@ export function createWorldSession(parser: WorldParser): WorldSession {
       loaded = resized;
       setBrushWorld(resized);
       setPropertiesWorld(resized, false);
-      useAppStore.setState({ summary: summarize(resized, openedFile.file), unsavedChanges: true });
+      const resizedSummary = summarize(resized, openedFile.file);
+      useAppStore.setState((state) => ({ summary: resizedSummary, unsavedChanges: true, worldRevision: state.worldRevision + 1 }));
       return;
     }
+    checkPropertyRange(path, value, { width: loaded.metadata.width, height: loaded.metadata.height,
+      dayTime: path === "details.timeAndWeather.dayTime" ? value === true : loaded.details.timeAndWeather.dayTime });
     const candidate = { ...loaded, header: { ...loaded.header }, metadata: structuredClone(loaded.metadata), details: structuredClone(loaded.details) };
     const keys = path.split(".");
     const last = keys.pop();
@@ -137,7 +140,10 @@ export function createWorldSession(parser: WorldParser): WorldSession {
     Object.assign(candidate.details.other, { killCountLength: candidate.details.other.killCounts.length, claimableBannerLength: candidate.details.other.claimableBanners?.length });
     Object.assign(loaded, normalizeWorldMetadata(candidate, loaded.envelope.source));
     Object.assign(loaded, { header: candidate.header });
-    useAppStore.setState({ summary: summarize(loaded, openedFile.file), unsavedChanges: true });
+    // Only the layer lines read metadata among the plane-built views; other edits leave the map and its caches alone.
+    const geometry = path === "metadata.surfaceLevel" || path === "metadata.rockLevel";
+    const edited = summarize(loaded, openedFile.file);
+    useAppStore.setState((state) => ({ summary: edited, unsavedChanges: true, worldRevision: state.worldRevision + (geometry ? 1 : 0) }));
   };
   return { open, cancel, reset, editProperty, getLoadedWorld: () => loaded, getOpenedFile: () => openedFile };
 }

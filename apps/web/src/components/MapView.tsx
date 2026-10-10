@@ -31,10 +31,14 @@ export function MapView({ renderer, world, commands }: MapViewProps): React.JSX.
   const phase = useAppStore((state) => state.phase);
   const loadingFileName = useAppStore((state) => state.loadingFileName);
   const summary = useAppStore((state) => state.summary);
+  const worldRevision = useAppStore((state) => state.worldRevision);
+  const hasWorld = summary !== null;
   const error = useAppStore((state) => state.error);
   const assetNotice = useAssetStore((state) => state.notice);
   // A new summary means a newly loaded world; the session is not reactive, the store is.
-  const sessionWorld = useMemo(() => (summary === null ? null : loadedRenderableWorld()), [summary]);
+  const sessionWorld = useMemo(() => (hasWorld ? loadedRenderableWorld() : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- rebuild on new tiles, not on metadata edits
+    [hasWorld, worldRevision]);
   const drawn = world === undefined ? sessionWorld : world;
 
   return (

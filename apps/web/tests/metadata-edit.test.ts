@@ -6,6 +6,7 @@ import { createWorldSession } from "../src/world/world-session.js";
 import { parseProperty, propertyOptions, propertyReadOnly, propertyValue } from "../src/world/world-properties.js";
 import { worldFieldGroups } from "../src/panels/world-fields.js";
 import { resizeWorld } from "../src/world/resize-world.js";
+import { useAppStore } from "../src/store.js";
 
 test.each(SUPPORTED_VANILLA_FORMATS)("format %i writes current identity, flags, weather, lists and landmarks", (version) => {
   const world = readWorldTiles(writerSource(2, 4, undefined, version));
@@ -36,8 +37,10 @@ test("every editable displayed path persists independently without changing its 
     const choices = propertyOptions(path, previous);
     let value: unknown = choices?.find((choice) => choice.value !== previous)?.value;
     if (value === undefined) {
-      if (Array.isArray(previous)) value = path.endsWith(".teamSpawns") ? [{ x: 1, y: 2 }] : path.endsWith(".anglerFinishers") ? ["Guide Andrew"] : previous.map((entry: unknown) => typeof entry === "number" ? entry + 1 : entry);
-      else if (typeof previous === "number") value = previous + 1;
+      if (Array.isArray(previous)) value = path.endsWith(".teamSpawns") ? [{ x: 1, y: 2 }] : path.endsWith(".anglerFinishers") ? ["Guide Andrew"] : previous.map((entry: unknown) => typeof entry === "number" ? (entry === 1 ? 2 : 1) : entry);
+      // The synthetic values (~16.8M) are outside many game ranges; 1 (or 2) fits all of them. Growing the canvas
+      // avoids the entity check that shrinking needs.
+      else if (typeof previous === "number") value = /^metadata\.(width|height)$/.test(path) ? previous + 1 : previous === 1 ? 2 : 1;
       else value = path.endsWith(".guid") ? "87e466e7853c3f48b75abc85e36d4b87" : /Time$|lastPlayed$/.test(path) ? "2026-10-10T12:30:00.000Z" : path.endsWith(".worldGenVersion") ? "1400159338498" : path.endsWith(".worldGenManifest") ? '{"passes":["Terrain","Caves"]}' : "Copper Coast";
     }
     const text = typeof value === "string" ? value : JSON.stringify(value);
@@ -80,5 +83,34 @@ test("an invalid edit is atomic and Singles are normalized before saving", async
   session.editProperty("details.timeAndWeather.rain.maximum", 0.1);
   expect(world.details.timeAndWeather.rain.maximum).toBe(Math.fround(0.1));
   expect(verifyWrittenWorld(world, writeWorld(world))).toBeNull();
+  session.reset();
+});
+
+test("edits outside the game's range are refused with the allowed range", async () => {
+  const world = readWorldTiles(writerSource());
+  const session = createWorldSession({ parse: () => Promise.resolve(world) });
+  await session.open(new File([writerSource()], "Copper Coast.wld"));
+  const before = structuredClone(world.details);
+  expect(() => { session.editProperty("details.timeAndWeather.slimeRainTime", -1.74942e50); }).toThrow(/between/);
+  expect(() => { session.editProperty("details.timeAndWeather.windSpeed", 3); }).toThrow(/between -1 and 1/);
+  expect(() => { session.editProperty("details.timeAndWeather.rain.time", -5); }).toThrow(/between/);
+  expect(() => { session.editProperty("details.spawnAndLandmarks.spawn.x", world.metadata.width); }).toThrow(/between/);
+  expect(() => { session.editProperty("metadata.bounds.right", 1); }).toThrow();
+  expect(world.details).toEqual(before);
+  session.editProperty("details.timeAndWeather.slimeRainTime", -86400);
+  expect(world.details.timeAndWeather.slimeRainTime).toBe(-86400);
+  session.reset();
+});
+
+test("a metadata edit keeps the world revision, so plane-built views are not rebuilt", async () => {
+  const world = readWorldTiles(writerSource());
+  const session = createWorldSession({ parse: () => Promise.resolve(world) });
+  await session.open(new File([writerSource()], "Copper Coast.wld"));
+  const revision = useAppStore.getState().worldRevision;
+  session.editProperty("metadata.name", "Tin Coast");
+  expect(useAppStore.getState().summary?.name).toBe("Tin Coast");
+  expect(useAppStore.getState().worldRevision).toBe(revision);
+  session.editProperty("metadata.surfaceLevel", 2);
+  expect(useAppStore.getState().worldRevision).toBe(revision + 1);
   session.reset();
 });

@@ -21,6 +21,11 @@ export interface AppState {
   readonly summary: WorldSummary | null;
   readonly error: LoadError | null;
   /**
+   * Changes when the tiles or their geometry change (open, resize, surface/rock level), so views that build from the
+   * planes rebuild then and not on every summary update; a metadata edit changes `summary` only.
+   */
+  readonly worldRevision: number;
+  /**
    * The loaded world was changed after it was opened or last saved. Edit tools set it; saving or opening another world
    * clears it. While it is set, reloading or closing the tab asks first.
    */
@@ -41,6 +46,7 @@ export const useAppStore = create<AppState>()((set) => ({
   phase: "idle",
   loadingFileName: null,
   summary: null,
+  worldRevision: 0,
   error: null,
   unsavedChanges: false,
   setUnsavedChanges: (unsaved) => {
@@ -50,7 +56,7 @@ export const useAppStore = create<AppState>()((set) => ({
     set({ phase: "loading", loadingFileName: fileName, error: null });
   },
   setLoaded: (summary) => {
-    set({ phase: "loaded", loadingFileName: null, summary, error: null, unsavedChanges: false });
+    set((state) => ({ phase: "loaded", loadingFileName: null, summary, error: null, unsavedChanges: false, worldRevision: state.worldRevision + 1 }));
   },
   setFailed: (error) => {
     set({ phase: "failed", loadingFileName: null, error });

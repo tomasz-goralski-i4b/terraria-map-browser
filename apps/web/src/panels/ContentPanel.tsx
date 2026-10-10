@@ -119,7 +119,11 @@ export function ContentPanel({ world }: { readonly world?: ContentWorld | null }
   const revision = useBrushStore((state) => state.revision);
   const active = useBrushStore((state) => state.active);
   const summary = useAppStore((state) => state.summary);
-  const sessionWorld = useMemo(() => (summary === null ? null : sessionContentWorld()), [summary]);
+  const worldRevision = useAppStore((state) => state.worldRevision);
+  const hasWorld = summary !== null;
+  const sessionWorld = useMemo(() => (hasWorld ? sessionContentWorld() : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- rebuild on new tiles, not on metadata edits
+    [hasWorld, worldRevision]);
   const shown = world === undefined ? sessionWorld : world;
   // Only a signal that a count finished: the counts live in `countCache`, keyed by the planes, outside React.
   const [, setCompleted] = useState(0);

@@ -49,7 +49,9 @@ export function propertyOptions(path: string, value: unknown): readonly Property
 
 /** File structure and stored list lengths are derived rather than editable values. */
 export function propertyReadOnly(path: string): boolean {
-  return !path.startsWith("metadata.") && !path.startsWith("details.") && !["header.revision", "header.isFavorite"].includes(path) || ["details.other.killCountLength", "details.other.claimableBannerLength"].includes(path);
+  return !path.startsWith("metadata.") && !path.startsWith("details.") && !["header.revision", "header.isFavorite"].includes(path) || ["details.other.killCountLength", "details.other.claimableBannerLength"].includes(path) ||
+    // Bounds follow the canvas size; resizing updates them.
+    path.startsWith("metadata.bounds.");
 }
 
 export function propertyValue(world: unknown, path: string): unknown {
@@ -142,4 +144,72 @@ export function setWorldProperty(path: string, text: string): void {
   const value = parseProperty(path, text, propertyValue(world, path));
   session.editProperty(path, value);
   if (propertiesFingerprint(world) !== before) useAppStore.getState().setUnsavedChanges(true);
+}
+
+/** One in-game day: a 54,000-tick day plus a 32,400-tick night (https://terraria.wiki.gg/wiki/Day_and_night_cycle). */
+const DAY_TICKS = 54000;
+const NIGHT_TICKS = 32400;
+const FULL_DAY = DAY_TICKS + NIGHT_TICKS;
+
+interface Range { readonly min: number; readonly max: number; readonly integer?: boolean; readonly unit?: string }
+
+/**
+ * The meaningful range of an edited number, beyond what its binary type can hold. Timers and cooldowns are bounded
+ * to 30 in-game days; positions to the canvas. `undefined` means only the codec's type checks apply.
+ */
+function propertyRange(path: string, world: WorldGeometry): Range | undefined {
+  const key = path.split(".").slice(-2).join(".");
+  const last = path.split(".").at(-1) ?? "";
+  const timer: Range = { min: 0, max: 30 * FULL_DAY, integer: true, unit: " ticks" };
+  switch (key) {
+    case "timeAndWeather.time": return { min: 0, max: world.dayTime ? DAY_TICKS : NIGHT_TICKS, unit: " ticks" };
+    // Positive while slime rain falls, negative while it counts down to the next one.
+    case "timeAndWeather.slimeRainTime": return { min: -30 * FULL_DAY, max: 30 * FULL_DAY, integer: true, unit: " ticks" };
+    case "timeAndWeather.windSpeed": return { min: -1, max: 1 };
+    case "timeAndWeather.cloudCount": return { min: 0, max: 200, integer: true };
+    case "rain.maximum": case "sandstorm.severity": case "sandstorm.intendedSeverity": return { min: 0, max: 1 };
+    case "rain.time": case "sandstorm.time": case "party.cooldown": case "lanternNight.cooldown": case "invasion.delay":
+    case "progression.cultistDelay": return timer;
+    case "timeAndWeather.sundialCooldown": case "timeAndWeather.moondialCooldown": return { min: 0, max: 255, integer: true, unit: " days" };
+    case "invasion.size": case "invasion.startSize": return { min: 0, max: 100000, integer: true };
+    case "invasion.x": return { min: 0, max: world.width * 16, unit: " px" };
+    case "progression.orbCount": return { min: 0, max: 2, integer: true };
+    case "progression.altarCount": case "timeAndWeather.meteorShowerCount": case "timeAndWeather.coinRain":
+      return { min: 0, max: 2147483647, integer: true };
+    case "metadata.surfaceLevel": case "metadata.rockLevel": return { min: 0, max: world.height, unit: " tiles" };
+    default: break;
+  }
+  if (last === "x" && /\.(spawn|dungeon)\.x$/.test(path)) return { min: 0, max: world.width - 1, integer: true, unit: " tiles" };
+  if (last === "y" && /\.(spawn|dungeon)\.y$/.test(path)) return { min: 0, max: world.height - 1, integer: true, unit: " tiles" };
+  return undefined;
+}
+
+export interface WorldGeometry { readonly width: number; readonly height: number; readonly dayTime: boolean }
+
+function checkRange(range: Range, value: number, what: string): void {
+  if (range.integer === true && !Number.isInteger(value)) throw new Error(`${what} must be a whole number.`);
+  if (value < range.min || value > range.max) {
+    throw new Error(`${what} must be between ${range.min.toLocaleString("en-US")} and ${range.max.toLocaleString("en-US")}${range.unit ?? ""}.`);
+  }
+}
+
+/** Refuse values the game would not produce, so a save never carries e.g. a slime rain timer of -1.7e50. */
+export function checkPropertyRange(path: string, value: unknown, world: WorldGeometry): void {
+  const last = path.split(".").at(-1) ?? "";
+  if (typeof value === "number") {
+    const range = propertyRange(path, world);
+    if (range !== undefined) checkRange(range, value, "The value");
+    return;
+  }
+  if (!Array.isArray(value)) return;
+  if (last === "treeX" || last === "caveBackX") {
+    value.forEach((item: unknown) => { if (typeof item === "number") checkRange({ min: 0, max: world.width, integer: true }, item, "Each boundary"); });
+  } else if (last === "killCounts" || last === "claimableBanners") {
+    value.forEach((item: unknown) => { if (typeof item === "number") checkRange({ min: 0, max: 2147483647, integer: true }, item, "Each count"); });
+  } else if (last === "teamSpawns") {
+    for (const item of value as readonly { readonly x: number; readonly y: number }[]) {
+      checkRange({ min: 0, max: world.width - 1, integer: true }, item.x, "Each spawn x");
+      checkRange({ min: 0, max: world.height - 1, integer: true }, item.y, "Each spawn y");
+    }
+  }
 }

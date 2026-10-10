@@ -16,7 +16,11 @@ Time is a tick count with a separate Day checkbox; changing the day/night flag d
 Text/numbers commit on Enter or blur; Escape restores the stored value. Saving flushes pending drafts and refuses
 invalid values. Candidate edits are encoded and decoded before replacing the live metadata; Singles normalize to
 their binary32 value. Integer width/range, finite numbers, GUID, UInt64, UTF-8 length caps, fixed array lengths and
-dates are validated. An error stays beside its field; the prior world remains intact. Save As uses the existing
+dates are validated. Numbers also have game ranges: time within the current day (54,000 ticks) or night (32,400), timers and
+cooldowns 0–30 in-game days (slime rain ±30 days: negative counts down to the next rain), wind −1–1, rain and
+sandstorm intensities 0–1, clouds 0–200, positions and levels inside the canvas. Bounds follow the canvas size and
+are not edited directly. Metadata edits refresh the panels; only resizing or a surface/rock level change rebuilds the
+map and other views built from the planes. An error stays beside its field; the prior world remains intact. Save As uses the existing
 Worker to encode and read back the complete current world before writing or downloading. The opened file is never
 overwritten. Changing a seed, biome or generation flag updates its saved setting and does not regenerate terrain.
 
