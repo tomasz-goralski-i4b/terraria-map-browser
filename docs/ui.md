@@ -104,9 +104,9 @@ Code: `apps/web/src/ui/` (primitives), `apps/web/src/shell/` (layout, commands, 
   `Tab` is **not** used for this, unlike some editors: Tab must keep moving focus for keyboard users.
 
   Inspector Block and Wall rows show vanilla map-colour swatches. With connected assets and Sprites enabled they
-  show the pinned tile's actual framed cell: stored frames for objects, neighbours for self-framed blocks and walls. Missing sheets or
-  unavailable framing or disabling Sprites keeps map colours; unknown content remains text only. Paint corners,
-  copy text and accessible names remain unchanged.
+  show the pinned tile's actual framed cell: stored frames for objects, neighbours for self-framed blocks and walls.
+  Missing sheets, unavailable framing or disabling Sprites keeps map colours; unknown content remains text only.
+  Paint corners, copy text and accessible names remain unchanged.
 
 - **Status bar** (`shell/StatusBar.tsx`) shows, from left to right:
   - the tile under the pointer;

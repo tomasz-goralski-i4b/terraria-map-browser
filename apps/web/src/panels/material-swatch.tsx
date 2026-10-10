@@ -48,9 +48,10 @@ export function MaterialSwatch({ color, paint, layer, content, actual, revision 
   const reference = useMemo(() => id === undefined ? undefined : { kind: "vanilla", id } as const, [id]);
   // Retain the last cell while neighbours are being reframed; a changed connection or material hides it immediately.
   const cached = sprites && status.kind === "ready" && actual === undefined && layer !== undefined && reference !== undefined ? cachedMaterialThumbnail(layer, reference) : undefined;
+  const imageCurrent = image?.status === status && image.layer === layer && image.content === reference && image.actual === actual && image.revision === revision;
   const thumbnail = !sprites ? null : cached !== undefined ? cached : image?.status === status && image.layer === layer && image.content === reference ? image.thumbnail : null;
   useEffect(() => {
-    if (!sprites || cached !== undefined || status.kind !== "ready" || layer === undefined || reference === undefined || host.current === null) return;
+    if (!sprites || imageCurrent || cached !== undefined || status.kind !== "ready" || layer === undefined || reference === undefined || host.current === null) return;
     let disposed = false;
     let visible = false;
     let request = 0;
@@ -86,7 +87,7 @@ export function MaterialSwatch({ color, paint, layer, content, actual, revision 
     });
     observer.observe(host.current);
     return () => { disposed = true; observer.disconnect(); cancel?.(); };
-  }, [status, sprites, cached, layer, reference, actual, revision]);
+  }, [status, sprites, cached, imageCurrent, layer, reference, actual, revision]);
   useLayoutEffect(() => {
     if (thumbnail === null || canvas.current === null) return;
     const context = canvas.current.getContext("2d");
