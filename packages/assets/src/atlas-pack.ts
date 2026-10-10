@@ -1,7 +1,7 @@
 import type { AtlasEntry, PackableSheet, SheetKind, SheetMetrics, SpriteAtlas } from "./atlas-types.js";
 
 /** Bump when the page layout or index shape changes; it is part of the cache key. */
-export const ATLAS_FORMAT_VERSION = 3;
+export const ATLAS_FORMAT_VERSION = 4;
 
 /** Page edge used when the caller passes none. */
 export const DEFAULT_PAGE_SIZE = 4096;
@@ -134,21 +134,29 @@ interface Placement {
   readonly y: number;
 }
 
-/** Finds room for a `width × height` rectangle (padding excluded) on an existing page, or `undefined`. */
+/** `value` rounded up to an even number. */
+const even = (value: number): number => value + (value & 1);
+
+/**
+ * Finds room for a `width × height` rectangle (padding excluded) on an existing page, or `undefined`. Sheets start at
+ * even pixels: the renderer's half-resolution atlas averages 2 × 2 pixels from even positions, so each sheet's cells
+ * stay apart from their gutters there.
+ */
 function place(pages: PageLayout[], width: number, height: number, pageSize: number, padding: number): Placement | undefined {
   for (const [page, layout] of pages.entries()) {
     for (const shelf of layout.shelves) {
       if (shelf.height >= height && shelf.nextX + width + padding <= pageSize) {
         const x = shelf.nextX;
-        shelf.nextX = x + width + padding;
+        shelf.nextX = even(x + width + padding);
         return { page, x, y: shelf.y };
       }
     }
     if (layout.nextY + height + padding <= pageSize) {
-      const shelf: Shelf = { y: layout.nextY, height, nextX: padding + width + padding };
+      const x = even(padding);
+      const shelf: Shelf = { y: layout.nextY, height, nextX: even(x + width + padding) };
       layout.shelves.push(shelf);
-      layout.nextY += height + padding;
-      return { page, x: padding, y: shelf.y };
+      layout.nextY = even(layout.nextY + height + padding);
+      return { page, x, y: shelf.y };
     }
   }
   return undefined;
@@ -160,7 +168,8 @@ export function packSheets(sheets: readonly PackableSheet[], options?: PackOptio
   const padding = options?.padding ?? DEFAULT_PADDING;
 
   for (const sheet of sheets) {
-    if (sheet.width + 2 * padding > pageSize || sheet.height + 2 * padding > pageSize) {
+    // A sheet starts at the first even pixel past the padding (place).
+    if (even(padding) + sheet.width + padding > pageSize || even(padding) + sheet.height + padding > pageSize) {
       throw new AtlasSheetTooLargeError(
         sheet.kind,
         sheet.id,
@@ -179,7 +188,7 @@ export function packSheets(sheets: readonly PackableSheet[], options?: PackOptio
   for (const sheet of ordered) {
     let placement = place(layouts, sheet.width, sheet.height, pageSize, padding);
     if (placement === undefined) {
-      layouts.push({ shelves: [], nextY: padding });
+      layouts.push({ shelves: [], nextY: even(padding) });
       pages.push(new Uint8Array(pageSize * pageSize * 4));
       placement = place(layouts, sheet.width, sheet.height, pageSize, padding);
       if (placement === undefined) throw new Error("A sheet that passed the size check did not fit an empty page.");

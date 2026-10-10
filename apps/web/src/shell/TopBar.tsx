@@ -12,6 +12,7 @@ import {
   reconnectWorldsFolder, useWorldLibrary, type RecentWorld, type WorldsFolderState,
 } from "../world/world-library.js";
 import { getDefaultWorldSession } from "../world/world-session.js";
+import { useViewStore } from "./view-store.js";
 import { commandById, type Command } from "./commands.js";
 
 /**
@@ -19,13 +20,18 @@ import { commandById, type Command } from "./commands.js";
  * panel closed), and greyed out once a valid folder is connected. Changing the folder stays in the Assets menu and the
  * Layers panel.
  */
-function assetsButton(status: AssetStatus): { readonly label: string; readonly inactive: boolean; readonly title?: string } {
+function assetsButton(
+  status: AssetStatus, preparing: boolean,
+): { readonly label: string; readonly inactive: boolean; readonly title?: string } {
   switch (status.kind) {
     case "choosing":
       return { label: "Waiting for the folder…", inactive: true, title: "With thousands of files the browser takes a few seconds to hand them over" };
     case "building":
       return { label: `Building sprites ${String(Math.floor(buildFraction(status) * 100))}%`, inactive: true, title: "The sprite atlas is being built" };
     case "ready":
+      if (preparing) {
+        return { label: "Preparing sprites…", inactive: true, title: "The graphics driver is compiling the sprite shaders" };
+      }
       return { label: "Terraria assets connected", inactive: true, title: `From “${status.folderName}”. Change the folder in the Assets menu or the Layers panel.` };
     default:
       return { label: "Connect Terraria assets", inactive: false };
@@ -106,6 +112,7 @@ export function TopBar({ commands }: { readonly commands: readonly Command[] }):
   const unsaved = useAppStore((state) => state.unsavedChanges);
   const input = useRef<HTMLInputElement>(null);
   const assetStatus = useAssetStore((state) => state.status);
+  const spritesPreparing = useViewStore((state) => state.spritesPreparing);
   const folder = useWorldLibrary((state) => state.folder);
   const recent = useWorldLibrary((state) => state.recent);
   const now = useNow();
@@ -161,7 +168,7 @@ export function TopBar({ commands }: { readonly commands: readonly Command[] }):
   ];
   const dock = get("view.dock");
   const assets = get("file.assets");
-  const assetButton = assetsButton(assetStatus);
+  const assetButton = assetsButton(assetStatus, spritesPreparing);
 
   return (
     <header className="top-bar">
@@ -190,6 +197,7 @@ export function TopBar({ commands }: { readonly commands: readonly Command[] }):
           {(assetStatus.kind === "building" || assetStatus.kind === "choosing") && (
             <ProgressFill fraction={buildFraction(assetStatus)} waiting={assetStatus.kind === "choosing"} />
           )}
+          {assetStatus.kind === "ready" && spritesPreparing && <ProgressFill fraction={0} waiting />}
           <span className="assets-dot" data-state={assetStatus.kind} aria-hidden="true" />
           <span className="button-label">{assetButton.label}</span>
         </button>

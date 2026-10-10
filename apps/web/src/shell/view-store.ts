@@ -49,6 +49,8 @@ export interface ViewState {
   readonly statsVisible: boolean;
   /** The sprite-sheet preview dialog of the connected Terraria assets. */
   readonly spritePreviewOpen: boolean;
+  /** Whether the renderer still prepares its sprite program (its onSpritesPreparing): sprites show map colours meanwhile. */
+  readonly spritesPreparing: boolean;
   readonly setHoverTile: (tile: TilePoint | null) => void;
   readonly setPinnedTile: (tile: TilePoint | null) => void;
   readonly setLayers: (layers: Partial<MapLayers>) => void;
@@ -58,6 +60,7 @@ export interface ViewState {
   readonly setPaletteOpen: (open: boolean) => void;
   readonly setStatsVisible: (visible: boolean) => void;
   readonly setSpritePreviewOpen: (open: boolean) => void;
+  readonly setSpritesPreparing: (preparing: boolean) => void;
 }
 
 export const useViewStore = create<ViewState>()((set, get) => ({
@@ -70,6 +73,7 @@ export const useViewStore = create<ViewState>()((set, get) => ({
   paletteOpen: false,
   statsVisible: false,
   spritePreviewOpen: false,
+  spritesPreparing: false,
   setHoverTile: (tile) => {
     const previous = get().hoverTile;
     if (previous?.x === tile?.x && previous?.y === tile?.y) return;
@@ -95,6 +99,9 @@ export const useViewStore = create<ViewState>()((set, get) => ({
   },
   setSpritePreviewOpen: (open) => {
     set({ spritePreviewOpen: open });
+  },
+  setSpritesPreparing: (preparing) => {
+    if (get().spritesPreparing !== preparing) set({ spritesPreparing: preparing });
   },
   setStatsVisible: (visible) => {
     set({ statsVisible: visible });

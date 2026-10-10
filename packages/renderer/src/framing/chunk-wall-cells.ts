@@ -45,6 +45,9 @@ export function createChunkWallCellCache(
 
   const keyOf = (chunk: ChunkCoord): number => chunk.y * chunksX + chunk.x;
 
+  // Scratch of one chunk's framed area inside the world, before it is placed into the chunk's array.
+  let scratch = new Uint16Array(0);
+
   const cells = (chunk: ChunkCoord): Uint16Array => {
     const key = keyOf(chunk);
     const cached = chunks.get(key);
@@ -52,11 +55,20 @@ export function createChunkWallCellCache(
     const out = new Uint16Array(side * side).fill(NO_CELL);
     const left = chunk.x * chunkSize - apron;
     const top = chunk.y * chunkSize - apron;
-    for (let i = Math.max(0, -left); i < Math.min(side, width - left); i++) {
-      for (let j = Math.max(0, -top); j < Math.min(side, height - top); j++) {
-        out[i * side + j] = framing.cellAt(world, left + i, top + j);
-        framedTiles++;
+    // The array's tiles inside the world: past its edges the cells stay NO_CELL.
+    const firstColumn = Math.max(0, -left);
+    const firstRow = Math.max(0, -top);
+    const region = {
+      left: left + firstColumn, top: top + firstRow,
+      width: Math.min(side, width - left) - firstColumn, height: Math.min(side, height - top) - firstRow,
+    };
+    if (region.width > 0 && region.height > 0) {
+      if (scratch.length < region.width * region.height) scratch = new Uint16Array(side * side);
+      framing.frameRegion(world, region, scratch);
+      for (let i = 0; i < region.width; i++) {
+        out.set(scratch.subarray(i * region.height, (i + 1) * region.height), (firstColumn + i) * side + firstRow);
       }
+      framedTiles += region.width * region.height;
     }
     chunks.set(key, out);
     return out;
@@ -88,12 +100,22 @@ export function createChunkWallCellCache(
           }
           const originX = cx * chunkSize - apron;
           const originY = cy * chunkSize - apron;
-          for (let tx = Math.max(region.left, originX); tx < Math.min(right, originX + side); tx++) {
-            for (let ty = Math.max(region.top, originY); ty < Math.min(bottom, originY + side); ty++) {
-              const at = (tx - originX) * side + (ty - originY);
+          // The part of the area inside this chunk's array, framed as one region.
+          const partLeft = Math.max(region.left, originX);
+          const partTop = Math.max(region.top, originY);
+          const part = {
+            left: partLeft, top: partTop,
+            width: Math.min(right, originX + side) - partLeft, height: Math.min(bottom, originY + side) - partTop,
+          };
+          if (part.width <= 0 || part.height <= 0) continue;
+          if (scratch.length < part.width * part.height) scratch = new Uint16Array(side * side);
+          framing.frameRegion(world, part, scratch);
+          for (let i = 0; i < part.width; i++) {
+            for (let j = 0; j < part.height; j++) {
+              const at = (partLeft + i - originX) * side + (partTop + j - originY);
               if (done[at] === 1) continue;
               done[at] = 1;
-              target[at] = framing.cellAt(world, tx, ty);
+              target[at] = scratch[i * part.height + j] ?? NO_CELL;
               framedTiles++;
             }
           }

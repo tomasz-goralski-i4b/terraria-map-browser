@@ -18,6 +18,8 @@ export { SPRITE_DEFERRED_TILES, WebGl2UnavailableError, createMapRenderer } from
 export type {
   MapRenderer, MapRendererOptions, MapRendererStats, RenderableWorld, SpriteAtlasSource, SpriteSheetEntry,
 } from "./gpu/map-renderer.js";
+export { SPRITE_FRAME_WRAPS, wrappedFrame } from "./gpu/frame-wrap.js";
+export type { FrameWrap } from "./gpu/frame-wrap.js";
 export { MISSING_SPRITE_COLORS, SPRITE_FULL_ZOOM, SPRITE_MIN_ZOOM, spriteSampling } from "./gpu/shaders.js";
 export { NEIGHBOUR_ORDER, UNSTABLE_CELL, loadFramingDatabase, neighbourhoodCode } from "./framing/framing-database.js";
 export type {

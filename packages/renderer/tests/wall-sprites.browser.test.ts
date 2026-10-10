@@ -222,8 +222,9 @@ describe("walls in sprite mode", () => {
   });
 
   test.each([
-    ["8 pixels per tile: 2 × 2 samples, sprites whole", 8],
-    ["6.4 pixels per tile: 3 × 3 samples, faded in over the map colours", 6.4],
+    ["12.8 pixels per tile: the art pixel under each screen pixel, sprites whole", 12.8],
+    ["8 pixels per tile: one sample of the half-resolution atlas", 8],
+    ["6.4 pixels per tile: 2 × 2 samples of the half-resolution atlas, faded in over the map colours", 6.4],
   ])("below 16 pixels per tile the wall layer is sampled and faded like block sprites (%s)", (_name, zoom) => {
     const world = createWorld(12, 8);
     stamp(world, 0, 0, SCENE);
@@ -257,6 +258,28 @@ describe("walls in sprite mode", () => {
     renderer.setCamera({ x: CHUNK_SIZE - 4, y: 0, zoom: ZOOM });
     renderer.render();
     expect(renderer.stats().visibleChunks).toHaveLength(2);
+    expectClose(readCanvas(canvas), expectedCanvas(world, CHUNK_SIZE - 4, 0, columns, world.height), columns * ZOOM);
+  });
+
+  test("a chunk without wall cells skips the wall layer: its neighbour's overhang, a modded wall and a new wall still show", () => {
+    // The chunk beside the walls has none of its own; only its apron holds the overhang of the wall left of it.
+    const world = createWorld(CHUNK_SIZE * 2, 8);
+    stamp(world, CHUNK_SIZE - 2, 0, ["..", ".1", ".1", ".."]);
+    stamp(world, CHUNK_SIZE + 3, 5, ["m."]);
+    const columns = 8;
+    const { canvas, renderer } = makeRenderer(columns * ZOOM, world.height * ZOOM);
+    renderer.setWorld(renderable(world));
+    renderer.setLayers(ALL);
+    renderer.setAtlas(syntheticAtlas());
+    renderer.setFraming(framing);
+    renderer.setSpriteMode(true);
+    renderer.setCamera({ x: CHUNK_SIZE - 4, y: 0, zoom: ZOOM });
+    renderer.render();
+    expectClose(readCanvas(canvas), expectedCanvas(world, CHUNK_SIZE - 4, 0, columns, world.height), columns * ZOOM);
+    // A wall placed where the chunk had none is drawn once its tiles are invalidated.
+    stamp(world, CHUNK_SIZE + 1, 1, ["22", "2."]);
+    renderer.invalidateTiles([{ x: CHUNK_SIZE + 1, y: 1 }, { x: CHUNK_SIZE + 2, y: 1 }, { x: CHUNK_SIZE + 1, y: 2 }]);
+    renderer.render();
     expectClose(readCanvas(canvas), expectedCanvas(world, CHUNK_SIZE - 4, 0, columns, world.height), columns * ZOOM);
   });
 

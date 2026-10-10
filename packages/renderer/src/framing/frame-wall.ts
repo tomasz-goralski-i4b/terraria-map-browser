@@ -131,38 +131,64 @@ export function createWallFraming(database: FramingDatabase): WallFraming {
 
   const neighbourBlocks: ReadonlySet<number> = new Set(database.wallNeighbourBlocks);
 
-  /** Whether the tile at plane index `index` counts as a wall's side neighbour: any wall, or a counting block. */
-  const counts = (world: WallFramingWorld, index: number): boolean => {
-    const { wall, block } = world.planes;
-    if ((wall[index] ?? ABSENT) !== ABSENT) return true;
-    const content = block[index] ?? ABSENT;
-    if (content === ABSENT) return false;
-    const ref = world.palette[content];
-    return ref?.kind === "vanilla" && neighbourBlocks.has(ref.id);
+  // Per palette index, derived once per palette and extended as it grows: the vanilla wall id (−1 for other content)
+  // and whether a block of it counts as a wall's side neighbour.
+  let lookupPalette: readonly ContentRef[] | null = null;
+  let wallIds = new Int32Array(0);
+  let countingBlocks = new Uint8Array(0);
+  const lookups = (palette: readonly ContentRef[]): void => {
+    if (palette === lookupPalette && wallIds.length === palette.length) return;
+    // A palette only grows (append-only): extend the lookups; anything else derives them again.
+    const from = palette === lookupPalette && wallIds.length < palette.length ? wallIds.length : 0;
+    const ids = new Int32Array(palette.length);
+    const counting = new Uint8Array(palette.length);
+    if (from > 0) {
+      ids.set(wallIds);
+      counting.set(countingBlocks);
+    }
+    for (let index = from; index < palette.length; index++) {
+      const ref = palette[index];
+      ids[index] = ref?.kind === "vanilla" ? ref.id : -1;
+      counting[index] = ref?.kind === "vanilla" && neighbourBlocks.has(ref.id) ? 1 : 0;
+    }
+    lookupPalette = palette;
+    wallIds = ids;
+    countingBlocks = counting;
   };
 
-  const cellAt = (world: WallFramingWorld, x: number, y: number): number => {
+  /** Whether the tile at plane index `at` counts as a wall's side neighbour: any wall, or a block of a counting type. */
+  const counts = (wall: Uint16Array, block: Uint16Array, at: number): boolean =>
+    (wall[at] ?? ABSENT) !== ABSENT || (countingBlocks[block[at] ?? ABSENT] ?? 0) === 1;
+
+  /** The cell of the wall at (x, y), plane index `index`; the palette lookups are current. */
+  const frameTile = (world: WallFramingWorld, x: number, y: number, index: number): number => {
     const { width, height } = world;
-    const index = x * height + y;
-    const content = world.planes.wall[index] ?? ABSENT;
+    const { wall, block } = world.planes;
+    const content = wall[index] ?? ABSENT;
     if (content === ABSENT) return NO_CELL;
-    const ref = world.palette[content];
-    if (ref?.kind !== "vanilla") return NO_CELL;
+    const id = wallIds[content] ?? -1;
+    if (id === -1) return NO_CELL;
     let sides = 0;
-    if (y > 0 && counts(world, index - 1)) sides |= WALL_SIDE.north;
-    if (x + 1 < width && counts(world, index + height)) sides |= WALL_SIDE.east;
-    if (y + 1 < height && counts(world, index + 1)) sides |= WALL_SIDE.south;
-    if (x > 0 && counts(world, index - height)) sides |= WALL_SIDE.west;
-    return wallCell(ref.id, sides, x, y);
+    if (y > 0 && counts(wall, block, index - 1)) sides |= WALL_SIDE.north;
+    if (x + 1 < width && counts(wall, block, index + height)) sides |= WALL_SIDE.east;
+    if (y + 1 < height && counts(wall, block, index + 1)) sides |= WALL_SIDE.south;
+    if (x > 0 && counts(wall, block, index - height)) sides |= WALL_SIDE.west;
+    return wallCell(id, sides, x, y);
   };
 
   return {
     wallCell,
     neighbourBlocks,
-    cellAt,
+    cellAt: (world, x, y) => {
+      lookups(world.palette);
+      return frameTile(world, x, y, x * world.height + y);
+    },
     frameRegion: (world, region, out) => {
+      lookups(world.palette);
+      const { height } = world;
       for (let i = 0; i < region.width; i++) {
-        for (let j = 0; j < region.height; j++) out[i * region.height + j] = cellAt(world, region.left + i, region.top + j);
+        const x = region.left + i;
+        for (let j = 0; j < region.height; j++) out[i * region.height + j] = frameTile(world, x, region.top + j, x * height + region.top + j);
       }
     },
   };

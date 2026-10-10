@@ -32,8 +32,11 @@ function missingText(missing: readonly MissingSheet[]): string {
   return [`${String(missing.length)} sheets could not be read; their tiles and walls show the magenta checkerboard.`, ...listed, ...more].join("\n");
 }
 
-/** What the Sprites row says on its right: why it is off, the build's progress, or a problem. */
-function SpritesStatus({ status }: { readonly status: AssetStatus }): React.JSX.Element | null {
+/**
+ * What the Sprites row says on its right: why it is off, the build's progress, that the map prepares its sprite
+ * program (`preparing`, after the build), or a problem.
+ */
+function SpritesStatus({ status, preparing }: { readonly status: AssetStatus; readonly preparing: boolean }): React.JSX.Element | null {
   switch (status.kind) {
     case "none":
       return <span className="row-note">Not connected</span>;
@@ -46,6 +49,14 @@ function SpritesStatus({ status }: { readonly status: AssetStatus }): React.JSX.
         <ProgressBar label="Building the sprite atlas" title={`Building the sprite atlas from “${status.folderName}”`} fraction={buildFraction(status)} />
       );
     case "ready":
+      if (preparing) {
+        return (
+          <ProgressBar
+            label="Preparing sprites" waiting fraction={0}
+            title="The graphics driver is compiling the sprite shaders; the map shows its colours until they are ready"
+          />
+        );
+      }
       return status.missing.length === 0 ? null : (
         <span className="row-warning" role="img" aria-label={`${String(status.missing.length)} sheets could not be read`} title={missingText(status.missing)}>
           <Icon name="warning" />
@@ -116,9 +127,10 @@ function SpritelessContent(): React.JSX.Element | null {
 /** The Sprites layer row: the same eye row as the other layers, with the Terraria assets' state and actions inline. */
 function SpritesRow({ command }: { readonly command: Command }): React.JSX.Element {
   const status = useAssetStore((state) => state.status);
+  const preparing = useViewStore((state) => state.spritesPreparing);
   return (
     <VisibilityRow label="Sprites" visible={command.checked ?? false} disabled={!command.enabled} shortcut="Alt+1" onChange={command.run}>
-      <SpritesStatus status={status} />
+      <SpritesStatus status={status} preparing={preparing} />
       <MenuButton label="Terraria assets" icon="more" items={spritesMenu(status)} align="end" />
     </VisibilityRow>
   );
