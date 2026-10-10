@@ -19,7 +19,10 @@ const PASTE_TOGGLES: readonly { readonly label: string; readonly tooltip: string
   { label: "Merge liquids", tooltip: "Add to liquid of the same kind, up to a full tile; other liquids stay", on: (options) => options.liquids === "merge", set: (options, on) => ({ ...options, liquids: on ? "merge" : "replace" }) },
 ];
 
-/** A toggle in a segmented row. `aria-disabled` keeps it focusable, so its tooltip can say why it is off. */
+/**
+ * One of several independent toggles (Brush's `Segments` picks one of many). `aria-disabled` keeps it focusable, so
+ * its tooltip can say why it is off.
+ */
 function Toggle({ label, tooltip, pressed, disabled, onChange }: {
   readonly label: string; readonly tooltip: string; readonly pressed: boolean; readonly disabled: boolean; readonly onChange: (pressed: boolean) => void;
 }): React.JSX.Element {
@@ -52,16 +55,17 @@ function CommandButton({ command, primary = false }: { readonly command: Command
 export function AreaOptions({ commands, disabled }: { readonly commands: readonly Command[]; readonly disabled: boolean }): React.JSX.Element {
   const state = useAreaStore();
   const copy = commandById(commands, "edit.copy");
+  const lockedReason = disabled ? commandById(commands, "tool.select").disabledReason ?? "Finish the stroke first" : null;
   const tooLarge = state.selection !== null && !copy.enabled && copy.disabledReason?.startsWith("Too large") === true;
   const hint = state.message ?? (tooLarge ? copy.disabledReason : state.selection === null ? TOOLS.find((tool) => tool.id === "select")?.hint : "Ctrl+C to copy · Escape to deselect");
   return <>
     {state.pasting ? (
       <div className="brush-option-group" role="group" aria-label="Paste options">
         <span className="brush-option-label area-option-label">Paste</span>
-        <div className="brush-segments">
+        <div className="brush-segments area-toggles">
           {PASTE_TOGGLES.map((toggle) => (
             <Toggle
-              key={toggle.label} label={toggle.label} tooltip={toggle.tooltip} pressed={toggle.on(state.options)} disabled={disabled}
+              key={toggle.label} label={toggle.label} tooltip={lockedReason ?? toggle.tooltip} pressed={toggle.on(state.options)} disabled={disabled}
               onChange={(on) => { useAreaStore.setState({ options: toggle.set(state.options, on) }); }}
             />
           ))}
@@ -69,13 +73,13 @@ export function AreaOptions({ commands, disabled }: { readonly commands: readonl
       </div>
     ) : (
       <div className="brush-option-group" role="group" aria-label="Copy layers">
-        <span className="brush-option-label area-option-label">Copy</span>
-        <div className="brush-segments">
+        <span className="brush-option-label area-option-label">Layers</span>
+        <div className="brush-segments area-toggles">
           {LAYERS.map(({ key, label, tooltip }) => {
             const needsBlocks = key === "objects" && !state.layers.blocks;
             return (
               <Toggle
-                key={key} label={label} tooltip={needsBlocks ? "Objects need Blocks" : tooltip} pressed={state.layers[key] && !needsBlocks} disabled={disabled || needsBlocks}
+                key={key} label={label} tooltip={lockedReason ?? (needsBlocks ? "Objects need Blocks" : `Copy ${tooltip.charAt(0).toLowerCase()}${tooltip.slice(1)}`)} pressed={state.layers[key] && !needsBlocks} disabled={disabled || needsBlocks}
                 onChange={(on) => { useAreaStore.setState({ layers: { ...state.layers, [key]: on } }); }}
               />
             );
@@ -86,8 +90,10 @@ export function AreaOptions({ commands, disabled }: { readonly commands: readonl
     <div className="brush-option-group" role="group" aria-label="Selection actions">
       {state.pasting
         ? <><CommandButton command={commandById(commands, "edit.placePaste")} primary /><CommandButton command={commandById(commands, "edit.cancelArea")} /></>
-        : <><CommandButton command={copy} /><CommandButton command={commandById(commands, "edit.paste")} />{state.selection !== null && <CommandButton command={commandById(commands, "edit.cancelArea")} />}</>}
+        : <><CommandButton command={copy} /><CommandButton command={commandById(commands, "edit.paste")} /><CommandButton command={commandById(commands, "edit.cancelArea")} /></>}
     </div>
-    <span className={tooLarge ? "tool-options-notice" : "tool-options-hint"} role="status">{hint}</span>
+    {/* The hint changes as the paste follows the pointer, so only results are announced. */}
+    <span className={tooLarge ? "tool-options-notice" : "tool-options-hint"}>{hint}</span>
+    <span className="visually-hidden" role="status">{state.notice}</span>
   </>;
 }

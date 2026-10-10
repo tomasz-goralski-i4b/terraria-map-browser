@@ -2441,3 +2441,10 @@ kbd {
 
 /* The group names say what the toggles act on ("Copy", "Paste"), so they stay where the sliders' labels go. */
 .tool-options .area-option-label { display: inline; }
+/* Independent toggles stand apart, so they do not read as one choice of many like Brush's segments. */
+.brush-segments.area-toggles { gap: 2px; border: 0; overflow: visible; }
+.area-toggles button { border: 1px solid var(--border-strong); border-radius: var(--radius); }
+.area-toggles button + button { border-left: 1px solid var(--border-strong); }
+@media (max-width: 639px) {
+  .tool-options .area-option-label { display: none; }
+}

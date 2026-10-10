@@ -4,13 +4,17 @@
 
 Select (`M`) drags an inclusive rectangular selection; the status bar shows its size (in the danger colour above the
 Copy limit). Copy (`Ctrl+C`, or Command on macOS) captures independent CWM planes and a content palette; subsequent
-edits do not change the clipboard. The options bar is one row, like Brush's: a **Copy** row of toggles (Blocks, Walls,
-Liquids, Wires, Paint, Objects; all on by default) chooses what Copy takes, then the Copy, Paste and Deselect
-buttons. Objects need Blocks; its toggle says so while Blocks is off. Changing the toggles takes effect on the next
-Copy.
+edits do not change the clipboard. The options bar is one row, like Brush's: a **Layers** row of independent toggles
+(Blocks, Walls, Liquids, Wires, Paint, Objects; all on by default) chooses what Copy takes, then the Copy, Paste and
+Deselect buttons. Objects need Blocks: while Blocks is off, the Objects toggle shows as off and disabled, and its
+tooltip says why; turning Blocks back on restores it. Changing the toggles takes effect on the next Copy. The
+selection stays on the map when another tool is chosen (Copy still works), but Escape deselects only in Select, so
+elsewhere it keeps its own meaning (unpinning the Inspector's tile, taking back a stroke). With no area to copy or
+paste, or with page text selected, `Ctrl+C` and `Ctrl+V` stay the browser's.
 
 Paste (`Ctrl+V`) switches Select to a floating, translucent map-colour preview that follows the pointer. The options
-bar then shows the paste toggles and Place paste / Cancel paste. Click or Enter places it. Escape works as in image
+bar then shows the paste toggles and Place paste / Cancel paste. Click or Enter places it; a click while a large
+preview is still being prepared places it as soon as it is ready, unless the pointer moves first. Escape works as in image
 editors: it drops a floating paste and keeps the selection; pressed again, it deselects. The Edit menu (after Undo
 and Redo), command palette and buttons use the same commands, and each disabled one says why. Text fields retain
 native copy and paste. Right/middle drags still pan.

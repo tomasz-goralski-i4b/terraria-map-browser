@@ -15,12 +15,17 @@ interface AreaState {
   readonly hasClipboard: boolean;
   readonly pasting: boolean;
   readonly position: TilePoint | null;
+  /** The options bar's hint: what to do next, or what went wrong. */
   readonly message: string | null;
+  /** Why a finished preview cannot be placed, short enough for a disabled reason. */
+  readonly problem: string | null;
+  /** Results worth announcing to assistive technology (a copy, a failure), unlike the hint's running instructions. */
+  readonly notice: string | null;
   readonly canPlace: boolean;
   readonly previewRevision: number;
 }
 
-export const useAreaStore = create<AreaState>()(() => ({ selection: null, layers: DEFAULT_COPY_LAYERS, options: DEFAULT_PASTE_OPTIONS, hasClipboard: false, pasting: false, position: null, message: null, canPlace: false, previewRevision: 0 }));
+export const useAreaStore = create<AreaState>()(() => ({ selection: null, layers: DEFAULT_COPY_LAYERS, options: DEFAULT_PASTE_OPTIONS, hasClipboard: false, pasting: false, position: null, message: null, problem: null, notice: null, canPlace: false, previewRevision: 0 }));
 
 // Outside the store: the world and clipboard are large, and the preview is rebuilt in slices.
 let loaded: WorldTilesResult | null = null;
@@ -29,6 +34,8 @@ let preview: AreaPaste | null = null;
 let previewKey = "";
 let generation = 0;
 let followingHistory = false;
+// A click while a large preview is still being planned places it as soon as it is ready.
+let placeWhenReady = false;
 const locked = (): boolean => loaded === null || useBrushStore.getState().reason !== null || useAppStore.getState().phase === "loading" || useSaveStore.getState().open;
 
 /** A newly opened (or closed) world drops the selection, the clipboard and any floating paste. */
@@ -64,8 +71,12 @@ export function copySelection(): void {
   finishBrush();
   try {
     clipboard = copyArea(loaded, state.selection, state.layers);
-    useAreaStore.setState({ hasClipboard: true, message: `Copied ${String(state.selection.width)} × ${String(state.selection.height)} tiles` });
-  } catch (error) { useAreaStore.setState({ message: error instanceof Error ? error.message : String(error) }); }
+    const copied = `Copied ${String(state.selection.width)} × ${String(state.selection.height)} tiles`;
+    useAreaStore.setState({ hasClipboard: true, message: copied, notice: copied });
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    useAreaStore.setState({ message: reason, notice: reason });
+  }
 }
 
 /** Floats the clipboard under the pointer (or over the selection) as a read-only preview. */
@@ -84,7 +95,8 @@ export function movePaste(position: TilePoint | null): void {
   previewKey = key;
   const request = ++generation;
   preview = null;
-  useAreaStore.setState({ position, canPlace: false, message: locked() ? "Editing is unavailable while loading or saving" : "Preparing preview…", previewRevision: useAreaStore.getState().previewRevision + 1 });
+  placeWhenReady = false;
+  useAreaStore.setState({ position, canPlace: false, problem: null, message: locked() ? "Editing is unavailable while loading or saving" : "Preparing preview…", previewRevision: useAreaStore.getState().previewRevision + 1 });
   if (!locked() && loaded !== null && clipboard !== null && position !== null) {
     const steps = areaPasteSteps(loaded, clipboard, position.x, position.y, useAreaStore.getState().options);
     const large = clipboard.world.width * clipboard.world.height > 4096;
@@ -97,8 +109,16 @@ export function movePaste(position: TilePoint | null): void {
         if (!step.done) { setTimeout(run, 0); return; }
         preview = step.value;
         const canPlace = preview.tiles.length !== 0;
-        useAreaStore.setState({ canPlace, message: canPlace ? "Click or Enter to place · Escape to cancel" : "Paste makes no changes · Escape to cancel", previewRevision: useAreaStore.getState().previewRevision + 1 });
-      } catch (error) { useAreaStore.setState({ message: error instanceof Error ? error.message : String(error) }); }
+        useAreaStore.setState({
+          canPlace, problem: canPlace ? null : "The paste changes nothing",
+          message: canPlace ? "Click or Enter to place · Escape to cancel" : "The paste changes nothing here · Escape to cancel",
+          previewRevision: useAreaStore.getState().previewRevision + 1,
+        });
+        if (placeWhenReady && canPlace) placePaste();
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        useAreaStore.setState({ message: reason, problem: reason, notice: reason });
+      }
     };
     if (large) setTimeout(run, 0); else run();
   }
@@ -127,7 +147,8 @@ export function pastePreviewWorld(): CanonicalWorld | null {
 export function placePaste(): void {
   if (locked() || loaded === null || clipboard === null || !useAreaStore.getState().pasting) return;
   movePaste(useAreaStore.getState().position);
-  if (preview === null || !useAreaStore.getState().canPlace) return;
+  if (preview === null) { placeWhenReady = true; return; }
+  if (!useAreaStore.getState().canPlace) return;
   if (commitAreaEdit(loaded, preview.tiles, preview.apply)) { stopPaste(); useAreaStore.setState({ selection: null }); }
 }
 
@@ -135,7 +156,8 @@ function stopPaste(): void {
   generation++;
   preview = null;
   previewKey = "";
-  useAreaStore.setState({ pasting: false, position: null, message: null, canPlace: false });
+  placeWhenReady = false;
+  useAreaStore.setState({ pasting: false, position: null, message: null, problem: null, canPlace: false });
 }
 
 /** Escape, as in image editors: a floating paste is dropped first and the selection stays; then the selection goes. */

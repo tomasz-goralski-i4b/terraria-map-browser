@@ -181,8 +181,9 @@ export function useCommands(): Command[] {
     ...([
       ["edit.copy", "Copy", "Control+C", areaCopyReason === null, areaCopyReason, copySelection],
       ["edit.paste", "Paste", "Control+V", area.hasClipboard, "Copy an area first", startPaste],
-      ["edit.placePaste", "Place paste", "Enter", area.pasting && area.canPlace, area.pasting ? area.message ?? "Preparing preview…" : "Paste first", placePaste],
-      ["edit.cancelArea", area.pasting ? "Cancel paste" : "Deselect", "Escape", area.pasting || area.selection !== null, "Nothing is selected", cancelArea],
+      ["edit.placePaste", "Place paste", "Enter", area.pasting && area.canPlace, area.pasting ? area.problem ?? "Preparing preview…" : "Paste first", placePaste],
+      // Outside Select, Escape keeps its other meanings (unpinning the Inspector's tile, taking back a stroke).
+      ["edit.cancelArea", area.pasting ? "Cancel paste" : "Deselect", "Escape", area.pasting || (area.selection !== null && tool === "select"), area.selection === null ? "Nothing is selected" : "Switch to Select first", cancelArea],
     ] as const).map(([id, label, shortcut, available, reason, run]): Command => ({ id, group: "Edit", label, shortcut, enabled: available && editReason === null, ...(!available || editReason !== null ? { disabledReason: editReason ?? reason ?? "" } : {}), run })),
     { id: "file.open", group: "File", label: "Open World…", icon: "file", shortcut: "Control+O", enabled: true, run: chooseWorldFile },
     {
@@ -358,6 +359,8 @@ export function useGlobalShortcuts(commands: readonly Command[]): void {
       const command = matching.find((candidate) => candidate.enabled) ?? matching[0];
       if (command === undefined) return;
       if (command.id === "edit.placePaste" && event.target instanceof Element && event.target.closest("button, input, select, [role=button]") !== null) return;
+      // Ctrl+C / Ctrl+V stay the browser's for selected page text and whenever there is no area to copy or paste.
+      if ((command.id === "edit.copy" || command.id === "edit.paste") && (!command.enabled || window.getSelection()?.isCollapsed === false)) return;
       // A disabled Ctrl shortcut is still ours: Ctrl+S must not open the browser's "Save page" instead.
       if (!command.enabled) {
         if (event.ctrlKey || event.metaKey) event.preventDefault();
