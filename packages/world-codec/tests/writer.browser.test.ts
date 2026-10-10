@@ -88,7 +88,8 @@ describe("Worker save", () => {
   it("reports unsupported writes and still accepts a later save and parse", async () => {
     const { client: created } = client();
     const world = writerWorld();
-    Object.assign(world.metadata, { name: "Crimson Observatory" });
+    // Metadata edits are writable now; a width without resized planes still is not.
+    Object.assign(world.metadata, { width: world.metadata.width + 1 });
     const error: unknown = await created.save(world).catch((caught: unknown) => caught);
     expect(error).toBeInstanceOf(WorldWorkerError);
     expect(error).toMatchObject({ code: "UnsupportedWrite" });

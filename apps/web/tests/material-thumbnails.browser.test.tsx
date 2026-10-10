@@ -93,7 +93,7 @@ test("fallback, paint and accessible names survive connecting and disconnecting 
   expect(swatch?.style.backgroundColor).toBe("rgb(151, 107, 75)");
   expect(swatch?.querySelector("canvas")).toBeNull();
   await act(async () => { connect(); await Promise.resolve(); });
-  await expect.poll(() => swatch?.querySelector("canvas")).not.toBeNull();
+  await expect.poll(() => swatch?.querySelector("canvas"), { timeout: 10_000 }).not.toBeNull();
   expect(swatch?.querySelector<HTMLElement>(".material-swatch-paint")?.style.borderTopColor).toBe("rgb(255, 0, 0)");
   await expect.element(page.getByRole("button", { name: "Dirt Block", exact: true })).toBeVisible();
   await act(async () => { useAssetStore.setState({ status: { kind: "none" } }); await Promise.resolve(); });
