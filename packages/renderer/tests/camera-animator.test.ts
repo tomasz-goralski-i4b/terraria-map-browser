@@ -474,16 +474,20 @@ test("a flick released at speed glides on without a kick from the resampled lag"
   expect(first / last).toBeLessThan(1.2);
 });
 
-test("a flick released while the frame shows the path ahead of its last sample glides on without stepping back", () => {
+test("irregular pointer input never steps the map back while dragging one way", () => {
   let time = 0;
   const animator = new CameraAnimator({ ...initial, zoom: 4 }, viewport, world, () => time);
   animator.beginDrag();
-  time = 20;
-  animator.drag(-20, 0, 20);
-  time = 36;
-  const ahead = animator.step(time).camera.x;
-  expect(ahead).toBeGreaterThan(initial.x + 20 / 4);
-  animator.endDrag(false, 36);
-  time = 52;
-  expect(animator.step(time).camera.x).toBeGreaterThan(ahead);
+  // Event gaps from 1 to 45 ms (a busy main thread, an automation driver), drawn at 60 Hz.
+  const gaps = [8, 9, 1, 30, 8, 8, 45, 2, 12, 16, 3, 25, 8, 8, 8, 40, 5, 9, 14, 7];
+  let event = 0;
+  let next = gaps[0] ?? 8;
+  let previous = animator.current.x;
+  for (let frame = 1; frame <= 40; frame++) {
+    time = frame * FRAME_MS;
+    for (; next <= time; next += gaps[++event % gaps.length] ?? 8) animator.drag(-4, 0, next);
+    const x = animator.step(time).camera.x;
+    expect(x).toBeGreaterThanOrEqual(previous);
+    previous = x;
+  }
 });
