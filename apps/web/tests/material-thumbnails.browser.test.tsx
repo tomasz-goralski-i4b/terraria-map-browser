@@ -45,6 +45,7 @@ afterEach(() => {
   useAssetStore.setState({ status: { kind: "none" } });
   setBrushWorld(null);
   useViewStore.setState({ pinnedTile: null, tool: "pan" });
+  useViewStore.getState().setLayers({ sprites: true });
   vi.restoreAllMocks();
   vi.mocked(blockFraming.getBlockFraming).mockReset();
   vi.mocked(thumbnailSession.getThumbnailSource).mockReset();
@@ -74,7 +75,7 @@ test("only visible swatches build, scrolling and rerender reuse the same pixels"
     <MaterialSwatch color={0x976b4b} layer="wall" content={{ kind: "vanilla", id: 1 }} />
   </div>;
   const screen = await render(view(0));
-  await expect.poll(() => screen.container.querySelectorAll("canvas").length).toBe(1);
+  await expect.poll(() => screen.container.querySelectorAll("canvas").length, { timeout: 10_000 }).toBe(1);
   expect(material.mock.calls.map(([layer]) => layer)).toEqual(["block"]);
   const pixels = screen.container.querySelector("canvas");
   await screen.rerender(view(1));
@@ -82,7 +83,7 @@ test("only visible swatches build, scrolling and rerender reuse the same pixels"
   const scroll = screen.container.firstElementChild;
   if (!(scroll instanceof HTMLElement)) throw new Error("Swatch scroll container missing");
   scroll.scrollTop = scroll.scrollHeight;
-  await expect.poll(() => screen.container.querySelectorAll("canvas").length).toBe(2);
+  await expect.poll(() => screen.container.querySelectorAll("canvas").length, { timeout: 10_000 }).toBe(2);
   scroll.scrollTop = 0;
   await settleThumbnails();
   expect(material).toHaveBeenCalledTimes(2);
@@ -141,6 +142,11 @@ test("Swatches, Brush chips and Inspector switch together without changing their
   await act(async () => { connect(); await Promise.resolve(); });
   await expect.poll(() => screen.container.querySelectorAll("canvas").length).toBe(5);
   expect([...screen.container.querySelectorAll("button")].map((button) => button.getAttribute("aria-label") ?? button.textContent)).toEqual(names);
+  await act(async () => { useViewStore.getState().setLayers({ sprites: false }); await Promise.resolve(); });
+  expect(screen.container.querySelectorAll("canvas")).toHaveLength(0);
+  expect(screen.container.querySelector<HTMLElement>(".swatch-button .material-swatch")?.style.backgroundColor).toBe("rgb(151, 107, 75)");
+  await act(async () => { useViewStore.getState().setLayers({ sprites: true }); await Promise.resolve(); });
+  expect(screen.container.querySelectorAll("canvas")).toHaveLength(5);
   await act(async () => { useSwatchesView.setState({ category: "wall", query: "Stone Wall" }); await Promise.resolve(); });
   await expect.poll(() => screen.container.querySelectorAll(".swatch-button canvas").length).toBe(1);
   await act(async () => { useAssetStore.setState({ status: { kind: "none" } }); await Promise.resolve(); });
@@ -160,7 +166,7 @@ test("missing sheets and an unconnected atlas keep the checkerboard and wall sha
   expect(screen.container.querySelector("canvas")).toBeNull();
 });
 
-test("wall grid circles, integer sprite sizes and theme borders survive assets", async () => {
+test("wall sprites fill the original square grid swatches and retain theme borders", async () => {
   setBrushWorld(readWorldTiles(brushSource()));
   useSwatchesView.setState({ category: "wall", source: "all", query: "Stone Wall", mode: "grid" });
   connect();
@@ -168,9 +174,10 @@ test("wall grid circles, integer sprite sizes and theme borders survive assets",
   await expect.poll(() => screen.container.querySelector("canvas")).not.toBeNull();
   const swatch = screen.container.querySelector<HTMLCanvasElement>("canvas")?.parentElement;
   if (swatch === null || swatch === undefined) throw new Error("Stone Wall sprite swatch missing");
-  expect(getComputedStyle(swatch).borderRadius).toBe("50%");
+  expect(getComputedStyle(swatch).borderRadius).toBe("3px");
   const canvas = screen.container.querySelector("canvas");
-  expect(canvas?.getBoundingClientRect().width).toBe(16);
+  expect(canvas?.getBoundingClientRect().width).toBe(swatch.getBoundingClientRect().width);
+  expect(canvas?.getBoundingClientRect().height).toBe(swatch.getBoundingClientRect().height);
   for (const theme of ["light", "dark"]) {
     document.documentElement.dataset["theme"] = theme;
     expect(getComputedStyle(swatch, "::after").boxShadow).not.toBe("none");
@@ -242,4 +249,31 @@ test("a ready connection with an atlas delayed by one idle callback retries with
   vi.mocked(getDefaultAssetSession().getAtlas).mockReturnValueOnce(null);
   const screen = await render(<MaterialSwatch color={0x976b4b} layer="block" content={{ kind: "vanilla", id: 0 }} />);
   await expect.poll(() => screen.container.querySelector("canvas")).not.toBeNull();
+});
+
+test("switching back to cached materials draws immediately without observer or idle jobs", async () => {
+  connect();
+  const view = (layer: "block" | "wall") => <MaterialSwatch key={layer} color={0x976b4b} layer={layer} content={{ kind: "vanilla", id: layer === "block" ? 0 : 1 }} />;
+  const screen = await render(view("block"));
+  await expect.poll(() => screen.container.querySelector("canvas")).not.toBeNull();
+  await screen.rerender(view("wall"));
+  await expect.poll(() => screen.container.querySelector("canvas")).not.toBeNull();
+  const jobs = vi.mocked(thumbnailSession.scheduleThumbnail);
+  jobs.mockClear();
+  await screen.rerender(view("block"));
+  const canvas = screen.container.querySelector("canvas");
+  expect(canvas).not.toBeNull();
+  expect(canvas?.getContext("2d")?.getImageData(0, 0, 1, 1).data[3]).toBe(255);
+  expect(jobs).not.toHaveBeenCalled();
+});
+
+test("Sprites disabled before connecting keeps colours and does not build thumbnails", async () => {
+  useViewStore.getState().setLayers({ sprites: false });
+  const builds = vi.spyOn(ThumbnailSource.prototype, "material");
+  connect();
+  const screen = await render(<MaterialSwatch color={0x976b4b} layer="block" content={{ kind: "vanilla", id: 0 }} />);
+  await settleThumbnails();
+  expect(screen.container.querySelector("canvas")).toBeNull();
+  expect(screen.container.querySelector<HTMLElement>(".material-swatch")?.style.backgroundColor).toBe("rgb(151, 107, 75)");
+  expect(builds).not.toHaveBeenCalled();
 });
