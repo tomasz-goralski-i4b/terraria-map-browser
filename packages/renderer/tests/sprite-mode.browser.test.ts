@@ -226,10 +226,11 @@ function stubParallelCompile(): { readonly state: { linked: boolean; failLink: b
     (this: WebGL2RenderingContext, name: string) => unknown;
   const realParameter = Object.getOwnPropertyDescriptor(prototype, "getProgramParameter")?.value as
     (this: WebGL2RenderingContext, program: WebGLProgram, name: number) => unknown;
+  // getExtension is overloaded by extension name: the stub stands in for all of them.
   const extension = vi.spyOn(prototype, "getExtension").mockImplementation(
     function (this: WebGL2RenderingContext, name: string): unknown {
       return name === "KHR_parallel_shader_compile" ? { COMPLETION_STATUS_KHR: COMPLETION_STATUS } : realExtension.call(this, name);
-    },
+    } as unknown as WebGL2RenderingContext["getExtension"],
   );
   const parameter = vi.spyOn(prototype, "getProgramParameter").mockImplementation(
     function (this: WebGL2RenderingContext, program: WebGLProgram, name: number): unknown {
