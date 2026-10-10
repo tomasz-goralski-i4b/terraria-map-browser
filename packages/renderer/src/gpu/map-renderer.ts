@@ -10,6 +10,7 @@ import { WIRE_ALPHA, WIRE_COLORS, WIRE_LAYER, type ChunkLayers } from "../chunk/
 import { NO_CELL } from "../framing/cells.js";
 import { createChunkCellCache } from "../framing/chunk-cells.js";
 import { SPRITE_FRAME_WRAPS } from "./frame-wrap.js";
+import { TRACK_TILE } from "../objects/tracks.js";
 import type { ChunkCellCache } from "../framing/chunk-cells.js";
 import { createChunkWallCellCache } from "../framing/chunk-wall-cells.js";
 import type { ChunkWallCellCache } from "../framing/chunk-wall-cells.js";
@@ -717,7 +718,9 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       const sheet = vanilla === undefined ? undefined : tileSheets.get(vanilla);
       const at = (Math.floor(index / SPRITE_SHEET_ROW) * SPRITE_SHEET_WIDTH + (index % SPRITE_SHEET_ROW) * SPRITE_SHEET_TEXELS) * 4;
       if (sheet !== undefined) {
-        sheetMirror.set([sheet.page, sheet.x, sheet.y, SPRITE_STATE.sheet, sheet.width, sheet.height, sheet.frameWidth, sheet.frameHeight], at);
+        // Tracks store piece indices, not sheet offsets: they have a state of their own (docs/assets.md, "Minecart tracks").
+        const state = vanilla === TRACK_TILE ? SPRITE_STATE.track : SPRITE_STATE.sheet;
+        sheetMirror.set([sheet.page, sheet.x, sheet.y, state, sheet.width, sheet.height, sheet.frameWidth, sheet.frameHeight], at);
       } else {
         const deferred = atlasTexture === null || (vanilla !== undefined && SPRITE_DEFERRED_TILES.has(vanilla));
         sheetMirror.set([0, 0, 0, deferred ? SPRITE_STATE.mapColor : SPRITE_STATE.missing, 0, 0, 0, 0], at);

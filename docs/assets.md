@@ -292,6 +292,50 @@ x = 1474, far short of the period. Any other sheet with a side of 1800 pixels or
 the sheet or uses its other blocks for something else (doors, chests, paintings 240 and 242, piles 186 and 647); a
 frame past the edge of a sheet not in the table keeps its map colour.
 
+### Minecart tracks
+
+A minecart track (tile 314) stores **piece indices**, not sheet offsets (R: `scripts/sprite-objects`, ADR 0003): the
+game's own accessors read the front piece from `frameX` and the back piece from `frameY`, and its placement writes
+`frameY = -1` for an ordinary track. A track with a back piece is a junction: both pieces are drawn, the back one first
+and the front one over it (chosen: the order is not observable without the game's renderer). `Tiles_314` is
+144 × 144 pixels, 8 × 8 cells of 16 pixels at a stride of 18; the game's source-rectangle function gives every piece a
+whole cell (R). Pieces 0–35 exist; any other value draws the track in its map colour (chosen). Placing tracks shows
+what the pieces are (R): a horizontal run is 2, 1, …, 1, 3 (left end, middles, right end); a diagonal down to the
+right is 11, 8, …, 8, 12; pressure-plate tracks (style 1) use 20 and 21, boosters (styles 2, 3) 30 to 35.
+
+Each piece may draw **extras** on a neighbouring tile (R: the game's `DrawLeftDecoration`, `DrawRightDecoration`,
+`DrawBumper` and `DrawBouncyBumper` per piece): a decoration under a slope, on the tile **below** the track, and a
+bumper at an end, on the tile **above** it. Where they go was measured in the art (S): a decoration's art continues the
+bottom edge of the slopes that draw it (piece 4's bottom row runs into the top row of the left-down decoration), and the
+bumper's posts continue into the top rows of the ends that draw it. The viewer draws an extra only on a tile without a
+block (chosen: blocks keep their pixels), over whatever lies there, and the extras of both pieces of a junction.
+
+| Piece | Cell (column, row) | Extras | Piece | Cell | Extras | Piece | Cell | Extras |
+|---|---|---|---|---|---|---|---|---|
+| 0 | (0, 0) | — | 12 | (6, 1) | bumper | 24 | (2, 2) | bouncy bumper |
+| 1 | (1, 0) | — | 13 | (7, 1) | bumper | 25 | (3, 2) | bouncy bumper |
+| 2 | (2, 1) | bumper | 14 | (2, 0) | — | 26 | (4, 2) | left-down, bouncy bumper |
+| 3 | (3, 1) | bumper | 15 | (3, 0) | — | 27 | (5, 2) | right-down, bouncy bumper |
+| 4 | (0, 2) | left-down | 16 | (4, 0) | left-down | 28 | (6, 2) | bouncy bumper |
+| 5 | (1, 2) | right-down | 17 | (5, 0) | right-down | 29 | (7, 2) | bouncy bumper |
+| 6 | (0, 1) | — | 18 | (6, 0) | — | 30 | (2, 3) | — |
+| 7 | (1, 1) | — | 19 | (7, 0) | — | 31 | (3, 3) | — |
+| 8 | (0, 3) | right-down | 20 | (0, 4) | — | 32 | (4, 3) | right-down |
+| 9 | (1, 3) | left-down | 21 | (1, 4) | — | 33 | (5, 3) | left-down |
+| 10 | (4, 1) | left-down, bumper | 22 | (0, 5) | — | 34 | (6, 3) | right-down |
+| 11 | (5, 1) | right-down, bumper | 23 | (1, 5) | — | 35 | (7, 3) | left-down |
+
+The extras' cells (R: the game names them as pieces 36–39): left-down decoration **(0, 6)**, right-down decoration
+**(1, 6)**, bumper **(0, 7)**, bouncy bumper **(1, 7)**. The table is generated
+(`packages/renderer/src/objects/terraria-sprite-objects.generated.ts`, `scripts/sprite-objects/export.mjs`). Pieces
+30–35 have a second animation frame (row 4 instead of row 3: a pressed plate); the viewer draws frame 0 (animation is
+out of scope).
+
+```text
+source = (x = 18 × column, y = 18 × row, w = 16, h = 16)   // per piece; back piece first, then the front piece
+dest   = the track's tile; a decoration the tile below it, a bumper the tile above it
+```
+
 ### Worked examples
 
 | # | Case | Input | Source rectangle (x, y, w, h) | Basis |
@@ -315,6 +359,7 @@ Expected sheet sizes (consistent with the size arithmetic, confirmed only by the
 | Non-frame-important blocks | the cell framed by "Tile framing" and its database (#141, #146), grass and moss included; half blocks and slopes cut per "Slopes and half blocks"; falling blocks with nothing below them in map colours | paint, lighting |
 | Walls | the cell framed by "Walls" and the framing database (#147), a 32 × 32 cell centred on the tile, below the blocks | paint, lighting |
 | Animated tiles (173 ids flagged `isAnimated` in A12, all frame-important) | draw the stored frame (static) | animation |
+| Minecart tracks (314) | the stored pieces' cells, a junction's back piece under its front piece, decorations below and bumpers above (#239, "Minecart tracks") | pressure-plate and booster animation, minecarts, paint |
 | Trees (5, 323, …), tree tops/branches, variant sheets (`Tiles_5_N`, `Tiles_2_Beach`, `Tiles_59_2`, …) | placeholder | yes |
 | Paint, actuated/inactive tint, illumination, liquids, wires | — | yes |
 
@@ -340,7 +385,7 @@ comes from another editor's code or data.
 | F | [header.md](file-format/header.md) (frame-important bitset), [tiles.md](file-format/tiles.md) ("Record layout", byte-2 bits 4–6 = block shape) | this repo | which ids store their frames; the shape values 0–5 |
 | S | **Sheet art**: local install L (1.4.5.8), sheets decoded with `packages/assets` and measured with [`packages/assets/tools/measure-tile-sheets.ts`](../packages/assets/tools/measure-tile-sheets.ts) (prints to the terminal; no pixels are saved) | measured 2026-10-07 and (layout agreement, grass and moss, large-frame sheets) 2026-10-08 | the cell catalogue ("Measuring the sheet", "Grass and moss sheets") |
 | G | **In-game check** of v2 and v3 Frozen observation worlds, generated from `SJCO1` | user screenshots, 2026-10-08 20:27–20:29 and 20:59–21:01; disposable game saves | [Observation results](#observation-results-2026-10-08) and [Frozen-world results](#frozen-world-results) |
-| R | **Runtime observation** ([ADR 0003](adr/0003-observe-framing-in-the-game.md)): the installed game's `WorldGen.TileFrame` and `Framing.WallFrame` called on synthetic tiles by [`scripts/framing/observe.ps1`](../scripts/framing/observe.ps1); only the frames they write are recorded | L (1.4.5.8), 2026-10-09 | every rule below; the [framing database](#the-framing-database); [Runtime observation results](#runtime-observation-results-2026-10-09) |
+| R | **Runtime observation** ([ADR 0003](adr/0003-observe-framing-in-the-game.md)): the installed game's `WorldGen.TileFrame` and `Framing.WallFrame` called on synthetic tiles by [`scripts/framing/observe.ps1`](../scripts/framing/observe.ps1); only the frames they write are recorded. Also the game's track, tree and draw-data functions (`Minecart.GetSourceRect`, `WorldGen.Get…TreeFoliageData`, `TileDrawing.GetTileDrawData`, …) called on synthetic tiles by [`scripts/sprite-objects/observe.ps1`](../scripts/sprite-objects/observe.ps1); only what they return is recorded | L (1.4.5.8), 2026-10-09 and 2026-10-10 | every rule below; the [framing database](#the-framing-database); [Runtime observation results](#runtime-observation-results-2026-10-09) |
 
 Evidence marks: **S** (measured in the art), **G** (seen in a screenshot; only the cases visible there), **R**
 (observed at runtime: exact, because it reads the frame the game writes, so pixel-identical cells are told apart),

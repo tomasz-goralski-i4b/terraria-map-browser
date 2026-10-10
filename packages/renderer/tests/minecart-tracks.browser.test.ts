@@ -31,8 +31,8 @@ const HEIGHT = 5;
 
 /**
  * (x, y, block, frameX (front piece), frameY (back piece)). Piece 2 is a left end with a bumper (drawn on the tile above),
- * 1 a straight middle, 1 over 9 a junction, 8 a slope with its right-down decoration (drawn on the tile below); the second
- * slope has a block below it, which keeps its map colour.
+ * 1 a straight middle, 1 over 9 a junction (whose back piece draws a left-down decoration below), 8 a slope with its
+ * right-down decoration (drawn on the tile below); the second slope has a block below it, which keeps its map colour.
  */
 const TILES: readonly (readonly [number, number, number, number, number])[] = [
   [1, 1, TRACK, 2, -1],
@@ -85,6 +85,7 @@ function over(top: Rgba, below: Rgba): Rgba {
 
 /** The documented cells (docs/assets.md, "Minecart tracks"), written out here so the test pins them. */
 const PIECE_CELLS: Readonly<Record<number, readonly [number, number]>> = { 1: [1, 0], 2: [2, 1], 8: [0, 3], 9: [1, 3] };
+const LEFT_DOWN: readonly [number, number] = [0, 6];
 const RIGHT_DOWN: readonly [number, number] = [1, 6];
 const BUMPER: readonly [number, number] = [0, 7];
 
@@ -95,11 +96,17 @@ function cellPixel(cell: readonly [number, number], sx: number, sy: number): Rgb
 const LAYERS: ChunkLayers = { background: true, walls: true, blocks: true, liquids: true };
 const ZOOM = 16;
 
-/** The expected canvas at 16 pixels per tile: the pieces and their extras over the background. */
+/**
+ * The expected canvas at 16 pixels per tile: the pieces and their extras over the background (a track's own map colour
+ * is not drawn under its sprite); the block keeps its map colour.
+ */
 function expectedCanvas(world: RenderableWorld): Uint8Array {
-  const { pixels } = renderChunk(world as never, 0, 0, { surfaceY: world.surfaceY, layers: LAYERS });
+  const colors = (layers: ChunkLayers): Uint8ClampedArray => renderChunk(world as never, 0, 0, { surfaceY: world.surfaceY, layers }).pixels;
+  const blocks = colors(LAYERS);
+  const background = colors({ ...LAYERS, blocks: false });
   const map = (tx: number, ty: number): Rgba => {
     const at = (ty * WIDTH + tx) * 4;
+    const pixels = TILES.some(([x, y, id]) => x === tx && y === ty && id === MOD_BLOCK) ? blocks : background;
     return [pixels[at] ?? 0, pixels[at + 1] ?? 0, pixels[at + 2] ?? 0, pixels[at + 3] ?? 0];
   };
   const tileAt = (tx: number, ty: number): (readonly [number, number, number, number, number]) | undefined =>
@@ -119,8 +126,12 @@ function expectedCanvas(world: RenderableWorld): Uint8Array {
         if (back !== undefined) color = over(cellPixel(back, sx, sy), color);
         if (front !== undefined) color = over(cellPixel(front, sx, sy), color);
       } else if (own === undefined) {
-        // The slope's decoration lies on the tile below it, the end's bumper on the tile above it.
-        if (tileAt(tx, ty - 1)?.[3] === 8) color = over(cellPixel(RIGHT_DOWN, sx, sy), color);
+        // Decorations lie on the tile below their track (slope 8: right-down; the junction's back piece 9: left-down), the
+        // end's bumper on the tile above it.
+        const above = tileAt(tx, ty - 1);
+        const pieces = above?.[2] === TRACK ? [above[3], above[4]] : [];
+        if (pieces.includes(9)) color = over(cellPixel(LEFT_DOWN, sx, sy), color);
+        if (pieces.includes(8)) color = over(cellPixel(RIGHT_DOWN, sx, sy), color);
         if (tileAt(tx, ty + 1)?.[3] === 2) color = over(cellPixel(BUMPER, sx, sy), color);
       }
       out.set(color, (py * WIDTH * ZOOM + px) * 4);

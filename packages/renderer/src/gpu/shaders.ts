@@ -4,6 +4,7 @@ import { FILTER_SUBTILE } from "../chunk/box-filter.js";
 import { BLOCK_CELL_STRIDE } from "../framing/chunk-cells.js";
 import { NO_CELL } from "../framing/frame-block.js";
 import { WALL_CELL_STRIDE, WALL_OVERHANG } from "../framing/frame-wall.js";
+import { TRACK_CELL_STRIDE, TRACK_FLAGS, trackShaderConstants } from "../objects/tracks.js";
 
 /** Tiles of neighbouring chunks stored around each chunk's page layer, so the box filter can cross chunk edges. */
 export const PAGE_APRON = 1;
@@ -51,6 +52,8 @@ export const SPRITE_STATE = {
   sheet: 1,
   /** No sheet in the atlas (newer than the install, mod, unknown): the missing-texture checkerboard. */
   missing: 2,
+  /** A minecart track: its stored frames name pieces of its sheet (docs/assets.md, "Minecart tracks"). */
+  track: 3,
 } as const;
 
 /** The missing-texture checkerboard: magenta and black squares, 2 × 2 per tile. Generated, not a game asset. */
@@ -292,12 +295,81 @@ bool cellPixel(ivec4 place, ivec2 at, ivec2 texel, ivec2 sub, out ivec4 color) {
   return true;
 }
 
+${trackShaderConstants()}
+// The pixel of Tiles_314 cell code (column | row << 4) at sprite pixel sub, of the sheet placed at place.
+ivec4 trackCellPixel(ivec4 place, int code, ivec2 sub) {
+  ivec2 pixel = ivec2(code & 15, (code >> 4) & 15) * ${String(TRACK_CELL_STRIDE)} + sub;
+  return ivec4(round(atlasTexel(place.yz, place.yz + pixel, place.x) * 255.0));
+}
+
+// A minecart track at sprite pixel sub: its back piece (frameY, a junction's other branch) with its front piece
+// (frameX) over it. False for a front value that names no piece: the map colour.
+bool trackPixel(ivec4 place, ivec2 texel, ivec2 sub, out ivec4 color) {
+  int front = frame(texel, ${String(PLANES_16.frameX)}, ${String(PRESENT.frameX)});
+  int back = frame(texel, ${String(PLANES_16.frameY)}, ${String(PRESENT.frameY)});
+  if (front < 0 || front >= TRACK_PIECE_COUNT) return false;
+  color = ivec4(0);
+  if (back >= 0 && back < TRACK_PIECE_COUNT) color = trackCellPixel(place, TRACK_PIECES[back], sub);
+  color = over(trackCellPixel(place, TRACK_PIECES[front], sub), color);
+  return true;
+}
+
+// The extras (TRACK_FLAGS) the pieces of the track at texel draw on a neighbouring tile; 0 without a track there.
+int trackExtras(ivec2 texel, int dy) {
+  int y = vRect.y + texel.x - ${String(PAGE_APRON)};
+  if (y < 0 || y >= uWorldSize.y) return 0;
+  uint block = plane16(texel, ${String(PLANES_16.block)});
+  if (block == ABSENT || int(block) >= uPaletteLength) return 0;
+  if (texelFetch(uSpriteSheets, sheetAt(block), 0).w != ${String(SPRITE_STATE.track)}) return 0;
+  int flags = 0;
+  int front = frame(texel, ${String(PLANES_16.frameX)}, ${String(PRESENT.frameX)});
+  int back = frame(texel, ${String(PLANES_16.frameY)}, ${String(PRESENT.frameY)});
+  if (front >= 0 && front < TRACK_PIECE_COUNT) flags |= TRACK_PIECES[front] >> 8;
+  if (back >= 0 && back < TRACK_PIECE_COUNT) flags |= TRACK_PIECES[back] >> 8;
+  // Decorations hang below their track (dy 1: the track is above), bumpers stand above it.
+  return flags & (dy > 0 ? ${String(TRACK_FLAGS.leftDown | TRACK_FLAGS.rightDown)} : ${String(TRACK_FLAGS.bumper | TRACK_FLAGS.bouncyBumper)});
+}
+
+// The extras the tracks above and below draw on the tile at texel, over the footprint of a screen pixel centred on
+// sprite pixel position centre, straight alpha: the decorations of the track above, then the bumpers of the track
+// below. False when neither draws one here.
+bool trackExtraSample(ivec2 texel, vec2 centre, out ivec4 color) {
+  if ((uPresent & ${String(PRESENT.frameX | PRESENT.frameY)}) != ${String(PRESENT.frameX | PRESENT.frameY)}) return false;
+  ivec2 aboveTexel = texel - ivec2(1, 0);
+  ivec2 belowTexel = texel + ivec2(1, 0);
+  int above = trackExtras(aboveTexel, 1);
+  int below = trackExtras(belowTexel, -1);
+  if ((above | below) == 0) return false;
+  ivec4 abovePlace = texelFetch(uSpriteSheets, sheetAt(plane16(aboveTexel, ${String(PLANES_16.block)})), 0);
+  ivec4 belowPlace = texelFetch(uSpriteSheets, sheetAt(plane16(belowTexel, ${String(PLANES_16.block)})), 0);
+  int count = uSpriteSamples;
+  ivec4 sum = ivec4(0);
+  for (int y = 0; y < count; y++) {
+    for (int x = 0; x < count; x++) {
+      ivec2 sub = samplePixel(centre, x, y);
+      ivec4 sampled = ivec4(0);
+      for (int k = 0; k < 4; k++) {
+        int bit = 1 << k;
+        if (((above | below) & bit) == 0) continue;
+        sampled = over(trackCellPixel((above & bit) != 0 ? abovePlace : belowPlace, TRACK_EXTRAS[k], sub), sampled);
+      }
+      sum += ivec4(sampled.rgb * sampled.a, sampled.a);
+    }
+  }
+  int samples = count * count;
+  color = sum.a == 0
+    ? ivec4(0)
+    : ivec4((2 * sum.rgb + sum.a) / (2 * sum.a), (2 * sum.a + samples) / (2 * samples));
+  return true;
+}
+
 // The atlas pixel of a block at sprite pixel sub (0–15 per axis) of its tile. A stored frame selects its cell, scaled
 // into the tile, or the missing-texture checkerboard for content without a sheet; a block without one (frames of -1)
 // shows its framed cell (cellPixel). False for content sprite mode leaves in map colours, or past the sheet's edge.
 bool spritePixel(uint index, ivec2 texel, ivec2 sub, out ivec4 color) {
   ivec2 at = sheetAt(index);
   ivec4 place = texelFetch(uSpriteSheets, at, 0);
+  if (place.w == ${String(SPRITE_STATE.track)}) return trackPixel(place, texel, sub, color);
   bool frames = (uPresent & ${String(PRESENT.frameX | PRESENT.frameY)}) == ${String(PRESENT.frameX | PRESENT.frameY)};
   ivec2 stored = frames
     ? ivec2(frame(texel, ${String(PLANES_16.frameX)}, ${String(PRESENT.frameX)}), frame(texel, ${String(PLANES_16.frameY)}, ${String(PRESENT.frameY)}))
@@ -563,6 +635,14 @@ ivec4 localColorAt(ivec2 local, vec2 sub) {
     }
 #endif
   }
+#ifdef SPRITES
+  // The decorations and bumpers of minecart tracks reach the tiles below and above them; a block keeps its pixels.
+  ivec4 extras;
+  if (!blockShown && (uLayers & 4) != 0 && trackExtraSample(texel, sub, extras)) {
+    ivec4 drawn = over(extras, color);
+    color = uSpriteWeight < 256 ? (color * (256 - uSpriteWeight) + drawn * uSpriteWeight + 128) / 256 : drawn;
+  }
+#endif
 
   if ((uLayers & 8) != 0) {
     uint liquid = plane8(texel, ${String(PLANES_8.liquid)});

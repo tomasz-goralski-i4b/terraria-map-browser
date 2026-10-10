@@ -38,3 +38,9 @@ export {
 export type { WallFraming, WallFramingWorld } from "./framing/frame-wall.js";
 export { createChunkWallCellCache } from "./framing/chunk-wall-cells.js";
 export type { ChunkWallCellCache } from "./framing/chunk-wall-cells.js";
+export {
+  TRACK_CELL_STRIDE, TRACK_EXTRA_OFFSET, TRACK_FLAGS, TRACK_PIECE_COUNT, TRACK_TILE, trackExtraCell, trackPiece,
+} from "./objects/tracks.js";
+export type { TrackCell, TrackExtra, TrackPiece } from "./objects/tracks.js";
+export type { SpriteObjectData } from "./objects/sprite-object-data.js";
+export { terrariaSpriteObjects } from "./objects/terraria-sprite-objects.generated.js";
