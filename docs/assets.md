@@ -37,7 +37,8 @@ Checked on one Windows install of Terraria **1.4.5.8** (L). `Content/Images/` ho
 |---|---|---|
 | `Tiles_<id>.xnb` | **754**, ids **0–753**, no gaps | equals the frame-important count `k = 754` written by 1.4.5 worlds ([header.md](file-format/header.md), "Hex examples") |
 | `Wall_<id>.xnb` | **366**, ids **1–366**, no gaps | there is no `Wall_0` — wall id 0 means "no wall" |
-| Tile variant sheets | `Tiles_5_0` … `Tiles_5_6`, `Tiles_2_Beach`, `Tiles_59_2`, `Tiles_199-gross`, `Tiles_59.bak` | not addressed by a tile id; deferred (see "Special handling") |
+| Tile variant sheets | `Tiles_5_0` … `Tiles_5_6`, `Tiles_2_Beach`, `Tiles_59_2`, `Tiles_199-gross`, `Tiles_59.bak` | not addressed by a tile id. `Tiles_5_N` is a pixel copy of block N + 1 of `Tiles_5` (`Tiles_5_6` differs from block 7 in 2 372 pixels), so trees need only `Tiles_5` ("Trees"); the others are deferred |
+| Tree and wire sheets | `Tree_Tops_0` … `Tree_Tops_31`, `Tree_Branches_0` … `Tree_Branches_31`, `Shroom_Tops`, `WiresNew`, `Actuator` | not addressed by a tile id; in the atlas ("Trees", "Wires"). `Wires`, `Wires2`–`Wires4` (an older layout) are not used |
 | Look-alikes that are **not** wall sheets | `Wall_Outline.xnb`, `WallOfFlesh.xnb` | a loader must match `Wall_<digits>.xnb` exactly |
 
 **File-name case is not reliable:** tile 650 ships as `TIles_650.xnb` (capital `I`). Windows does not care; a
@@ -1088,9 +1089,11 @@ report the same errors, and every candidate library either drags in a framework 
 
 ## Atlas
 
-`buildSpriteAtlas(contentDir)` (`packages/assets`) decodes every `Images/Tiles_<id>.xnb` and `Images/Wall_<id>.xnb`
-once (names matched case-insensitively; `Wall_Outline`, `Tiles_<id>_<n>` variants and everything else are ignored)
-and packs them into square RGBA pages, 4096 × 4096 by default. It runs in a Worker (`atlas-worker.ts`) and never
+`buildSpriteAtlas(contentDir)` (`packages/assets`) decodes every `Images/Tiles_<id>.xnb`, `Images/Wall_<id>.xnb`,
+`Images/Tree_Tops_<n>.xnb` and `Images/Tree_Branches_<n>.xnb` (kinds `tile`, `wall`, `treeTop`, `treeBranch`), and
+`Shroom_Tops`, `WiresNew` and `Actuator` (kinds `shroomTop`, `wire`, `actuator`, each id 0) once (names matched
+case-insensitively; `Wall_Outline`, `Tiles_<id>_<n>` variants and everything else are ignored) and packs them into
+square RGBA pages, 4096 × 4096 by default. Format 5 added the tree, cap, wire and actuator sheets. It runs in a Worker (`atlas-worker.ts`) and never
 touches the network; the Worker reports the number of `fetch` calls it saw (always 0).
 
 - **Packing:** shelf packing, tallest sheet first, with 2 transparent pixels of padding around every sheet so
@@ -1099,7 +1102,8 @@ touches the network; the Worker reports the number of `fetch` calls it saw (alwa
   pixel of it, so no half-resolution texel mixes a cell with its gutter. A sheet that does not fit an empty page
   (including padding) is rejected with `AtlasSheetTooLargeError`.
 - **Index:** `(kind, id) → { page, x, y, width, height, frameWidth, frameHeight, gapX, gapY }`: the per-sheet frame and gutter
-  of "Sprite layout" (default tiles 16×16 / 2, walls 32×32 / 4; the 56 tile ids whose grid or gutter differs from the default — e.g. tile 4
+  of "Sprite layout" (default tiles 16×16 / 2, walls 32×32 / 4, tree tops 80×80 / 2 (other sizes come from the foliage
+  table, "Trees"), branches 40×40 / 2, mushroom caps 60×42 / 2, wires 16×16 / 2, the actuator 16×16 / 0; the 56 tile ids whose grid or gutter differs from the default — e.g. tile 4
   20×20, tile 3 and 24 16×20, tile 15 gutter 2×4, tiles 751/752 18×18 with no gutter — carry their own values, restated from A12's
   per-id `textureGrid`/`frameGap`; all others the default), the family defaults, the page size, padding and `ATLAS_FORMAT_VERSION`.
 - **Cache:** the origin private file system, one directory per fingerprint holding `page-<n>.rgba` (raw RGBA) and

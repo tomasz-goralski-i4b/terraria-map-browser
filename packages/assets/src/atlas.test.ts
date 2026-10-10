@@ -13,12 +13,13 @@ import {
   type BuildProgress,
   type ContentDirectory,
   type PackableSheet,
+  type SheetKind,
   type XnbTexture,
 } from "./index.js";
 import { MemoryDirectory } from "./atlas-fakes.js";
 import { buildTexturePayload, patternRgba, wrapUncompressed } from "./xnb-fixture.js";
 
-function sheet(kind: "tile" | "wall", id: number, width: number, height: number): PackableSheet {
+function sheet(kind: SheetKind, id: number, width: number, height: number): PackableSheet {
   const rgba = patternRgba(width, height);
   // Make every sheet distinct and never fully transparent.
   for (let i = 0; i < rgba.length; i += 4) rgba[i + 3] = 255;
@@ -313,6 +314,8 @@ const SHEETS = [
   { name: "Wires", width: 36, height: 18 }, // the old wire sheets are not used
   { name: "Tree_Tops_Outline", width: 16, height: 16 }, // look-alike
 ];
+/** The sheets of SHEETS a build decodes: tiles, walls, tree tops and branches, the caps, the wires and the actuator. */
+const MATCHED = 10;
 
 /** `content` where the `Images/<name>` entry is listed but `getFile()` rejects, like a file that vanished mid-scan. */
 function withUnreadableSheet(content: MemoryDirectory, name: string): ContentDirectory {
@@ -387,11 +390,11 @@ describe("buildSpriteAtlas", () => {
     const counter = countingDecoder();
     const first = await buildSpriteAtlas(content, { cache, decode: counter.decode, pageSize: 1024 });
     expect(first.fromCache).toBe(false);
-    expect(counter.calls()).toBe(5);
+    expect(counter.calls()).toBe(MATCHED);
 
     const second = await buildSpriteAtlas(content, { cache, decode: counter.decode, pageSize: 1024 });
     expect(second.fromCache).toBe(true);
-    expect(counter.calls()).toBe(5);
+    expect(counter.calls()).toBe(MATCHED);
     expect(second.fingerprint).toBe(first.fingerprint);
     expect(second.atlas.index).toEqual(first.atlas.index);
     expect(second.atlas.pages).toEqual(first.atlas.pages);
@@ -413,7 +416,7 @@ describe("buildSpriteAtlas", () => {
     change(images);
     const rebuilt = await buildSpriteAtlas(content, { cache, decode: counter.decode, pageSize: 1024 });
     expect(rebuilt.fromCache).toBe(false);
-    expect(counter.calls()).toBe(before + 5);
+    expect(counter.calls()).toBe(before + MATCHED);
   });
 
   it("buildSpriteAtlas_UndecodableSheet_IsListedAndTheRestIsBuilt", async () => {
@@ -437,9 +440,9 @@ describe("buildSpriteAtlas", () => {
     const events: BuildProgress[] = [];
     await buildSpriteAtlas(contentWith(SHEETS), { pageSize: 1024, onProgress: (p) => events.push(p) });
     const decode = events.filter((e) => e.phase === "decode");
-    expect(decode).toHaveLength(5);
-    expect(decode.map((e) => e.done)).toEqual([1, 2, 3, 4, 5]);
-    expect(decode.every((e) => e.total === 5)).toBe(true);
+    expect(decode).toHaveLength(MATCHED);
+    expect(decode.map((e) => e.done)).toEqual(Array.from({ length: MATCHED }, (_, k) => k + 1));
+    expect(decode.every((e) => e.total === MATCHED)).toBe(true);
     const phases = events.map((e) => e.phase);
     expect(phases.indexOf("pack")).toBeGreaterThan(phases.lastIndexOf("decode"));
   });

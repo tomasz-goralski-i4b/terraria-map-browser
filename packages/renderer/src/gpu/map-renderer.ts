@@ -55,7 +55,7 @@ export interface RenderableWorld {
 
 /** One sheet of a sprite atlas: where it lies on its page and the size of its frame cells (docs/assets.md, "Atlas"). */
 export interface SpriteSheetEntry {
-  readonly kind: "tile" | "wall";
+  readonly kind: "tile" | "wall" | "treeTop" | "treeBranch" | "shroomTop" | "wire" | "actuator";
   readonly id: number;
   readonly page: number;
   readonly x: number;

@@ -1,7 +1,7 @@
 import type { AtlasEntry, PackableSheet, SheetKind, SheetMetrics, SpriteAtlas } from "./atlas-types.js";
 
 /** Bump when the page layout or index shape changes; it is part of the cache key. */
-export const ATLAS_FORMAT_VERSION = 4;
+export const ATLAS_FORMAT_VERSION = 5;
 
 /** Page edge used when the caller passes none. */
 export const DEFAULT_PAGE_SIZE = 4096;
@@ -12,6 +12,15 @@ export const DEFAULT_PADDING = 2;
 const METRICS: Readonly<Record<SheetKind, SheetMetrics>> = {
   tile: { cell: 16, gap: 2 },
   wall: { cell: 32, gap: 4 },
+  // docs/assets.md, "Trees": the common styles' tops are 80 × 80 (others differ: the renderer takes their size from
+  // the generated foliage table); branches 40 × 40.
+  treeTop: { cell: 80, gap: 2 },
+  treeBranch: { cell: 40, gap: 2 },
+  // Measured (S): three 60 × 42 caps side by side; layoutOf carries the height.
+  shroomTop: { cell: 60, gap: 2 },
+  // docs/assets.md, "Wires": 16 × 16 pieces at a stride of 18; the actuator is one 16 × 16 image.
+  wire: { cell: 16, gap: 2 },
+  actuator: { cell: 16, gap: 0 },
 };
 
 interface SheetLayout {
@@ -90,9 +99,13 @@ const TILE_LAYOUT_EXCEPTIONS: ReadonlyMap<number, SheetLayout> = new Map(
   ).map(([id, frameWidth, frameHeight, gapX, gapY]) => [id, { frameWidth, frameHeight, gapX, gapY }]),
 );
 
+/** The giant mushroom caps are 60 × 42 (measured, S). */
+const SHROOM_TOP_HEIGHT = 42;
+
 function layoutOf(kind: SheetKind, id: number): SheetLayout {
   const { cell, gap } = METRICS[kind];
-  const base: SheetLayout = { frameWidth: cell, frameHeight: cell, gapX: gap, gapY: gap };
+  const height = kind === "shroomTop" ? SHROOM_TOP_HEIGHT : cell;
+  const base: SheetLayout = { frameWidth: cell, frameHeight: height, gapX: gap, gapY: gap };
   return kind === "tile" ? (TILE_LAYOUT_EXCEPTIONS.get(id) ?? base) : base;
 }
 

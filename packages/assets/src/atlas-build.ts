@@ -62,7 +62,24 @@ interface Scan {
 }
 
 // Case-insensitive: the casing of Tiles_/Wall_ files differs between installs (docs/assets.md).
-const SHEET_NAME = /^(tiles|wall)_(\d+)\.xnb$/i;
+const SHEET_NAME = /^(tiles|wall|tree_tops|tree_branches)_(\d+)\.xnb$/i;
+/** The single sheets the atlas holds by name, each as id 0 of its kind (docs/assets.md, "Atlas"). */
+const NAMED_SHEETS: ReadonlyMap<string, SheetKind> = new Map([
+  ["shroom_tops.xnb", "shroomTop"], ["wiresnew.xnb", "wire"], ["actuator.xnb", "actuator"],
+]);
+const NUMBERED_KINDS: ReadonlyMap<string, SheetKind> = new Map([
+  ["tiles", "tile"], ["wall", "wall"], ["tree_tops", "treeTop"], ["tree_branches", "treeBranch"],
+]);
+
+/** The kind and id of a sheet file the atlas holds, or undefined for any other file. */
+function sheetOf(name: string): { readonly kind: SheetKind; readonly id: number } | undefined {
+  const named = NAMED_SHEETS.get(name.toLowerCase());
+  if (named !== undefined) return { kind: named, id: 0 };
+  const match = SHEET_NAME.exec(name);
+  if (match === null) return undefined;
+  const kind = NUMBERED_KINDS.get((match[1] ?? "").toLowerCase());
+  return kind === undefined ? undefined : { kind, id: Number(match[2]) };
+}
 
 /** The `Images` folder when `contentDir` is `Content`, otherwise `contentDir` itself. */
 async function imagesDirectory(contentDir: ContentDirectory): Promise<ContentDirectory> {
@@ -77,10 +94,9 @@ async function scanSheets(directory: ContentDirectory): Promise<Scan> {
   const sheets: SourceSheet[] = [];
   const unreadable: MissingSheet[] = [];
   for await (const [name, entry] of directory.entries()) {
-    const match = SHEET_NAME.exec(name);
-    if (match === null || entry.kind !== "file" || entry.getFile === undefined) continue;
-    const kind: SheetKind = (match[1] ?? "").toLowerCase() === "tiles" ? "tile" : "wall";
-    const id = Number(match[2]);
+    const sheet = sheetOf(name);
+    if (sheet === undefined || entry.kind !== "file" || entry.getFile === undefined) continue;
+    const { kind, id } = sheet;
     try {
       sheets.push({ kind, id, name, file: await entry.getFile() });
     } catch (error) {
