@@ -96,6 +96,17 @@ exactly the pixels `filterTiles` (below) makes of them. The browser tests assert
   baseline cache (512 chunks, about 160 MiB) however large the world is. At half a pixel per tile and above the
   cache grows to the visible set, which the viewport bounds. While chunks are still loading there, the overview is
   drawn under them instead of a hole; a complete frame is exact.
+- **Prefetch.** After a frame that loaded everything it shows, an idle callback (`requestIdleCallback`) uploads the
+  chunks of the ring `prefetchChunks` (default 1) chunks wide around the view, nearest first and framed at a sprite
+  zoom, while the idle period lasts, so a pan finds them resident. It never evicts a chunk of the view or the ring and
+  never touches the view's own chunks (those are the frames' to load).
+- **Frame reuse.** Scheduled frames from one pixel per tile up draw into one of two offscreen `RGBA8` targets, copied
+  to the canvas (`blitFramebuffer`), with the camera snapped to whole screen pixels. When only the camera moved since
+  the last complete frame (same zoom and program, no other setter called, no upload in the frame), the frame copies
+  the last one shifted by whole pixels and draws only the strips the pan revealed (scissored), so a pan costs about two
+  full-canvas copies instead of the whole chunk pass: measured on an Intel Arc iGPU (D3D11) at 3440 × 1440 in sprite
+  mode, about 1 ms per frame instead of 2.5–4.7 ms. `stats().reusedFrames` counts them. `render()` draws the camera as
+  given straight to the canvas and never reuses a frame.
 - **Sprite mode (#91).** `setAtlas(atlas)` uploads a sprite atlas (`@studio/assets`' `SpriteAtlas`, square RGBA8 pages)
   once, as one `RGBA8` array texture with a layer per page; `stats().atlasUploads` counts it. A lookup texture
   (`RGBA32I`, `SPRITE_SHEET_ROW` in `src/gpu/shaders.ts`) holds per palette index the tile sheet of its content ID
@@ -133,9 +144,12 @@ exactly the pixels `filterTiles` (below) makes of them. The browser tests assert
     (`objectSprites` in `src/objects/object-sprites.ts`: tree trunk cells, branches and tops, palm and mushroom parts,
     track decorations and bumpers) at its rectangle in world sprite pixels, so it may reach past its tile; the sprites
     are collected on the CPU per chunk, for the visible chunks and the ring around them, cached until an edit nearby
-    (`invalidateTiles`), the world or the atlas changes. A **wire pass** (`wireFragmentSource`) then draws every chunk's
-    wires and actuators from `WiresNew` and `Actuator`, faded in over the colour overlay, which the chunk pass's sprite
-    program no longer draws. Both passes blend over what is drawn and are linked on their first use.
+    (`invalidateTiles`), the world or the atlas changes; the instance buffer is uploaded again only when the shown chunks
+    or their lists change. A **wire pass** (`wireVertexSource`, `wireFragmentSource`) then draws the wires and actuators
+    from `WiresNew` and `Actuator`, faded in over the colour overlay, which the chunk pass's sprite program no longer
+    draws: one quad per vertical run of tiles with a wire or actuator (`collectWireRuns`, cached per chunk like the
+    object lists), so a chunk with one wire shades one tile, not all of its 128 × 128. Both passes blend over what is
+    drawn and are linked on their first use.
   - **Chunk borders.** Each chunk is its own quad; a pixel on the border can compute the tile just across it (the
     quad's edge and the pixel's position round apart). The pass then keeps the chunk's own tile and moves the sprite
     position to that tile's near edge, so the border never shows the far edge of a tile.
