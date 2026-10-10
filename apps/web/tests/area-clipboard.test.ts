@@ -102,10 +102,23 @@ test("whole chests retain independent contents; partial selections, object exclu
   }
 });
 
-test("paste cannot destroy destination objects, even when a different layer is copied", () => {
-  const world = chestWorld(); const clipboard = copyArea(world, { x: 4, y: 4, width: 1, height: 1 });
+test("paste replaces a destination chest whole, with its record and items, and undo restores both", () => {
+  const world = chestWorld(); const view = canonicalWorldOf(world);
+  const before = structuredClone(world.planes), records = world.entities.Chests.data;
+  const paste = planAreaPaste(world, copyArea(world, { x: 4, y: 4, width: 1, height: 1 }), 1, 1);
+  expect(paste.replaced).toEqual({ objects: 1, chests: 1 });
+  paste.apply("after");
+  for (let x = 1; x <= 2; x++) for (let y = 1; y <= 2; y++) expect(view.tileAt(x, y).block).toBeUndefined();
+  expect(world.entities.Chests.data?.entries).toEqual([]);
+  paste.apply("before");
+  expect(world.planes).toEqual(before); expect(world.entities.Chests.data).toBe(records);
+});
+
+test("paste still refuses to break the supports of an object it does not replace", () => {
+  const world = chestWorld(); const view = canonicalWorldOf(world);
+  for (let x = 1; x <= 2; x++) view.setTile(x, 3, { block: { kind: "vanilla", id: 1 }, wires: 0, actuator: false });
   const before = structuredClone(world.planes);
-  expect(() => planAreaPaste(world, clipboard, 1, 1)).toThrow(/object/);
+  expect(() => planAreaPaste(world, copyArea(world, { x: 5, y: 5, width: 1, height: 1 }), 1, 3)).toThrow(/object/);
   expect(world.planes).toEqual(before);
 });
 

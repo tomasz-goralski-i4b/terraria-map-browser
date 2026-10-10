@@ -87,7 +87,7 @@ test("maximum clipboard planning yields, cancels stale work and only places comp
   expect(canonicalWorldOf(world).tileAt(512, 0).block).toEqual({ kind: "vanilla", id: 1 });
 });
 
-test("invalid overlap disables placement and option-only recovery clears the error", () => {
+test("a paste over an object says it replaces it, and transparent air leaves it alone", () => {
   const bytes = brushSource(8, 8, Array.from({ length: 8 }, () => [0x40, 7]).flat());
   bytes[74] = (bytes[74] ?? 0) | 32;
   const world = readWorldTiles(bytes), view = canonicalWorldOf(world);
@@ -95,8 +95,7 @@ test("invalid overlap disables placement and option-only recovery clears the err
   view.setTile(2, 2, { wall: { kind: "vanilla", id: 1 }, wires: 0, actuator: false });
   setBrushWorld(world); setAreaWorld(world);
   selectArea({ x: 2, y: 2 }, { x: 2, y: 2 }); copySelection(); startPaste(); movePaste({ x: 5, y: 5 });
-  expect(useAreaStore.getState().canPlace).toBe(false);
-  expect(useAreaStore.getState().message).toContain("object");
+  expect(useAreaStore.getState()).toMatchObject({ canPlace: true, message: "Click or Enter to place · replaces 1 object · Escape to cancel" });
   useAreaStore.setState({ options: { ...DEFAULT_PASTE_OPTIONS, air: "transparent" } });
   expect(useAreaStore.getState()).toMatchObject({ canPlace: true, message: "Click or Enter to place · Escape to cancel" });
   placePaste(); expect(view.tileAt(5, 5)).toMatchObject({ block: { id: 21 }, wall: { id: 1 } });

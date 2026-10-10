@@ -87,6 +87,13 @@ export function startPaste(): void {
   movePaste(useViewStore.getState().hoverTile ?? useAreaStore.getState().selection ?? { x: 0, y: 0 });
 }
 
+/** " · replaces 2 objects (1 chest with its items)": said before placing, since the objects go whole. */
+function replacedText({ objects, chests }: AreaPaste["replaced"]): string {
+  if (objects === 0) return "";
+  const what = `${String(objects)} ${objects === 1 ? "object" : "objects"}`;
+  return chests === 0 ? ` · replaces ${what}` : ` · replaces ${what} (${String(chests)} ${chests === 1 ? "chest with its items" : "chests with their items"})`;
+}
+
 /** Moves the floating paste; large previews are planned in 8 ms slices, and only the latest request completes. */
 export function movePaste(position: TilePoint | null): void {
   if (!useAreaStore.getState().pasting) return;
@@ -111,7 +118,7 @@ export function movePaste(position: TilePoint | null): void {
         const canPlace = preview.tiles.length !== 0;
         useAreaStore.setState({
           canPlace, problem: canPlace ? null : "The paste changes nothing",
-          message: canPlace ? "Click or Enter to place · Escape to cancel" : "The paste changes nothing here · Escape to cancel",
+          message: canPlace ? `Click or Enter to place${replacedText(preview.replaced)} · Escape to cancel` : "The paste changes nothing here · Escape to cancel",
           previewRevision: useAreaStore.getState().previewRevision + 1,
         });
         if (placeWhenReady && canPlace) placePaste();

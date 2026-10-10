@@ -29,8 +29,13 @@ updating adjacent framing.
 
 Frame-important tiles are grouped conservatively into connected same-content components. A component crossing
 the selection or world boundary is omitted whole; adjacent identical objects may therefore be omitted together.
-Chest/sign footprints must also be complete. Existing destination objects are protected from structural replacement:
-an overlapping paste reports the problem before placement. Copied tile entities get new IDs and keep their full
+Chest/sign footprints must also be complete. A paste replaces the destination objects it writes blocks into, as the
+Eraser removes a chest: each one goes whole (the same connected same-content component, also its tiles outside the
+rectangle), with the chest, sign, tile-entity or pressure-plate record anchored on it, a chest's items included. The
+hint says so before placing (*replaces 2 objects (1 chest with its items)*), and Undo restores tiles and records
+together. Empty copied cells under Skip empty blocks touch nothing. A paste that would break an object it does not
+replace (the supports of a chest or sign one tile around it; four tiles around a tile entity, whose orientation is
+unobserved) reports it before placement. Copied tile entities get new IDs and keep their full
 binary payload, including fields outside the semantic model. Selections are limited to 262,144 cells to bound
 clipboard/preview allocation; an oversized Copy reports its limit without replacing the previous clipboard.
 

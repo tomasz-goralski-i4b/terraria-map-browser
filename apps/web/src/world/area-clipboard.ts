@@ -18,8 +18,16 @@ type ObjectSection = "Chests" | "Signs" | "TileEntities" | "WeightedPressurePlat
 const OBJECT_SECTIONS: readonly ObjectSection[] = ["Chests", "Signs", "TileEntities", "WeightedPressurePlates"];
 type ObjectRecords = Pick<WorldTilesResult["entities"], ObjectSection>;
 export interface AreaClipboard { readonly world: CanonicalWorld; readonly layers: CopyLayers; readonly blocked: Uint8Array; readonly objects: readonly (readonly number[])[]; readonly records: ObjectRecords; readonly payloads: readonly TileEntityPayload[] }
-export interface AreaPaste { readonly tiles: readonly TileDiff[]; readonly palette: CanonicalWorld["palette"]; readonly apply: (direction: "before" | "after") => void }
+export interface AreaPaste {
+  readonly tiles: readonly TileDiff[];
+  readonly palette: CanonicalWorld["palette"];
+  /** Destination objects the paste removes whole, and how many of them are chests (with their items). */
+  readonly replaced: { readonly objects: number; readonly chests: number };
+  readonly apply: (direction: "before" | "after") => void }
 const PLANE_NAMES: readonly (keyof WorldPlanes)[] = ["block", "wall", "frameX", "frameY", "paint", "wallPaint", "liquid", "liquidAmount", "shape", "flags"];
+const BLOCK_PLANES: readonly (keyof WorldPlanes)[] = ["block", "frameX", "frameY", "shape"];
+/** The block's own flags (inactive, invisible, full bright); wires, the actuator and the wall's flags are separate. */
+const BLOCK_FLAGS = 0x160;
 const framed = (world: WorldTilesResult, x: number, y: number): boolean => {
   if (x < 0 || y < 0 || x >= world.metadata.width || y >= world.metadata.height) return false;
   const ref = world.palette[world.planes.block[x * world.metadata.height + y] ?? 0xffff];
@@ -120,19 +128,10 @@ export function* areaPasteSteps(world: WorldTilesResult, clipboard: AreaClipboar
     if (palette.length >= 0xffff) throw new RangeError("CWM palette exceeds 65535 entries");
     paletteKeys.set(key, palette.length); palette.push({ ...ref }); return palette.length - 1;
   };
-  const tiles: TileDiff[] = [];
-  const protectedCells = new Set<number>();
-  for (const name of OBJECT_SECTIONS) for (const entry of world.entities[name].data?.entries ?? []) {
-    const origin = world.palette[world.planes.block[entry.x * target.height + entry.y] ?? 0xffff];
-    const width = name === "TileEntities" ? 9 : name === "WeightedPressurePlates" ? 1 : name === "Chests" && origin?.kind === "vanilla" && origin.id === 88 ? 3 : 2;
-    const height = name === "TileEntities" ? 9 : name === "WeightedPressurePlates" ? 1 : 2;
-    const offset = name === "TileEntities" ? 4 : 0;
-    for (let dx = 0; dx < width; dx++) for (let dy = 0; dy < height; dy++) {
-      const tx = entry.x + dx - offset, ty = entry.y + dy - offset;
-      if (tx >= 0 && ty >= 0 && tx < target.width && ty < target.height) protectedCells.add(tx * target.height + ty);
-    }
-    yield;
-  }
+  // The planes after the paste, per written cell, in placement order; diffs are taken once replaced objects are known.
+  const written = new Map<number, Record<keyof WorldPlanes, number>>();
+  const blockWritten = new Set<number>();
+  const hits: number[] = [];
   for (let sx = 0; sx < source.width; sx++) for (let sy = 0; sy < source.height; sy++) {
     const si = sx * source.height + sy, tx = x + sx, ty = y + sy;
     if (si % 256 === 0) yield;
@@ -144,7 +143,8 @@ export function* areaPasteSteps(world: WorldTilesResult, clipboard: AreaClipboar
     const sourceFlags = source.planes.flags[si] ?? 0;
     if (blockWrite) {
       for (const name of ["block", "frameX", "frameY", "shape"] as const) values[name] = name === "block" ? remap(source.planes.block[si] ?? 0xffff) : source.planes[name][si] ?? 0;
-      values.flags = (values.flags & ~0x160) | (sourceFlags & 0x160);
+      values.flags = (values.flags & ~BLOCK_FLAGS) | (sourceFlags & BLOCK_FLAGS);
+      blockWritten.add(ti);
     }
     if (wallWrite) { values.wall = remap(source.planes.wall[si] ?? 0xffff); values.flags = (values.flags & ~0x280) | (sourceFlags & 0x280); }
     if (layers.paint) {
@@ -160,21 +160,81 @@ export function* areaPasteSteps(world: WorldTilesResult, clipboard: AreaClipboar
       if (options.liquids === "replace") { values.liquid = kind; values.liquidAmount = amount; }
       else if (kind !== 0 && (values.liquid === 0 || values.liquid === kind)) { values.liquid = kind; values.liquidAmount = Math.min(255, values.liquidAmount + amount); }
     }
+    if (blockWrite && framed(world, tx, ty) && BLOCK_PLANES.some((plane) => (target.planes[plane][ti] ?? 0) !== values[plane])) hits.push(ti);
+    written.set(ti, values);
+  }
+
+  // A destination object the paste writes into is replaced whole, as the Eraser removes a chest: every tile of its
+  // connected same-content component goes, also outside the rectangle, so no half object is left behind.
+  const removed = new Set<number>();
+  let replacedObjects = 0;
+  for (const start of hits) {
+    if (removed.has(start)) continue;
+    replacedObjects++;
+    const content = world.planes.block[start];
+    const stack = [start];
+    while (stack.length !== 0) {
+      const index = stack.pop() ?? 0;
+      if (removed.has(index)) continue;
+      removed.add(index);
+      if (removed.size % 256 === 0) yield;
+      const cx = Math.floor(index / target.height), cy = index % target.height;
+      for (const [nx, ny] of [[cx - 1, cy], [cx + 1, cy], [cx, cy - 1], [cx, cy + 1]] as const) {
+        if (framed(world, nx, ny) && world.planes.block[nx * target.height + ny] === content) stack.push(nx * target.height + ny);
+      }
+    }
+  }
+  // Records anchored on a replaced tile go with it; the rest keep protecting their footprints and supports.
+  const survives = ({ x: ex, y: ey }: { readonly x: number; readonly y: number }): boolean => !removed.has(ex * target.height + ey);
+  const kept = {
+    Chests: (world.entities.Chests.data?.entries ?? []).filter(survives),
+    Signs: (world.entities.Signs.data?.entries ?? []).filter(survives),
+    TileEntities: (world.entities.TileEntities.data?.entries ?? []).filter(survives),
+    WeightedPressurePlates: (world.entities.WeightedPressurePlates.data?.entries ?? []).filter(survives),
+  };
+  const replacedChests = (world.entities.Chests.data?.entries.length ?? 0) - kept.Chests.length;
+  const protectedCells = new Set<number>();
+  for (const name of OBJECT_SECTIONS) for (const entry of kept[name]) {
+    const origin = world.palette[world.planes.block[entry.x * target.height + entry.y] ?? 0xffff];
+    // Chests and signs keep one tile around them (their supports), as for the Eraser; tile entities, whose
+    // orientation is unobserved, keep four in every direction.
+    const width = name === "TileEntities" ? 9 : name === "WeightedPressurePlates" ? 1 : name === "Chests" && origin?.kind === "vanilla" && origin.id === 88 ? 5 : 4;
+    const height = name === "TileEntities" ? 9 : name === "WeightedPressurePlates" ? 1 : 4;
+    const offset = name === "TileEntities" ? 4 : name === "WeightedPressurePlates" ? 0 : 1;
+    for (let dx = 0; dx < width; dx++) for (let dy = 0; dy < height; dy++) {
+      const tx = entry.x + dx - offset, ty = entry.y + dy - offset;
+      if (tx >= 0 && ty >= 0 && tx < target.width && ty < target.height) protectedCells.add(tx * target.height + ty);
+    }
+    yield;
+  }
+  for (const index of removed) {
+    if (blockWritten.has(index)) continue;
+    const values = written.get(index) ?? Object.fromEntries(PLANE_NAMES.map((name) => [name, target.planes[name][index] ?? 0])) as Record<keyof WorldPlanes, number>;
+    for (const plane of BLOCK_PLANES) values[plane] = plane === "block" ? 0xffff : 0;
+    values.paint = 0;
+    values.flags &= ~BLOCK_FLAGS;
+    written.set(index, values);
+  }
+  const tiles: TileDiff[] = [];
+  for (const [index, values] of written) {
     const changes = PLANE_NAMES.flatMap((plane) => {
-      const before = target.planes[plane][ti] ?? 0, after = values[plane];
+      const before = target.planes[plane][index] ?? 0, after = values[plane];
       return before === after ? [] : [{ plane, before, after }];
     });
-    if (blockWrite && (framed(world, tx, ty) || protectedCells.has(ti)) && changes.some((change) => ["block", "frameX", "frameY", "shape"].includes(change.plane))) throw new Error("Paste would overwrite an existing object. Choose free space.");
-    if (changes.length !== 0) tiles.push({ x: tx, y: ty, changes });
+    if (changes.length === 0) continue;
+    if (protectedCells.has(index) && changes.some((change) => BLOCK_PLANES.includes(change.plane))) throw new Error("Paste would break an object it does not replace. Choose free space.");
+    tiles.push({ x: Math.floor(index / target.height), y: index % target.height, changes });
   }
   const beforeRecords = Object.fromEntries(OBJECT_SECTIONS.map((name) => [name, world.entities[name].data])) as Record<ObjectSection, unknown>;
   const beforePayloads = world.envelope.tileEntityPayloads;
   let afterPayloads = beforePayloads;
   const afterRecords = Object.fromEntries(OBJECT_SECTIONS.map((name) => {
     const additions = clipboard.records[name].data?.entries.filter((entry) => skip[entry.x * source.height + entry.y] === 0 && inside(entry.x * source.height + entry.y)).map((entry) => ({ ...structuredClone(entry), x: x + entry.x, y: y + entry.y })) ?? [];
-    if (additions.some((entry) => world.entities[name].data?.entries.some((existing) => existing.x === entry.x && existing.y === entry.y))) throw new Error("Paste would overlap an existing entity. Choose free space.");
-    if (name === "TileEntities" && additions.length !== 0) {
-      const payloads = [...world.envelope.tileEntityPayloads ?? readTileEntityPayloads(world.envelope.source, world.sections.tileEntities, world.header.version)];
+    if (additions.some((entry) => kept[name].some((existing) => existing.x === entry.x && existing.y === entry.y))) throw new Error("Paste would overlap an existing entity. Choose free space.");
+    const removedRecords = kept[name].length !== (world.entities[name].data?.entries.length ?? 0);
+    if (name === "TileEntities" && (additions.length !== 0 || removedRecords)) {
+      const keptIds = new Set(kept.TileEntities.map((entry) => entry.entityId));
+      const payloads = (world.envelope.tileEntityPayloads ?? readTileEntityPayloads(world.envelope.source, world.sections.tileEntities, world.header.version)).filter((payload) => keptIds.has(payload.entityId));
       let next = (world.entities.TileEntities.data?.entries.reduce((maximum, entry) => Math.max(maximum, entry.entityId), -1) ?? -1) + 1;
       for (const entry of additions) {
         if (!("entityId" in entry) || typeof entry.entityId !== "number") throw new Error("Missing tile entity identity");
@@ -186,9 +246,9 @@ export function* areaPasteSteps(world: WorldTilesResult, clipboard: AreaClipboar
       }
       afterPayloads = payloads;
     }
-    return [name, additions.length === 0 ? world.entities[name].data : { entries: [...world.entities[name].data?.entries ?? [], ...additions] }];
+    return [name, additions.length === 0 && !removedRecords ? world.entities[name].data : { entries: [...kept[name], ...additions] }];
   })) as Record<ObjectSection, unknown>;
-  return { tiles, palette, apply: (direction) => {
+  return { tiles, palette, replaced: { objects: replacedObjects, chests: replacedChests }, apply: (direction) => {
     if (direction === "after") {
       for (const ref of palette.slice(world.palette.length)) target.internContent(ref);
     }
