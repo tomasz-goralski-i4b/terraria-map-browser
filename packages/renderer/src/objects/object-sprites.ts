@@ -41,6 +41,8 @@ export interface ObjectWorld {
     readonly block: Uint16Array;
     readonly frameX?: Int16Array;
     readonly frameY?: Int16Array;
+    /** Block shapes (0 full, 1 half, 2–5 slopes); absent means all full. */
+    readonly shape?: Uint8Array;
   };
   readonly palette: readonly ContentRef[];
   /** The world's tree settings; without them every variation is 0. */
@@ -95,6 +97,11 @@ export class ObjectReader {
     return (planes.block[x * height + y] ?? ABSENT) !== ABSENT;
   }
 
+  /** Whether (x, y) holds a full block: a block that is neither a half block nor a slope. */
+  hasFullBlock(x: number, y: number): boolean {
+    return this.hasBlock(x, y) && (this.#world.planes.shape?.[x * this.#world.height + y] ?? 0) === 0;
+  }
+
   frameX(x: number, y: number): number {
     return this.#world.planes.frameX?.[x * this.#world.height + y] ?? -1;
   }
@@ -108,7 +115,8 @@ const EXTRA_ORDER: readonly TrackExtra[] = ["leftDown", "rightDown", "bumper", "
 
 /**
  * The decorations and bumpers of the track at (x, y), on the tiles below and above it; none on a tile that holds a
- * block (it keeps its pixels) or lies outside the world.
+ * full block (it keeps its pixels) or lies outside the world. A half block or slope there is drawn over: the
+ * decoration under a sloped track fills the open part of the sloped block below it.
  */
 function trackExtras(reader: ObjectReader, x: number, y: number, out: ObjectSprite[]): void {
   const extras = new Set<TrackExtra>();
@@ -116,7 +124,7 @@ function trackExtras(reader: ObjectReader, x: number, y: number, out: ObjectSpri
   for (const extra of EXTRA_ORDER) {
     if (!extras.has(extra)) continue;
     const ty = y + TRACK_EXTRA_OFFSET[extra];
-    if (ty < 0 || ty >= reader.height || reader.hasBlock(x, ty)) continue;
+    if (ty < 0 || ty >= reader.height || reader.hasFullBlock(x, ty)) continue;
     const cell = trackExtraCell(extra);
     out.push({
       kind: "tile", id: TRACK_TILE, sx: cell.column * TRACK_CELL_STRIDE, sy: cell.row * TRACK_CELL_STRIDE, width: 16, height: 16,

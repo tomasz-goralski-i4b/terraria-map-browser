@@ -308,8 +308,10 @@ Each piece may draw **extras** on a neighbouring tile (R: the game's `DrawLeftDe
 `DrawBumper` and `DrawBouncyBumper` per piece): a decoration under a slope, on the tile **below** the track, and a
 bumper at an end, on the tile **above** it. Where they go was measured in the art (S): a decoration's art continues the
 bottom edge of the slopes that draw it (piece 4's bottom row runs into the top row of the left-down decoration), and the
-bumper's posts continue into the top rows of the ends that draw it. The viewer draws an extra only on a tile without a
-block (chosen: blocks keep their pixels), over whatever lies there, and the extras of both pieces of a junction. The
+bumper's posts continue into the top rows of the ends that draw it. The viewer draws an extra on a tile without a block
+or with a half block or slope (a decoration fills the open part of the sloped block under a sloped track), over
+whatever lies there, but not on a full block (chosen: full blocks keep their pixels), and the extras of both pieces of a
+junction. The
 track's own pieces are drawn by the chunk pass; its extras, which reach the neighbouring tiles, by the object pass
 ("Trees"), over the chunk pass.
 
