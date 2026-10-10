@@ -35,11 +35,11 @@ test("fallback, paint and accessible names survive connecting and disconnecting 
   const swatch = screen.container.querySelector<HTMLElement>(".material-swatch");
   expect(swatch?.style.backgroundColor).toBe("rgb(151, 107, 75)");
   expect(swatch?.querySelector("canvas")).toBeNull();
-  await act(() => { connect(); });
+  await act(async () => { connect(); await Promise.resolve(); });
   await expect.poll(() => swatch?.querySelector("canvas")).not.toBeNull();
   expect(swatch?.querySelector<HTMLElement>(".material-swatch-paint")?.style.borderTopColor).toBe("rgb(255, 0, 0)");
   await expect.element(page.getByRole("button", { name: "Dirt Block", exact: true })).toBeVisible();
-  await act(() => { useAssetStore.setState({ status: { kind: "none" } }); });
+  await act(async () => { useAssetStore.setState({ status: { kind: "none" } }); await Promise.resolve(); });
   expect(swatch?.querySelector("canvas")).toBeNull();
   expect(swatch?.style.backgroundColor).toBe("rgb(151, 107, 75)");
 });
@@ -77,12 +77,12 @@ test("Swatches, Brush chips and Inspector switch together without changing their
   const screen = await render(<><SwatchesPanel /><ToolOptions /><InspectorPanel world={{ width: 3, height: 3, tileAt: (x, y) => world.tileAt(x, y), framingWorld: world }} /></>);
   const names = [...screen.container.querySelectorAll("button")].map((button) => button.getAttribute("aria-label") ?? button.textContent);
   expect(screen.container.querySelectorAll("canvas")).toHaveLength(0);
-  await act(() => { connect(); });
+  await act(async () => { connect(); await Promise.resolve(); });
   await expect.poll(() => screen.container.querySelectorAll("canvas").length).toBe(5);
   expect([...screen.container.querySelectorAll("button")].map((button) => button.getAttribute("aria-label") ?? button.textContent)).toEqual(names);
-  await act(() => { useSwatchesView.setState({ category: "wall", query: "Stone Wall" }); });
+  await act(async () => { useSwatchesView.setState({ category: "wall", query: "Stone Wall" }); await Promise.resolve(); });
   await expect.poll(() => screen.container.querySelectorAll(".swatch-button canvas").length).toBe(1);
-  await act(() => { useAssetStore.setState({ status: { kind: "none" } }); });
+  await act(async () => { useAssetStore.setState({ status: { kind: "none" } }); await Promise.resolve(); });
   expect(screen.container.querySelectorAll("canvas")).toHaveLength(0);
 });
 
