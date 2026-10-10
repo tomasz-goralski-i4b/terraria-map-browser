@@ -6,7 +6,8 @@ import { readWorldTiles } from "@studio/world-codec";
 import { BRUSH_LAYER } from "@studio/world-model";
 import type { Camera } from "@studio/renderer";
 import { MapCanvas } from "../src/components/MapCanvas.js";
-import { ToolOptions } from "../src/shell/ToolOptions.js";
+import { ToolOptions as BrushToolOptions } from "../src/shell/ToolOptions.js";
+import { TopBar } from "../src/shell/TopBar.js";
 import { InspectorPanel } from "../src/panels/InspectorPanel.js";
 import { ContentPanel } from "../src/panels/ContentPanel.js";
 import { SwatchesPanel, useSwatchesView } from "../src/panels/SwatchesPanel.js";
@@ -24,6 +25,11 @@ import "../src/styles.css";
 function Shortcuts(): null {
   useGlobalShortcuts(useCommands());
   return null;
+}
+/** The tool options bar with the top bar above it, where Undo and Redo live. */
+function ToolOptions(): React.JSX.Element {
+  const commands = useCommands();
+  return <><TopBar commands={commands} /><BrushToolOptions commands={commands} /></>;
 }
 function stoneCount(): string | undefined {
   const grid = page.getByRole("grid", { name: "Content", exact: true }).element();
@@ -431,4 +437,36 @@ test("swatches go into custom palettes from their context menu and the + button,
   await swatches.getByRole("button", { name: "Red Brick", exact: true }).click({ button: "right" });
   await page.getByRole("menuitem", { name: "Remove from “Castle”" }).click();
   await expect.poll(() => usePaletteStore.getState().palettes[0]?.swatches.length).toBe(2);
+});
+
+test("zoomed-out brush outline stays on the tile painted under the pointer", async () => {
+  const world = readWorldTiles(brushSource(64, 32, Array.from({ length: 64 }, () => [0x40, 31]).flat()));
+  const view = canonicalWorldOf(world);
+  setBrushWorld(world);
+  useAppStore.setState({ phase: "loaded", unsavedChanges: false });
+  useBrushStore.setState({ layer: BRUSH_LAYER.block, blockId: 1, size: 1, shape: "square", smoothing: 0, placementPreview: true });
+  useViewStore.setState({ tool: "brush" });
+  await render(<div className="map-view" style={{ width: 128, height: 128 }}><MapCanvas world={toRenderableWorld(world)} /></div>);
+  const canvas = document.querySelector("canvas");
+  if (canvas === null) throw new Error("World map canvas is missing");
+  await expect.poll(() => canvas.dataset["camera"]).toBeDefined();
+  getMapController()?.jumpTo({ x: 0, y: 0, zoom: 0.25 });
+  const camera = JSON.parse(canvas.dataset["camera"] ?? "null") as Camera;
+  const rect = canvas.getBoundingClientRect();
+  const clientX = rect.left + (32.5 - camera.x) * camera.zoom * canvas.clientWidth / canvas.width;
+  const clientY = rect.top + (16.5 - camera.y) * camera.zoom * canvas.clientHeight / canvas.height;
+  const pointer = (type: string): void => {
+    canvas.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerId: 1, isPrimary: true, button: 0, buttons: type === "pointerup" ? 0 : 1, clientX, clientY }));
+  };
+  pointer("pointermove");
+  const footprint = document.querySelector<HTMLElement>(".brush-footprint");
+  await expect.poll(() => footprint?.hidden).toBe(false);
+  // The outline is the svg inside the footprint box: its centre, not the box's, is what people see.
+  const outline = footprint?.querySelector("svg")?.getBoundingClientRect();
+  if (outline === undefined) throw new Error("Brush outline is missing");
+  expect(outline.x + outline.width / 2).toBeCloseTo(clientX, 1);
+  expect(outline.y + outline.height / 2).toBeCloseTo(clientY, 1);
+  act(() => { pointer("pointerdown"); pointer("pointerup"); });
+  expect(view.tileAt(32, 16).block).toEqual({ kind: "vanilla", id: 1 });
+  expect(view.tileAt(32, 17).block).toBeUndefined();
 });

@@ -401,3 +401,27 @@ test("below 1024 px the rail runs along the top, the dock sits under the map and
   expect(map.height).toBeGreaterThanOrEqual(700 / 2 - 1);
   expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(800);
 });
+
+test("the Inspector's top edge resizes it against the tabs, by dragging or the keys, and the height persists", async () => {
+  const first = await render(<App layoutStorage={storage} />);
+  const splitter = page.getByRole("separator", { name: "Resize Inspector" });
+  await expect.element(splitter).toHaveAttribute("aria-orientation", "horizontal");
+  const inspector = document.querySelector<HTMLElement>(".dock-inspector");
+  if (inspector === null) throw new Error("The Inspector is missing");
+  const start = inspector.getBoundingClientRect().height;
+  const handle = splitter.element() as HTMLElement;
+  const box = handle.getBoundingClientRect();
+  const at = (type: string, dy: number): void => {
+    handle.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerId: 3, clientX: box.left + 10, clientY: box.top + dy }));
+  };
+  at("pointerdown", 0);
+  at("pointermove", -30);
+  at("pointerup", -30);
+  await expect.poll(() => Math.round(inspector.getBoundingClientRect().height)).toBe(Math.round(start + 30));
+  handle.focus();
+  await userEvent.keyboard("{ArrowDown}");
+  await expect.poll(() => Math.round(inspector.getBoundingClientRect().height)).toBe(Math.round(start + 30 - 16));
+  await first.unmount();
+  await render(<App layoutStorage={storage} />);
+  await expect.poll(() => Math.round(document.querySelector<HTMLElement>(".dock-inspector")?.getBoundingClientRect().height ?? 0)).toBe(Math.round(start + 14));
+});
