@@ -235,7 +235,9 @@ ivec4 missingPixel(ivec2 sub) {
 
 // The atlas pixel at (atlas x, y) at of page page, in 0–1, of a sheet whose top-left is at origin: at level 1 the
 // half-resolution texel holding it, the mean of its 2 × 2 sprite pixels. A sheet at an odd position (not packed for
-// the half-resolution atlas) is read at full resolution.
+// the half-resolution atlas) is read at full resolution. The cells of the shipped layouts start at even pixels of their
+// sheets (the atlas tests pin it), so a texel never mixes a cell with its gutter; tile 529's 15-pixel frames at a
+// 17-pixel stride are the one exception, where one row blends with its neighbour.
 vec4 atlasTexel(ivec2 origin, ivec2 at, int page) {
   if (uSpriteLevel == 1 && ((origin.x | origin.y) & 1) == 0) {
     return vec4(texelFetch(uAtlasHalf, ivec3(at >> 1, page), 0)) / 255.0;

@@ -138,7 +138,8 @@ export function createWallFraming(database: FramingDatabase): WallFraming {
   let countingBlocks = new Uint8Array(0);
   const lookups = (palette: readonly ContentRef[]): void => {
     if (palette === lookupPalette && wallIds.length === palette.length) return;
-    const from = palette === lookupPalette ? wallIds.length : 0;
+    // A palette only grows (append-only): extend the lookups; anything else derives them again.
+    const from = palette === lookupPalette && wallIds.length < palette.length ? wallIds.length : 0;
     const ids = new Int32Array(palette.length);
     const counting = new Uint8Array(palette.length);
     if (from > 0) {

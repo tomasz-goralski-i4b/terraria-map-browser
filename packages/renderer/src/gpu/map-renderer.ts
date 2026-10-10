@@ -100,7 +100,8 @@ export interface MapRendererOptions {
   /**
    * Called with true when the renderer starts preparing its sprite program in the background (KHR_parallel_shader_compile:
    * seconds on some drivers with a cold shader cache; sprites show map colours meanwhile) and with false when it is
-   * ready, or the preparation ends otherwise (context loss, dispose). Without the extension the program is linked at
+   * ready, or the preparation ends otherwise: the link failed (sprites keep map colours and `render` throws the
+   * driver's log), the context was lost, or the renderer was disposed. Without the extension the program is linked at
    * once and this is never called.
    */
   readonly onSpritesPreparing?: (preparing: boolean) => void;
@@ -360,16 +361,27 @@ function startLink(gl: WebGL2RenderingContext, vertex: string, fragment: string)
   return { program, shaders: compiled };
 }
 
-/** Waits for a started link and looks up the program's uniforms; throws with the driver's log if it failed. */
+/**
+ * Waits for a started link and looks up the program's uniforms; throws with the driver's log if it failed (the program
+ * is deleted then). The shaders are deleted either way: a linked program keeps what it needs.
+ */
 function finishLink<Name extends string>(gl: WebGL2RenderingContext, linking: Linking, names: readonly Name[]): Program<Name> {
   const { program } = linking;
-  if (!(gl.getProgramParameter(program, gl.LINK_STATUS) as boolean)) {
-    for (const shader of linking.shaders) {
-      if (!(gl.getShaderParameter(shader, gl.COMPILE_STATUS) as boolean)) {
-        throw new Error(`Shader compilation failed: ${gl.getShaderInfoLog(shader) ?? "unknown error"}`);
-      }
-    }
-    throw new Error(`Shader link failed: ${gl.getProgramInfoLog(program) ?? "unknown error"}`);
+  const linked = gl.getProgramParameter(program, gl.LINK_STATUS) as boolean;
+  let failure: string | null = null;
+  if (!linked) {
+    const broken = linking.shaders.find((shader) => !(gl.getShaderParameter(shader, gl.COMPILE_STATUS) as boolean));
+    failure = broken === undefined
+      ? `Shader link failed: ${gl.getProgramInfoLog(program) ?? "unknown error"}`
+      : `Shader compilation failed: ${gl.getShaderInfoLog(broken) ?? "unknown error"}`;
+  }
+  for (const shader of linking.shaders) {
+    gl.detachShader(program, shader);
+    gl.deleteShader(shader);
+  }
+  if (failure !== null) {
+    gl.deleteProgram(program);
+    throw new Error(failure);
   }
   const uniforms = Object.fromEntries(
     names.map((name) => [name, requireValue(gl.getUniformLocation(program, name), `uniform ${name}`)]),
@@ -532,6 +544,8 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   let parallelCompile = parallelShaderCompile(gl);
   // The timer that asks whether the background link is done; 0 when none is pending.
   let linkPoll = 0;
+  // Why the sprite program failed to link, for this context.
+  let spriteLinkError: Error | null = null;
   let world: RenderableWorld | null = null;
   let cacheCapacity = maxCachedChunks;
   let camera: Camera = { x: 0, y: 0, zoom: 1 };
@@ -779,6 +793,8 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       gl.drawArrays(gl.TRIANGLES, 0, 3);
     }
     gl.bindVertexArray(null);
+    // Detached, or the shared framebuffer would keep the texture alive after the atlas is replaced.
+    gl.framebufferTextureLayer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, null, 0, 0);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     return texture;
   };
@@ -963,8 +979,8 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     /** Uploads columns [c0, c1) × rows [r0, r1) of a column-major array of `rows` rows, `offset` texels into the layer. */
     const part = (
       plane: number, cells: Uint16Array, rows: number, offset: number, c0: number, c1: number, r0: number, r1: number,
-    ): void => {
-      if (c1 <= c0 || r1 <= r0) return;
+    ): boolean => {
+      if (c1 <= c0 || r1 <= r0) return false;
       gl.pixelStorei(gl.UNPACK_ROW_LENGTH, rows);
       // A 3D upload must fit its skipped rows within the image height: the array's columns.
       gl.pixelStorei(gl.UNPACK_IMAGE_HEIGHT, cells.length / rows);
@@ -974,21 +990,23 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
         gl.TEXTURE_2D_ARRAY, 0, offset + r0, offset + c0, layer + plane, r1 - r0, c1 - c0, 1, gl.RED_INTEGER,
         gl.UNSIGNED_SHORT, cells,
       );
+      return true;
     };
     const columns = Math.min(CHUNK_SIZE, source.width - originX);
     const rows = Math.min(CHUNK_SIZE, source.height - originY);
-    part(
+    const blocks = part(
       PLANES_16.cell, caches.blocks.cells(chunk), rows, PAGE_APRON,
       Math.max(0, area.left - originX), Math.min(columns, area.right - originX),
       Math.max(0, area.top - originY), Math.min(rows, area.bottom - originY),
     );
     const walls = caches.walls.cells(chunk);
-    part(
+    const wallsUploaded = part(
       PLANES_16.wallCell, walls, PAGE_SIZE, 0,
       Math.max(0, area.left - originX + PAGE_APRON), Math.min(PAGE_SIZE, area.right - originX + PAGE_APRON),
       Math.max(0, area.top - originY + PAGE_APRON), Math.min(PAGE_SIZE, area.bottom - originY + PAGE_APRON),
     );
     defaultUnpack(gl);
+    if (blocks || wallsUploaded) textureUploads++;
     // A wall cell may have appeared where the chunk had none.
     if (walls.some((cell) => cell !== NO_CELL)) wallSlots.add(slot);
     else wallSlots.delete(slot);
@@ -1057,6 +1075,11 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
    */
   const spriteProgramOf = (wait: boolean): Program<(typeof SPRITE_CHUNK_UNIFORMS)[number]> | null => {
     if (spriteProgram !== null) return spriteProgram;
+    // A program that failed to link: animation frames keep map colours, `render` reports why.
+    if (spriteLinkError !== null) {
+      if (wait) throw spriteLinkError;
+      return null;
+    }
     // Without KHR_parallel_shader_compile this links it at once (finishSpriteLink then returns it).
     startSpriteLink();
     return wait || spriteLinkDone() ? finishSpriteLink() : null;
@@ -1068,7 +1091,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
    * it at once.
    */
   const startSpriteLink = (): void => {
-    if (spriteProgram !== null || spriteLinking !== null) return;
+    if (spriteProgram !== null || spriteLinking !== null || spriteLinkError !== null) return;
     spriteLinking = startLink(gl, chunkVertexSource, chunkSpriteFragmentSource);
     if (parallelCompile === null) {
       finishSpriteLink();
@@ -1082,7 +1105,11 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
         linkPoll = window.setTimeout(poll, LINK_POLL_MILLISECONDS);
         return;
       }
-      finishSpriteLink();
+      try {
+        finishSpriteLink();
+      } catch {
+        // Kept in spriteLinkError: frames stay in map colours and `render` throws it.
+      }
       schedule();
     };
     linkPoll = window.setTimeout(poll, LINK_POLL_MILLISECONDS);
@@ -1091,14 +1118,23 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   const spriteLinkDone = (): boolean => spriteLinking === null || parallelCompile === null
     || (gl.getProgramParameter(spriteLinking.program, parallelCompile.COMPLETION_STATUS_KHR) as boolean);
 
-  /** Waits for the sprite program's link (if it is still running) and keeps the program. */
+  /**
+   * Waits for the sprite program's link (if it is still running) and keeps the program; a failure is kept in
+   * spriteLinkError and thrown. Either way the link has ended.
+   */
   const finishSpriteLink = (): Program<(typeof SPRITE_CHUNK_UNIFORMS)[number]> => {
     if (spriteProgram !== null) return spriteProgram;
     if (spriteLinking === null) throw new Error("the sprite program is not being linked");
     const inBackground = parallelCompile !== null;
-    spriteProgram = finishLink(gl, spriteLinking, SPRITE_CHUNK_UNIFORMS);
-    endSpriteLink(inBackground);
-    return spriteProgram;
+    try {
+      spriteProgram = finishLink(gl, spriteLinking, SPRITE_CHUNK_UNIFORMS);
+      return spriteProgram;
+    } catch (error) {
+      spriteLinkError = error instanceof Error ? error : new Error(String(error));
+      throw spriteLinkError;
+    } finally {
+      endSpriteLink(inBackground);
+    }
   };
 
   /** Forgets the pending link and its poll; reports the end of a background one. */
@@ -1282,7 +1318,6 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     const spriteZoom = spriteMode && atlasTexture !== null && camera.zoom >= SPRITE_MIN_ZOOM;
     const spriteChunk = spriteZoom ? spriteProgramOf(wait) : null;
     // Until the sprite program is linked, frames are drawn in map colours.
-    const linking = spriteZoom && spriteChunk === null;
     const sprites = spriteChunk !== null;
     // Self-framed blocks draw their cells: a chunk is framed on its first upload at a sprite zoom, never below one.
     const framed = sprites && target === null && framing !== null;
@@ -1452,7 +1487,8 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       drawCalls = drawOverview(source, target);
       drawn = visible.filter((chunk) => target.built[keyOf(chunk)] === 1);
     }
-    if (loading.pending || linking) schedule();
+    // While the sprite program links, the poll asks for the next frame once it is done (startSpriteLink).
+    if (loading.pending) schedule();
   };
 
   const schedule = (): void => {
@@ -1466,6 +1502,8 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   const onContextLost = (event: Event): void => {
     // Without this the browser never restores the context.
     event.preventDefault();
+    // A background link dies with the context (no GL call needed to forget it).
+    endSpriteLink(parallelCompile !== null);
     // A loss forced through WEBGL_lose_context is only restored by an explicit call made after this event: Chromium
     // ignores one made earlier. For a real GPU loss the call is a harmless INVALID_OPERATION, the browser restores it.
     setTimeout(() => {
@@ -1487,6 +1525,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     spriteProgram = null;
     // A background link died with the context; the next sprite frame (or atlas) starts another.
     endSpriteLink(parallelCompile !== null);
+    spriteLinkError = null;
     parallelCompile = parallelShaderCompile(gl);
     halfAtlasProgram = null;
     // The atlas died with the context too: upload it again (its sheets follow the palette's next upload).

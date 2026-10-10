@@ -331,7 +331,9 @@ describe("sprite mode", () => {
     const stub = stubParallelCompile();
     try {
       const { canvas, renderer } = makeRenderer(WIDTH * ZOOM, HEIGHT * ZOOM);
-      const draws = vi.spyOn(canvas.getContext("webgl2") as WebGL2RenderingContext, "drawArraysInstanced");
+      const gl = canvas.getContext("webgl2");
+      if (gl === null) throw new Error("no webgl2 context");
+      const draws = vi.spyOn(gl, "drawArraysInstanced");
       renderer.setWorld(spriteWorld());
       renderer.setSpriteMode(true);
       renderer.setCamera({ x: 0, y: 0, zoom: ZOOM });

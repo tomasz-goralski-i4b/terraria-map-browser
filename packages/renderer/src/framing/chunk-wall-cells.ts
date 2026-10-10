@@ -100,12 +100,22 @@ export function createChunkWallCellCache(
           }
           const originX = cx * chunkSize - apron;
           const originY = cy * chunkSize - apron;
-          for (let tx = Math.max(region.left, originX); tx < Math.min(right, originX + side); tx++) {
-            for (let ty = Math.max(region.top, originY); ty < Math.min(bottom, originY + side); ty++) {
-              const at = (tx - originX) * side + (ty - originY);
+          // The part of the area inside this chunk's array, framed as one region.
+          const partLeft = Math.max(region.left, originX);
+          const partTop = Math.max(region.top, originY);
+          const part = {
+            left: partLeft, top: partTop,
+            width: Math.min(right, originX + side) - partLeft, height: Math.min(bottom, originY + side) - partTop,
+          };
+          if (part.width <= 0 || part.height <= 0) continue;
+          if (scratch.length < part.width * part.height) scratch = new Uint16Array(side * side);
+          framing.frameRegion(world, part, scratch);
+          for (let i = 0; i < part.width; i++) {
+            for (let j = 0; j < part.height; j++) {
+              const at = (partLeft + i - originX) * side + (partTop + j - originY);
               if (done[at] === 1) continue;
               done[at] = 1;
-              target[at] = framing.cellAt(world, tx, ty);
+              target[at] = scratch[i * part.height + j] ?? NO_CELL;
               framedTiles++;
             }
           }
