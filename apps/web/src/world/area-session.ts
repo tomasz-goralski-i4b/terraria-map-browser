@@ -7,6 +7,7 @@ import { useSaveStore } from "./save-world.js";
 import { commitAreaEdit, finishBrush, useBrushStore } from "./brush-session.js";
 import { copyArea, areaPasteSteps, DEFAULT_COPY_LAYERS, DEFAULT_PASTE_OPTIONS, type Area, type AreaClipboard, type AreaPaste, type CopyLayers, type PasteOptions } from "./area-clipboard.js";
 
+/** What the Select tool shows: the selection, what Copy takes, how a paste combines, and the floating paste. */
 interface AreaState {
   readonly selection: Area | null;
   readonly layers: CopyLayers;
@@ -18,7 +19,10 @@ interface AreaState {
   readonly canPlace: boolean;
   readonly previewRevision: number;
 }
+
 export const useAreaStore = create<AreaState>()(() => ({ selection: null, layers: DEFAULT_COPY_LAYERS, options: DEFAULT_PASTE_OPTIONS, hasClipboard: false, pasting: false, position: null, message: null, canPlace: false, previewRevision: 0 }));
+
+// Outside the store: the world and clipboard are large, and the preview is rebuilt in slices.
 let loaded: WorldTilesResult | null = null;
 let clipboard: AreaClipboard | null = null;
 let preview: AreaPaste | null = null;
@@ -26,6 +30,8 @@ let previewKey = "";
 let generation = 0;
 let followingHistory = false;
 const locked = (): boolean => loaded === null || useBrushStore.getState().reason !== null || useAppStore.getState().phase === "loading" || useSaveStore.getState().open;
+
+/** A newly opened (or closed) world drops the selection, the clipboard and any floating paste. */
 export function setAreaWorld(world: WorldTilesResult | null): void {
   if (!followingHistory) {
     followingHistory = true;
@@ -40,6 +46,8 @@ export function setAreaWorld(world: WorldTilesResult | null): void {
   generation++;
   useAreaStore.setState({ selection: null, hasClipboard: false, pasting: false, position: null, message: null, canPlace: false });
 }
+
+/** The inclusive rectangle between two tiles, clamped to the world. */
 export function selectArea(from: TilePoint, to: TilePoint): void {
   if (locked() || loaded === null) return;
   if (![from.x, from.y, to.x, to.y].every(Number.isSafeInteger)) return;
@@ -48,6 +56,8 @@ export function selectArea(from: TilePoint, to: TilePoint): void {
   const a = clamp(from), b = clamp(to);
   useAreaStore.setState({ selection: { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), width: Math.abs(a.x - b.x) + 1, height: Math.abs(a.y - b.y) + 1 }, message: null });
 }
+
+/** Copies the selection with the chosen layers; a failure keeps the previous clipboard and says why. */
 export function copySelection(): void {
   const state = useAreaStore.getState();
   if (locked() || loaded === null || state.selection === null) return;
@@ -57,12 +67,16 @@ export function copySelection(): void {
     useAreaStore.setState({ hasClipboard: true, message: `Copied ${String(state.selection.width)} × ${String(state.selection.height)} tiles` });
   } catch (error) { useAreaStore.setState({ message: error instanceof Error ? error.message : String(error) }); }
 }
+
+/** Floats the clipboard under the pointer (or over the selection) as a read-only preview. */
 export function startPaste(): void {
   if (locked() || clipboard === null) return;
   finishBrush(); previewKey = ""; useViewStore.getState().setTool("select");
   useAreaStore.setState({ pasting: true, message: "Click or Enter to place · Escape to cancel" });
   movePaste(useViewStore.getState().hoverTile ?? useAreaStore.getState().selection ?? { x: 0, y: 0 });
 }
+
+/** Moves the floating paste; large previews are planned in 8 ms slices, and only the latest request completes. */
 export function movePaste(position: TilePoint | null): void {
   if (!useAreaStore.getState().pasting) return;
   const key = JSON.stringify([position, useAreaStore.getState().options, useBrushStore.getState().revision, locked()]);
@@ -89,11 +103,15 @@ export function movePaste(position: TilePoint | null): void {
     if (large) setTimeout(run, 0); else run();
   }
 }
+
 export function pasteBounds(): Area | null {
   const state = useAreaStore.getState();
   return !state.pasting || state.position === null || clipboard === null ? null : { ...state.position, width: clipboard.world.width, height: clipboard.world.height };
 }
+
 export function pastePreview(): readonly import("@studio/world-model").TileDiff[] { return preview?.tiles ?? []; }
+
+/** The destination under the paste with the preview applied, for the overlay to draw with the map palette. */
 export function pastePreviewWorld(): CanonicalWorld | null {
   const bounds = pasteBounds();
   if (loaded === null || preview === null || bounds === null) return null;
@@ -104,20 +122,28 @@ export function pastePreviewWorld(): CanonicalWorld | null {
   for (const tile of preview.tiles) for (const change of tile.changes) planes[change.plane][(tile.x - bounds.x) * height + tile.y - bounds.y] = change.after;
   return viewWorld(width, height, planes, preview.palette, { indicesChecked: true });
 }
+
+/** Places a completed preview as one undo entry, then clears the paste and the selection. */
 export function placePaste(): void {
   if (locked() || loaded === null || clipboard === null || !useAreaStore.getState().pasting) return;
   movePaste(useAreaStore.getState().position);
   if (preview === null || !useAreaStore.getState().canPlace) return;
   if (commitAreaEdit(loaded, preview.tiles, preview.apply)) { stopPaste(); useAreaStore.setState({ selection: null }); }
 }
+
 function stopPaste(): void {
-  generation++; preview = null; previewKey = ""; useAreaStore.setState({ pasting: false, position: null, message: null, canPlace: false });
+  generation++;
+  preview = null;
+  previewKey = "";
+  useAreaStore.setState({ pasting: false, position: null, message: null, canPlace: false });
 }
+
 /** Escape, as in image editors: a floating paste is dropped first and the selection stays; then the selection goes. */
 export function cancelArea(): void {
   if (useAreaStore.getState().pasting) stopPaste();
   else useAreaStore.setState({ selection: null, message: null });
 }
+
 useAreaStore.subscribe((state, previous) => {
   if (state.options !== previous.options && state.pasting) movePaste(state.position);
 });
