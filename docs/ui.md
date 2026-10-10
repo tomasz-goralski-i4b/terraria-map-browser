@@ -56,7 +56,9 @@ Code: `apps/web/src/ui/` (primitives), `apps/web/src/shell/` (layout, commands, 
     write a verified copy until saving over the opened file exists), Save As… `Ctrl+Shift+S`, Close World (asks
     before dropping unsaved edits, as opening another world does).
   - *View*: Show panels, Fit world, Actual size, Show render stats, **Theme ▸**, Reset layout.
-  - *Edit*: Undo `Ctrl+Z`, Redo `Ctrl+Shift+Z` (Command on macOS), with availability shared by the options bar.
+  - *Edit*: Undo `Ctrl+Z`, Redo `Ctrl+Shift+Z` (Command on macOS). They also sit on the top bar right after the
+    menus, as in Krita and Photopea; the tool options bar holds only the tool's settings (on phones, where the top
+    bar has no room, it carries Undo and Redo at its end).
   - *Assets*: Connect, Preview sprite sheets, Disconnect.
   - *Help*: Command palette, Keyboard shortcuts.
 
@@ -92,8 +94,9 @@ Code: `apps/web/src/ui/` (primitives), `apps/web/src/shell/` (layout, commands, 
   (`panels/SwatchesPanel.tsx`: materials, paints, recent swatches and custom palettes). The **Inspector** sits under
   the tabs and is visible with any; open, it takes up to half the dock. World is the default tab: after opening a world it shows
   what was opened. Inside a tab, sections are an accordion; several may be open at once. A splitter resizes the dock
-  (240–640 px; drag it, or use the arrow keys, Shift for bigger steps, Home and End). `P` hides or shows the whole
-  dock.
+  (240–640 px; drag it, or use the arrow keys, Shift for bigger steps, Home and End); a second one, on the open
+  Inspector's top edge, trades height between it and the tabs (↑ ↓ from the keyboard), and the height is remembered
+  with the layout. `P` hides or shows the whole dock.
 
   `Tab` is **not** used for this, unlike some editors: Tab must keep moving focus for keyboard users.
 - **Status bar** (`shell/StatusBar.tsx`) shows, from left to right:

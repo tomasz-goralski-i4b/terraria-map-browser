@@ -634,7 +634,8 @@ kbd {
   font-weight: 600;
 }
 
-.tool-options { overflow-x: auto; overflow-y: hidden; }
+/* Visible, not scrolled: a scroll container would clip the tooltips and popovers of the options. */
+.tool-options { overflow: visible; }
 .tool-options > * { flex-shrink: 0; }
 .tool-options-identity { display: inline-flex; align-items: center; gap: var(--space-2); min-width: 68px; }
 .tool-options-hint, .tool-options-notice, .brush-option-label { color: var(--text-2); }
@@ -658,8 +659,19 @@ kbd {
 .brush-shape-icon { display: block; width: 11px; height: 11px; border: 1px solid currentColor; }
 .brush-shape-icon[data-shape="circle"] { border-radius: 50%; }
 .brush-option-group .icon-button { width: 26px; height: 26px; }
-.tool-options-history { display: inline-flex; gap: 2px; margin-left: auto; padding-left: var(--space-3); border-left: 1px solid var(--border); }
-.tool-options-history .icon-button { width: 26px; height: 26px; }
+.top-history { display: inline-flex; gap: 2px; margin-left: var(--space-2); padding-left: var(--space-2); border-left: 1px solid var(--border); }
+.tool-options-history { display: none; }
+/* A long hint gives way rather than widening the page. */
+.tool-options .tool-options-hint { flex-shrink: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 639px) {
+  .tool-options-history { display: inline-flex; gap: 2px; margin-left: auto; }
+  .tool-options-history .icon-button { width: 26px; height: 26px; }
+}
+@media (max-width: 1400px) {
+  /* Room for every option on one row: the sliders shrink and their labels go (their names stay for assistive tech). */
+  .tool-options .brush-option-label { display: none; }
+  .tool-options .brush-slider { width: 64px; }
+}
 
 /* A material as image editors show colours: a swatch (walls round), painted ones with the paint in a corner. */
 .material-swatch {
@@ -687,12 +699,12 @@ kbd {
 .material-chip-name { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .paint-well { position: relative; display: inline-flex; }
 .paint-well-button {
-  width: 18px; height: 26px; padding: 0; border: 1px solid var(--border-strong); border-radius: var(--radius); cursor: pointer;
-  background: var(--surface-2);
+  width: 22px; height: 22px; padding: 0; border: 1px solid var(--border-strong); border-radius: 4px; cursor: pointer;
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 35%);
 }
-/* No paint: an empty well crossed out, as image editors show "no colour". */
+/* No paint: white crossed by a red diagonal, as image editors show "no colour". */
 .paint-well-button[data-none="true"] {
-  background: linear-gradient(to top right, transparent calc(50% - 1px), #e5534b 50%, transparent calc(50% + 1px)), var(--surface-2);
+  background: linear-gradient(to top right, transparent calc(50% - 1px), #e5534b calc(50% - 1px), #e5534b calc(50% + 1px), transparent calc(50% + 1px)), #fff;
 }
 .paint-well-button:disabled { opacity: .5; cursor: default; }
 .paint-popover {
@@ -717,7 +729,9 @@ kbd {
   max-width: 50%; height: 26px; padding: 0 var(--space-2); border: 1px solid var(--focus); border-radius: var(--radius);
   background: var(--surface-2); color: var(--text-1); font: inherit;
 }
-.swatches-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(26px, 1fr)); gap: 3px; max-height: 340px; overflow-y: auto; padding: 2px; }
+/* The kinds, filter and source stay in view while the dock scrolls the swatches. */
+.swatches-header { position: sticky; top: 0; z-index: 1; display: flex; flex-direction: column; gap: var(--space-2); padding-block: var(--space-1); background: var(--surface-1); }
+.swatches-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(26px, 1fr)); gap: 3px; padding: 2px; }
 .swatches-grid[data-mode="list"] { grid-template-columns: 1fr; gap: 0; }
 .swatch-button {
   display: flex; align-items: center; justify-content: center; gap: var(--space-2); aspect-ratio: 1; padding: 0;
@@ -802,6 +816,23 @@ kbd {
   inset: 0 1px 0 2px;
   background: var(--accent);
 }
+
+/* A horizontal splitter sits in the flow between two stacked panes, as a 6 px handle over their border. */
+.splitter.splitter-horizontal {
+  position: relative;
+  top: auto;
+  bottom: auto;
+  left: auto;
+  flex: none;
+  width: auto;
+  height: 6px;
+  margin: -3px 0;
+  cursor: row-resize;
+}
+
+.splitter.splitter-horizontal::before { inset: 3px 0 2px; background: transparent; }
+.splitter.splitter-horizontal:hover::before,
+.splitter.splitter-horizontal:focus-visible::before { inset: 2px 0 1px; background: var(--accent); }
 
 .dock {
   position: relative;
@@ -2144,6 +2175,13 @@ kbd {
 .dock-inspector[data-open="true"] {
   flex: 0 1 auto;
   min-height: 120px;
+}
+
+/* Dragged to a height: it keeps it (the tabs above keep their minimum, the splitter's maximum). */
+.dock-inspector[data-sized="true"] {
+  flex: none;
+  min-height: 0;
+  max-height: none;
 }
 
 .dock-inspector .section-level-2 {

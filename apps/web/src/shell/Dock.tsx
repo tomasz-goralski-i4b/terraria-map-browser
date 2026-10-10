@@ -1,4 +1,4 @@
-import { useId, useRef } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { ContentPanel } from "../panels/ContentPanel.js";
 import { EntitiesPanel } from "../panels/placeholders.js";
 import { InspectorPanel } from "../panels/InspectorPanel.js";
@@ -29,6 +29,22 @@ const SECTIONS: Readonly<Record<SectionId, SectionDefinition>> = {
 const TAB_LABELS: Readonly<Record<DockTab, string>> = { world: "World", view: "View", swatches: "Swatches" };
 
 export const DOCK_ID = "dock";
+/** The smallest Inspector and the room the tabs keep above it when the Inspector is dragged taller. */
+const INSPECTOR_MIN_HEIGHT = 96;
+const TABS_MIN_HEIGHT = 140;
+
+/** An element's height in CSS pixels, kept current by a ResizeObserver (0 before it is laid out). */
+function useHeight(ref: React.RefObject<HTMLElement | null>, hidden: boolean): number {
+  const [height, setHeight] = useState(0);
+  useEffect(() => {
+    const element = ref.current;
+    if (element === null || hidden) return undefined;
+    const observer = new ResizeObserver(() => { setHeight(element.getBoundingClientRect().height); });
+    observer.observe(element);
+    return () => { observer.disconnect(); };
+  }, [ref, hidden]);
+  return height;
+}
 
 function DockSection({ id, commands }: { readonly id: SectionId; readonly commands: readonly Command[] }): React.JSX.Element {
   const open = useLayoutStore((state) => state.sections[id]);
@@ -61,6 +77,12 @@ export function Dock({ commands }: { readonly commands: readonly Command[] }): R
   const tab = useLayoutStore((state) => state.dockTab);
   const setTab = useLayoutStore((state) => state.setDockTab);
   const inspectorOpen = useLayoutStore((state) => state.sections.inspector);
+  const inspectorHeight = useLayoutStore((state) => state.inspectorHeight);
+  const setInspectorHeight = useLayoutStore((state) => state.setInspectorHeight);
+  const dock = useRef<HTMLElement>(null);
+  const inspector = useRef<HTMLDivElement>(null);
+  const dockHeight = useHeight(dock, hidden);
+  const fittedHeight = useHeight(inspector, hidden);
   const tabs = useRef(new Map<DockTab, HTMLButtonElement>());
   if (hidden) return null;
   const select = (next: DockTab): void => {
@@ -68,7 +90,7 @@ export function Dock({ commands }: { readonly commands: readonly Command[] }): R
     tabs.current.get(next)?.focus();
   };
   return (
-    <aside id={DOCK_ID} className="dock" aria-label="Panels">
+    <aside ref={dock} id={DOCK_ID} className="dock" aria-label="Panels">
       <Splitter
         label="Resize panels"
         value={width}
@@ -118,7 +140,22 @@ export function Dock({ commands }: { readonly commands: readonly Command[] }): R
           <DockSection key={section} id={section} commands={commands} />
         ))}
       </div>
-      <div className="dock-inspector" data-open={inspectorOpen}>
+      {inspectorOpen && (
+        // Until it is dragged the Inspector fits its content; the splitter starts from the height it has.
+        <Splitter
+          label="Resize Inspector"
+          value={inspectorHeight ?? (fittedHeight || INSPECTOR_MIN_HEIGHT)}
+          min={INSPECTOR_MIN_HEIGHT}
+          max={Math.max(INSPECTOR_MIN_HEIGHT, dockHeight - TABS_MIN_HEIGHT)}
+          grows="up"
+          controls={`${id}-inspector`}
+          onChange={setInspectorHeight}
+        />
+      )}
+      <div
+        ref={inspector} id={`${id}-inspector`} className="dock-inspector" data-open={inspectorOpen} data-sized={inspectorOpen && inspectorHeight !== null}
+        style={inspectorOpen && inspectorHeight !== null ? { height: inspectorHeight } : undefined}
+      >
         <DockSection id="inspector" commands={commands} />
       </div>
     </aside>

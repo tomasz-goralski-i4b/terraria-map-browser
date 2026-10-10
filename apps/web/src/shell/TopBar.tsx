@@ -175,6 +175,12 @@ export function TopBar({ commands }: { readonly commands: readonly Command[] }):
       <span className="brand-mark" aria-hidden="true" />
       <h1 className="visually-hidden">Terraria Map Studio</h1>
       <MenuBar label="Main menu" menus={menus} />
+      <div className="top-history hide-on-phone" role="group" aria-label="History">
+        {(["edit.undo", "edit.redo"] as const).map((id) => {
+          const command = get(id);
+          return <IconButton key={id} icon={id === "edit.undo" ? "undo" : "redo"} label={command.label} shortcut={command.shortcut} disabled={!command.enabled} disabledReason={command.disabledReason} onClick={command.run} />;
+        })}
+      </div>
       <div className="world-title" aria-live="polite">
         {summary === null ? (
           <span className="muted">Terraria Map Studio</span>

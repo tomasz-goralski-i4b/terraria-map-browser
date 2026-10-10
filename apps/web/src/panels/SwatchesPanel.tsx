@@ -3,6 +3,7 @@ import { create } from "zustand";
 import type { BrushContentLayer } from "@studio/world-model";
 import { confirmAction } from "../shell/ConfirmDialog.js";
 import { useLayoutStore } from "../shell/layout-store.js";
+import { useViewStore } from "../shell/view-store.js";
 import { notify } from "../shell/notification-store.js";
 import { Icon } from "../ui/Icon.js";
 import { IconButton } from "../ui/IconButton.js";
@@ -168,6 +169,9 @@ export function SwatchesPanel(): React.JSX.Element {
   // The grid's one Tab stop: the selected swatch, else the first.
   const tabStop = Math.max(0, shown.findIndex((item) => isSelected(item)));
   const choose = (item: ShownSwatch): void => {
+    // Choosing a material means painting next (Erase keeps erasing; its materials wait for Brush).
+    const tool = useViewStore.getState().tool;
+    if (tool !== "brush" && tool !== "erase") useViewStore.getState().setTool("brush");
     if (item.paint !== null) chooseBrushPaint(item.paint);
     else if (item.swatch !== null) chooseBrushMaterial(item.swatch.layer, item.swatch.id, source === "all" ? undefined : item.swatch.paint);
   };
@@ -227,6 +231,7 @@ export function SwatchesPanel(): React.JSX.Element {
 
   return (
     <div className="swatches-panel">
+      <div className="swatches-header">
       <div className="swatches-toolbar">
         <div className="brush-segments swatches-categories" role="group" aria-label="Swatch kind">
           {CATEGORIES.map(({ id, label }) => (
@@ -275,11 +280,12 @@ export function SwatchesPanel(): React.JSX.Element {
           </select>
         )}
       </div>
+      </div>
       <div className="swatches-grid" data-mode={view.mode} role="group" aria-label="Swatches" onKeyDown={onGridKeyDown}>
         {shown.map((item, index) => (
           <button
             key={item.key} type="button" data-swatch="" className="swatch-button" aria-pressed={isSelected(item)} aria-label={item.name}
-            title={item.swatch === null ? item.name : `${item.name} — right-click to add it to a palette`}
+            data-tooltip={item.swatch === null ? item.name : `${item.name} — right-click: add to a palette`} data-tooltip-side="top"
             tabIndex={index === tabStop ? 0 : -1}
             onClick={() => { choose(item); }}
             onContextMenu={(event) => {
@@ -310,7 +316,7 @@ export function SwatchesPanel(): React.JSX.Element {
           </button>
         ))}
         {palette !== null && view.category !== "paint" && (
-          <button type="button" className="swatch-button swatch-add" aria-label={`Add current materials to “${palette.name}”`} title={`Add current materials to “${palette.name}”`}
+          <button type="button" className="swatch-button swatch-add" aria-label={`Add current materials to “${palette.name}”`} data-tooltip={`Add current materials to “${palette.name}”`} data-tooltip-side="top"
             onClick={() => { addSwatches(palette.id, current()); }}>
             <span className="material-swatch" aria-hidden="true">+</span>
             {view.mode === "list" && <span className="swatch-name">Add current</span>}

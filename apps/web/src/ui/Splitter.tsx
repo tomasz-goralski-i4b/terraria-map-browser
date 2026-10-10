@@ -7,26 +7,28 @@ export interface SplitterProps {
   readonly min: number;
   readonly max: number;
   readonly onChange: (value: number) => void;
-  /** The pane that grows when the pointer moves this way. */
-  readonly grows: "left" | "right";
+  /** The pane that grows when the pointer moves this way: left/right for a vertical splitter, up/down for a horizontal one. */
+  readonly grows: "left" | "right" | "up" | "down";
   readonly controls?: string;
   readonly step?: number;
 }
 
 /**
- * A vertical window splitter (WAI-ARIA `separator`, focusable): drag it, or use the arrow keys (Shift for larger
- * steps) and Home/End for the minimum and maximum.
+ * A window splitter (WAI-ARIA `separator`, focusable), vertical (`grows` left or right) or horizontal (up or down):
+ * drag it, or use the arrow keys along it (Shift for larger steps) and Home/End for the minimum and maximum.
  */
 export function Splitter({ label, value, min, max, onChange, grows, controls, step = 16 }: SplitterProps): React.JSX.Element {
-  const drag = useRef<{ readonly startX: number; readonly startValue: number } | null>(null);
-  const sign = grows === "left" ? -1 : 1;
+  const drag = useRef<{ readonly start: number; readonly startValue: number } | null>(null);
+  const horizontal = grows === "up" || grows === "down";
+  const sign = grows === "left" || grows === "up" ? -1 : 1;
   const clamp = (next: number): number => Math.min(max, Math.max(min, next));
+  const along = (event: React.PointerEvent): number => (horizontal ? event.clientY : event.clientX);
 
   return (
     <div
-      className="splitter"
+      className={horizontal ? "splitter splitter-horizontal" : "splitter"}
       role="separator"
-      aria-orientation="vertical"
+      aria-orientation={horizontal ? "horizontal" : "vertical"}
       aria-label={label}
       aria-valuenow={Math.round(value)}
       aria-valuemin={min}
@@ -34,7 +36,7 @@ export function Splitter({ label, value, min, max, onChange, grows, controls, st
       aria-controls={controls}
       tabIndex={0}
       onPointerDown={(event) => {
-        drag.current = { startX: event.clientX, startValue: value };
+        drag.current = { start: along(event), startValue: value };
         try {
           event.currentTarget.setPointerCapture(event.pointerId);
         } catch {
@@ -43,7 +45,7 @@ export function Splitter({ label, value, min, max, onChange, grows, controls, st
       }}
       onPointerMove={(event) => {
         if (drag.current === null) return;
-        onChange(clamp(drag.current.startValue + sign * (event.clientX - drag.current.startX)));
+        onChange(clamp(drag.current.startValue + sign * (along(event) - drag.current.start)));
       }}
       onPointerUp={() => {
         drag.current = null;
@@ -54,8 +56,8 @@ export function Splitter({ label, value, min, max, onChange, grows, controls, st
       onKeyDown={(event) => {
         const amount = event.shiftKey ? step * 4 : step;
         const next = {
-          ArrowLeft: value - sign * amount,
-          ArrowRight: value + sign * amount,
+          [horizontal ? "ArrowUp" : "ArrowLeft"]: value - sign * amount,
+          [horizontal ? "ArrowDown" : "ArrowRight"]: value + sign * amount,
           Home: min,
           End: max,
         }[event.key];

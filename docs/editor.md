@@ -15,15 +15,23 @@ Blocks, Walls or Both (both layers of a tile change together or not at all).
   stone, ores, sand, bricks, …) and every named wall, limited to the content ids the world's format defines. Objects
   and other frame-important tiles are not materials: they need their own placement rules (a later tool). The options
   bar shows each written layer's material as a swatch and name; clicking it opens the **Swatches** tab of the dock
-  on that layer with the search field focused. Alt+click on the map picks the block, wall and their paints under the
+  on that layer with the search field focused. The tab is always there, as an image editor's Swatches panel; choosing
+  a swatch while Pan or Inspect is active switches to Brush. Alt+click on the map picks the block, wall and their paints under the
   pointer (an eyedropper).
 - **Paint** is chosen per layer from the colour well next to the material (No paint, or one of the 30 paints) and is
-  applied with the material, as a player paints a placed block. **Paint only** (the roller) changes the paint of
-  what is there and places nothing; with No paint it removes paint.
+  applied with the material, as a player paints a placed block. The **Place | Paint** switch picks the mode: Paint
+  changes only the paint of what is there, like a paint roller, and places nothing; with No paint it removes paint.
 - Placing a block puts it as the game places one: a full, unframed, active block without coatings, with the chosen
   paint, displacing any liquid. Over the same block only the paint changes (its shape and coatings stay). Placing a
   wall gives it the chosen paint and no coating. Erase removes the content with its paint, shape and coatings and
   keeps wires and actuators. Unknown and mod content is never changed.
+
+## Keys
+
+As image editors give their options keys: `B` Brush, `E` Erase, `[` `]` size, `X` swaps blocks and walls (`Shift+X`
+both), `Shift+B` square or round, `S` Smooth edges, `R` Place or Paint, Alt+click eyedropper, Shift+click line,
+`Escape` takes back a stroke in progress, `Ctrl+Z` / `Ctrl+Shift+Z` undo and redo (also on the top bar). None of them
+changes a stroke in progress. Every option's tooltip names its key; `?` lists them all.
 
 ## Footprint
 

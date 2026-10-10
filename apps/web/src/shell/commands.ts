@@ -96,6 +96,30 @@ export function brushSizeCommands(editing: boolean): Command[] {
   }));
 }
 
+/**
+ * Brush settings from the keyboard, as image editors give their options keys: X swaps blocks and walls (Shift+X
+ * both), Shift+B the shape, S Smooth edges, R Place and Paint. Not during a stroke, whose settings are fixed.
+ */
+export function brushOptionCommands(tool: ToolId): Command[] {
+  const editing = tool === "brush" || tool === "erase";
+  const set = (change: (state: ReturnType<typeof useBrushStore.getState>) => Partial<ReturnType<typeof useBrushStore.getState>>) => () => {
+    const state = useBrushStore.getState();
+    if (!state.active) useBrushStore.setState(change(state));
+  };
+  const reason = (brushOnly: boolean): string | null => (!editing ? "Choose Brush or Erase first" : brushOnly && tool !== "brush" ? "Choose Brush first" : null);
+  const options: readonly (readonly [string, string, string, boolean, ReturnType<typeof set>])[] = [
+    ["tool.brushSwapLayer", "Swap block and wall target", "X", false, set((state) => ({ layer: state.layer === "block" ? "wall" : "block" }))],
+    ["tool.brushBothLayers", "Target blocks and walls", "Shift+X", false, set(() => ({ layer: "both" }))],
+    ["tool.brushShape", "Toggle square and round brush", "Shift+B", false, set((state) => ({ shape: state.shape === "square" ? "circle" : "square" }))],
+    ["tool.brushSmooth", "Toggle Smooth edges", "S", false, set((state) => ({ smooth: !state.smooth }))],
+    ["tool.brushPaintOnly", "Toggle Place and Paint", "R", true, set((state) => ({ paintOnly: !state.paintOnly }))],
+  ];
+  return options.map(([id, label, shortcut, brushOnly, run]) => {
+    const why = reason(brushOnly);
+    return { id, group: "Tools", label, shortcut, enabled: why === null, ...(why === null ? {} : { disabledReason: why }), run };
+  });
+}
+
 /** Layer toggles, in the order of the Layers panel, with their shortcuts. Sprites has its own row (with the assets). */
 export const LAYER_TOGGLES: readonly { readonly layer: Exclude<keyof MapLayers, "wireMask" | "sprites">; readonly label: string; readonly shortcut: string }[] = [
   { layer: "background", label: "Background", shortcut: "Alt+2" },
@@ -243,13 +267,6 @@ export function useCommands(): Command[] {
         setGroupsOpen(WORLD_GROUP_KEYS, false);
       },
     },
-    ...LAYER_TOGGLES.map(({ layer, label, shortcut }): Command => ({
-      id: `layer.${layer}`, group: "Layers", label: `Show ${label.toLowerCase()}`, shortcut, enabled: true,
-      checked: layerShown(layers, layer),
-      run: () => {
-        setLayers({ [layer]: !layers[layer] });
-      },
-    })),
     {
       id: "layer.sprites", group: "Layers", label: "Show sprites", shortcut: "Alt+1", enabled: assetsReady,
       ...(assetsReady ? {} : { disabledReason: "Connect Terraria assets first" }),
@@ -258,8 +275,16 @@ export function useCommands(): Command[] {
         setLayers({ sprites: !layers.sprites });
       },
     },
+    ...LAYER_TOGGLES.map(({ layer, label, shortcut }): Command => ({
+      id: `layer.${layer}`, group: "Layers", label: `Show ${label.toLowerCase()}`, shortcut, enabled: true,
+      checked: layerShown(layers, layer),
+      run: () => {
+        setLayers({ [layer]: !layers[layer] });
+      },
+    })),
     ...toolCommands(tool, setTool, editReason),
     ...brushSizeCommands(tool === "brush" || tool === "erase"),
+    ...brushOptionCommands(tool),
     {
       id: "tool.unpin", group: "Tools", label: "Unpin inspected tile", shortcut: "Escape", enabled: pinnedTile !== null,
       ...(pinnedTile === null ? { disabledReason: "No tile is pinned" } : {}),

@@ -57,6 +57,7 @@ function PaintWell({ layer, materials, disabled }: { readonly layer: BrushConten
     };
   }, [open]);
   const label = `${LAYER_NAMES[layer]} paint: ${paintLabel(materials, paint)}`;
+  const tooltip = `${label} — click to choose the paint it is put down with`;
   const choose = (next: number): void => {
     chooseBrushPaint(next, [layer]);
     setOpen(null);
@@ -66,7 +67,7 @@ function PaintWell({ layer, materials, disabled }: { readonly layer: BrushConten
     <div ref={root} className="paint-well">
       <button
         ref={button} type="button" className="paint-well-button" disabled={disabled} aria-label={label} aria-haspopup="dialog" aria-expanded={open !== null && materials !== null}
-        data-tooltip={label} data-tooltip-side="bottom" data-none={paint === 0}
+        data-tooltip={tooltip} data-tooltip-side="bottom" data-none={paint === 0}
         style={paint === 0 ? undefined : { backgroundColor: `#${(paintColor(materials, paint) ?? 0).toString(16).padStart(6, "0")}` }}
         onClick={(event) => {
           const rect = event.currentTarget.getBoundingClientRect();
@@ -83,7 +84,7 @@ function PaintWell({ layer, materials, disabled }: { readonly layer: BrushConten
           <div className="paint-grid" role="group" aria-label="Paints">
             {materials.paints.map((candidate) => (
               <button
-                key={candidate.id} type="button" className="paint-cell" aria-label={candidate.name} title={candidate.name} aria-pressed={paint === candidate.id}
+                key={candidate.id} type="button" className="paint-cell" aria-label={candidate.name} data-tooltip={candidate.name} data-tooltip-side="bottom" aria-pressed={paint === candidate.id}
                 autoFocus={paint === candidate.id} style={{ backgroundColor: `#${candidate.color.toString(16).padStart(6, "0")}` }}
                 onClick={() => { choose(candidate.id); }}
               />
@@ -97,7 +98,8 @@ function PaintWell({ layer, materials, disabled }: { readonly layer: BrushConten
 
 function Segments<T extends string>({ label, options, value, disabled, onChange }: {
   readonly label: string;
-  readonly options: readonly { readonly id: T; readonly label: React.ReactNode; readonly title?: string }[];
+  /** `name` is the accessible name of an option without text; `tooltip` the app's tooltip (never a native title). */
+  readonly options: readonly { readonly id: T; readonly label: React.ReactNode; readonly name?: string; readonly tooltip?: string }[];
   readonly value: T;
   readonly disabled: boolean;
   readonly onChange: (value: T) => void;
@@ -107,7 +109,8 @@ function Segments<T extends string>({ label, options, value, disabled, onChange 
       {options.map((option) => (
         <button
           key={option.id} type="button" aria-pressed={value === option.id} disabled={disabled}
-          {...(option.title === undefined ? {} : { "aria-label": option.title, title: option.title })}
+          {...(option.name === undefined ? {} : { "aria-label": option.name })}
+          {...(option.tooltip === undefined ? {} : { "data-tooltip": option.tooltip, "data-tooltip-side": "bottom" })}
           onClick={() => { onChange(option.id); }}
         >{option.label}</button>
       ))}
@@ -130,8 +133,6 @@ export function ToolOptions({ commands: supplied }: { readonly commands?: readon
   // The brush's world version keys the loaded world's materials (read outside React).
   const materials = useMemo(() => loadedBrushMaterials(), [brushWorld]); // eslint-disable-line react-hooks/exhaustive-deps -- see above
   const editing = tool === "brush" || tool === "erase";
-  const undo = commandById(commands, "edit.undo");
-  const redo = commandById(commands, "edit.redo");
   const locked = brush.active || !commandById(commands, `tool.${tool}`).enabled;
   const layers = brushLayers(brush.layer);
   return (
@@ -143,27 +144,31 @@ export function ToolOptions({ commands: supplied }: { readonly commands?: readon
       {editing ? <>
         {tool === "brush" && (
           <div className="brush-option-group brush-option-materials" role="group" aria-label="Brush materials">
+            <Segments
+              label="Brush mode" value={brush.paintOnly ? "paint" : "place"} disabled={locked}
+              options={[
+                { id: "place", label: "Place", tooltip: "Place the material with its paint (R)" },
+                { id: "paint", label: "Paint", tooltip: "Paint only: recolour what is there, like a paint roller (R)" },
+              ]}
+              onChange={(mode) => { useBrushStore.setState({ paintOnly: mode === "paint" }); }}
+            />
             {layers.map((layer) => (
               <span key={layer} className="material-slot" data-paint-only={brush.paintOnly}>
                 {!brush.paintOnly && <MaterialChip layer={layer} materials={materials} disabled={locked} />}
                 <PaintWell layer={layer} materials={materials} disabled={locked} />
               </span>
             ))}
-            <IconButton
-              icon="roller" label="Paint only" pressed={brush.paintOnly} disabled={locked}
-              disabledReason={brush.reason ?? "Finish the stroke first"}
-              onClick={() => { useBrushStore.setState({ paintOnly: !brush.paintOnly }); }}
-            />
           </div>
         )}
         <div className="brush-option-group brush-layer-options">
           <Segments
-            label="Brush layer" options={LAYER_OPTIONS} value={brush.layer} disabled={locked}
+            label="Brush layer" options={LAYER_OPTIONS.map((option) => ({ ...option, tooltip: option.id === BRUSH_LAYER.both ? "Blocks and walls together (Shift+X)" : `${option.label} only (X swaps blocks and walls)` }))}
+            value={brush.layer} disabled={locked}
             onChange={(layer) => { finishBrush(); useBrushStore.setState({ layer }); }}
           />
         </div>
         <div className="brush-option-group brush-option-size">
-          <label className="brush-field"><span className="brush-option-label">Size</span>
+          <label className="brush-field" data-tooltip="Size in tiles: a square's side or a circle's diameter ([ and ])" data-tooltip-side="bottom"><span className="brush-option-label">Size</span>
             <input
               className="brush-slider" aria-label="Brush size" aria-valuetext={`${String(brush.size)} tiles across`} type="range"
               min={BRUSH_SIZE.minimum} max={BRUSH_SIZE.maximum} step={1} value={brush.size} disabled={locked}
@@ -173,31 +178,29 @@ export function ToolOptions({ commands: supplied }: { readonly commands?: readon
           <input
             className="brush-number" aria-label="Brush size in tiles" type="number" inputMode="numeric"
             min={BRUSH_SIZE.minimum} max={BRUSH_SIZE.maximum} step={1} value={brush.size} disabled={locked}
-            title="Footprint width in tiles: a square's side or a circle's diameter ([ and ] change it)"
             onChange={(event) => { if (event.target.value !== "") setBrushSize(Number(event.target.value)); }}
           />
           <Segments
             label="Brush shape" value={brush.shape} disabled={locked}
             options={[
-              { id: BRUSH_SHAPE.square, title: "Square brush", label: <span className="brush-shape-icon" data-shape="square" aria-hidden="true" /> },
-              { id: BRUSH_SHAPE.circle, title: "Round brush", label: <span className="brush-shape-icon" data-shape="circle" aria-hidden="true" /> },
+              { id: BRUSH_SHAPE.square, name: "Square brush", tooltip: "Square brush (Shift+B)", label: <span className="brush-shape-icon" data-shape="square" aria-hidden="true" /> },
+              { id: BRUSH_SHAPE.circle, name: "Round brush", tooltip: "Round brush (Shift+B)", label: <span className="brush-shape-icon" data-shape="circle" aria-hidden="true" /> },
             ]}
             onChange={(shape) => { useBrushStore.setState({ shape }); }}
           />
         </div>
         <div className="brush-option-group brush-option-smooth">
           <IconButton
-            icon="hammer" label="Smooth edges" pressed={brush.smooth} disabled={locked || (tool === "brush" && brush.paintOnly) || brush.layer === BRUSH_LAYER.wall}
+            icon="hammer" label="Smooth edges: hammer edges into slopes" shortcut="S" pressed={brush.smooth} disabled={locked || (tool === "brush" && brush.paintOnly) || brush.layer === BRUSH_LAYER.wall}
             disabledReason={brush.layer === BRUSH_LAYER.wall ? "Walls have no shape" : brush.paintOnly ? "Paint only changes no blocks" : brush.reason ?? "Finish the stroke first"}
             onClick={() => { useBrushStore.setState({ smooth: !brush.smooth }); }}
           />
         </div>
         <div className="brush-option-group brush-option-smoothing">
-          <label className="brush-field"><span className="brush-option-label">Stabilizer</span>
+          <label className="brush-field" data-tooltip="Stabilizer: the brush trails the pointer for steadier lines; Off at 0" data-tooltip-side="bottom"><span className="brush-option-label">Stabilizer</span>
             <input
               className="brush-slider" aria-label="Brush stabilizer" type="range" min={0} max={100} step={5} value={brush.smoothing} disabled={locked}
               aria-valuetext={brush.smoothing === 0 ? "Off" : `${String(brush.smoothing)} percent stabilization`}
-              title="Stroke stabilizer: the brush trails the pointer for steadier lines; 0 turns it off"
               onChange={(event) => { useBrushStore.setState({ smoothing: Number(event.target.value) }); }}
             />
           </label>
@@ -206,8 +209,12 @@ export function ToolOptions({ commands: supplied }: { readonly commands?: readon
         </div>
         {brush.reason !== null && <span className="tool-options-notice">{brush.reason}</span>}
       </> : <span className="tool-options-hint">{definition?.hint}</span>}
+      {/* Phones hide the top bar's Undo and Redo; the options bar carries them there. */}
       <div className="tool-options-history" role="group" aria-label="History">
-        {[undo, redo].map((command) => <IconButton key={command.id} icon={command.id === undo.id ? "undo" : "redo"} label={command.label} shortcut={command.shortcut} disabled={!command.enabled} disabledReason={command.disabledReason} onClick={command.run} />)}
+        {(["edit.undo", "edit.redo"] as const).map((id) => {
+          const command = commandById(commands, id);
+          return <IconButton key={id} icon={id === "edit.undo" ? "undo" : "redo"} label={command.label} shortcut={command.shortcut} disabled={!command.enabled} disabledReason={command.disabledReason} onClick={command.run} />;
+        })}
       </div>
     </div>
   );
