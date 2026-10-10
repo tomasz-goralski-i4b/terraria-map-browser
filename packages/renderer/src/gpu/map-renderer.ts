@@ -102,6 +102,11 @@ export interface MapRendererOptions {
    * not grow it.
    */
   readonly maxCachedChunks?: number;
+  /**
+   * Chunks around the viewport, per side, uploaded ahead while the browser is idle (and framed at a sprite zoom), so a
+   * pan finds them resident. Default 1; 0 turns it off. They never evict a chunk the last frame drew.
+   */
+  readonly prefetchChunks?: number;
   /** Map colours (content, paint, background by depth), as in `renderChunk`; without one, placeholders are drawn. */
   readonly mapPalette?: MapPalette;
   /**
@@ -196,6 +201,9 @@ const PALETTE_WIDTH = PALETTE_ROW * 2;
 const PALETTE_CAPACITY = 0xffff;
 const PALETTE_HEIGHT = PALETTE_ROW;
 const DEFAULT_MAX_CACHED_CHUNKS = 512;
+const DEFAULT_PREFETCH_CHUNKS = 1;
+/** An idle prefetch step stops uploading once less than this much of its idle period is left (milliseconds). */
+const PREFETCH_IDLE_RESERVE = 3;
 const DEFAULT_MAX_CHUNK_UPLOADS_PER_FRAME = 256;
 const DEFAULT_MAX_UPLOAD_MILLISECONDS_PER_FRAME = 8;
 /**
@@ -577,6 +585,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   if (context === null) throw new WebGl2UnavailableError();
   const gl: WebGL2RenderingContext = context;
   const maxCachedChunks = Math.max(1, options?.maxCachedChunks ?? DEFAULT_MAX_CACHED_CHUNKS);
+  const prefetchChunks = Math.max(0, Math.floor(options?.prefetchChunks ?? DEFAULT_PREFETCH_CHUNKS));
   const requestedUploadBudget = options?.maxChunkUploadsPerFrame ?? DEFAULT_MAX_CHUNK_UPLOADS_PER_FRAME;
   const maxChunkUploadsPerFrame = Number.isFinite(requestedUploadBudget)
     ? Math.max(1, Math.floor(requestedUploadBudget))
@@ -1758,6 +1767,93 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     }
     // While the sprite program links, the poll asks for the next frame once it is done (startSpriteLink).
     if (loading.pending) schedule();
+    else if (target === null) schedulePrefetch();
+  };
+
+  // The pending idle prefetch step (requestIdleCallback, or a timeout where there is none); 0 when none is pending.
+  let prefetchHandle = 0;
+  const idle = typeof requestIdleCallback === "function";
+
+  /** Asks for an idle prefetch step, unless one is pending or prefetching is off. */
+  const schedulePrefetch = (): void => {
+    if (prefetchChunks === 0 || prefetchHandle !== 0 || disposed) return;
+    prefetchHandle = idle
+      ? requestIdleCallback((deadline) => { prefetchHandle = 0; prefetchStep(deadline); }, { timeout: 500 })
+      : globalThis.setTimeout(() => { prefetchHandle = 0; prefetchStep(null); }, 16);
+  };
+
+  const cancelPrefetch = (): void => {
+    if (prefetchHandle === 0) return;
+    if (idle) cancelIdleCallback(prefetchHandle);
+    else clearTimeout(prefetchHandle);
+    prefetchHandle = 0;
+  };
+
+  /**
+   * Uploads (and frames, at a sprite zoom) the nearest chunks of the ring of `prefetchChunks` chunks around the
+   * viewport that are not resident yet, while the idle period lasts; at least one per step. Evicts only chunks outside
+   * the view and the ring. A scheduled frame goes first: the step then waits for the next idle period.
+   */
+  const prefetchStep = (deadline: IdleDeadline | null): void => {
+    if (disposed || gl.isContextLost() || world === null) return;
+    if (frame !== 0) {
+      schedulePrefetch();
+      return;
+    }
+    const source = world;
+    const viewport = { width: canvas.width, height: canvas.height };
+    const overview = overviewOf(source);
+    if (overview !== null && camera.zoom < 1 / overview.factor) return;
+    const framed = spriteMode && atlasTexture !== null && camera.zoom >= SPRITE_MIN_ZOOM && spriteProgram !== null
+      && framing !== null;
+    const chunksX = Math.ceil(source.width / CHUNK_SIZE);
+    const keyOf = (chunk: ChunkCoord): number => chunk.y * chunksX + chunk.x;
+    const margin = prefetchChunks * CHUNK_SIZE;
+    const around = visibleChunks(
+      { x: camera.x - margin, y: camera.y - margin, zoom: camera.zoom },
+      { width: viewport.width + 2 * margin * camera.zoom, height: viewport.height + 2 * margin * camera.zoom },
+      source,
+    );
+    const keep = new Set(around.map(keyOf));
+    const centreX = camera.x + viewport.width / (2 * camera.zoom);
+    const centreY = camera.y + viewport.height / (2 * camera.zoom);
+    const distance = (chunk: ChunkCoord): number =>
+      Math.hypot((chunk.x + 0.5) * CHUNK_SIZE - centreX, (chunk.y + 0.5) * CHUNK_SIZE - centreY);
+    const wanted = around.filter((chunk) => {
+      const slot = chunks.get(keyOf(chunk));
+      if (slot === undefined) return true;
+      return framed && !framedSlots.has(slot) && !dirtyChunks.has(keyOf(chunk));
+    }).sort((first, second) => distance(first) - distance(second));
+    let done = 0;
+    for (const chunk of wanted) {
+      if (done > 0 && (deadline === null || deadline.timeRemaining() < PREFETCH_IDLE_RESERVE)) break;
+      const key = keyOf(chunk);
+      let slot = chunks.get(key);
+      if (slot === undefined) {
+        if (chunks.size >= cacheCapacity) {
+          // The least recently used chunk outside the view and the ring; none: the cache holds only those.
+          let evicted = false;
+          for (const [other, otherSlot] of chunks) {
+            if (keep.has(other)) continue;
+            chunks.delete(other);
+            freeSlots.push(otherSlot);
+            evictedChunks++;
+            dirtyChunks.delete(other);
+            cellCache?.drop({ x: other % chunksX, y: Math.floor(other / chunksX) });
+            wallCache?.drop({ x: other % chunksX, y: Math.floor(other / chunksX) });
+            evicted = true;
+            break;
+          }
+          if (!evicted) return;
+        }
+        slot = allocateSlot();
+        uploadChunk(source, chunk, slot);
+        chunks.set(key, slot);
+      }
+      if (framed) uploadCells(source, chunk, slot);
+      done++;
+    }
+    if (done > 0 && done < wanted.length) schedulePrefetch();
   };
 
   const schedule = (): void => {
@@ -1923,6 +2019,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       if (disposed) return;
       disposed = true;
       cancelAnimationFrame(frame);
+      cancelPrefetch();
       canvas.removeEventListener("webglcontextlost", onContextLost);
       canvas.removeEventListener("webglcontextrestored", onContextRestored);
       if (!gl.isContextLost()) {
