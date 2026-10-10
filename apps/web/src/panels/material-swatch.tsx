@@ -57,9 +57,18 @@ export function MaterialSwatch({ color, paint, layer, content, actual, revision 
       if (!visible) { request++; cancel?.(); cancel = undefined; return; }
       if (cancel !== undefined) return;
       const generation = ++request;
-      cancel = scheduleThumbnail(() => {
+      let retriedAtlas = false;
+      const build = (): void => {
+        if (disposed || !visible || generation !== request) return;
         const source = getThumbnailSource();
-        if (source === null) return;
+        if (source === null) {
+          cancel = undefined;
+          if (!retriedAtlas) {
+            retriedAtlas = true;
+            cancel = scheduleThumbnail(build);
+          }
+          return;
+        }
         void source.then((ready) => {
           if (disposed || !visible || generation !== request) return;
           cancel = scheduleThumbnail(() => {
@@ -69,7 +78,8 @@ export function MaterialSwatch({ color, paint, layer, content, actual, revision 
             observer.disconnect();
           });
         }).catch(() => { /* Keep the exact map-colour fallback if framing cannot load. */ });
-      });
+      };
+      cancel = scheduleThumbnail(build);
     });
     observer.observe(host.current);
     return () => { disposed = true; observer.disconnect(); cancel?.(); };

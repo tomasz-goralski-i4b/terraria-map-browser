@@ -680,7 +680,7 @@ kbd {
   box-shadow: inset 0 0 0 1px rgb(0 0 0 / 35%), 0 0 0 1px rgb(255 255 255 / 8%);
 }
 .material-swatch[data-layer="wall"] { border-radius: 50%; }
-.material-thumbnail { display: block; width: 16px; height: 16px; object-fit: contain; image-rendering: pixelated; border-radius: inherit; }
+.material-thumbnail { display: block; width: auto; height: auto; image-rendering: pixelated; border-radius: inherit; }
 .material-swatch[data-sprite="true"]::after {
   content: ""; position: absolute; inset: 0; border-radius: inherit;
   box-shadow: inset 0 0 0 1px var(--border-strong); pointer-events: none;

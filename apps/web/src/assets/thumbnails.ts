@@ -71,7 +71,7 @@ export class ThumbnailSource {
     if (entry === undefined) return null;
     if (tile.frameX !== undefined && tile.frameY !== undefined) {
       const [left, top] = wrappedFrame(ref.id, tile.frameX, tile.frameY);
-      return thumbnailPixels(this.atlas, layer, ref.id, left, top, entry.frameWidth, entry.frameHeight);
+      return thumbnailPixels(this.atlas, layer, ref.id, left, top, Math.min(16, entry.frameWidth), Math.min(16, entry.frameHeight));
     }
     const cells = new Uint16Array(1);
     this.framing.frameRegion(world, { left: x, top: y, width: 1, height: 1 }, cells);

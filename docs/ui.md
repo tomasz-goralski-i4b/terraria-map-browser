@@ -75,9 +75,9 @@ Code: `apps/web/src/ui/` (primitives), `apps/web/src/shell/` (layout, commands, 
   sprites when assets are ready, using the same interior thumbnails as the Swatches tab.
   Disconnecting assets or a missing sheet restores map colours; paint corners and accessible names are unchanged.
   Edit tools put their settings here: brush size and shape, and the layer mask, i.e. which of block, wall, paint,
-  liquid and wires a stroke
-  writes (as TEdit does). A tool never opens a dialog to change a setting. Brush shows, in the order of an image
-  editor's options bar: each written layer's material (a swatch and name that opens the Swatches tab) with its paint
+  liquid and wires a stroke writes (as TEdit does). A tool never opens a dialog to change a setting. Brush shows,
+  in the order of an image editor's options bar: each written layer's material (a swatch and name that opens
+  the Swatches tab) with its paint
   well, Paint only, the Blocks / Walls / Both target, size (slider and number, 1–64; `[` `]`), square/round shape,
   Smooth edges (the hammer), the stabilizer (Off to 100%) and the outline toggle, then Undo/Redo from the shared
   command registry. Erase keeps the target, size, shape, Smooth edges and the stabilizer. On narrow screens the
@@ -101,12 +101,13 @@ Code: `apps/web/src/ui/` (primitives), `apps/web/src/shell/` (layout, commands, 
   Inspector's top edge, trades height between it and the tabs (↑ ↓ from the keyboard), and the height is remembered
   with the layout. `P` hides or shows the whole dock.
 
+  `Tab` is **not** used for this, unlike some editors: Tab must keep moving focus for keyboard users.
+
   Inspector Block and Wall rows show vanilla map-colour swatches. With connected assets they show the pinned tile's
   actual framed cell: stored frames for objects, neighbours for self-framed blocks and walls. Missing sheets or
   unavailable framing keep map colours; unknown content remains text only. Paint corners, round wall swatches,
   copy text and accessible names remain unchanged.
 
-  `Tab` is **not** used for this, unlike some editors: Tab must keep moving focus for keyboard users.
 - **Status bar** (`shell/StatusBar.tsx`) shows, from left to right:
   - the tile under the pointer;
   - its depth band;

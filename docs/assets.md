@@ -1146,7 +1146,8 @@ as the chunk pass. Material thumbnails select one interior cell; Inspector thumb
 from the world's neighbours or the stored, wrapped frame of frame-important blocks. Walls are always cropped to
 their 16 × 16 centre. Pixels are copied directly from the atlas page, so no decoded sheet is allocated or retained.
 Canvases store native cell pixels using `putImageData`; CSS `image-rendering: pixelated` displays square cells
-at 16 CSS pixels without interpolation. Non-square object cells retain their aspect ratio. Paint remains a corner mark.
+at native CSS size without interpolation. Larger object cells are cropped to their top-left 16 × 16;
+shorter cells retain their native height. Paint remains a corner mark.
 
 ## Open questions
 
