@@ -162,7 +162,7 @@ describe("connecting a Content folder", () => {
     const session = createAssetSession({ builder, remembered: new MemoryRemembered(), pickDirectory: null, openFolderInput: vi.fn() });
     const names = [
       "Tiles_5.xnb", "Wall_1.xnb", "Tree_Tops_0.xnb", "Tree_Branches_31.xnb", "Shroom_Tops.xnb", "WiresNew.xnb", "Actuator.xnb",
-      "Wires.xnb", "Wall_Outline.xnb", "Tiles_5_0.xnb",
+      "Item_1.xnb", "Liquid_0.xnb", "LiquidSlope_14.xnb", "Wires.xnb", "Wall_Outline.xnb", "Tiles_5_0.xnb",
     ];
     const files = names.map((name) => {
       const file = new File([], name);
@@ -171,7 +171,7 @@ describe("connecting a Content folder", () => {
     });
     const connecting = session.connectFiles(files);
     await settle();
-    expect((builder.last().source as readonly File[]).map((file) => file.name)).toEqual(names.slice(0, 7));
+    expect((builder.last().source as readonly File[]).map((file) => file.name)).toEqual(names.slice(0, 10));
     builder.last().resolve(result());
     await connecting;
   });

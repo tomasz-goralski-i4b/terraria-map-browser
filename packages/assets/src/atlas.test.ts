@@ -147,7 +147,8 @@ describe("packSheets", () => {
     expect(index.metrics.wall).toEqual({ cell: 32, gap: 4 });
     expect(index.formatVersion).toBe(ATLAS_FORMAT_VERSION);
     // Format 5 added the tree, mushroom cap, wire and actuator sheets: an older cache entry lacks them.
-    expect(ATLAS_FORMAT_VERSION).toBe(5);
+    // Format 6 added the item and liquid sheets.
+    expect(ATLAS_FORMAT_VERSION).toBe(6);
     expect(index.pageSize).toBe(64);
   });
 
@@ -179,6 +180,10 @@ describe("packSheets", () => {
     ["the giant mushroom caps (60 × 42 frames)", "shroomTop", 0, { frameWidth: 60, frameHeight: 42, gapX: 2, gapY: 2 }],
     ["the wire pieces (16 × 16 cells)", "wire", 0, { frameWidth: 16, frameHeight: 16, gapX: 2, gapY: 2 }],
     ["the actuator (one 16 × 16 image)", "actuator", 0, { frameWidth: 16, frameHeight: 16, gapX: 0, gapY: 0 }],
+    // Items and liquids are kept for later use; their frame layout is not described yet (0: the whole sheet).
+    ["an item", "item", 1, { frameWidth: 0, frameHeight: 0, gapX: 0, gapY: 0 }],
+    ["a liquid sheet", "liquid", 0, { frameWidth: 0, frameHeight: 0, gapX: 0, gapY: 0 }],
+    ["a liquid slope sheet", "liquidSlope", 0, { frameWidth: 0, frameHeight: 0, gapX: 0, gapY: 0 }],
   ] as const)("packSheets_%s_IndexesItsEffectiveFrameAndGutter", (_label, kind, id, expected) => {
     const atlas = packSheets([sheet(kind, id, 40, 40)], { pageSize: 128 });
     expect(findSprite(atlas, kind, id)).toMatchObject(expected);
@@ -313,9 +318,13 @@ const SHEETS = [
   { name: "Actuator", width: 16, height: 16 },
   { name: "Wires", width: 36, height: 18 }, // the old wire sheets are not used
   { name: "Tree_Tops_Outline", width: 16, height: 16 }, // look-alike
+  { name: "Item_1", width: 32, height: 32 },
+  { name: "Liquid_0", width: 16, height: 80 },
+  { name: "LiquidSlope_0", width: 16, height: 80 },
+  { name: "Item_Outline", width: 16, height: 16 }, // look-alike
 ];
 /** The sheets of SHEETS a build decodes: tiles, walls, tree tops and branches, the caps, the wires and the actuator. */
-const MATCHED = 10;
+const MATCHED = 13;
 
 /** `content` where the `Images/<name>` entry is listed but `getFile()` rejects, like a file that vanished mid-scan. */
 function withUnreadableSheet(content: MemoryDirectory, name: string): ContentDirectory {
@@ -376,7 +385,8 @@ describe("buildSpriteAtlas", () => {
     const result = await buildSpriteAtlas(contentWith(SHEETS), { pageSize: 1024 });
     const keys = result.atlas.index.entries.map((e) => `${e.kind}:${String(e.id)}`).sort();
     expect(keys).toEqual([
-      "actuator:0", "shroomTop:0", "tile:0", "tile:1", "tile:650", "treeBranch:12", "treeTop:3", "wall:1", "wall:2", "wire:0",
+      "actuator:0", "item:1", "liquid:0", "liquidSlope:0", "shroomTop:0", "tile:0", "tile:1", "tile:650", "treeBranch:12",
+      "treeTop:3", "wall:1", "wall:2", "wire:0",
     ]);
     expect(result.fromCache).toBe(false);
     expect(result.missing).toEqual([]);
