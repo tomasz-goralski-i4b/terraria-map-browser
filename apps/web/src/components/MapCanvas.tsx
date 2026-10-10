@@ -116,6 +116,7 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
    */
   const pressRef = useRef<{ readonly at: Point; moved: boolean } | null>(null);
   const brushPointer = useRef<number | null>(null);
+  const brushPointerType = useRef<string>("mouse");
   // Where the painting pointer last was (CSS pixels), so a second finger can turn the stroke into a pinch.
   const brushLast = useRef<Point | null>(null);
   const brushTrail = useRef<{
@@ -456,7 +457,8 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
         const last = brushLast.current;
         const painting = brushPointer.current;
         endStroke();
-        if (event.pointerType === "touch" && last !== null) session.pointers.set(painting, last);
+        // A palm landing during a pen stroke ends it but does not pinch.
+        if (event.pointerType === "touch" && brushPointerType.current === "touch" && last !== null) session.pointers.set(painting, last);
       }
       const point = toBacking(localPoint(event.clientX, event.clientY));
       const tile = (selected === "brush" || selected === "erase") && event.isPrimary && event.button === 0 && session.pointers.size === 0
@@ -472,6 +474,7 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
         session.animator.cancelMotion();
         session.keys.clear();
         brushPointer.current = event.pointerId;
+        brushPointerType.current = event.pointerType;
         const local = localPoint(event.clientX, event.clientY);
         brushLast.current = local;
         const strength = useBrushStore.getState().smoothing;

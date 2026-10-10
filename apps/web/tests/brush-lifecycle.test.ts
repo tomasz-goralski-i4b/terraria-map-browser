@@ -87,6 +87,7 @@ test("successful replacement clears history; failed and cancelled replacements r
   await vi.waitFor(() => { expect(parse).toHaveBeenCalledTimes(3); });
   session.cancel();
   await opening;
+  expect(useAppStore.getState().phase).not.toBe("loading");
   expect(useBrushStore.getState().canUndo).toBe(true);
   undoBrush();
   expect(canonicalWorldOf(world).tileAt(2, 2).block).toBeUndefined();
@@ -133,6 +134,33 @@ test("opening another world with unsaved edits asks first; declining keeps the w
     expect(useBrushStore.getState().canUndo).toBe(false);
     await session.open(file);
     expect(confirm).toHaveBeenCalledTimes(2);
+  } finally {
+    setDiscardConfirmer(null);
+  }
+});
+
+test("declining the question for a second open leaves the first one loading, never a stuck spinner", async () => {
+  const world = readWorldTiles(source());
+  const replacement = readWorldTiles(source());
+  let finish: (value: typeof replacement) => void = () => undefined;
+  const parse = vi.fn<WorldParser["parse"]>().mockResolvedValueOnce(world)
+    .mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+  const session = createWorldSession({ parse });
+  const file = new File([source()], "EvergreenReach.wld");
+  await session.open(file);
+  paint(2, 2);
+  const answers = [true, false];
+  setDiscardConfirmer(() => Promise.resolve(answers.shift() ?? false));
+  try {
+    const first = session.open(file);
+    await vi.waitFor(() => { expect(parse).toHaveBeenCalledTimes(2); });
+    await session.open(file);
+    expect(parse).toHaveBeenCalledTimes(2);
+    expect(useAppStore.getState().phase).toBe("loading");
+    finish(replacement);
+    await first;
+    expect(session.getLoadedWorld()).toBe(replacement);
+    expect(useAppStore.getState().phase).toBe("loaded");
   } finally {
     setDiscardConfirmer(null);
   }

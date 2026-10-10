@@ -37,7 +37,17 @@ Fast drags are interpolated between sampled tiles; consecutive stamps are at mos
 stamp only the footprint's leading edge is visited (one of nine precomputed edge lists). Shift+click draws a straight
 line from where the last stroke ended.
 
-**Smoothing** (Off to 100%) is a stroke stabilizer: the painting position trails the pointer in screen space with an
+**Smooth edges** (the hammer) shapes blocks as a player hammers the edge of a hill or a tunnel: every block a stroke
+reaches and every block beside one (its exposure may have changed) gets its shape from its exposed sides, the sides
+without ground (a block that can be hammered, or unknown/mod content, or the world's edge). Two exposed sides that
+meet at a corner cut that corner (a slope); an exposed top and both sides make a one-tile bump a half block; anything
+else becomes a full block again. So a painted square gets rounded corners, a diagonal line gets sloped steps and an
+erased tunnel gets sloped walls. The shapes are part of the stroke's undo entry; entity footprints and blocks a hammer
+cannot shape (ropes, chains, cobwebs, thorns, cactus, trees, bamboo, bubbles: a provisional list from play, to be
+replaced by observing the game's hammer) are left alone, and the latter do not count as ground. Wall-only and
+Paint-only strokes shape nothing. Shapes show in sprite mode; map colours draw whole tiles.
+
+**Stabilizer** (Off to 100%) trails the pointer: the painting position trails the pointer in screen space with an
 exponential time constant up to 400 ms and catches up while the pointer rests; releasing finishes the tail in the
 same stroke. The outline follows the painting position.
 

@@ -4,7 +4,7 @@ import {
   type BrushContentLayer, type BrushHistory, type BrushLayer, type BrushOptions, type BrushShape, type LayerEdit, type TileDiff,
 } from "@studio/world-model";
 import { create } from "zustand";
-import { brushMaterials, findMaterial } from "./brush-materials.js";
+import { brushMaterials, findMaterial, isShapeable } from "./brush-materials.js";
 import { pushRecentSwatch } from "./brush-palettes.js";
 import { canonicalWorldOf } from "./canonical-world.js";
 import { useAppStore } from "../store.js";
@@ -51,6 +51,7 @@ export function createWorldBrush(world: WorldTilesResult): BrushHistory | null {
     protectedTile: (x, y) => protectedIndices.has(x * height + y),
     placeable: (layer, id) => findMaterial(materials, layer, id) !== undefined,
     paintable: (paint) => materials.paints.some((candidate) => candidate.id === paint),
+    shapeable: (id) => isShapeable(materials, id),
   });
 }
 
@@ -63,6 +64,8 @@ interface BrushState {
   readonly wallPaint: number;
   /** Paint-only mode: the brush changes the paint of what is there and places nothing. */
   readonly paintOnly: boolean;
+  /** Smooth edges: strokes hammer the blocks they reach and their neighbours into slopes and half blocks. */
+  readonly smooth: boolean;
   readonly size: number;
   readonly shape: BrushShape;
   readonly placementPreview: boolean;
@@ -76,7 +79,7 @@ interface BrushState {
   readonly world: number;
 }
 export const useBrushStore = create<BrushState>()(() => ({
-  layer: BRUSH_LAYER.block, blockId: 1, wallId: 1, blockPaint: 0, wallPaint: 0, paintOnly: false, size: 1,
+  layer: BRUSH_LAYER.block, blockId: 1, wallId: 1, blockPaint: 0, wallPaint: 0, paintOnly: false, smooth: false, size: 1,
   reason: "Open a vanilla world first", shape: BRUSH_SHAPE.square, placementPreview: true, smoothing: 0,
   canUndo: false, canRedo: false, active: false, revision: 0, world: 0,
 }));
@@ -94,7 +97,7 @@ export function brushOptions(state: BrushState, erase: boolean): BrushOptions {
     if (state.paintOnly) return { kind: "paint", paint };
     return { kind: "place", id: layer === "block" ? state.blockId : state.wallId, paint };
   };
-  const options: { size: number; shape: BrushShape; block?: LayerEdit; wall?: LayerEdit } = { size: state.size, shape: state.shape };
+  const options: { size: number; shape: BrushShape; smooth: boolean; block?: LayerEdit; wall?: LayerEdit } = { size: state.size, shape: state.shape, smooth: state.smooth };
   for (const layer of brushLayers(state.layer)) options[layer] = editOf(layer);
   return options;
 }
@@ -129,8 +132,10 @@ let loaded: WorldTilesResult | null = null;
 let history: BrushHistory | null = null;
 let savedPosition: ReturnType<BrushHistory["position"]> = null;
 let dirtyBeforeStroke = false;
-// Where the last stroke ended, for Shift-click straight lines.
+// Where the last stroke ended, for Shift-click straight lines, and where the one before ended (a cancelled stroke
+// gives its line origin back).
 let lastPoint: { readonly x: number; readonly y: number } | null = null;
+let lastPointBeforeStroke: { readonly x: number; readonly y: number } | null = null;
 useAppStore.subscribe((state, previous) => {
   if (!state.unsavedChanges && previous.unsavedChanges) savedPosition = history?.position() ?? null;
 });
@@ -183,6 +188,7 @@ export function beginBrush(erase: boolean, lineFromLast = false): boolean {
     throw error;
   }
   dirtyBeforeStroke = useAppStore.getState().unsavedChanges;
+  lastPointBeforeStroke = lastPoint;
   const state = useBrushStore.getState();
   if (!erase && !state.paintOnly) {
     for (const layer of brushLayers(state.layer)) {
@@ -206,7 +212,10 @@ export function moveBrush(x: number, y: number): void {
 /** Ends the stroke: committed as one undo entry, or with `cancel` restored. */
 export function finishBrush(cancel = false): void {
   if (!useBrushStore.getState().active) return;
-  if (cancel) notify(history?.cancel() ?? [], "before");
+  if (cancel) {
+    notify(history?.cancel() ?? [], "before");
+    lastPoint = lastPointBeforeStroke;
+  }
   else history?.commit(); // The planes were already changed and invalidated by move.
   useBrushStore.setState({ active: false });
   useAppStore.getState().setUnsavedChanges(cancel ? dirtyBeforeStroke : history?.position() !== savedPosition);
@@ -236,11 +245,12 @@ export function pickBrushMaterial(x: number, y: number): boolean {
   if (loaded === null || materials === null || x < 0 || y < 0 || x >= loaded.metadata.width || y >= loaded.metadata.height) return false;
   const tile = canonicalWorldOf(loaded).tileAt(x, y);
   const change: Partial<BrushState> = {};
+  const known = (paint: number | undefined): number => (materials.paints.some((candidate) => candidate.id === paint) ? paint ?? 0 : 0);
   if (tile.block?.kind === "vanilla" && findMaterial(materials, "block", tile.block.id) !== undefined) {
-    Object.assign(change, { blockId: tile.block.id, blockPaint: tile.paint ?? 0 });
+    Object.assign(change, { blockId: tile.block.id, blockPaint: known(tile.paint) });
   }
   if (tile.wall?.kind === "vanilla" && findMaterial(materials, "wall", tile.wall.id) !== undefined) {
-    Object.assign(change, { wallId: tile.wall.id, wallPaint: tile.wallPaint ?? 0 });
+    Object.assign(change, { wallId: tile.wall.id, wallPaint: known(tile.wallPaint) });
   }
   if (Object.keys(change).length === 0) return false;
   useBrushStore.setState(change);

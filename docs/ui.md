@@ -74,8 +74,9 @@ Code: `apps/web/src/ui/` (primitives), `apps/web/src/shell/` (layout, commands, 
   writes (as TEdit does). A tool never opens a dialog to change a setting. Brush shows, in the order of an image
   editor's options bar: each written layer's material (a swatch and name that opens the Swatches tab) with its paint
   well, Paint only, the Blocks / Walls / Both target, size (slider and number, 1–64; `[` `]`), square/round shape,
-  smoothing (Off to 100%) and the outline toggle, then Undo/Redo from the shared command registry. Erase keeps the
-  target, size, shape and smoothing. On narrow screens the fields wrap, materials first. See [editor.md](editor.md).
+  Smooth edges (the hammer), the stabilizer (Off to 100%) and the outline toggle, then Undo/Redo from the shared
+  command registry. Erase keeps the target, size, shape, Smooth edges and the stabilizer. On narrow screens the
+  fields wrap, materials first. See [editor.md](editor.md).
 - **Map** (`components/MapView.tsx`, `MapCanvas.tsx`) holds the zoom controls (Fit world `F`, 1:1 `1`) in its top
   right corner. The minimap (#145) and transient messages (loading, errors) also go over the map. With no world it shows the **start screen** (`components/StartScreen.tsx`),
   as an editor's start page: Open World, Open Worlds Folder, Connect assets, the folder's worlds and the recent ones,

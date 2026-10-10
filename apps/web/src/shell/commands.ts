@@ -90,7 +90,8 @@ export function brushSizeCommands(editing: boolean): Command[] {
     id, group: "Tools", label, shortcut, enabled: reason === null,
     ...(reason === null ? {} : { disabledReason: reason }),
     run: () => {
-      setBrushSize(step(useBrushStore.getState().size, direction));
+      // The footprint of a stroke in progress is fixed; so is its outline.
+      if (!useBrushStore.getState().active) setBrushSize(step(useBrushStore.getState().size, direction));
     },
   }));
 }

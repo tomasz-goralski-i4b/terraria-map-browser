@@ -60,6 +60,18 @@ export function brushMaterials(world: WorldTilesResult): BrushMaterials {
   return materials;
 }
 
+/**
+ * Self-framed blocks a player cannot hammer, none of them solid ground: ropes and chains, cobwebs, thorns, cactus,
+ * the pine tree and bamboo, and bubbles. Provisional, from playing the game; observing its hammer on synthetic tiles
+ * (scripts/framing, ADR 0003) is to replace it.
+ */
+const NOT_HAMMERABLE: ReadonlySet<number> = new Set([213, 214, 353, 365, 366, 504, 51, 697, 32, 69, 352, 655, 188, 170, 562, 563, 379]);
+
+/** Whether smoothing may give a block a slope or half block: a material a hammer can shape. */
+export function isShapeable(materials: BrushMaterials, id: number): boolean {
+  return !NOT_HAMMERABLE.has(id) && findMaterial(materials, "block", id) !== undefined;
+}
+
 /** The material of a layer and id, if it is in the list. */
 export function findMaterial(materials: BrushMaterials, layer: BrushContentLayer, id: number): BrushMaterial | undefined {
   return (layer === "block" ? materials.blocks : materials.walls).find((candidate) => candidate.id === id);

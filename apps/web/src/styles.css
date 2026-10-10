@@ -755,7 +755,8 @@ kbd {
 }
 
 .brush-footprint { z-index: 1; }
-.brush-footprint svg { overflow: visible; }
+/* Avoid the text baseline shifting a subpixel outline below the pointer at low zoom. */
+.brush-footprint svg { display: block; overflow: visible; }
 .brush-footprint path { fill: none; vector-effect: non-scaling-stroke; stroke-linecap: square; }
 .brush-footprint .brush-footprint-fill { fill: rgb(255 255 255 / 10%); }
 /* A dark halo under a light line keeps the outline visible over any terrain, as image editors draw brush outlines. */
@@ -1648,7 +1649,7 @@ kbd {
   .brush-option-materials { order: 1; }
   .brush-layer-options { order: 2; }
   .brush-option-size { order: 3; }
-  .brush-option-smoothing { order: 4; }
+  .brush-option-smooth, .brush-option-smoothing { order: 4; }
   .material-chip { max-width: 120px; }
   .tool-options-history { order: 4; }
 

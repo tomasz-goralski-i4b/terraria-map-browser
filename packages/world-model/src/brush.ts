@@ -1,4 +1,4 @@
-import type { CanonicalWorld, Tile, WorldPlanes } from "./index.js";
+import type { BlockShape, CanonicalWorld, Tile, WorldPlanes } from "./index.js";
 
 /** Which layers a brush edits; the session turns it into the `block` and `wall` edits of `BrushOptions`. */
 export const BRUSH_LAYER = { block: "block", wall: "wall", both: "both" } as const;
@@ -40,6 +40,11 @@ export interface BrushOptions {
   readonly shape?: BrushShape;
   readonly block?: LayerEdit;
   readonly wall?: LayerEdit;
+  /**
+   * Smooth edges (an automatic hammer): a stroke that edits blocks also shapes the blocks it reaches and the ones
+   * beside them by their exposed sides (`smoothShape`), as a player would hammer the edge of a hill or a tunnel.
+   */
+  readonly smooth?: boolean;
 }
 
 export interface BrushRules {
@@ -49,6 +54,27 @@ export interface BrushRules {
   readonly placeable?: (layer: BrushContentLayer, id: number) => boolean;
   /** Whether a paint id may be applied (0, no paint, always may); `begin` throws a RangeError otherwise. */
   readonly paintable?: (paint: number) => boolean;
+  /**
+   * Whether a vanilla block can take a slope or half block (and so counts as ground for smoothing). Unknown and mod
+   * blocks count as ground but are never shaped. Every vanilla block when absent.
+   */
+  readonly shapeable?: (id: number) => boolean;
+}
+
+/** The sides of a block with no ground beside them. */
+export interface ExposedSides { readonly north: boolean; readonly south: boolean; readonly west: boolean; readonly east: boolean }
+
+/**
+ * The shape smoothing gives a block from its exposed sides: two exposed sides that meet at a corner cut that corner
+ * (a slope), an exposed top and both sides make a bump a half block, anything else stays a full block.
+ */
+export function smoothShape({ north, south, west, east }: ExposedSides): BlockShape {
+  if (north && west && !south && !east) return "slopeTopLeft";
+  if (north && east && !south && !west) return "slopeTopRight";
+  if (south && west && !north && !east) return "slopeBottomLeft";
+  if (south && east && !north && !west) return "slopeBottomRight";
+  if (north && west && east && !south) return "half";
+  return "full";
 }
 
 export interface TileCoordinate { readonly x: number; readonly y: number }
@@ -115,8 +141,9 @@ function edit(tile: Tile, layer: BrushContentLayer, change: LayerEdit): void {
 }
 
 export function createBrushHistory(world: CanonicalWorld, rules: BrushRules = {}): BrushHistory {
-  const { protectedTile = () => false, placeable = () => true, paintable = () => true } = rules;
+  const { protectedTile = () => false, placeable = () => true, paintable = () => true, shapeable = () => true } = rules;
   let targets: Targets | null = null;
+  let smoothing = false;
   let previous: TileCoordinate | null = null;
   let footprint: readonly TileCoordinate[] = [];
   // The cells a footprint gains when its centre moves by one tile, by direction ((dx + 1) * 3 + dy + 1): consecutive
@@ -132,7 +159,29 @@ export function createBrushHistory(world: CanonicalWorld, rules: BrushRules = {}
     for (const tile of diff) for (const change of tile.changes) world.planes[change.plane][tile.x * world.height + tile.y] = change[direction];
     return diff;
   };
-  const stamp = (cx: number, cy: number, cells: readonly TileCoordinate[], selected: Targets, changed: TileDiff[]): void => {
+  /** Writes a changed tile view and records it in the stroke against the tile's values before the stroke. */
+  const write = (x: number, y: number, tile: Tile, changed: TileDiff[]): void => {
+    const index = x * world.height + y;
+    const earlier = stroke.get(index);
+    const before = planeNames.map((name) => earlier?.changes.find((change) => change.plane === name)?.before ?? world.planes[name][index] ?? 0);
+    world.setTile(x, y, tile);
+    const changes: PlaneChange[] = [];
+    planeNames.forEach((plane, i) => {
+      const old = before[i] ?? 0;
+      const after = world.planes[plane][index] ?? 0;
+      if (old !== after) changes.push({ plane, before: old, after });
+    });
+    if (changes.length !== 0) {
+      const diff = { x, y, changes };
+      stroke.set(index, diff);
+      changed.push(diff);
+    } else if (earlier !== undefined) {
+      // Back to how it was before the stroke: no longer part of it, but listeners still learn of the change.
+      stroke.delete(index);
+      changed.push({ x, y, changes: earlier.changes.map(({ plane, after, before: old }) => ({ plane, before: after, after: old })) });
+    }
+  };
+  const stamp = (cx: number, cy: number, cells: readonly TileCoordinate[], selected: Targets, changed: TileDiff[], reached: number[]): void => {
     for (const delta of cells) {
       const x = cx + delta.x;
       const y = cy + delta.y;
@@ -140,24 +189,44 @@ export function createBrushHistory(world: CanonicalWorld, rules: BrushRules = {}
       const index = x * world.height + y;
       if (visited.has(index)) continue;
       visited.add(index);
+      reached.push(index);
       if (selected.some(([layer]) => protectedTile(x, y, layer))) continue;
       const tile = world.tileAt(x, y);
       // Unknown and mod content stays as it is: the editor knows nothing about its rules.
       if (selected.some(([layer]) => { const content = tile[layer]; return content !== undefined && content.kind !== "vanilla"; })) continue;
-      const before = planeNames.map((name) => world.planes[name][index] ?? 0);
       for (const [layer, change] of selected) edit(tile, layer, change);
-      world.setTile(x, y, tile);
-      const changes: PlaneChange[] = [];
-      planeNames.forEach((plane, i) => {
-        const old = before[i] ?? 0;
-        const after = world.planes[plane][index] ?? 0;
-        if (old !== after) changes.push({ plane, before: old, after });
-      });
-      if (changes.length !== 0) {
-        const diff = { x, y, changes };
-        stroke.set(index, diff);
-        changed.push(diff);
-      }
+      write(x, y, tile, changed);
+    }
+  };
+  const isGround = (x: number, y: number): boolean => {
+    // Beyond the world's edge is ground: nothing is shaped against the border.
+    if (x < 0 || y < 0 || x >= world.width || y >= world.height) return true;
+    const block = world.palette[world.planes.block[x * world.height + y] ?? 0xffff];
+    return block !== undefined && (block.kind !== "vanilla" || shapeable(block.id));
+  };
+  /** Shapes the blocks at the reached tiles and beside them (their exposure may have changed) by `smoothShape`. */
+  const smoothAround = (reached: readonly number[], changed: TileDiff[]): void => {
+    const area = new Set<number>();
+    for (const index of reached) {
+      const x = Math.floor(index / world.height);
+      const y = index % world.height;
+      area.add(index);
+      if (x > 0) area.add(index - world.height);
+      if (x < world.width - 1) area.add(index + world.height);
+      if (y > 0) area.add(index - 1);
+      if (y < world.height - 1) area.add(index + 1);
+    }
+    for (const index of area) {
+      const x = Math.floor(index / world.height);
+      const y = index % world.height;
+      const block = world.palette[world.planes.block[index] ?? 0xffff];
+      if (block?.kind !== "vanilla" || !shapeable(block.id) || protectedTile(x, y, "block")) continue;
+      const shape = smoothShape({ north: !isGround(x, y - 1), south: !isGround(x, y + 1), west: !isGround(x - 1, y), east: !isGround(x + 1, y) });
+      const tile = world.tileAt(x, y);
+      if ((tile.shape ?? "full") === shape) continue;
+      if (shape === "full") delete tile.shape;
+      else tile.shape = shape;
+      write(x, y, tile, changed);
     }
   };
   const validEdit = (layer: BrushContentLayer, change: LayerEdit): boolean => {
@@ -187,6 +256,7 @@ export function createBrushHistory(world: CanonicalWorld, rules: BrushRules = {}
         throw new RangeError("A brush edits a block or a wall layer with placeable vanilla content and a valid paint");
       }
       targets = selected;
+      smoothing = options.smooth === true && selected.some(([layer, change]) => layer === "block" && change.kind !== "paint");
       footprint = brushFootprint(size, options.shape);
       const inFootprint = new Set(footprint.map(({ x, y }) => `${String(x)},${String(y)}`));
       leadingEdges = Array.from({ length: 9 }, (_, direction) => {
@@ -205,6 +275,7 @@ export function createBrushHistory(world: CanonicalWorld, rules: BrushRules = {}
         return [];
       }
       const changed: TileDiff[] = [];
+      const reached: number[] = [];
       // `previous` was stamped whole by the last move; a stroke's first point (or one after leaving the world) is not.
       let last = previous;
       const from = previous ?? { x, y };
@@ -212,10 +283,11 @@ export function createBrushHistory(world: CanonicalWorld, rules: BrushRules = {}
       for (let i = 0; i <= steps; i++) {
         const cx = Math.round(from.x + (x - from.x) * i / steps);
         const cy = Math.round(from.y + (y - from.y) * i / steps);
-        if (last === null) stamp(cx, cy, footprint, targets, changed);
-        else if (cx !== last.x || cy !== last.y) stamp(cx, cy, leadingEdges[(cx - last.x + 1) * 3 + cy - last.y + 1] ?? footprint, targets, changed);
+        if (last === null) stamp(cx, cy, footprint, targets, changed, reached);
+        else if (cx !== last.x || cy !== last.y) stamp(cx, cy, leadingEdges[(cx - last.x + 1) * 3 + cy - last.y + 1] ?? footprint, targets, changed, reached);
         last = { x: cx, y: cy };
       }
+      if (smoothing && reached.length !== 0) smoothAround(reached, changed);
       previous = { x, y };
       return changed;
     },

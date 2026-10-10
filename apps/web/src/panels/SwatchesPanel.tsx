@@ -65,7 +65,9 @@ function shownSwatches(materials: BrushMaterials, view: SwatchesView, recent: re
     : (view.source === "recent" ? recent : palette ?? []).filter((swatch) => swatch.layer === layer);
   return swatches.flatMap((swatch) => {
     const material = findMaterial(materials, swatch.layer, swatch.id);
-    if (material === undefined || !matches(material.name, material.id)) return [];
+    // A palette from another world or file can hold content or paint this world cannot take.
+    const paintKnown = swatch.paint === 0 || materials.paints.some((paint) => paint.id === swatch.paint);
+    if (material === undefined || !paintKnown || !matches(material.name, material.id)) return [];
     return [{
       key: `${swatch.layer}:${String(swatch.id)}:${String(swatch.paint)}`, swatch, paint: null,
       name: swatchName(materials, swatch.layer, swatch.id, swatch.paint), color: material.color, paintColor: paintColor(materials, swatch.paint),
@@ -78,8 +80,9 @@ function onGridKeyDown(event: React.KeyboardEvent<HTMLDivElement>): void {
   const buttons = [...event.currentTarget.querySelectorAll<HTMLButtonElement>("button[data-swatch]")];
   const index = buttons.findIndex((button) => button === document.activeElement);
   if (index < 0 || buttons.length === 0) return;
-  const first = buttons[0];
-  const columns = first === undefined ? 1 : Math.max(1, Math.round(event.currentTarget.clientWidth / first.offsetWidth));
+  // Columns as laid out: the buttons on the first row share its top.
+  const top = buttons[0]?.offsetTop;
+  const columns = Math.max(1, buttons.filter((button) => button.offsetTop === top).length);
   const step = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: columns, ArrowUp: -columns }[event.key];
   let next: number | undefined;
   if (step !== undefined) next = Math.min(buttons.length - 1, Math.max(0, index + step));
@@ -131,8 +134,16 @@ export function SwatchesPanel(): React.JSX.Element {
     const onPointerDown = (event: PointerEvent): void => {
       if (!(contextRef.current?.contains(event.target as Node) ?? false)) setContextMenu(null);
     };
+    // Fixed under the pointer, it would drift from its swatch when the dock scrolls or the window resizes.
+    const close = (): void => { setContextMenu(null); };
     document.addEventListener("pointerdown", onPointerDown);
-    return () => { document.removeEventListener("pointerdown", onPointerDown); };
+    window.addEventListener("resize", close);
+    document.addEventListener("scroll", close, true);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("resize", close);
+      document.removeEventListener("scroll", close, true);
+    };
   }, [contextMenu]);
 
   const palette = palettes.find((candidate) => candidate.id === view.source) ?? null;
@@ -154,6 +165,8 @@ export function SwatchesPanel(): React.JSX.Element {
     const [id, paint] = swatch.layer === "block" ? [brush.blockId, brush.blockPaint] : [brush.wallId, brush.wallPaint];
     return swatch.id === id && (source === "all" || swatch.paint === paint);
   };
+  // The grid's one Tab stop: the selected swatch, else the first.
+  const tabStop = Math.max(0, shown.findIndex((item) => isSelected(item)));
   const choose = (item: ShownSwatch): void => {
     if (item.paint !== null) chooseBrushPaint(item.paint);
     else if (item.swatch !== null) chooseBrushMaterial(item.swatch.layer, item.swatch.id, source === "all" ? undefined : item.swatch.paint);
@@ -174,7 +187,9 @@ export function SwatchesPanel(): React.JSX.Element {
     { kind: "action", label: swatches.length === 1 ? "New palette with this swatch" : "New palette with these swatches", icon: "copy", onSelect: () => { newPalette(swatches); } },
   ];
   const newPalette = (swatches: readonly PaletteSwatch[] = current()): void => {
-    const name = `Palette ${String(palettes.length + 1)}`;
+    let number = palettes.length + 1;
+    while (palettes.some((candidate) => candidate.name === `Palette ${String(number)}`)) number += 1;
+    const name = `Palette ${String(number)}`;
     const id = createPalette(name, swatches);
     useSwatchesView.setState({ source: id, category: view.category === "paint" ? brushLayers(brush.layer)[0] ?? "block" : view.category });
     setRenaming(name);
@@ -265,16 +280,29 @@ export function SwatchesPanel(): React.JSX.Element {
           <button
             key={item.key} type="button" data-swatch="" className="swatch-button" aria-pressed={isSelected(item)} aria-label={item.name}
             title={item.swatch === null ? item.name : `${item.name} — right-click to add it to a palette`}
-            tabIndex={index === 0 ? 0 : -1}
+            tabIndex={index === tabStop ? 0 : -1}
             onClick={() => { choose(item); }}
             onContextMenu={(event) => {
               const swatch = item.swatch;
               if (swatch === null) return;
               event.preventDefault();
-              setContextMenu({ x: Math.min(event.clientX, window.innerWidth - 240), y: event.clientY, swatch });
+              setContextMenu({ x: Math.min(event.clientX, window.innerWidth - 270), y: Math.min(event.clientY, window.innerHeight - 40 - 30 * (palettes.length + 3)), swatch });
             }}
             onKeyDown={(event) => {
-              if ((event.key === "Delete" || event.key === "Backspace") && palette !== null && item.swatch !== null) removeSwatch(palette.id, item.swatch);
+              const swatch = item.swatch;
+              if (swatch === null) return;
+              if ((event.key === "Delete" || event.key === "Backspace") && palette !== null) {
+                // Focus moves to the next swatch, not to the page, when the focused one goes.
+                const next = event.currentTarget.nextElementSibling ?? event.currentTarget.previousElementSibling;
+                removeSwatch(palette.id, swatch);
+                if (next instanceof HTMLElement) next.focus();
+              }
+              // The context menu from the keyboard, as desktop applications offer it.
+              if (event.key === "ContextMenu" || (event.key === "F10" && event.shiftKey)) {
+                event.preventDefault();
+                const rect = event.currentTarget.getBoundingClientRect();
+                setContextMenu({ x: Math.min(rect.left, window.innerWidth - 270), y: Math.min(rect.bottom, window.innerHeight - 40 - 30 * (palettes.length + 3)), swatch });
+              }
             }}
           >
             {item.paint !== null ? <MaterialSwatch color={item.color} /> : <MaterialSwatch color={item.color} paint={item.paintColor} />}

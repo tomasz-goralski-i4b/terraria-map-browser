@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createWorld, type CanonicalWorld, type Tile } from "./index.js";
+import { createWorld, type BlockShape, type CanonicalWorld, type Tile } from "./index.js";
 import { createBrushHistory, type BrushOptions, type BrushRules } from "./brush.js";
 
 const place = (id: number) => ({ kind: "place", id, paint: 0 }) as const;
@@ -19,10 +19,11 @@ function picture(world: CanonicalWorld, left: number, top: number, width: number
 
 function draw(world: CanonicalWorld, rows: readonly string[], left = 0, top = 0): void {
   rows.forEach((row, y) => {
-    [...row].forEach((glyph, x) => {
+    Array.from(row).forEach((glyph, x) => {
       if (glyph === ".") return;
-      const shape = { "#": undefined, h: "half", L: "slopeTopLeft", R: "slopeTopRight", l: "slopeBottomLeft", r: "slopeBottomRight", o: undefined }[glyph];
-      world.setTile(left + x, top + y, { block: { kind: "vanilla", id: glyph === "o" ? 213 : 1 }, ...(shape === undefined ? {} : { shape: shape as Tile["shape"] }), wires: 0, actuator: false });
+      const shapes: Partial<Record<string, BlockShape>> = { h: "half", L: "slopeTopLeft", R: "slopeTopRight", l: "slopeBottomLeft", r: "slopeBottomRight" };
+      const shape = shapes[glyph];
+      world.setTile(left + x, top + y, { block: { kind: "vanilla", id: glyph === "o" ? 213 : 1 }, ...(shape === undefined ? {} : { shape }), wires: 0, actuator: false });
     });
   });
 }

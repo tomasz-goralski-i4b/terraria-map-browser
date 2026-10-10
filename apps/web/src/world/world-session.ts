@@ -69,14 +69,11 @@ export function createWorldSession(parser: WorldParser): WorldSession {
 
   const open = async (file: File, handle?: OpenWorldHandle, directory?: WorldSaveDirectory): Promise<void> => {
     finishBrush();
+    // Only an unsaved world waits for the question, before anything changes: declining leaves a load in flight going.
+    if (useAppStore.getState().unsavedChanges && !(await confirmDiscardChanges())) return;
     current?.abort();
     const controller = new AbortController();
     current = controller;
-    // Only an unsaved world waits for the question (which Cancel also ends); a clean one starts loading at once.
-    if (useAppStore.getState().unsavedChanges && (!(await confirmDiscardChanges()) || controller.signal.aborted)) {
-      if (current === controller) current = null;
-      return;
-    }
     resetWorldSave();
     const store = useAppStore.getState();
     store.setLoading(file.name);

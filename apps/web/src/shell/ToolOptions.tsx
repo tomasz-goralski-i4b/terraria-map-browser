@@ -46,8 +46,15 @@ function PaintWell({ layer, materials, disabled }: { readonly layer: BrushConten
     const onPointerDown = (event: PointerEvent): void => {
       if (!(root.current?.contains(event.target as Node) ?? false)) setOpen(null);
     };
+    const close = (): void => { setOpen(null); };
     document.addEventListener("pointerdown", onPointerDown);
-    return () => { document.removeEventListener("pointerdown", onPointerDown); };
+    window.addEventListener("resize", close);
+    document.addEventListener("scroll", close, true);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("resize", close);
+      document.removeEventListener("scroll", close, true);
+    };
   }, [open]);
   const label = `${LAYER_NAMES[layer]} paint: ${paintLabel(materials, paint)}`;
   const choose = (next: number): void => {
@@ -58,7 +65,7 @@ function PaintWell({ layer, materials, disabled }: { readonly layer: BrushConten
   return (
     <div ref={root} className="paint-well">
       <button
-        ref={button} type="button" className="paint-well-button" disabled={disabled} aria-label={label} aria-haspopup="dialog" aria-expanded={open !== null}
+        ref={button} type="button" className="paint-well-button" disabled={disabled} aria-label={label} aria-haspopup="dialog" aria-expanded={open !== null && materials !== null}
         data-tooltip={label} data-tooltip-side="bottom" data-none={paint === 0}
         style={paint === 0 ? undefined : { backgroundColor: `#${(paintColor(materials, paint) ?? 0).toString(16).padStart(6, "0")}` }}
         onClick={(event) => {
@@ -70,6 +77,7 @@ function PaintWell({ layer, materials, disabled }: { readonly layer: BrushConten
         <div
           className="paint-popover" role="dialog" aria-label={`${LAYER_NAMES[layer]} paint`} style={{ left: open.left, top: open.top }}
           onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); setOpen(null); button.current?.focus(); } }}
+          onBlur={(event) => { if (!(root.current?.contains(event.relatedTarget) ?? false)) setOpen(null); }}
         >
           <button type="button" className="paint-none" aria-pressed={paint === 0} autoFocus={paint === 0} onClick={() => { choose(0); }}>No paint</button>
           <div className="paint-grid" role="group" aria-label="Paints">
@@ -177,10 +185,17 @@ export function ToolOptions({ commands: supplied }: { readonly commands?: readon
             onChange={(shape) => { useBrushStore.setState({ shape }); }}
           />
         </div>
+        <div className="brush-option-group brush-option-smooth">
+          <IconButton
+            icon="hammer" label="Smooth edges" pressed={brush.smooth} disabled={locked || (tool === "brush" && brush.paintOnly) || brush.layer === BRUSH_LAYER.wall}
+            disabledReason={brush.layer === BRUSH_LAYER.wall ? "Walls have no shape" : brush.paintOnly ? "Paint only changes no blocks" : brush.reason ?? "Finish the stroke first"}
+            onClick={() => { useBrushStore.setState({ smooth: !brush.smooth }); }}
+          />
+        </div>
         <div className="brush-option-group brush-option-smoothing">
-          <label className="brush-field"><span className="brush-option-label">Smoothing</span>
+          <label className="brush-field"><span className="brush-option-label">Stabilizer</span>
             <input
-              className="brush-slider" aria-label="Brush smoothing" type="range" min={0} max={100} step={5} value={brush.smoothing} disabled={locked}
+              className="brush-slider" aria-label="Brush stabilizer" type="range" min={0} max={100} step={5} value={brush.smoothing} disabled={locked}
               aria-valuetext={brush.smoothing === 0 ? "Off" : `${String(brush.smoothing)} percent stabilization`}
               title="Stroke stabilizer: the brush trails the pointer for steadier lines; 0 turns it off"
               onChange={(event) => { useBrushStore.setState({ smoothing: Number(event.target.value) }); }}
