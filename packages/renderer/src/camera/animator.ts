@@ -12,9 +12,25 @@ const ZOOM_EPSILON = 1e-4;
 const VELOCITY_EPSILON = 0.005;
 /** Release velocity: the last ~2 frames of a drag, so the glide continues at the speed the map was last moving. */
 const RELEASE_WINDOW_MS = 40;
+/**
+ * A drag shows the pointer where it was this long before the frame, interpolated between its samples: the map then
+ * moves by the time between frames, not by how many pointer events (125 Hz, 250 Hz, 1000 Hz mice) landed in each.
+ */
+const RESAMPLE_LATENCY_MS = 5;
+/**
+ * Past the last sample the path goes on along its last segment, by at most that segment and this long: a pointer
+ * event that just missed a frame (a 60 Hz touchpad on a 60 Hz display) keeps the map moving evenly.
+ */
+const MAX_EXTRAPOLATION_MS = 12;
+/** Segments shorter than this are too noisy to extrapolate. */
+const MIN_EXTRAPOLATION_SEGMENT_MS = 2;
+/** No sample for this long past the last one: the pointer has stopped there. */
+const STOPPED_AFTER_MS = 20;
 
 interface Point { readonly x: number; readonly y: number }
 interface DragSegment { readonly start: number; readonly end: number; readonly dx: number; readonly dy: number }
+/** A drag's pointer path: the total screen displacement since it began, at an event's timestamp. */
+interface DragSample { readonly time: number; readonly x: number; readonly y: number }
 const STILL: Point = { x: 0, y: 0 };
 
 export interface CameraStep {
@@ -41,6 +57,12 @@ export class CameraAnimator {
   private dragStart = 0;
   private lastDrag = 0;
   private readonly segments: DragSegment[] = [];
+  /** The drag's pointer path, oldest first; empty when the destination shows all of it. */
+  private readonly path: DragSample[] = [];
+  /** The point of the path the destination shows. */
+  private shown: Point = STILL;
+  /** The path has its last sample (the drag ended): the steps finish it without going on past it. */
+  private released = false;
 
   constructor(camera: Camera, viewport: Size, world: Size, now: () => number) {
     this.drawn = clampCamera(camera, viewport, world);
@@ -63,6 +85,7 @@ export class CameraAnimator {
     this.destination = this.drawn;
     this.direct = false;
     this.zoomVelocity = 0;
+    this.endPath();
     this.cancelMotion();
     this.segments.length = 0;
     this.lastStep = this.now();
@@ -70,7 +93,10 @@ export class CameraAnimator {
 
   setReducedMotion(reduce: boolean): void {
     this.reduced = reduce;
-    if (reduce) this.kinetic = STILL;
+    if (reduce) {
+      this.catchUp();
+      this.kinetic = STILL;
+    }
   }
 
   zoom(factor: number, x: number, y: number, direct = false): void {
@@ -88,24 +114,42 @@ export class CameraAnimator {
     if (direct) this.zoomVelocity = 0;
   }
 
-  beginDrag(): void {
+  /** Starts a drag at `time`, the press's timestamp on the clock's time base. */
+  beginDrag(time: number = this.now()): void {
     this.cancelMotion();
     this.settleZoom();
     this.segments.length = 0;
-    this.dragStart = this.now();
-    this.lastDrag = this.dragStart;
+    this.dragStart = time;
+    this.lastDrag = time;
+    this.released = false;
+    this.path.push({ time, x: 0, y: 0 });
   }
 
-  drag(dx: number, dy: number): void {
-    const end = this.now();
+  /**
+   * One pointer move of a drag by (dx, dy) backing pixels at `time`, the event's timestamp on the clock's time base.
+   * The steps show it resampled to their frame time.
+   */
+  drag(dx: number, dy: number, time: number = this.now()): void {
+    const end = Math.max(time, this.lastDrag);
     this.segments.push({ start: this.lastDrag, end, dx, dy });
     this.lastDrag = end;
     while (this.segments[0] !== undefined && this.segments[0].end <= end - RELEASE_WINDOW_MS) this.segments.shift();
-    this.pan(dx, dy);
+    if (this.reduced) {
+      this.pan(dx, dy);
+      return;
+    }
+    this.settleZoom();
+    const last = this.path.at(-1) ?? { time: end, x: 0, y: 0 };
+    if (this.path.length === 0) this.path.push(last);
+    this.path.push({ time: end, x: last.x + dx, y: last.y + dy });
+    // Samples before the two around the resampled time are never read again.
+    while (this.path.length > 2 && (this.path[1]?.time ?? Infinity) < end - RESAMPLE_LATENCY_MS - STOPPED_AFTER_MS) {
+      this.path.shift();
+    }
   }
 
-  endDrag(cancel = false): void {
-    const end = this.now();
+  endDrag(cancel = false, time: number = this.now()): void {
+    const end = Math.max(time, this.lastDrag);
     const start = Math.max(this.dragStart, end - RELEASE_WINDOW_MS);
     const duration = end - start;
     let dx = 0;
@@ -120,10 +164,15 @@ export class CameraAnimator {
       this.kinetic = { x: dx / duration, y: dy / duration };
     } else this.kinetic = STILL;
     this.segments.length = 0;
-    this.lastStep = end;
+    // The frames still show the path up to the release, RESAMPLE_LATENCY_MS behind: the glide starts after it, so its
+    // first frame moves about as far as a drag frame did.
+    this.released = true;
+    const gliding = this.path.length > 0 && (this.kinetic.x !== 0 || this.kinetic.y !== 0);
+    this.lastStep = gliding ? end + RESAMPLE_LATENCY_MS : end;
   }
 
   pan(dx: number, dy: number): void {
+    this.catchUp();
     this.settleZoom();
     this.destination = panBy(this.destination, dx, dy, this.viewport, this.world);
     this.direct = true;
@@ -137,20 +186,91 @@ export class CameraAnimator {
   }
 
   keyPan(x: number, y: number): void {
+    this.catchUp();
     this.kinetic = STILL;
     this.held = { x, y };
     this.lastStep = this.now();
   }
 
   cancelMotion(): void {
+    this.catchUp();
     this.kinetic = STILL;
     this.held = STILL;
   }
 
-  step(): CameraStep {
-    const time = this.now();
+  /** Another gesture takes over: the destination shows the rest of the drag's path at once, and the path ends. */
+  private catchUp(): void {
+    const last = this.path.at(-1);
+    if (last === undefined) return;
+    this.showPath(last);
+    this.endPath();
+  }
+
+  private endPath(): void {
+    this.path.length = 0;
+    this.shown = STILL;
+    this.released = false;
+  }
+
+  private showPath(point: Point): void {
+    const dx = point.x - this.shown.x;
+    const dy = point.y - this.shown.y;
+    this.shown = point;
+    if (dx === 0 && dy === 0) return;
+    this.destination = panBy(this.destination, dx, dy, this.viewport, this.world);
+    this.direct = true;
+  }
+
+  /**
+   * Where the drag's pointer was RESAMPLE_LATENCY_MS before `time`. `pending` while a later step may show another
+   * point without another sample; `stopped` once the path is shown to its end for good.
+   */
+  private resample(time: number): { readonly point: Point; readonly pending: boolean; readonly stopped: boolean } | null {
+    const path = this.path;
+    const last = path.at(-1);
+    if (last === undefined) return null;
+    const at = time - RESAMPLE_LATENCY_MS;
+    if (at >= last.time + STOPPED_AFTER_MS || (this.released && at >= last.time)) {
+      return { point: last, pending: false, stopped: true };
+    }
+    if (at <= last.time) {
+      let index = path.length - 1;
+      while (index > 0 && (path[index - 1]?.time ?? -Infinity) > at) index--;
+      const after = path[index] ?? last;
+      const before = path[index - 1];
+      if (before === undefined || after.time <= before.time) return { point: after, pending: at < last.time, stopped: false };
+      const fraction = Math.min(1, Math.max(0, (at - before.time) / (after.time - before.time)));
+      return {
+        point: { x: before.x + (after.x - before.x) * fraction, y: before.y + (after.y - before.y) * fraction },
+        pending: true,
+        stopped: false,
+      };
+    }
+    // Ahead of the last sample (a slow mouse): go on along the last segment for a little while.
+    const previous = path.at(-2);
+    const segment = previous === undefined ? 0 : last.time - previous.time;
+    // A sample that has not moved, or one too close to the previous one, gives no direction to go on in.
+    if (previous === undefined || segment < MIN_EXTRAPOLATION_SEGMENT_MS || (last.x === previous.x && last.y === previous.y)) {
+      return { point: last, pending: false, stopped: false };
+    }
+    const ahead = Math.min(at - last.time, segment, MAX_EXTRAPOLATION_MS) / segment;
+    return {
+      point: { x: last.x + (last.x - previous.x) * ahead, y: last.y + (last.y - previous.y) * ahead },
+      // Back to the last sample once the pointer turns out to have stopped there.
+      pending: true,
+      stopped: false,
+    };
+  }
+
+  /** Advances to `time`: the frame's timestamp (requestAnimationFrame's) on the clock's time base. */
+  step(time: number = this.now()): CameraStep {
     const dt = Math.max(0, time - this.lastStep);
-    this.lastStep = time;
+    this.lastStep = Math.max(time, this.lastStep);
+    const sampled = this.resample(time);
+    if (sampled !== null) {
+      this.showPath(sampled.point);
+      if (sampled.stopped) this.endPath();
+    }
     if (this.direct || this.reduced) {
       this.drawn = this.destination;
       this.direct = false;
@@ -200,7 +320,7 @@ export class CameraAnimator {
     return {
       camera: this.drawn,
       settled: this.drawn.zoom === this.destination.zoom && this.kinetic.x === 0 && this.kinetic.y === 0
-        && this.held.x === 0 && this.held.y === 0,
+        && this.held.x === 0 && this.held.y === 0 && sampled?.pending !== true,
     };
   }
 }
