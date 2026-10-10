@@ -130,13 +130,14 @@ save:
 `writeWorld` accepts a parsed world in any [reader-admitted format](compatibility.md#reading-versus-writing)
 (269–279, 315–319, 325–326) with its preserved envelope and returns a fresh `ArrayBuffer` in the **same format**.
 Format 326 has generated-world fixture evidence; older-format writes are experimental and synthetic-tested.
-The dimensions, decoded metadata/details, header/revision/flags, section layout, frame-important data and decoded
-entity sections must still match the source and original snapshots. Envelope byte views must keep their source
-buffer, offsets, order and lengths. The source footer must pass the footer contract above. Metadata and entity
-editing, unadmitted formats, version conversion, worlds without an envelope, and unknown or modded content references are refused with
+The original snapshots, structural header, section layout, frame-important data and decoded entity sections must
+still match the preserved source. Current metadata/details, revision and favorite flags may be edited; dimensions
+must match all ten current plane lengths. Envelope byte views must keep their source buffer, offsets, order and
+lengths. The source footer must pass the footer contract above. Entity editing, unadmitted formats, version
+conversion, worlds without an envelope, and unknown or modded content references are refused with
 `UnsupportedWrite`; this API makes no claim to save modded worlds. The caller must keep the source bytes intact.
 
-The editable subset is the ten correctly typed CWM planes at the original dimensions, with vanilla block ids
+The editable subset is the decoded metadata and ten correctly typed CWM planes at the current dimensions, with vanilla block ids
 within the [source profile's limits](compatibility.md#vanilla-id-ranges) (also below the source frame-important
 count), vanilla wall ids 1 through that profile's maximum or the no-content sentinel, and every
 contract-representable tile field. All palette entries must be vanilla and within the format's content range,
@@ -151,10 +152,15 @@ the same direct-plane encoder for its tile section. Every admitted profile uses 
 It measures and validates
 before allocating the output, emits the canonical W-T1–W-T9 records with greedy column-local RLE, and compares
 palette aliases by content value. It allocates no per-tile objects. Whole-file saves copy the untouched spans and
-regenerate pointers 2–10 by the tile-length delta; revision is not incremented. Outputs of 2 GiB or more are
+regenerate pointers 1–10 by metadata and tile-length deltas; revision is not automatically incremented. Outputs of 2 GiB or more are
 refused before allocation. Full output cross-checking against .NET and an in-game load are separate proof tasks.
-Metadata, frame-important data and entity sections are copied in their original physical layout, including the
-older chest/NPC/display-doll layouts; none is regenerated using format-326 field emission. Independent tests
+Metadata is emitted in the source format's feature profile, with original DateTime binaries retained for unchanged
+dates. The footer is rebuilt from current identity after validating the original footer. Integer ranges, fixed
+array lengths, finite floats, UInt64, GUID and string caps are validated. Kill-count and claimable-banner arrays
+are exposed alongside their derived lengths. Revision and all 64 header flag bits are emitted from the model;
+the UI's favorite toggle preserves reserved bits. See [world-properties.md](../world-properties.md) for controls,
+normalization, validation and canvas resizing. Frame-important data and entity sections are still copied in their
+original physical layout, including the older chest/NPC/display-doll layouts. Independent tests
 cover byte-identical synthetic saves, all tile-field edits, content bounds, tile-span growth/shrinkage and
 opaque-section preservation for every admitted version, plus parse/save through a real Worker.
 

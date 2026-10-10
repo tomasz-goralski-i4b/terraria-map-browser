@@ -12,6 +12,7 @@ import {
 } from "./world-file.js";
 import { worldsFolder } from "./world-library.js";
 import { getDefaultWorldSession } from "./world-session.js";
+import { flushPropertyDrafts } from "./world-properties.js";
 
 /**
  * File ▸ Save As…: one dialog that names the file, shows where it goes and saves it there, with Download as the
@@ -156,6 +157,8 @@ async function removeIfEmpty(directory: WorldSaveDirectory, handle: WorldCopyDes
 /** Opens the Save As dialog for the loaded world. */
 export async function openSaveAs(): Promise<void> {
   finishBrush();
+  const draftError = flushPropertyDrafts();
+  if (draftError !== null) { notify({ kind: "error", title: "World properties need attention", detail: draftError }); return; }
   const session = getDefaultWorldSession();
   const opened = session.getOpenedFile();
   const world = session.getLoadedWorld();

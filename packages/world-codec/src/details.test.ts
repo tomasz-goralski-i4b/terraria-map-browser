@@ -184,7 +184,7 @@ describe("WorldDetails", () => {
     expect(details.generation.treeTopVariations).toEqual(Array.from({ length: 13 }, (_, index) => index));
     expect(details.spawnAndLandmarks.teamSpawns).toEqual([{ x: 10, y: 20 }, { x: -1, y: 32767 }]);
     expect(details.generation.worldGenManifest).toBe('{"passes":["Terrain","Caves","Corruption"]}');
-    expect(details.other).toEqual({ killCountLength: 3, claimableBannerLength: 2 });
+    expect(details.other).toEqual({ killCountLength: 3, claimableBannerLength: 2, killCounts: [21, 400, 17], claimableBanners: [50, 200] });
     expect(file).toEqual(before);
     const backing = new Uint8Array(file.length + 23);
     backing.set(file, 23);

@@ -9,6 +9,7 @@ import { pushRecentSwatch } from "./brush-palettes.js";
 import { canonicalWorldOf } from "./canonical-world.js";
 import { useAppStore } from "../store.js";
 import { useSaveStore } from "./save-world.js";
+import { propertiesAreDirty } from "./world-properties.js";
 
 export function brushDisabledReason(world: WorldTilesResult | null): string | null {
   if (world === null) return "Open a vanilla world first";
@@ -218,20 +219,20 @@ export function finishBrush(cancel = false): void {
   }
   else history?.commit(); // The planes were already changed and invalidated by move.
   useBrushStore.setState({ active: false });
-  useAppStore.getState().setUnsavedChanges(cancel ? dirtyBeforeStroke : history?.position() !== savedPosition);
+  useAppStore.getState().setUnsavedChanges(cancel ? dirtyBeforeStroke : propertiesAreDirty() || history?.position() !== savedPosition);
   publish();
 }
 export function undoBrush(): void {
   if (!editingLocked() && history?.canUndo() === true) {
     notify(history.undo(), "before");
-    useAppStore.getState().setUnsavedChanges(history.position() !== savedPosition);
+    useAppStore.getState().setUnsavedChanges(propertiesAreDirty() || history.position() !== savedPosition);
     publish();
   }
 }
 export function redoBrush(): void {
   if (!editingLocked() && history?.canRedo() === true) {
     notify(history.redo());
-    useAppStore.getState().setUnsavedChanges(history.position() !== savedPosition);
+    useAppStore.getState().setUnsavedChanges(propertiesAreDirty() || history.position() !== savedPosition);
     publish();
   }
 }

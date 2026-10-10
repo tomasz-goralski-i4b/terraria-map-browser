@@ -1,9 +1,11 @@
-import { WorldWorkerClient, WorldWorkerError, type WorldTilesResult } from "@studio/world-codec";
+import { WorldWorkerClient, WorldWorkerError, normalizeWorldMetadata, type WorldTilesResult } from "@studio/world-codec";
 import { useAppStore, type LoadError } from "../store.js";
 import { resetWorldSave } from "./save-world.js";
 import { finishBrush, setBrushWorld } from "./brush-session.js";
 import { confirmDiscardChanges } from "./discard-guard.js";
 import type { OpenedWorldFile, OpenWorldHandle, WorldSaveDirectory } from "./world-file.js";
+import { setPropertiesWorld, propertyReadOnly, type PropertyValue } from "./world-properties.js";
+import { resizeWorld } from "./resize-world.js";
 
 /** Small display facts about the loaded world; the planes and palette themselves stay outside React and the store. */
 export interface WorldSummary {
@@ -35,6 +37,7 @@ export interface WorldSession {
   /** The loaded world (planes, palette, metadata) as a plain reference, not React state. */
   readonly getLoadedWorld: () => WorldTilesResult | null;
   readonly getOpenedFile: () => OpenedWorldFile | null;
+  readonly editProperty: (path: string, value: PropertyValue) => void;
 }
 
 function summarize(world: WorldTilesResult, file: File): WorldSummary {
@@ -81,6 +84,7 @@ export function createWorldSession(parser: WorldParser): WorldSession {
       const world = await parser.parse(file, { signal: controller.signal });
       if (current !== controller) return;
       loaded = world;
+      setPropertiesWorld(world);
       setBrushWorld("entities" in world ? world : null);
       openedFile = { file, handle: handle ?? null, directory: directory ?? null };
       useAppStore.getState().setLoaded(summarize(world, file));
@@ -101,10 +105,41 @@ export function createWorldSession(parser: WorldParser): WorldSession {
     cancel();
     current = null;
     loaded = null;
+    setPropertiesWorld(null);
     openedFile = null;
   };
 
-  return { open, cancel, reset, getLoadedWorld: () => loaded, getOpenedFile: () => openedFile };
+  const editProperty = (path: string, value: PropertyValue): void => {
+    if (loaded === null || openedFile === null) throw new Error("Open a world first.");
+    if (propertyReadOnly(path)) throw new Error("This property is derived or part of the file structure.");
+    if (path === "metadata.width" || path === "metadata.height") {
+      if (typeof value !== "number") throw new Error("Enter a dimension in tiles.");
+      const resized = resizeWorld(loaded, path === "metadata.width" ? value : loaded.metadata.width, path === "metadata.height" ? value : loaded.metadata.height);
+      loaded = resized;
+      setBrushWorld(resized);
+      setPropertiesWorld(resized, false);
+      useAppStore.setState({ summary: summarize(resized, openedFile.file), unsavedChanges: true });
+      return;
+    }
+    const candidate = { ...loaded, header: { ...loaded.header }, metadata: structuredClone(loaded.metadata), details: structuredClone(loaded.details) };
+    const keys = path.split(".");
+    const last = keys.pop();
+    let parent: unknown = candidate;
+    for (const key of keys) {
+      if (parent === null || typeof parent !== "object" || !Object.hasOwn(parent, key)) throw new Error("Unknown world property.");
+      parent = (parent as Record<string, unknown>)[key];
+    }
+    if (last === undefined || parent === null || typeof parent !== "object" || !Object.hasOwn(parent, last)) throw new Error("Unknown world property.");
+    (parent as Record<string, unknown>)[last] = value;
+    if (!Number.isInteger(candidate.header.revision) || candidate.header.revision < 0 || candidate.header.revision > 0xffffffff) throw new Error("Save revision must be a UInt32 integer.");
+    if (typeof candidate.header.isFavorite !== "boolean") throw new Error("Favorite must be a boolean.");
+    Object.assign(candidate.header, { flags: candidate.header.isFavorite ? candidate.header.flags | 1n : candidate.header.flags & ~1n });
+    Object.assign(candidate.details.other, { killCountLength: candidate.details.other.killCounts.length, claimableBannerLength: candidate.details.other.claimableBanners?.length });
+    Object.assign(loaded, normalizeWorldMetadata(candidate, loaded.envelope.source));
+    Object.assign(loaded, { header: candidate.header });
+    useAppStore.setState({ summary: summarize(loaded, openedFile.file), unsavedChanges: true });
+  };
+  return { open, cancel, reset, editProperty, getLoadedWorld: () => loaded, getOpenedFile: () => openedFile };
 }
 
 let defaultSession: WorldSession | undefined;

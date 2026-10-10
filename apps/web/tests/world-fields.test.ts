@@ -26,7 +26,7 @@ function value(fields: readonly WorldField[], label: string): unknown {
 test("identity and size show exactly the decoded header fields", () => {
   const groups = worldFieldGroups({ ...world, fileSize: bytes.length });
   const identity = group(groups, "identity").fields;
-  expect(labels(identity)).toEqual(["Name", "Seed", "GUID", "World ID", "Format version", "File size"]);
+  expect(labels(identity)).toEqual(["Name", "Seed", "GUID", "World ID", "Format version", "Save revision", "Favorite", "File size"]);
   expect(value(identity, "Name")).toBe("SCCR1");
   expect(value(identity, "Seed")).toBe("948580918");
   expect(value(identity, "GUID")).toBe(world.metadata.guid);
@@ -62,7 +62,7 @@ function leafPaths(value: unknown, path: string): string[] {
 }
 
 test("every decoded metadata and details value has exactly one row", () => {
-  const decoded = ["header.version", ...leafPaths(world.metadata, "metadata"), ...leafPaths(world.details, "details")];
+  const decoded = ["header.version", "header.revision", "header.isFavorite", ...leafPaths(world.metadata, "metadata"), ...leafPaths(world.details, "details")];
   const shown = worldFieldGroups(world).flatMap((candidate) => candidate.fields.flatMap((field) => field.paths));
   expect(new Set(shown)).toEqual(new Set(decoded));
   expect(shown).toHaveLength(new Set(shown).size);

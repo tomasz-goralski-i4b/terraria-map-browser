@@ -5,6 +5,7 @@ import { OPAQUE_SECTION_NAMES, type WorldEnvelope } from "./envelope.js";
 import { WorldFormatError } from "./world-format-error.js";
 import type { TilePlanes, WorldTilesResult } from "./tiles.js";
 import { resolveWorldFormat, type WorldFormatProfile } from "./world-format.js";
+import { writeWorldMetadata, writeWorldFooter } from "./metadata-writer.js";
 
 type TileInput = Pick<WorldTilesResult, "header" | "metadata" | "sections" | "planes" | "palette">;
 type WorldWriteInput = Omit<WorldTilesResult, "envelope"> & { readonly envelope?: WorldEnvelope };
@@ -187,11 +188,13 @@ function validateEnvelope(world: WorldWriteInput): asserts world is WorldTilesRe
     if (!(error instanceof WorldFormatError)) throw error;
     unsupported(`invalid preserved source: ${error.reason}`, error.offset);
   }
-  if (!sameValue(source.header, world.header) || !sameValue(source.header, envelope.original.header) ||
-    !sameValue(source.metadata, world.metadata) || !sameValue(source.metadata, envelope.original.metadata) ||
-    !sameValue(source.details, world.details) || !sameValue(source.details, envelope.original.details)) {
-    unsupported("metadata, dimensions and header must match the preserved source");
+  if (!sameValue(source.header, { ...world.header, revision: source.header.revision, flags: source.header.flags, isFavorite: source.header.isFavorite }) || !sameValue(source.header, envelope.original.header) ||
+    !sameValue(source.metadata, envelope.original.metadata) || !sameValue(source.details, envelope.original.details)) {
+    unsupported("header and original metadata must match the preserved source");
   }
+  if (!Number.isInteger(world.header.revision) || world.header.revision < 0 || world.header.revision > 0xffffffff ||
+    typeof world.header.flags !== "bigint" || world.header.flags < 0n || world.header.flags > 0xffffffffffffffffn ||
+    world.header.isFavorite !== ((world.header.flags & 1n) !== 0n)) unsupported("invalid revision or favorite flags");
   if (!sameValue(source.sections, world.sections) || !sameValue(source.sections.pointers, envelope.original.sectionPointers) ||
     source.sections.frameImportantCount !== envelope.original.frameImportantCount ||
     !sameValue(Array.from(source.sections.frameImportantBits), envelope.original.frameImportantBits)) {
@@ -239,30 +242,38 @@ function validateFooter(world: WorldTilesResult): void {
   const nameBytes = source.subarray(cursor, cursor + length);
   try { new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(nameBytes); }
   catch { fail(prefix, "invalid name"); }
-  const metadataName = new TextEncoder().encode(world.metadata.name);
+  const metadataName = new TextEncoder().encode(world.envelope.original.metadata.name);
   if (nameBytes.length !== metadataName.length || nameBytes.some((byte, index) => byte !== metadataName[index])) {
     throw new WorldFormatError("InconsistentFooter", prefix, "name differs from metadata", { field: "name" });
   }
   const idOffset = cursor + length;
-  if (new DataView(source.buffer, source.byteOffset + idOffset, 4).getInt32(0, true) !== world.metadata.worldId) {
+  if (new DataView(source.buffer, source.byteOffset + idOffset, 4).getInt32(0, true) !== world.envelope.original.metadata.worldId) {
     throw new WorldFormatError("InconsistentFooter", idOffset, "world id differs from metadata", { field: "worldId" });
   }
   if (idOffset + 4 !== end) fail(idOffset + 4, "trailing bytes");
 }
 
-/** Fresh `.wld` output; original metadata, entities and source bytes must remain unchanged. Never overwrites a path. */
+/** Fresh `.wld` output from current metadata and tiles, preserving the source and opaque sections. */
 export function writeWorld(world: WorldWriteInput): ArrayBuffer {
   validateEnvelope(world);
   validateFooter(world);
   const { envelope, sections } = world;
-  const unchangedLength = envelope.source.length - envelope.tiles.length;
+  const original = readWorldMetadata(envelope.source);
+  const metadata = writeWorldMetadata(world, envelope.source, original);
+  const footer = writeWorldFooter(world.metadata.name, world.metadata.worldId);
+  const metadataDelta = metadata.length - envelope.metadata.length;
+  const unchangedLength = envelope.source.length - envelope.tiles.length + metadataDelta + footer.length - envelope.footer.length;
   const tiles = new TileEncoder(world).encode(MAX_FILE_LENGTH - 1 - unchangedLength);
   const delta = tiles.length - envelope.tiles.length;
   const output = new Uint8Array(unchangedLength + tiles.length);
-  output.set(envelope.source.subarray(0, sections.tiles.start));
-  output.set(tiles, sections.tiles.start);
-  output.set(envelope.source.subarray(sections.tiles.end), sections.tiles.start + tiles.length);
+  output.set(envelope.fileHeader);
+  output.set(metadata, sections.metadata.start);
+  output.set(tiles, sections.tiles.start + metadataDelta);
+  output.set(envelope.source.subarray(sections.tiles.end, sections.footer.start), sections.tiles.start + metadataDelta + tiles.length);
+  output.set(footer, output.length - footer.length);
   const view = new DataView(output.buffer);
-  sections.pointers.forEach((pointer, index) => { view.setInt32(26 + index * 4, pointer + (index < 2 ? 0 : delta), true); });
+  view.setUint32(12, world.header.revision, true);
+  view.setBigUint64(16, world.header.flags, true);
+  sections.pointers.forEach((pointer, index) => { view.setInt32(26 + index * 4, pointer + (index === 0 ? 0 : metadataDelta) + (index < 2 ? 0 : delta), true); });
   return output.buffer;
 }

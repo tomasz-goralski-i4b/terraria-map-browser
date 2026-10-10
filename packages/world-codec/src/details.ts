@@ -1,7 +1,7 @@
 import type { MetadataReader } from "./metadata.js";
 import type { WorldMetadataFeatures } from "./world-format.js";
 
-/** Read-only display data; the writer continues to use the original metadata bytes. */
+/** Decoded metadata values used by the viewer and writer. */
 export interface WorldDetails {
   readonly generation: {
     /** Exact UInt64 represented as decimal text, safe for JSON and worker messages. */
@@ -85,7 +85,7 @@ export interface WorldDetails {
     readonly boughtPets: Readonly<Record<"cat" | "dog" | "bunny", boolean>>;
     readonly unlockedNpcs: Readonly<Record<"blueSlime" | "merchant" | "demolitionist" | "partyGirl" | "dyeTrader" | "truffle" | "armsDealer" | "nurse" | "princess" | "greenSlime" | "oldSlime" | "purpleSlime" | "rainbowSlime" | "redSlime" | "yellowSlime" | "copperSlime", boolean>>;
   };
-  readonly other: { readonly killCountLength: number; readonly claimableBannerLength: number | undefined };
+  readonly other: { readonly killCountLength: number; readonly claimableBannerLength: number | undefined; readonly killCounts: readonly number[]; readonly claimableBanners: readonly number[] | undefined };
 }
 
 export interface WorldPoint {
@@ -176,8 +176,10 @@ export function readWorldDetails(reader: MetadataReader, features: WorldMetadata
   const laterSavedNpcs = booleans(reader, ["stylist", "taxCollector", "golfer"]);
   const startSize = reader.int();
   const cultistDelay = reader.int();
-  const killCountLength = reader.list("killCounts", 2, 4);
-  const claimableBannerLength = features.claimableBanners ? reader.list("claimableBanners", 2, 2) : undefined;
+  const killCounts = reader.array("killCounts", 2, 4, () => reader.int());
+  const claimableBanners = features.claimableBanners ? reader.array("claimableBanners", 2, 2, () => reader.int(2)) : undefined;
+  const killCountLength = killCounts.length;
+  const claimableBannerLength = claimableBanners?.length;
   const fastForwardTime = reader.bool();
   const dukeFishron = reader.bool();
   const martians = reader.bool();
@@ -235,7 +237,7 @@ export function readWorldDetails(reader: MetadataReader, features: WorldMetadata
       orbSmashed, spawnMeteor, orbCount, altarCount, partyOfDoom, invasion: { ...invasionStart, startSize }, cultistDelay,
       hardmodeOres, preHardmodeOres, anglerQuest, anglerFinishers, combatBookUsed, combatBookVolumeTwoUsed,
       peddlersSatchelUsed, boughtPets, unlockedNpcs: { ...initialUnlocks, ...slimeUnlocks } },
-    other: { killCountLength, claimableBannerLength },
+    other: { killCountLength, claimableBannerLength, killCounts, claimableBanners },
   };
   return { details, surfaceLevel, rockLevel, evil };
 }

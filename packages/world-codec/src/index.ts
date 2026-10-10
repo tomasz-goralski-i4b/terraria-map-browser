@@ -27,3 +27,4 @@ export { type WorldEnvelope, type OpaqueWorldSection } from "./envelope.js";
 export { collectTransferList, type WorldWorkerFailure, type WorldWorkerRequest, type WorldWorkerResponse } from "./worker-protocol.js";
 export { WorldWorkerClient, WorldWorkerError } from "./world-worker-client.js";
 export { writeWorld, writeWorldTiles } from "./writer.js";
+export { writeWorldMetadata, normalizeWorldMetadata } from "./metadata-writer.js";
