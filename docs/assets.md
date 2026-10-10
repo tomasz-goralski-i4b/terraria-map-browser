@@ -309,7 +309,9 @@ Each piece may draw **extras** on a neighbouring tile (R: the game's `DrawLeftDe
 bumper at an end, on the tile **above** it. Where they go was measured in the art (S): a decoration's art continues the
 bottom edge of the slopes that draw it (piece 4's bottom row runs into the top row of the left-down decoration), and the
 bumper's posts continue into the top rows of the ends that draw it. The viewer draws an extra only on a tile without a
-block (chosen: blocks keep their pixels), over whatever lies there, and the extras of both pieces of a junction.
+block (chosen: blocks keep their pixels), over whatever lies there, and the extras of both pieces of a junction. The
+track's own pieces are drawn by the chunk pass; its extras, which reach the neighbouring tiles, by the object pass
+("Trees"), over the chunk pass.
 
 | Piece | Cell (column, row) | Extras | Piece | Cell | Extras | Piece | Cell | Extras |
 |---|---|---|---|---|---|---|---|---|
@@ -336,6 +338,81 @@ out of scope).
 source = (x = 18 × column, y = 18 × row, w = 16, h = 16)   // per piece; back piece first, then the front piece
 dest   = the track's tile; a decoration the tile below it, a bumper the tile above it
 ```
+
+### Trees
+
+Trees (common 5, gem trees 583–589, vanity trees 596 and 616, ash trees 634), palms (323) and the giant mushroom (72)
+store frames, but their sprites reach past their tiles and their tops and branches come from other sheets, chosen by
+the ground under the tree and the world header. Everything marked R was observed with
+`scripts/sprite-objects/observe.ps1` (ADR 0003): trees grown by the game's own `WorldGen.GrowTree`, `GrowPalmTree`
+and `GrowShroom`, and synthetic trees over every block type, asked for their draw data (`TileDrawing.GetTileDrawData`),
+biome (`GetTreeBiome`, `GetPalmTreeBiome`) and foliage (`WorldGen.GetCommonTreeFoliageData`, `GetGemTreeFoliageData`,
+`GetVanityTreeFoliageData`, `GetAshTreeFoliageData`) under every tree top variation 0–63 at 30 consecutive columns.
+The tables the viewer needs are generated (`terraria-sprite-objects.generated.ts`, see "Minecart tracks").
+
+**Which tiles carry foliage (R).** A tree tile with `frameY` 198, 220 or 242 is leafy, its variant `(frameY − 198) / 22`;
+with `frameX` 22 it is the **top** (`IsTileALeafyTreeTop`), with 44 a **left branch** (its trunk one tile to the
+right) and with 66 a **right branch** (trunk to the left; `IsTileATreeBranch` reports the offset). Their own trunk cells
+are empty art; every other frame is an ordinary trunk cell (bare branch stubs and roots included).
+
+**Trunk cells.** The draw data gives every trunk tile a 20 × 20 cell at its stored frame (R). The common tree's cell is
+shifted right by **176 · (biome + 1)** pixels: `Tiles_5` holds eight 176-pixel blocks, and the game's biome of the tree
+(by the ground under its trunk: forest −1 → block 0, corruption 0 → 1, hallow 2 → 3, snow 3 → 4, crimson 4 → 5, jungle
+5 → 6, mushroom 6 → 7; block 2 was not seen) picks one (R). `Tiles_5_0` … `Tiles_5_6` are pixel copies of blocks 1–7 and
+are not needed. Gem, vanity and ash trees use their own sheet unshifted (R). The art of every trunk cell fills columns
+2–17 of its 20 (roots and branch stubs reach to 0 and 19) and rows 0–15, with roots reaching 19 (S), so the cell is
+drawn **2 pixels left of its tile, at its top**, overhanging 2 pixels to each side and 4 below (chosen from the art).
+Cells are drawn column by column, each from the top, so a lower cell covers the overhang of the one above (chosen).
+
+**Top and branch style.** The foliage data names a style (`Tree_Tops_<style>` and `Tree_Branches_<style>`), a frame
+offset and the top's frame size (R; the frame sizes match the sheets' layouts, S). Which style depends on the **ground**
+under the trunk and, for some grounds, on one of the world's **13 tree top variations** (`treeTopVariations` in the
+header, F):
+
+- forest grounds (grass 2, golf grass 477): the variation of the tree's **forest zone**, the zone by the header's three
+  `treeX` boundaries (x < treeX[0] → zone 0, < treeX[1] → 1, < treeX[2] → 2, else 3; the variation index is the zone).
+  Variation 0 gives style 0, any other v style **v + 5** (so the forest values 0–5 give styles 0, 6–10), 80 × 80;
+- snow (147): variation 6; the styles by value are irregular (value 0: style 12, but 18 in every tenth column;
+  1: 4; 2: 16; 3: 17; …), so the table lists each value 0–63;
+- corruption (23, 661) style 1, crimson (199, 662) 5, jungle (60) 13 at 116 × 96, mushroom grass (70) 14, hallow
+  (109, 492) 3 at 80 × 140 with the frame offset **3 · (x mod 3)** (nine frames), whatever the variations;
+- gem trees on any of 15 stone-like blocks styles 22–28 (116 × 96), vanity trees 29 and 30 (118 × 96), the ash tree
+  31 (116 × 96).
+
+The frame is the tile's variant plus the offset; the offset is taken at the top's or branch's own column (R: a branch
+reports the frame of its own column). A ground the table does not list draws no foliage (the trunk cells still draw).
+The header's `treeStyles` do not change the foliage (R: only the variations do). A variation outside 0–63 takes the
+variation-0 style (chosen; real worlds store small values).
+
+**Placement (chosen from the art, S).** A top frame `w × h` sits on its tile: its bottom on the tile's bottom, centred
+(left edge `16x + 8 − ⌊w/2⌋`); the trunk stub at the bottom of every 80-pixel-wide top spans columns 32–47, exactly
+the tile (two 114- and 118-wide styles are off by one pixel). A branch frame (40 × 40; left branches in column 0, right
+ones at x = 42; rows by frame) is centred vertically on its tile (12 pixels above it) and touches the trunk: a left
+branch's right edge on its tile's right edge, a right branch's left edge on its tile's left edge (their art stubs run
+into the trunk there).
+
+**Palms (R).** A palm stores its column's cell in `frameX` (66 the base, 0/22/44 trunk, 88/110/132 the leafy top in
+three variants) and its lean in `frameY`: an offset in pixels (even, −16 to 16 in grown palms, changing by 2 a tile up
+the trunk). The draw data replaces `frameY` with **22 · row**, the row by the sand under the palm: sand (53) 0,
+crimsand (234) 1, pearlsand (116) 2, ebonsand (112) 3; on any other ground the game names row −1 (outside the sheet)
+and the viewer draws nothing (chosen). The cell is drawn shifted right by the lean (chosen: the sign is not
+observable). The top comes from `Tree_Tops_15` (80 × 80, three columns by variant, four rows by the palm row; chosen
+from the sheet's layout), placed like a tree top and shifted by the top tile's lean. The oasis rows 4–7 of `Tiles_323`
+were not observed.
+
+**The giant mushroom (R, S).** Its stem cells are 16 × 18 at the stored frame (R: draw data), drawn at the tile, 2
+pixels overhanging below. The tile with `frameX` 36 is the top: its own cell is empty art and its cap is
+`Shroom_Tops` (three 60 × 42 caps at a stride of 62, the column `frameY / 18`), centred on the tile, its bottom on the
+tile's bottom (chosen: the cap's stem stub spans columns 22–37).
+
+**How the viewer draws them (#238).** The chunk pass shows what lies behind a tree tile (walls, background), faded in
+over its map colour like any sprite. An **object pass**, drawn after the chunk pass in sprite mode, draws the sprites of
+every visible chunk and the chunks around it as quads at their pixel positions: first the trunk cells (and the track
+extras), then the branches, then the tops and caps, so the foliage covers neighbouring trunks and blocks (chosen; the
+game's layering is not observable). Its sprites are collected on the CPU per chunk from the planes and the header's
+`treeX` and `treeTopVariations` (`toRenderableWorld` passes them as `RenderableWorld.trees`), and collected again for
+the chunks around an edited tile. Liquids and the colour overlay of the chunk pass lie under the object pass; wires are
+drawn over it ("Wires").
 
 ### Wires
 
@@ -389,7 +466,8 @@ Expected sheet sizes (consistent with the size arithmetic, confirmed only by the
 | Walls | the cell framed by "Walls" and the framing database (#147), a 32 × 32 cell centred on the tile, below the blocks | paint, lighting |
 | Animated tiles (173 ids flagged `isAnimated` in A12, all frame-important) | draw the stored frame (static) | animation |
 | Minecart tracks (314) | the stored pieces' cells, a junction's back piece under its front piece, decorations below and bumpers above (#239, "Minecart tracks") | pressure-plate and booster animation, minecarts, paint |
-| Trees (5, 323, …), tree tops/branches, variant sheets (`Tiles_5_N`, `Tiles_2_Beach`, `Tiles_59_2`, …) | placeholder | yes |
+| Trees (5, 583–589, 596, 616, 634), palms (323), the giant mushroom (72) | trunk cells by ground, tops and branches by ground, zone and tree top variation, palm rows and lean, mushroom caps, in an object pass over the chunk pass (#238, "Trees") | wind sway, paint, lighting, the oasis palm rows |
+| Other variant sheets (`Tiles_2_Beach`, `Tiles_59_2`, …) | — | yes |
 | Wires and actuators | the `WiresNew` piece the four same-colour side neighbours give, red to yellow, the actuator on top, over everything in a wire pass; the colour overlay below `SPRITE_MIN_ZOOM` (#241, "Wires") | animation, the wiring tools' translucency modes, the other `WiresNew` rows |
 | Paint, actuated/inactive tint, illumination, liquids | — | yes |
 
@@ -1237,5 +1315,9 @@ shorter cells retain their native height. Paint remains a corner mark.
 4. Which walls use variant rows 5–6 of the wall table, given that `Wall_1` (468 × 180) has only rows 0–4.
 5. Whether any file in a full install has the E8 flag set or uses a non-`0xFF` last chunk (L checked seven files;
    the opt-in test checks all).
+6. Sprite objects (#238, #239, #241), not observable without the game's renderer: the direction of a palm's lean;
+   which `WiresNew` rows 4–15 the game shows when; the layering of tree foliage against neighbouring blocks, liquids
+   and wires; the draw order of a junction's two track pieces; `Tiles_5` block 2 (no ground produced it); the oasis
+   palm rows. Each has a documented choice ("Minecart tracks", "Trees", "Wires").
 
 Proposed follow-up issues: [planning/assets-follow-ups.md](planning/assets-follow-ups.md).

@@ -44,6 +44,9 @@ function tree(x: number, type: number, ground: number, variant = 0): Placed {
 
 const of = (sprites: readonly ObjectSprite[], kind: ObjectSprite["kind"]): ObjectSprite[] => sprites.filter((sprite) => sprite.kind === kind);
 const ALL = { left: 0, top: 0, right: WIDTH, bottom: HEIGHT };
+/** The trunk cell of the lowest trunk tile of the tree at column 10. */
+const lowestTrunk = (sprites: readonly ObjectSprite[]): ObjectSprite | undefined =>
+  sprites.find((sprite) => sprite.kind === "tile" && sprite.dx === 158 && sprite.dy === 16 * (GROUND_Y - 1));
 
 describe("tree sprites", () => {
   test("a forest tree: trunk cells 20 × 20 drawn 2 pixels left of their tile, its branches and its top from the forest style", () => {
@@ -86,21 +89,21 @@ describe("tree sprites", () => {
 
   test("the ground picks the trunk block and the top: corruption, jungle (116 × 96 tops), hallow (frames by column)", () => {
     const corrupt = objectSprites(world(tree(10, 5, 23)), ALL);
-    expect(of(corrupt, "tile")[0]).toMatchObject({ id: 5, sx: 176 });
+    expect(lowestTrunk(corrupt)).toMatchObject({ id: 5, sx: 176 });
     expect(of(corrupt, "treeTop")[0]).toMatchObject({ id: 1, width: 80, height: 80 });
     const jungle = objectSprites(world(tree(10, 5, 60)), ALL);
-    expect(of(jungle, "tile")[0]).toMatchObject({ sx: 6 * 176 });
+    expect(lowestTrunk(jungle)).toMatchObject({ sx: 6 * 176 });
     expect(of(jungle, "treeTop")[0]).toEqual({ kind: "treeTop", id: 13, sx: 0, sy: 0, width: 116, height: 96, dx: 160 + 8 - 58, dy: 16 * 15 + 16 - 96 });
     // Hallow: Tree_Tops_3, 80 × 140, frame = variant + 3 · (x mod 3), branches by their own column.
     const hallow = objectSprites(world(tree(10, 5, 109, 1)), ALL);
-    expect(of(hallow, "tile")[0]).toMatchObject({ sx: 3 * 176 });
+    expect(lowestTrunk(hallow)).toMatchObject({ sx: 3 * 176 });
     expect(of(hallow, "treeTop")[0]).toMatchObject({ id: 3, sx: (1 + 3 * 1) * 82, width: 80, height: 140 });
     expect(of(hallow, "treeBranch").map((sprite) => sprite.sy)).toEqual([(1 + 3 * 0) * 42, (1 + 3 * 2) * 42]);
   });
 
   test("a gem tree draws Tiles_583 trunk cells and the Tree_Tops_22 top", () => {
     const sprites = objectSprites(world(tree(10, 583, 1)), ALL);
-    expect(of(sprites, "tile")[0]).toMatchObject({ id: 583, sx: 0, sy: 0, width: 20, height: 20, dx: 158 });
+    expect(lowestTrunk(sprites)).toMatchObject({ id: 583, sx: 0, sy: 0, width: 20, height: 20, dx: 158 });
     expect(of(sprites, "treeTop")).toEqual([{ kind: "treeTop", id: 22, sx: 0, sy: 0, width: 116, height: 96, dx: 110, dy: 16 * 15 + 16 - 96 }]);
     expect(of(sprites, "treeBranch").map((sprite) => sprite.id)).toEqual([22, 22]);
   });
