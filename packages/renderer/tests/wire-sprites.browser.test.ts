@@ -107,20 +107,26 @@ function expectedCanvas(world: RenderableWorld, shown: number): Uint8Array {
   return out;
 }
 
-function draw(world: RenderableWorld, shown: number, zoom = ZOOM, sprites = true): Uint8Array {
+/**
+ * A renderer of `world` at `zoom` with the synthetic atlas; the returned function draws it with the wire mask `shown`,
+ * in sprite mode or not. One renderer per test: each links its own programs, which is slow on software GL.
+ */
+function drawer(world: RenderableWorld, zoom = ZOOM): (shown: number, sprites?: boolean) => Uint8Array {
   const canvas = document.createElement("canvas");
   canvas.width = WIDTH * zoom;
   canvas.height = HEIGHT * zoom;
   const renderer = createMapRenderer(canvas);
   created.push(renderer);
   renderer.setWorld(world);
-  renderer.setLayers({ ...BASE, wires: shown });
   renderer.setAtlas(syntheticAtlas());
-  renderer.setSpriteMode(sprites);
   renderer.setCamera({ x: 0, y: 0, zoom });
-  renderer.render();
-  expect(canvas.getContext("webgl2")?.getError()).toBe(0);
-  return readCanvas(canvas);
+  return (shown, sprites = true) => {
+    renderer.setLayers({ ...BASE, wires: shown });
+    renderer.setSpriteMode(sprites);
+    renderer.render();
+    expect(canvas.getContext("webgl2")?.getError()).toBe(0);
+    return readCanvas(canvas);
+  };
 }
 
 function differing(actual: Uint8Array, expected: Uint8Array): string[] {
@@ -136,14 +142,15 @@ function differing(actual: Uint8Array, expected: Uint8Array): string[] {
 describe("wires in sprite mode", () => {
   test("crossing red and blue wires take the pieces their neighbours give, over blocks, with actuators on top", () => {
     const world = wireWorld();
-    const found = differing(draw(world, WIRE_LAYER.all), expectedCanvas(world, WIRE_LAYER.all));
+    const found = differing(drawer(world)(WIRE_LAYER.all), expectedCanvas(world, WIRE_LAYER.all));
     expect(found.slice(0, 8), `${String(found.length)} pixels differ`).toEqual([]);
   });
 
   test("hiding one colour removes exactly its pixels", () => {
     const world = wireWorld();
-    const all = draw(world, WIRE_LAYER.all);
-    const withoutRed = draw(world, WIRE_LAYER.all & ~RED);
+    const draw = drawer(world);
+    const all = draw(WIRE_LAYER.all);
+    const withoutRed = draw(WIRE_LAYER.all & ~RED);
     const found = differing(withoutRed, expectedCanvas(world, WIRE_LAYER.all & ~RED));
     expect(found.slice(0, 8), `${String(found.length)} pixels differ`).toEqual([]);
     // Every changed pixel lies on a red wire's tile; the blue wire's own tiles keep their blue pixels.
@@ -157,10 +164,10 @@ describe("wires in sprite mode", () => {
 
   test(`below ${String(SPRITE_MIN_ZOOM)} pixels per tile the wires keep their colour overlay`, () => {
     const world = wireWorld();
-    const zoom = SPRITE_MIN_ZOOM - 1;
-    const overlay = draw(world, WIRE_LAYER.all, zoom, false);
-    expect(draw(world, WIRE_LAYER.all, zoom)).toEqual(overlay);
+    const draw = drawer(world, SPRITE_MIN_ZOOM - 1);
+    const overlay = draw(WIRE_LAYER.all, false);
+    expect(draw(WIRE_LAYER.all)).toEqual(overlay);
     // The overlay really shows: a red wire's tile differs from the same world without wires.
-    expect(draw(world, 0, zoom, false)).not.toEqual(overlay);
+    expect(draw(0, false)).not.toEqual(overlay);
   });
 });
