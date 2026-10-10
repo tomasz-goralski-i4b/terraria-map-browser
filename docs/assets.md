@@ -320,13 +320,6 @@ Expected sheet sizes (consistent with the size arithmetic, confirmed only by the
 
 ## Tile framing
 
-Editor thumbnails (`apps/web/src/assets/thumbnails.ts`) use the same block and wall framing as the chunk pass.
-Material thumbnails select one interior cell; Inspector thumbnails select the actual cell from the world's
-neighbours or the stored, wrapped frame of frame-important blocks. Walls are always cropped to their 16 × 16
-centre. Pixels are copied directly from the atlas page, using the entry's frame and gutter metrics for blocks,
-so no decoded sheet is allocated or retained. Canvases store native cell pixels with smoothing disabled and
-CSS pixelated scaling; paint is still shown only as a corner mark.
-
 This section explains how a block or wall whose frame is **not** stored in the `.wld` picks its cell: diagonal
 corners, merging with other types (for example stone ↔ dirt), slopes and half blocks, the variant, grass and moss,
 large-frame blocks, walls. Cactus, vines, beams and the other non-block self-framed ids stay deferred ("Not covered").
@@ -1145,6 +1138,15 @@ committed. The .NET decoder (#73) must reproduce the same vectors.
   per tile: every framed tile there has a sheet, sprites change the picture, and no pixel is the missing-texture
   checkerboard.
 - Never write decoded pixels into the repository; renders made by hand go to `local-renders/` (gitignored).
+
+## Editor thumbnails
+
+Editor thumbnails (`apps/web/src/assets/thumbnails.ts`) use the same block and wall framing and source rectangles
+as the chunk pass. Material thumbnails select one interior cell; Inspector thumbnails select the actual cell
+from the world's neighbours or the stored, wrapped frame of frame-important blocks. Walls are always cropped to
+their 16 × 16 centre. Pixels are copied directly from the atlas page, so no decoded sheet is allocated or retained.
+Canvases store native cell pixels using `putImageData`; CSS `image-rendering: pixelated` displays square cells
+at 16 CSS pixels without interpolation. Non-square object cells retain their aspect ratio. Paint remains a corner mark.
 
 ## Open questions
 

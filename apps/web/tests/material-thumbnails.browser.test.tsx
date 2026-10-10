@@ -16,9 +16,11 @@ import { useViewStore } from "../src/shell/view-store.js";
 import { brushSource } from "./support/brush-source.js";
 import * as blockFraming from "../src/world/block-framing.js";
 import { PropertyGrid } from "../src/ui/PropertyGrid.js";
+import * as thumbnailSession from "../src/assets/thumbnail-session.js";
 import "../src/styles.css";
 
 vi.mock("../src/world/block-framing.js", { spy: true });
+vi.mock("../src/assets/thumbnail-session.js", { spy: true });
 
 const ready = { kind: "ready", folderName: "Terraria Content", tileSheets: 1, wallSheets: 1, pages: 1, fromCache: false, missing: [] } as const;
 
@@ -39,7 +41,14 @@ async function settleThumbnails(): Promise<void> {
   await new Promise<void>((resolve) => { requestIdleCallback(() => { resolve(); }, { timeout: 300 }); });
 }
 
-afterEach(() => { useAssetStore.setState({ status: { kind: "none" } }); setBrushWorld(null); useViewStore.setState({ pinnedTile: null, tool: "pan" }); vi.restoreAllMocks(); });
+afterEach(() => {
+  useAssetStore.setState({ status: { kind: "none" } });
+  setBrushWorld(null);
+  useViewStore.setState({ pinnedTile: null, tool: "pan" });
+  vi.restoreAllMocks();
+  vi.mocked(blockFraming.getBlockFraming).mockReset();
+  vi.mocked(thumbnailSession.getThumbnailSource).mockReset();
+});
 
 test("fallback, paint and accessible names survive connecting and disconnecting assets", async () => {
   const screen = await render(<button aria-label="Dirt Block"><MaterialSwatch color={0x976b4b} layer="block" content={{ kind: "vanilla", id: 0 }} paint={0xff0000} /></button>);
@@ -157,8 +166,8 @@ test("wall grid circles, integer sprite sizes and theme borders survive assets",
   connect();
   const screen = await render(<SwatchesPanel />);
   await expect.poll(() => screen.container.querySelector("canvas")).not.toBeNull();
-  const swatch = screen.container.querySelector<HTMLElement>(".material-swatch");
-  if (swatch === null) throw new Error("Stone Wall swatch missing");
+  const swatch = screen.container.querySelector<HTMLCanvasElement>("canvas")?.parentElement;
+  if (swatch === null || swatch === undefined) throw new Error("Stone Wall sprite swatch missing");
   expect(getComputedStyle(swatch).borderRadius).toBe("50%");
   const canvas = screen.container.querySelector("canvas");
   expect(canvas?.getBoundingClientRect().width).toBe(16);
@@ -176,4 +185,54 @@ test("PropertyGrid decorative swatch preserves copy text and the accessible name
   const value = page.getByRole("button", { name: "Dirt Block", exact: true });
   await value.click();
   expect(copied).toHaveBeenCalledWith("Dirt Block");
+});
+
+test("Inspector keeps its previous sprite while an edit's thumbnail is pending", async () => {
+  const world = createWorld(3, 3);
+  world.setTile(1, 1, { block: { kind: "vanilla", id: 0 }, wires: 0, actuator: false });
+  connect();
+  const source = { world, x: 1, y: 1, tile: world.tileAt(1, 1) };
+  const screen = await render(<MaterialSwatch color={0x976b4b} layer="block" content={{ kind: "vanilla", id: 0 }} actual={source} revision={0} />);
+  await expect.poll(() => screen.container.querySelector("canvas")).not.toBeNull();
+  const canvas = screen.container.querySelector("canvas");
+  const original = await thumbnailSession.getThumbnailSource();
+  let resume: ((source: ThumbnailSource) => void) | undefined;
+  const pending = new Promise<ThumbnailSource>((resolve) => { resume = resolve; });
+  vi.mocked(thumbnailSession.getThumbnailSource).mockClear();
+  vi.mocked(thumbnailSession.getThumbnailSource).mockReturnValueOnce(pending);
+  await screen.rerender(<MaterialSwatch color={0x976b4b} layer="block" content={{ kind: "vanilla", id: 0 }} actual={{ ...source }} revision={1} />);
+  await settleThumbnails();
+  expect(screen.container.querySelector("canvas")).toBe(canvas);
+  await expect.poll(() => vi.mocked(thumbnailSession.getThumbnailSource).mock.calls.length).toBe(1);
+  if (original !== null) resume?.(original);
+  await settleThumbnails();
+});
+
+test("Inspector without a framing world keeps map colour and paint, and unknown content stays text", async () => {
+  useViewStore.setState({ pinnedTile: { x: 1, y: 1 } });
+  const world = createWorld(3, 3);
+  world.setTile(1, 1, { block: { kind: "vanilla", id: 0 }, paint: 1, wall: { kind: "unknown", runtimeId: 900 }, wires: 0, actuator: false });
+  connect();
+  const source = vi.spyOn(ThumbnailSource.prototype, "material");
+  const screen = await render(<InspectorPanel world={{ width: 3, height: 3, tileAt: (x, y) => world.tileAt(x, y) }} />);
+  await settleThumbnails();
+  expect(screen.container.querySelector("canvas")).toBeNull();
+  expect(source).not.toHaveBeenCalled();
+  expect(screen.container.querySelectorAll(".material-swatch")).toHaveLength(1);
+  expect(screen.container.querySelector<HTMLElement>(".material-swatch-paint")?.style.borderTopColor).toBe("rgb(255, 0, 0)");
+  await expect.element(page.getByRole("button", { name: "unknown:900", exact: true })).toBeVisible();
+});
+
+test("reconnecting owns a new cache and disconnecting releases the source", async () => {
+  connect();
+  const first = await thumbnailSession.getThumbnailSource();
+  const ref = { kind: "vanilla", id: 0 } as const;
+  const firstPixels = first?.material("block", ref);
+  expect(firstPixels).not.toBeNull();
+  await act(async () => { useAssetStore.setState({ status: { kind: "none" } }); await Promise.resolve(); });
+  expect(thumbnailSession.getThumbnailSource()).toBeNull();
+  connect();
+  const second = await thumbnailSession.getThumbnailSource();
+  expect(second === first).toBe(false);
+  expect(second?.material("block", ref)).not.toBe(firstPixels);
 });

@@ -73,10 +73,9 @@ Code: `apps/web/src/ui/` (primitives), `apps/web/src/shell/` (layout, commands, 
   are available for supported vanilla worlds; the remaining edit tools show their unavailable reason.
 - **Tool options bar** (`shell/ToolOptions.tsx`) shows the active tool's name and settings. Its material chips show
   sprites when assets are ready, using the same interior thumbnails as the Swatches tab.
-  Inspector Block and Wall rows instead show the pinned tile's actual framed cell (stored frames for objects,
-  neighbouring tiles for self-framed blocks and walls). Disconnecting assets or a missing sheet restores map
-  colours; paint corners, round wall swatches and the existing accessible names remain unchanged.
-  Edit tools put their settings here: brush size and shape, and the layer mask, i.e. which of block, wall, paint, liquid and wires a stroke
+  Disconnecting assets or a missing sheet restores map colours; paint corners and accessible names are unchanged.
+  Edit tools put their settings here: brush size and shape, and the layer mask, i.e. which of block, wall, paint,
+  liquid and wires a stroke
   writes (as TEdit does). A tool never opens a dialog to change a setting. Brush shows, in the order of an image
   editor's options bar: each written layer's material (a swatch and name that opens the Swatches tab) with its paint
   well, Paint only, the Blocks / Walls / Both target, size (slider and number, 1–64; `[` `]`), square/round shape,
@@ -101,6 +100,11 @@ Code: `apps/web/src/ui/` (primitives), `apps/web/src/shell/` (layout, commands, 
   (240–640 px; drag it, or use the arrow keys, Shift for bigger steps, Home and End); a second one, on the open
   Inspector's top edge, trades height between it and the tabs (↑ ↓ from the keyboard), and the height is remembered
   with the layout. `P` hides or shows the whole dock.
+
+  Inspector Block and Wall rows show vanilla map-colour swatches. With connected assets they show the pinned tile's
+  actual framed cell: stored frames for objects, neighbours for self-framed blocks and walls. Missing sheets or
+  unavailable framing keep map colours; unknown content remains text only. Paint corners, round wall swatches,
+  copy text and accessible names remain unchanged.
 
   `Tab` is **not** used for this, unlike some editors: Tab must keep moving focus for keyboard users.
 - **Status bar** (`shell/StatusBar.tsx`) shows, from left to right:

@@ -41,28 +41,32 @@ export function MaterialSwatch({ color, paint, layer, content, actual, revision 
   const status = useAssetStore((state) => state.status);
   const host = useRef<HTMLSpanElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
-  const [image, setImage] = useState<{ readonly status: typeof status; readonly content: ContentRef; readonly actual: typeof actual; readonly revision: number; readonly thumbnail: Thumbnail } | null>(null);
+  const [image, setImage] = useState<{ readonly status: typeof status; readonly layer: BrushContentLayer; readonly content: ContentRef; readonly actual: typeof actual; readonly revision: number; readonly thumbnail: Thumbnail } | null>(null);
   const id = content?.kind === "vanilla" ? content.id : undefined;
   const reference = useMemo(() => id === undefined ? undefined : { kind: "vanilla", id } as const, [id]);
-  const thumbnail = image?.status === status && image.content === reference && image.actual === actual && image.revision === revision ? image.thumbnail : null;
+  // Retain the last cell while neighbours are being reframed; a changed connection or material hides it immediately.
+  const thumbnail = image?.status === status && image.layer === layer && image.content === reference ? image.thumbnail : null;
   useEffect(() => {
     if (status.kind !== "ready" || layer === undefined || reference === undefined || host.current === null) return;
     let disposed = false;
     let visible = false;
+    let request = 0;
     let cancel: (() => void) | undefined;
     const observer = new IntersectionObserver((entries) => {
       visible = entries.some((entry) => entry.isIntersecting);
-      if (!visible) { cancel?.(); cancel = undefined; return; }
+      if (!visible) { request++; cancel?.(); cancel = undefined; return; }
       if (cancel !== undefined) return;
+      const generation = ++request;
       cancel = scheduleThumbnail(() => {
         const source = getThumbnailSource();
         if (source === null) return;
         void source.then((ready) => {
-          if (disposed || !visible) return;
+          if (disposed || !visible || generation !== request) return;
           cancel = scheduleThumbnail(() => {
-            if (disposed || !visible) return;
+            if (disposed || !visible || generation !== request) return;
             const result = actual === undefined ? ready.material(layer, reference) : ready.tile(layer, reference, actual);
-            if (result !== null) setImage({ status, content: reference, actual, revision, thumbnail: result });
+            setImage(result === null ? null : { status, layer, content: reference, actual, revision, thumbnail: result });
+            observer.disconnect();
           });
         }).catch(() => { /* Keep the exact map-colour fallback if framing cannot load. */ });
       });
@@ -79,7 +83,7 @@ export function MaterialSwatch({ color, paint, layer, content, actual, revision 
   }, [thumbnail]);
   const paintCss = cssColor(paint ?? null);
   return (
-    <span ref={host} className="material-swatch" data-layer={layer} data-empty={color === null} style={{ backgroundColor: cssColor(color) }} aria-hidden="true">
+    <span ref={host} className="material-swatch" data-layer={layer} data-sprite={thumbnail !== null} data-empty={color === null} style={{ backgroundColor: cssColor(color) }} aria-hidden="true">
       {thumbnail !== null && <canvas ref={canvas} className="material-thumbnail" width={thumbnail.width} height={thumbnail.height} />}
       {paintCss !== undefined && <span className="material-swatch-paint" style={{ borderTopColor: paintCss }} />}
     </span>

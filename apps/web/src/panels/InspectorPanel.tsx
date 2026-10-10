@@ -3,8 +3,7 @@ import type { WorldChest } from "@studio/world-codec";
 import type { Tile } from "@studio/world-model";
 import { contentColor, terrariaMapPalette } from "@studio/renderer";
 import type { TileThumbnailSource } from "../assets/thumbnails.js";
-import { MaterialSwatch, paintColor } from "./material-swatch.js";
-import { loadedBrushMaterials } from "../world/brush-session.js";
+import { MaterialSwatch } from "./material-swatch.js";
 import { useLayoutStore } from "../shell/layout-store.js";
 import { useViewStore, type TilePoint } from "../shell/view-store.js";
 import { useAppStore } from "../store.js";
@@ -105,6 +104,7 @@ export function InspectorPanel({ world }: { readonly world?: InspectorWorld | nu
   if (pinned === null || pinned.x < 0 || pinned.y < 0 || pinned.x >= shown.width || pinned.y >= shown.height) {
     return <p className="panel-empty">Click a tile with the Inspect tool (I) to inspect it.</p>;
   }
+  const tile = actual?.tile ?? shown.tileAt(pinned.x, pinned.y);
   return (
     <div className="inspector-panel">
       <div className="inspector-header">
@@ -119,15 +119,16 @@ export function InspectorPanel({ world }: { readonly world?: InspectorWorld | nu
           }} />
         </span>
       </div>
-      <PropertyGrid label="Tile" properties={tileProperties(pinned, shown.tileAt(pinned.x, pinned.y), showAll).map((property) => {
+      <PropertyGrid label="Tile" properties={tileProperties(pinned, tile, showAll).map((property) => {
         if (property.kind !== "text" || (property.label !== "Block" && property.label !== "Wall")) return property;
         const layer = property.label === "Block" ? "block" : "wall";
-        const tile = shown.tileAt(pinned.x, pinned.y);
         const ref = layer === "block" ? tile.block : tile.wall;
-        if (ref === undefined) return property;
+        if (ref?.kind !== "vanilla") return property;
         const rgba = contentColor(ref, layer, terrariaMapPalette, tile.frameX, tile.frameY);
-        const color = (rgba[0] << 16) | (rgba[1] << 8) | rgba[2];
-        return { ...property, icon: <MaterialSwatch color={color} layer={layer} content={ref} actual={actual} revision={revision} paint={paintColor(loadedBrushMaterials(), (layer === "block" ? tile.paint : tile.wallPaint) ?? 0)} /> };
+        const colors = (layer === "block" ? terrariaMapPalette.tiles : terrariaMapPalette.walls)[ref.id];
+        const color = colors === undefined || colors.length === 0 ? null : (rgba[0] << 16) | (rgba[1] << 8) | rgba[2];
+        const paint = layer === "block" ? tile.paint : tile.wallPaint;
+        return { ...property, icon: <MaterialSwatch color={color} layer={layer} {...(actual === undefined ? {} : { content: ref, actual })} revision={revision} paint={paint === undefined || paint === 0 ? null : terrariaMapPalette.paints[paint] ?? null} /> };
       })} />
       {chest !== null && (
         <>

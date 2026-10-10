@@ -1,5 +1,5 @@
 import { findSprite, type SpriteAtlas } from "@studio/assets";
-import { NO_CELL, WALL_OVERHANG, wallSourceRect, wrappedFrame, type BlockFraming, type FramingWorld, type WallFramingWorld } from "@studio/renderer";
+import { NO_CELL, WALL_OVERHANG, WALL_SIDE, blockSourceRect, wallSourceRect, wrappedFrame, type BlockFraming, type FramingWorld, type WallFramingWorld } from "@studio/renderer";
 import type { BrushContentLayer, ContentRef, Tile } from "@studio/world-model";
 
 export interface Thumbnail {
@@ -47,13 +47,13 @@ export class ThumbnailSource {
     if (this.cells.has(key)) return this.cells.get(key) ?? null;
     let thumbnail: Thumbnail | null = null;
     if (layer === "wall") {
-      const rect = wallSourceRect(this.framing.walls.wallCell(ref.id, 15, 0, 0));
+      const sides = WALL_SIDE.north | WALL_SIDE.east | WALL_SIDE.south | WALL_SIDE.west;
+      const rect = wallSourceRect(this.framing.walls.wallCell(ref.id, sides, 0, 0));
       if (rect !== null) thumbnail = thumbnailPixels(this.atlas, layer, ref.id, rect.x + WALL_OVERHANG, rect.y + WALL_OVERHANG);
     } else {
       const cell = this.framing.frameBlock({ type: ref.id, shape: 0, x: 0, y: 0, neighbours: new Int32Array(8).fill(ref.id) });
-      const entry = findSprite(this.atlas, "tile", ref.id);
-      if (cell !== null && entry !== undefined) thumbnail = thumbnailPixels(this.atlas, layer, ref.id,
-        cell.column * (entry.frameWidth + entry.gapX), cell.row * (entry.frameHeight + entry.gapY));
+      const rect = cell === null ? null : blockSourceRect((cell.column << 6) | cell.row);
+      if (rect !== null) thumbnail = thumbnailPixels(this.atlas, layer, ref.id, rect.x, rect.y);
     }
     this.cells.set(key, thumbnail);
     return thumbnail;
@@ -75,8 +75,7 @@ export class ThumbnailSource {
     }
     const cells = new Uint16Array(1);
     this.framing.frameRegion(world, { left: x, top: y, width: 1, height: 1 }, cells);
-    const cell = cells[0] ?? NO_CELL;
-    return cell === NO_CELL ? null : thumbnailPixels(this.atlas, layer, ref.id,
-      (cell >> 6) * (entry.frameWidth + entry.gapX), (cell & 63) * (entry.frameHeight + entry.gapY));
+    const rect = blockSourceRect(cells[0] ?? NO_CELL);
+    return rect === null ? null : thumbnailPixels(this.atlas, layer, ref.id, rect.x, rect.y);
   }
 }

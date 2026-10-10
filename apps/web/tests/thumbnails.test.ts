@@ -26,6 +26,7 @@ function atlas() {
     { kind: "tile", id: 0, width: 288, height: 270, rgba: sheetPixels(288, 270) },
     { kind: "tile", id: 38, width: 288, height: 270, rgba: sheetPixels(288, 270) },
     { kind: "tile", id: 21, width: 288, height: 270, rgba: sheetPixels(288, 270) },
+    { kind: "tile", id: 3, width: 72, height: 88, rgba: sheetPixels(72, 88) },
     { kind: "wall", id: 1, width: 468, height: 468, rgba: sheetPixels(468, 468) },
   ], { pageSize: 1024 });
 }
@@ -82,4 +83,13 @@ test("missing, unknown and out of sheet content has no thumbnail", () => {
   expect(thumbnailPixels(packed, "block", 0, 0, 260)).toBeNull();
   expect(thumbnailPixels(packed, "wall", 1, -1, 0)).toBeNull();
   expect(new ThumbnailSource(packed, { ...framing, frameBlock: () => null }).material("block", { kind: "vanilla", id: 0 })).toBeNull();
+});
+
+test("stored non-square object frames retain the atlas cell dimensions", () => {
+  const world = createWorld(2, 2);
+  world.setTile(1, 1, { block: { kind: "vanilla", id: 3 }, frameX: 18, frameY: 22, wires: 0, actuator: false });
+  const thumbnail = new ThumbnailSource(atlas(), framing).tile("block", { kind: "vanilla", id: 3 }, { world, x: 1, y: 1, tile: world.tileAt(1, 1) });
+  expect(thumbnail?.width).toBe(16);
+  expect(thumbnail?.height).toBe(20);
+  expect(thumbnail?.pixels).toEqual(expectedPixels(18, 22, 16, 20));
 });

@@ -44,7 +44,7 @@ export function PropertyGrid({ properties, label }: { readonly properties: reado
                 <button type="button" className="property-value" title="Click to copy" onClick={() => {
                   copy(property);
                 }}>
-                  {property.icon}{property.value}
+                  {property.icon}<span className="property-value-text">{property.value}</span>
                 </button>
               )}
               {property.kind === "flag" && (

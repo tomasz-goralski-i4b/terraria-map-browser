@@ -21,7 +21,7 @@ export function getThumbnailSource(): Promise<ThumbnailSource> | null {
 /** One visible cell per idle callback, including in browsers without requestIdleCallback. */
 export function scheduleThumbnail(build: () => void): () => void {
   if (typeof window.requestIdleCallback === "function") {
-    const handle = window.requestIdleCallback(build);
+    const handle = window.requestIdleCallback(build, { timeout: 250 });
     return () => { window.cancelIdleCallback(handle); };
   }
   const handle = window.setTimeout(build, 16);
