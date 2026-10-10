@@ -130,6 +130,8 @@ test("framing pending preserves the exact map colour until ready", async () => {
 });
 
 test("Swatches, Brush chips and Inspector switch together without changing their names", async () => {
+  const materialBuilds = vi.spyOn(ThumbnailSource.prototype, "material");
+  const tileBuilds = vi.spyOn(ThumbnailSource.prototype, "tile");
   setBrushWorld(readWorldTiles(brushSource()));
   useBrushStore.setState({ blockId: 0, wallId: 1, layer: BRUSH_LAYER.both });
   useViewStore.setState({ tool: "brush", pinnedTile: { x: 1, y: 1 } });
@@ -141,12 +143,17 @@ test("Swatches, Brush chips and Inspector switch together without changing their
   expect(screen.container.querySelectorAll("canvas")).toHaveLength(0);
   await act(async () => { connect(); await Promise.resolve(); });
   await expect.poll(() => screen.container.querySelectorAll("canvas").length).toBe(5);
+  const materialCount = materialBuilds.mock.calls.length;
+  const tileCount = tileBuilds.mock.calls.length;
   expect([...screen.container.querySelectorAll("button")].map((button) => button.getAttribute("aria-label") ?? button.textContent)).toEqual(names);
   await act(async () => { useViewStore.getState().setLayers({ sprites: false }); await Promise.resolve(); });
   expect(screen.container.querySelectorAll("canvas")).toHaveLength(0);
   expect(screen.container.querySelector<HTMLElement>(".swatch-button .material-swatch")?.style.backgroundColor).toBe("rgb(151, 107, 75)");
   await act(async () => { useViewStore.getState().setLayers({ sprites: true }); await Promise.resolve(); });
   expect(screen.container.querySelectorAll("canvas")).toHaveLength(5);
+  await settleThumbnails();
+  expect(materialBuilds).toHaveBeenCalledTimes(materialCount);
+  expect(tileBuilds).toHaveBeenCalledTimes(tileCount);
   await act(async () => { useSwatchesView.setState({ category: "wall", query: "Stone Wall" }); await Promise.resolve(); });
   await expect.poll(() => screen.container.querySelectorAll(".swatch-button canvas").length).toBe(1);
   await act(async () => { useAssetStore.setState({ status: { kind: "none" } }); await Promise.resolve(); });
@@ -276,4 +283,20 @@ test("Sprites disabled before connecting keeps colours and does not build thumbn
   expect(screen.container.querySelector("canvas")).toBeNull();
   expect(screen.container.querySelector<HTMLElement>(".material-swatch")?.style.backgroundColor).toBe("rgb(151, 107, 75)");
   expect(builds).not.toHaveBeenCalled();
+});
+
+test("disconnecting and reconnecting a different atlas never shows the previous pixels", async () => {
+  connect();
+  const screen = await render(<MaterialSwatch color={0x976b4b} layer="block" content={{ kind: "vanilla", id: 0 }} />);
+  await expect.poll(() => screen.container.querySelector("canvas")).not.toBeNull();
+  expect(screen.container.querySelector("canvas")?.getContext("2d")?.getImageData(0, 0, 1, 1).data[0]).toBe(255);
+  await act(async () => { useAssetStore.setState({ status: { kind: "none" } }); await Promise.resolve(); });
+  expect(screen.container.querySelector("canvas")).toBeNull();
+  const rgba = new Uint8Array(288 * 270 * 4);
+  for (let index = 0; index < rgba.length; index += 4) rgba.set([151, 107, 75, 255], index);
+  const replacement = packSheets([{ kind: "tile", id: 0, width: 288, height: 270, rgba }], { pageSize: 512 });
+  vi.mocked(getDefaultAssetSession().getAtlas).mockReturnValue(replacement);
+  await act(async () => { useAssetStore.setState({ status: { ...ready, wallSheets: 0 } }); await Promise.resolve(); });
+  expect(screen.container.querySelector("canvas")).toBeNull();
+  await expect.poll(() => screen.container.querySelector("canvas")?.getContext("2d")?.getImageData(0, 0, 1, 1).data[0]).toBe(151);
 });
