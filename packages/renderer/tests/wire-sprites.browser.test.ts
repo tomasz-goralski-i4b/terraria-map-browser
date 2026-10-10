@@ -162,6 +162,34 @@ describe("wires in sprite mode", () => {
     expect(new Set(changed)).toEqual(new Set(["1,2", "2,2", "3,2", "4,2", "5,2", "6,2", "7,2"]));
   });
 
+  // The wire pass draws every chunk again over the whole screen: chunks without a shown wire or actuator skip it, and
+  // a wire placed later (invalidateTiles) brings it back.
+  test("the wire pass runs only over chunks with a shown wire or actuator", () => {
+    const world = wireWorld();
+    const flags = world.planes.flags ?? new Uint16Array(0);
+    const original = flags.slice();
+    flags.fill(0);
+    const canvas = document.createElement("canvas");
+    canvas.width = WIDTH * ZOOM;
+    canvas.height = HEIGHT * ZOOM;
+    const renderer = createMapRenderer(canvas);
+    created.push(renderer);
+    renderer.setWorld(world);
+    renderer.setAtlas(syntheticAtlas());
+    renderer.setCamera({ x: 0, y: 0, zoom: ZOOM });
+    renderer.setSpriteMode(true);
+    const calls = (shown: number): number => {
+      renderer.setLayers({ ...BASE, wires: shown });
+      renderer.render();
+      return renderer.stats().drawCalls;
+    };
+    const chunkPassOnly = calls(WIRE_LAYER.all);
+    flags.set(original);
+    renderer.invalidateTiles(Array.from({ length: WIDTH * HEIGHT }, (_, i) => ({ x: Math.floor(i / HEIGHT), y: i % HEIGHT })));
+    expect(calls(WIRE_LAYER.all)).toBe(chunkPassOnly + 1);
+    expect(calls(WIRE_LAYER.green | WIRE_LAYER.yellow)).toBe(chunkPassOnly);
+  });
+
   test(`below ${String(SPRITE_MIN_ZOOM)} pixels per tile the wires keep their colour overlay`, () => {
     const world = wireWorld();
     const draw = drawer(world, SPRITE_MIN_ZOOM - 1);

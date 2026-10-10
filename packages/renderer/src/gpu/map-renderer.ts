@@ -617,6 +617,12 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   // planes on first draw, dropped by invalidateTiles around changed tiles.
   const objectCache = new Map<number, Int32Array>();
   let objectData = new Int32Array(OBJECT_INTS * 256);
+  // The chunk keys whose instances the object buffer holds, in order, and their instance count: a frame showing the
+  // same chunks with none of their lists collected again draws the buffer as it is, without uploading it again.
+  let objectUploaded: { readonly keys: readonly number[]; readonly instances: number } | null = null;
+  // Per chunk key, the wire and actuator bits (0–4) set anywhere in the chunk: the wire pass skips chunks without one
+  // shown, so a view without wires costs no pass at all. Dropped around changed tiles.
+  const wireChunks = new Map<number, number>();
   const sheetMirror = new Int32Array(SPRITE_SHEET_WIDTH * PALETTE_HEIGHT * 4);
   let spriteMode = false;
   let atlasUploads = 0;
@@ -872,6 +878,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     wireSheet = placeOf("wire");
     actuatorSheet = placeOf("actuator");
     objectCache.clear();
+    objectUploaded = null;
     if (source !== null) uploadAtlas(source);
     if (world !== null) uploadSheets(world.palette, 0, paletteUploaded);
   };
@@ -1291,13 +1298,17 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     const area = {
       left: chunk.x * CHUNK_SIZE, top: chunk.y * CHUNK_SIZE, right: (chunk.x + 1) * CHUNK_SIZE, bottom: (chunk.y + 1) * CHUNK_SIZE,
     };
-    const placed = objectSprites(source, area).flatMap((sprite: ObjectSprite) => {
+    const sprites: readonly ObjectSprite[] = objectSprites(source, area);
+    const placed = new Int32Array(sprites.length * OBJECT_INTS);
+    let at = 0;
+    for (const sprite of sprites) {
       const sheet = sheetsByKey.get(`${sprite.kind}:${String(sprite.id)}`);
-      if (sheet === undefined || sprite.sx < 0 || sprite.sy < 0) return [];
-      if (sprite.sx + sprite.width > sheet.width || sprite.sy + sprite.height > sheet.height) return [];
-      return [sprite.dx, sprite.dy, sprite.width, sprite.height, sheet.page, sheet.x + sprite.sx, sheet.y + sprite.sy, 0];
-    });
-    const instances = new Int32Array(placed);
+      if (sheet === undefined || sprite.sx < 0 || sprite.sy < 0) continue;
+      if (sprite.sx + sprite.width > sheet.width || sprite.sy + sprite.height > sheet.height) continue;
+      placed.set([sprite.dx, sprite.dy, sprite.width, sprite.height, sheet.page, sheet.x + sprite.sx, sheet.y + sprite.sy, 0], at);
+      at += OBJECT_INTS;
+    }
+    const instances = placed.subarray(0, at);
     objectCache.set(key, instances);
     return instances;
   };
@@ -1319,32 +1330,66 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
         }
       }
     }
-    const lists = [...keys].sort((a, b) => a - b)
-      .map((key) => objectsOf(source, { x: key % chunksX, y: Math.floor(key / chunksX) }, key));
-    const total = lists.reduce((sum, list) => sum + list.length, 0);
-    if (total === 0) return 0;
-    if (objectData.length < total) objectData = new Int32Array(total * 2);
-    let at = 0;
-    for (const list of lists) {
-      objectData.set(list, at);
-      at += list.length;
+    const sorted = [...keys].sort((a, b) => a - b);
+    const previous = objectUploaded;
+    // Unchanged when the same chunks are shown and none of their lists was dropped since the upload.
+    const unchanged = previous !== null && previous.keys.length === sorted.length
+      && sorted.every((key, index) => previous.keys[index] === key && objectCache.has(key));
+    if (!unchanged) {
+      const lists = sorted.map((key) => objectsOf(source, { x: key % chunksX, y: Math.floor(key / chunksX) }, key));
+      const total = lists.reduce((sum, list) => sum + list.length, 0);
+      if (objectData.length < total) objectData = new Int32Array(total * 2);
+      let at = 0;
+      for (const list of lists) {
+        objectData.set(list, at);
+        at += list.length;
+      }
+      if (total > 0) {
+        gl.bindBuffer(gl.ARRAY_BUFFER, resources.objectInstances);
+        gl.bufferData(gl.ARRAY_BUFFER, objectData.subarray(0, total), gl.DYNAMIC_DRAW);
+      }
+      objectUploaded = { keys: sorted, instances: total / OBJECT_INTS };
     }
+    const instances = objectUploaded?.instances ?? 0;
+    if (instances === 0) return 0;
     objectProgram ??= link(gl, objectVertexSource, objectFragmentSource, OBJECT_UNIFORMS);
     gl.useProgram(objectProgram.program);
     setSpritePassUniforms(objectProgram.uniforms);
     gl.bindVertexArray(resources.objectArray);
-    gl.bindBuffer(gl.ARRAY_BUFFER, resources.objectInstances);
-    gl.bufferData(gl.ARRAY_BUFFER, objectData.subarray(0, total), gl.STREAM_DRAW);
     gl.enable(gl.BLEND);
     gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-    gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, total / OBJECT_INTS);
+    gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, instances);
     gl.disable(gl.BLEND);
     gl.bindVertexArray(null);
     return 1;
   };
 
-  /** Draws the wires and actuators of `items` over everything else (wireFragmentSource), premultiplied. */
-  const drawWires = (source: RenderableWorld, items: readonly (readonly [ChunkCoord, number])[]): number => {
+  /** The wire and actuator bits (0–4) set anywhere in `chunk` (cached), 0 without a flags plane. */
+  const wireBitsOf = (source: RenderableWorld, chunk: ChunkCoord, key: number): number => {
+    const cached = wireChunks.get(key);
+    if (cached !== undefined) return cached;
+    const { flags } = source.planes;
+    let bits = 0;
+    if (flags !== undefined) {
+      const top = chunk.y * CHUNK_SIZE;
+      const bottom = Math.min(source.height, top + CHUNK_SIZE);
+      const right = Math.min(source.width, (chunk.x + 1) * CHUNK_SIZE);
+      for (let x = chunk.x * CHUNK_SIZE; x < right && bits !== WIRE_LAYER.all; x++) {
+        const column = x * source.height;
+        for (let y = top; y < bottom; y++) bits |= flags[column + y] ?? 0;
+        bits &= WIRE_LAYER.all;
+      }
+    }
+    wireChunks.set(key, bits);
+    return bits;
+  };
+
+  /** Draws the wires and actuators of the chunks of `ready` with any shown over everything else, premultiplied. */
+  const drawWires = (source: RenderableWorld, ready: readonly (readonly [ChunkCoord, number])[]): number => {
+    const shown = (layers >> 4) & WIRE_LAYER.all;
+    const chunksX = Math.ceil(source.width / CHUNK_SIZE);
+    const items = ready.filter(([chunk]) => (wireBitsOf(source, chunk, chunk.y * chunksX + chunk.x) & shown) !== 0);
+    if (items.length === 0) return 0;
     wireProgram ??= link(gl, chunkVertexSource, wireFragmentSource, WIRE_UNIFORMS);
     const program = wireProgram;
     gl.useProgram(program.program);
@@ -1690,6 +1735,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     spriteProgram = null;
     objectProgram = null;
     wireProgram = null;
+    objectUploaded = null;
     // A background link died with the context; the next sprite frame (or atlas) starts another.
     endSpriteLink(parallelCompile !== null);
     spriteLinkError = null;
@@ -1717,6 +1763,8 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
         paletteUploaded = 0;
         planeSources = null;
         objectCache.clear();
+        objectUploaded = null;
+        wireChunks.clear();
         // Also drops the reference that would keep the previous world's planes alive.
         if (gl.isContextLost()) unpackWorld = null;
         else resetUnpack();
@@ -1782,6 +1830,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
         const chunkX = Math.floor(x / CHUNK_SIZE);
         const chunkY = Math.floor(y / CHUNK_SIZE);
         for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) objectCache.delete((chunkY + dy) * chunksX + chunkX + dx);
+        wireChunks.delete(chunkY * chunksX + chunkX);
       }
       for (const [key, area] of touched) {
         if (chunks.has(key)) dirtyChunks.set(key, union(dirtyChunks.get(key), area));
