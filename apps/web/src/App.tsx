@@ -142,10 +142,9 @@ export function App({ layoutStorage }: AppProps = {}): React.JSX.Element {
   useGlobalShortcuts(commands);
   const dockHidden = useLayoutStore((state) => state.dockHidden);
   const dockWidth = useLayoutStore((state) => state.dockWidth);
-  const tool = useViewStore((state) => state.tool);
 
   return (
-    <div className="app" data-tool={tool} data-dock={dockHidden ? "hidden" : "shown"} style={{ "--dock-width": `${String(dockWidth)}px` } as React.CSSProperties}>
+    <div className="app" data-dock={dockHidden ? "hidden" : "shown"} style={{ "--dock-width": `${String(dockWidth)}px` } as React.CSSProperties}>
       <TopBar commands={commands} />
       <ToolRail commands={commands} />
       <ToolOptions commands={commands} />

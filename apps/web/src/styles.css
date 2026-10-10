@@ -644,9 +644,9 @@ kbd {
 .brush-segments { display: inline-flex; border: 1px solid var(--border-strong); border-radius: var(--radius); overflow: hidden; }
 .brush-segments button { height: 22px; padding: 0 var(--space-2); background: var(--surface-2); color: var(--text-2); border: 0; font: inherit; }
 .brush-segments button + button { border-left: 1px solid var(--border); }
-.brush-segments button:hover:not(:disabled) { background: var(--surface-3); color: var(--text-1); }
+.brush-segments button:hover:not(:disabled, [aria-disabled="true"]) { background: var(--surface-3); color: var(--text-1); }
 .brush-segments button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent-text); box-shadow: inset 0 -2px var(--accent-text); }
-.brush-segments button:disabled { opacity: .5; }
+.brush-segments button:disabled, .brush-segments button[aria-disabled="true"] { opacity: .5; cursor: not-allowed; }
 .brush-segments button:focus-visible { outline-offset: -2px; }
 .brush-slider { width: 88px; margin: 0; accent-color: var(--accent-text); cursor: pointer; }
 .brush-slider:disabled { cursor: default; opacity: .5; }
@@ -1384,6 +1384,15 @@ kbd {
 .status-cursor {
   min-width: 12ch;
   color: var(--text-1);
+}
+
+.status-selection {
+  min-width: 11ch;
+  color: var(--text-1);
+}
+
+.status-selection[data-too-large="true"] {
+  color: var(--danger);
 }
 
 .status-depth {
@@ -2430,26 +2439,5 @@ kbd {
   opacity: 0.7;
 }
 
-.area-layer-options {
-  flex-wrap: wrap;
-}
-
-.tool-options[data-selection="true"] {
-  height: auto;
-  min-height: min-content;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  padding-block: var(--space-1);
-  overflow: visible;
-}
-
-.tool-options[data-selection="true"] .brush-option-group {
-  max-width: 100%;
-  flex-wrap: wrap;
-}
-
-@media (min-width: 1024px) {
-  .app[data-tool="select"] {
-    grid-template-rows: var(--bar) auto minmax(0, 1fr) var(--status);
-  }
-}
+/* The group names say what the toggles act on ("Copy", "Paste"), so they stay where the sliders' labels go. */
+.tool-options .area-option-label { display: inline; }

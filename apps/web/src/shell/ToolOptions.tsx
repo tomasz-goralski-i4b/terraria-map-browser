@@ -137,7 +137,7 @@ export function ToolOptions({ commands: supplied }: { readonly commands?: readon
   const locked = brush.active || !commandById(commands, `tool.${tool}`).enabled;
   const layers = brushLayers(brush.layer);
   return (
-    <div className="tool-options" role="region" aria-label="Tool options" data-editing={editing || tool === "select"} data-selection={tool === "select"}>
+    <div className="tool-options" role="region" aria-label="Tool options" data-editing={editing || tool === "select"}>
       <span className="tool-options-identity">
         {definition !== undefined && <Icon name={definition.icon} />}
         <span className="tool-options-name">{definition?.label}</span>

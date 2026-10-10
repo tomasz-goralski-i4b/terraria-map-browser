@@ -108,10 +108,15 @@ export function placePaste(): void {
   if (locked() || loaded === null || clipboard === null || !useAreaStore.getState().pasting) return;
   movePaste(useAreaStore.getState().position);
   if (preview === null || !useAreaStore.getState().canPlace) return;
-  if (commitAreaEdit(loaded, preview.tiles, preview.apply)) cancelArea();
+  if (commitAreaEdit(loaded, preview.tiles, preview.apply)) { stopPaste(); useAreaStore.setState({ selection: null }); }
 }
+function stopPaste(): void {
+  generation++; preview = null; previewKey = ""; useAreaStore.setState({ pasting: false, position: null, message: null, canPlace: false });
+}
+/** Escape, as in image editors: a floating paste is dropped first and the selection stays; then the selection goes. */
 export function cancelArea(): void {
-  generation++; preview = null; previewKey = ""; useAreaStore.setState({ pasting: false, position: null, selection: null, message: null, canPlace: false });
+  if (useAreaStore.getState().pasting) stopPaste();
+  else useAreaStore.setState({ selection: null, message: null });
 }
 useAreaStore.subscribe((state, previous) => {
   if (state.options !== previous.options && state.pasting) movePaste(state.position);

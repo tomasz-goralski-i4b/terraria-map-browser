@@ -48,7 +48,7 @@ test("stationary paste pixels follow destination Undo/Redo and invalid preview d
   cancelArea(); useAreaStore.setState({ layers: DEFAULT_COPY_LAYERS });
   selectArea({ x: 2, y: 2 }, { x: 2, y: 2 }); copySelection(); startPaste(); movePaste({ x: 12, y: 12 });
   await expect.element(page.getByRole("button", { name: "Place paste", exact: true })).toBeDisabled();
-  await page.getByRole("combobox", { name: "Paste air" }).selectOptions("transparent");
+  await page.getByRole("button", { name: "Transparent air" }).click();
   await expect.element(page.getByRole("button", { name: "Place paste", exact: true })).toBeEnabled();
   useAreaStore.setState({ layers: DEFAULT_COPY_LAYERS });
 });
@@ -93,7 +93,7 @@ test("rectangle drag, copy, read-only coloured preview, Enter placement and Esca
   await page.getByRole("textbox", { name: "Sign text" }).fill("Welcome to the forest village");
   await userEvent.keyboard("{Control>}v{/Control}"); expect(useAreaStore.getState().pasting).toBe(false);
   await expect.element(page.getByRole("group", { name: "Copy layers" })).toBeVisible();
-  startPaste(); await expect.element(page.getByRole("combobox", { name: "Paste air" })).toBeVisible();
+  startPaste(); await expect.element(page.getByRole("button", { name: "Transparent air" })).toBeVisible();
   cancelArea();
   getMapController()?.jumpTo({ x: 0, y: 0, zoom: 8 });
   const rect = canvas.getBoundingClientRect();
@@ -127,6 +127,8 @@ test("Select options fit the existing shell in both themes and desktop/tablet/ph
       if (canvas === null) throw new Error("World map is missing");
       const bounds = options.element().getBoundingClientRect();
       expect(bounds.bottom).toBeLessThanOrEqual(canvas.getBoundingClientRect().top + 1);
+      // Desktop: one fixed row, so switching to Select never moves the map.
+      if (width >= 1024) expect(bounds.height).toBe(30);
       for (const field of options.element().querySelectorAll("input, select, button")) {
         if ((field as HTMLElement).offsetParent === null) continue;
         const rectangle = field.getBoundingClientRect();
@@ -137,9 +139,10 @@ test("Select options fit the existing shell in both themes and desktop/tablet/ph
       expect(results.violations.map((violation) => violation.id)).toEqual([]);
       if (width === 1440 || width === 360) await page.screenshot({ path: `.tdd/area-${theme}-${String(width)}.png` });
       selectArea({ x: 100, y: 100 }, { x: 109, y: 109 }); copySelection(); startPaste();
-      await expect.element(page.getByRole("combobox", { name: "Paste liquids" })).toBeVisible();
+      await expect.element(page.getByRole("button", { name: "Merge liquids" })).toBeVisible();
       const pasteBounds = options.element().getBoundingClientRect();
       expect(pasteBounds.bottom).toBeLessThanOrEqual(canvas.getBoundingClientRect().top + 1);
+      if (width >= 1024) expect(pasteBounds.height).toBe(30);
       for (const field of options.element().querySelectorAll("input, select, button")) {
         if ((field as HTMLElement).offsetParent === null) continue;
         const rectangle = field.getBoundingClientRect(); expect(rectangle.right).toBeLessThanOrEqual(width); expect(rectangle.bottom).toBeLessThanOrEqual(pasteBounds.bottom);

@@ -8,6 +8,8 @@ export interface CopyLayers { readonly blocks: boolean; readonly walls: boolean;
 export interface PasteOptions { readonly air: "replace" | "transparent"; readonly walls: "replace" | "keep"; readonly liquids: "replace" | "merge" }
 export const DEFAULT_COPY_LAYERS: CopyLayers = { blocks: true, walls: true, liquids: true, wires: true, paint: true, objects: true };
 export const DEFAULT_PASTE_OPTIONS: PasteOptions = { air: "replace", walls: "replace", liquids: "replace" };
+/** The largest selection Copy accepts, bounding the clipboard and preview allocations. */
+export const MAX_AREA_TILES = 262144;
 type ObjectSection = "Chests" | "Signs" | "TileEntities" | "WeightedPressurePlates";
 const OBJECT_SECTIONS: readonly ObjectSection[] = ["Chests", "Signs", "TileEntities", "WeightedPressurePlates"];
 type ObjectRecords = Pick<WorldTilesResult["entities"], ObjectSection>;
@@ -28,7 +30,7 @@ function editable(world: WorldTilesResult): void {
 export function copyArea(world: WorldTilesResult, area: Area, layers: CopyLayers = DEFAULT_COPY_LAYERS): AreaClipboard {
   editable(world);
   const { x: left, y: top, width, height } = area;
-  if (![left, top, width, height].every(Number.isSafeInteger) || left < 0 || top < 0 || width < 1 || height < 1 || left + width > world.metadata.width || top + height > world.metadata.height || width * height > 262144) throw new RangeError("Select up to 262,144 tiles inside the world");
+  if (![left, top, width, height].every(Number.isSafeInteger) || left < 0 || top < 0 || width < 1 || height < 1 || left + width > world.metadata.width || top + height > world.metadata.height || width * height > MAX_AREA_TILES) throw new RangeError(`Select up to ${MAX_AREA_TILES.toLocaleString("en-US")} tiles inside the world`);
   const planes = createWorld(width, height).planes;
   for (const name of PLANE_NAMES) for (let x = 0; x < width; x++) planes[name].set(world.planes[name].subarray((left + x) * world.metadata.height + top, (left + x) * world.metadata.height + top + height), x * height);
   const snapshot = viewWorld(width, height, planes, structuredClone(world.palette), { indicesChecked: true });

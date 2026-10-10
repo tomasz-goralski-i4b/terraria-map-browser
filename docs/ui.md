@@ -56,7 +56,8 @@ Code: `apps/web/src/ui/` (primitives), `apps/web/src/shell/` (layout, commands, 
     write a verified copy until saving over the opened file exists), Save As… `Ctrl+Shift+S`, Close World (asks
     before dropping unsaved edits, as opening another world does).
   - *View*: Show panels, Fit world, Actual size, Show render stats, **Theme ▸**, Reset layout.
-  - *Edit*: Undo `Ctrl+Z`, Redo `Ctrl+Shift+Z` (Command on macOS). They also sit on the top bar right after the
+  - *Edit*: Undo `Ctrl+Z`, Redo `Ctrl+Shift+Z` (Command on macOS); then Copy `Ctrl+C`, Paste `Ctrl+V`, Place paste
+    `Enter` and Deselect / Cancel paste `Escape` for the Select tool. Undo and Redo also sit on the top bar right after the
     menus, as in Krita and Photopea; the tool options bar holds only the tool's settings (on phones, where the top
     bar has no room, it carries Undo and Redo at its end).
   - *Assets*: Connect, Preview sprite sheets, Disconnect.
@@ -80,7 +81,10 @@ Code: `apps/web/src/ui/` (primitives), `apps/web/src/shell/` (layout, commands, 
   the Swatches tab) with its paint
   well, Paint only, the Blocks / Walls / Both target, size (slider and number, 1–64; `[` `]`), square/round shape,
   Smooth edges (the hammer), the stabilizer (Off to 100%) and the outline toggle, then Undo/Redo from the shared
-  command registry. Erase keeps the target, size, shape, Smooth edges and the stabilizer. On narrow screens the
+  command registry. Erase keeps the target, size, shape, Smooth edges and the stabilizer. Select shows the Copy
+  toggles (which layers Copy takes) and the Copy, Paste and Deselect buttons; while a paste floats, its toggles
+  (Transparent air, Keep walls, Merge liquids) and Place paste / Cancel paste. On desktop the bar is one fixed row for
+  every tool, so switching tools never moves the map. On narrow screens the
   fields wrap, materials first. See [editor.md](editor.md).
 - **Map** (`components/MapView.tsx`, `MapCanvas.tsx`) holds the zoom controls (Fit world `F`, 1:1 `1`) in its top
   right corner. The minimap (#145) and transient messages (loading, errors) also go over the map. With no world it shows the **start screen** (`components/StartScreen.tsx`),
@@ -117,7 +121,8 @@ Code: `apps/web/src/ui/` (primitives), `apps/web/src/shell/` (layout, commands, 
     percentage and press Enter (or leave the field) to zoom there around the centre of the view, clamped to the
     supported range (12.5 %–25 600 %, lower only to fit a large world); Escape keeps the zoom.
 
-  With editing it also shows the selection size and the brush footprint.
+  With editing it also shows the selection size, or the floating paste's (left of the zoom; in `--danger` above the
+  Copy limit).
 
 ### Depth bands (status bar)
 

@@ -1,32 +1,93 @@
 import { useAreaStore } from "../world/area-session.js";
 import type { CopyLayers, PasteOptions } from "../world/area-clipboard.js";
-import { type Command, commandById } from "./commands.js";
+import { shortcutText } from "../ui/IconButton.js";
+import { TOOLS, type Command, commandById } from "./commands.js";
 
-const LAYERS: readonly (readonly [keyof CopyLayers, string])[] = [["blocks", "Blocks"], ["walls", "Walls"], ["liquids", "Liquids"], ["wires", "Wires / actuators"], ["paint", "Paint"], ["objects", "Objects / entities"]];
-const OPTIONS: readonly { readonly key: keyof PasteOptions; readonly label: string; readonly choices: readonly string[] }[] = [
-  { key: "air", label: "Air", choices: ["replace", "transparent"] }, { key: "walls", label: "Walls", choices: ["replace", "keep"] }, { key: "liquids", label: "Liquids", choices: ["replace", "merge"] },
+const LAYERS: readonly { readonly key: keyof CopyLayers; readonly label: string; readonly tooltip: string }[] = [
+  { key: "blocks", label: "Blocks", tooltip: "Blocks with their shape and actuation" },
+  { key: "walls", label: "Walls", tooltip: "Walls" },
+  { key: "liquids", label: "Liquids", tooltip: "Water, lava, honey and shimmer" },
+  { key: "wires", label: "Wires", tooltip: "Wires and actuators" },
+  { key: "paint", label: "Paint", tooltip: "Paint and coatings of blocks and walls" },
+  { key: "objects", label: "Objects", tooltip: "Whole objects with their chests, signs and tile entities" },
 ];
+
+/** Each paste option is a toggle that departs from "the copy replaces what is there". */
+const PASTE_TOGGLES: readonly { readonly label: string; readonly tooltip: string; readonly on: (options: PasteOptions) => boolean; readonly set: (options: PasteOptions, on: boolean) => PasteOptions }[] = [
+  { label: "Transparent air", tooltip: "Empty tiles in the copy keep the block under them", on: (options) => options.air === "transparent", set: (options, on) => ({ ...options, air: on ? "transparent" : "replace" }) },
+  { label: "Keep walls", tooltip: "Keep the walls that are already there", on: (options) => options.walls === "keep", set: (options, on) => ({ ...options, walls: on ? "keep" : "replace" }) },
+  { label: "Merge liquids", tooltip: "Add to liquid of the same kind, up to a full tile; other liquids stay", on: (options) => options.liquids === "merge", set: (options, on) => ({ ...options, liquids: on ? "merge" : "replace" }) },
+];
+
+/** A toggle in a segmented row. `aria-disabled` keeps it focusable, so its tooltip can say why it is off. */
+function Toggle({ label, tooltip, pressed, disabled, onChange }: {
+  readonly label: string; readonly tooltip: string; readonly pressed: boolean; readonly disabled: boolean; readonly onChange: (pressed: boolean) => void;
+}): React.JSX.Element {
+  return (
+    <button
+      type="button" aria-pressed={pressed} aria-disabled={disabled || undefined} data-tooltip={tooltip} data-tooltip-side="bottom"
+      onClick={() => { if (!disabled) onChange(!pressed); }}
+    >{label}</button>
+  );
+}
+
+/** A command as a text button: the same label, shortcut and disabled reason as its menu item. */
+function CommandButton({ command, primary = false }: { readonly command: Command; readonly primary?: boolean }): React.JSX.Element {
+  const tooltip = [command.shortcut === undefined ? "" : shortcutText(command.shortcut), command.enabled ? "" : command.disabledReason ?? ""]
+    .filter((part) => part !== "").join(" — ");
+  return (
+    <button
+      type="button" className={`button button-small${primary && command.enabled ? " button-primary" : ""}`}
+      aria-keyshortcuts={command.shortcut} aria-disabled={!command.enabled || undefined}
+      {...(tooltip === "" ? {} : { "data-tooltip": tooltip, "data-tooltip-side": "bottom" })}
+      onClick={() => { if (command.enabled) command.run(); }}
+    >{command.label}</button>
+  );
+}
+
+/**
+ * Select's options, as an image editor's marquee: what Copy takes, then the clipboard actions. While a paste floats,
+ * how it combines with what is there, then Place and Cancel. One row, the same controls as Brush.
+ */
 export function AreaOptions({ commands, disabled }: { readonly commands: readonly Command[]; readonly disabled: boolean }): React.JSX.Element {
   const state = useAreaStore();
+  const copy = commandById(commands, "edit.copy");
+  const tooLarge = state.selection !== null && !copy.enabled && copy.disabledReason?.startsWith("Too large") === true;
+  const hint = state.message ?? (tooLarge ? copy.disabledReason : state.selection === null ? TOOLS.find((tool) => tool.id === "select")?.hint : "Ctrl+C to copy · Escape to deselect");
   return <>
-    {!state.pasting && <div className="brush-option-group area-layer-options" role="group" aria-label="Copy layers">
-      <span className="brush-option-label">Copy</span>
-      {LAYERS.map(([key, label]) => <label key={key} className="brush-field"><input type="checkbox" checked={state.layers[key] && (key !== "objects" || state.layers.blocks)} aria-describedby={key === "objects" && !state.layers.blocks ? "objects-requires-blocks" : undefined} disabled={disabled || state.pasting || (key === "objects" && !state.layers.blocks)} onChange={(event) => { useAreaStore.setState({ layers: { ...state.layers, [key]: event.target.checked } }); }} />{label}</label>)}
-      {!state.layers.blocks && <span id="objects-requires-blocks" className="tool-options-hint">Objects / entities: Requires Blocks</span>}
-    </div>}
-    {state.pasting && <div className="brush-option-group" role="group" aria-label="Paste options">
-      {OPTIONS.map(({ key, label, choices }) => <label key={key} className="brush-field">{label}<select aria-label={`Paste ${key}`} disabled={disabled} value={state.options[key]} onChange={(event) => {
-        const value = event.target.value;
-        const options = state.options;
-        useAreaStore.setState({ options: key === "air" ? { ...options, air: value === "transparent" ? "transparent" : "replace" } : key === "walls" ? { ...options, walls: value === "keep" ? "keep" : "replace" } : { ...options, liquids: value === "merge" ? "merge" : "replace" } });
-      }}>{choices.map((value) => <option key={value} value={value}>{value === "merge" ? "Merge same kind" : value[0]?.toUpperCase()}{value === "merge" ? "" : value.slice(1)}</option>)}</select></label>)}
-    </div>}
+    {state.pasting ? (
+      <div className="brush-option-group" role="group" aria-label="Paste options">
+        <span className="brush-option-label area-option-label">Paste</span>
+        <div className="brush-segments">
+          {PASTE_TOGGLES.map((toggle) => (
+            <Toggle
+              key={toggle.label} label={toggle.label} tooltip={toggle.tooltip} pressed={toggle.on(state.options)} disabled={disabled}
+              onChange={(on) => { useAreaStore.setState({ options: toggle.set(state.options, on) }); }}
+            />
+          ))}
+        </div>
+      </div>
+    ) : (
+      <div className="brush-option-group" role="group" aria-label="Copy layers">
+        <span className="brush-option-label area-option-label">Copy</span>
+        <div className="brush-segments">
+          {LAYERS.map(({ key, label, tooltip }) => {
+            const needsBlocks = key === "objects" && !state.layers.blocks;
+            return (
+              <Toggle
+                key={key} label={label} tooltip={needsBlocks ? "Objects need Blocks" : tooltip} pressed={state.layers[key] && !needsBlocks} disabled={disabled || needsBlocks}
+                onChange={(on) => { useAreaStore.setState({ layers: { ...state.layers, [key]: on } }); }}
+              />
+            );
+          })}
+        </div>
+      </div>
+    )}
     <div className="brush-option-group" role="group" aria-label="Selection actions">
-      {(state.pasting ? ["edit.placePaste", "edit.cancelArea"] : ["edit.copy", "edit.paste", ...(state.selection === null ? [] : ["edit.cancelArea"])]).map((id) => {
-        const command = commandById(commands, id);
-        return <button key={id} type="button" className="button" disabled={!command.enabled} title={command.disabledReason ?? command.shortcut} onClick={command.run}>{command.label}</button>;
-      })}
+      {state.pasting
+        ? <><CommandButton command={commandById(commands, "edit.placePaste")} primary /><CommandButton command={commandById(commands, "edit.cancelArea")} /></>
+        : <><CommandButton command={copy} /><CommandButton command={commandById(commands, "edit.paste")} />{state.selection !== null && <CommandButton command={commandById(commands, "edit.cancelArea")} />}</>}
     </div>
-    <span className="tool-options-hint" role="status">{state.message ?? (state.selection === null ? "Drag a rectangle · Ctrl+C / Ctrl+V" : `${String(state.selection.width)} × ${String(state.selection.height)} tiles`)}</span>
+    <span className={tooLarge ? "tool-options-notice" : "tool-options-hint"} role="status">{hint}</span>
   </>;
 }

@@ -9,6 +9,7 @@ import { closeWorld } from "../world/world-session.js";
 import { finishBrush, redoBrush, setBrushSize, undoBrush, useBrushStore } from "../world/brush-session.js";
 import { WORLD_GROUP_IDS } from "../panels/world-fields.js";
 import { cancelArea, copySelection, placePaste, startPaste, useAreaStore } from "../world/area-session.js";
+import { MAX_AREA_TILES } from "../world/area-clipboard.js";
 import { resetLayout, useLayoutStore, type ThemeChoice } from "./layout-store.js";
 import { getMapController, useViewStore, type MapLayers, type ToolId } from "./view-store.js";
 
@@ -52,7 +53,7 @@ export const TOOLS: readonly ToolDefinition[] = [
   { id: "brush", label: "Brush", icon: "brush", shortcut: "B", group: "edit", available: true, hint: "Drag to paint simple blocks or walls" },
   { id: "erase", label: "Erase", icon: "erase", shortcut: "E", group: "edit", available: true, hint: "Drag to erase the selected layer" },
   { id: "fill", label: "Fill", icon: "fill", shortcut: "G", group: "edit", available: false, hint: "" },
-  { id: "select", label: "Select", icon: "select", shortcut: "M", group: "edit", available: true, hint: "Drag a rectangle · Ctrl+C to copy · Ctrl+V to preview · Escape to cancel" },
+  { id: "select", label: "Select", icon: "select", shortcut: "M", group: "edit", available: true, hint: "Drag a rectangle · Ctrl+C to copy · Ctrl+V to paste" },
   { id: "picker", label: "Pick content", icon: "picker", shortcut: "K", group: "edit", available: false, hint: "" },
   { id: "object", label: "Place object", icon: "object", shortcut: "O", group: "objects", available: false, hint: "" },
 ];
@@ -149,6 +150,8 @@ export function useCommands(): Command[] {
   const canUndo = useBrushStore((state) => state.canUndo);
   const canRedo = useBrushStore((state) => state.canRedo);
   const area = useAreaStore();
+  const areaCopyReason = area.pasting ? "Place or cancel the paste first" : area.selection === null ? "Select an area first"
+    : area.selection.width * area.selection.height > MAX_AREA_TILES ? `Too large: select up to ${MAX_AREA_TILES.toLocaleString("en-US")} tiles` : null;
   const editReason = loadingWorld ? "A world is loading" : saving ? "Finish exporting first" : brushReason;
   const dockHidden = useLayoutStore((state) => state.dockHidden);
   const setDockHidden = useLayoutStore((state) => state.setDockHidden);
@@ -171,16 +174,16 @@ export function useCommands(): Command[] {
   const setSpritePreviewOpen = useViewStore((state) => state.setSpritePreviewOpen);
 
   return [
-    ...([
-      ["edit.copy", "Copy area", "Control+C", area.selection !== null && !area.pasting, "Select a rectangle first", copySelection],
-      ["edit.paste", "Paste area", "Control+V", area.hasClipboard, "Copy an area first", startPaste],
-      ["edit.placePaste", "Place paste", "Enter", area.pasting && area.canPlace, area.message ?? "Preview a paste first", placePaste],
-      ["edit.cancelArea", "Deselect / cancel paste", "Escape", area.pasting || area.selection !== null, "No selection or paste", cancelArea],
-    ] as const).map(([id, label, shortcut, available, reason, run]): Command => ({ id, group: "Edit", label, shortcut, enabled: available && editReason === null, ...(!available || editReason !== null ? { disabledReason: editReason ?? reason } : {}), run })),
     { id: "edit.undo", group: "Edit", label: "Undo", icon: "undo", shortcut: "Control+Z", enabled: canUndo && editReason === null,
       ...(editReason !== null ? { disabledReason: editReason } : !canUndo ? { disabledReason: "No stroke to undo" } : {}), run: undoBrush },
     { id: "edit.redo", group: "Edit", label: "Redo", icon: "redo", shortcut: "Control+Shift+Z", enabled: canRedo && editReason === null,
       ...(editReason !== null ? { disabledReason: editReason } : !canRedo ? { disabledReason: "No stroke to redo" } : {}), run: redoBrush },
+    ...([
+      ["edit.copy", "Copy", "Control+C", areaCopyReason === null, areaCopyReason, copySelection],
+      ["edit.paste", "Paste", "Control+V", area.hasClipboard, "Copy an area first", startPaste],
+      ["edit.placePaste", "Place paste", "Enter", area.pasting && area.canPlace, area.pasting ? area.message ?? "Preparing preview…" : "Paste first", placePaste],
+      ["edit.cancelArea", area.pasting ? "Cancel paste" : "Deselect", "Escape", area.pasting || area.selection !== null, "Nothing is selected", cancelArea],
+    ] as const).map(([id, label, shortcut, available, reason, run]): Command => ({ id, group: "Edit", label, shortcut, enabled: available && editReason === null, ...(!available || editReason !== null ? { disabledReason: editReason ?? reason ?? "" } : {}), run })),
     { id: "file.open", group: "File", label: "Open World…", icon: "file", shortcut: "Control+O", enabled: true, run: chooseWorldFile },
     {
       id: "file.openFolder", group: "File", label: "Open Folder…", icon: "folder", enabled: hasFolderPicker(),

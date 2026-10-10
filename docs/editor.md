@@ -2,19 +2,24 @@
 
 ## Area copy and paste
 
-Select (`M`) drags an inclusive rectangular selection. Copy (`Ctrl+C`, or Command on macOS) captures independent
-CWM planes and a content palette; subsequent edits do not change the clipboard. The options bar chooses Blocks,
-Walls, Liquids, Wires / actuators, Paint and Objects / entities. All are selected by default. Objects require Blocks.
-Changing a copy mask takes effect on the next Copy.
+Select (`M`) drags an inclusive rectangular selection; the status bar shows its size (in the danger colour above the
+Copy limit). Copy (`Ctrl+C`, or Command on macOS) captures independent CWM planes and a content palette; subsequent
+edits do not change the clipboard. The options bar is one row, like Brush's: a **Copy** row of toggles (Blocks, Walls,
+Liquids, Wires, Paint, Objects; all on by default) chooses what Copy takes, then the Copy, Paste and Deselect
+buttons. Objects need Blocks; its toggle says so while Blocks is off. Changing the toggles takes effect on the next
+Copy.
 
-Paste (`Ctrl+V`) switches Select to a floating, translucent map-colour preview, using the same compact options bar.
-Click or Enter places it; Escape cancels it or deselects a rectangle. The Edit menu, command palette and buttons
-use the same commands. Text fields retain native copy and paste. Right/middle drags still pan.
+Paste (`Ctrl+V`) switches Select to a floating, translucent map-colour preview that follows the pointer. The options
+bar then shows the paste toggles and Place paste / Cancel paste. Click or Enter places it. Escape works as in image
+editors: it drops a floating paste and keeps the selection; pressed again, it deselects. The Edit menu (after Undo
+and Redo), command palette and buttons use the same commands, and each disabled one says why. Text fields retain
+native copy and paste. Right/middle drags still pan.
 
-Paste defaults replace air, walls and liquids. Transparent air keeps the destination block and its paint/coatings;
-Keep walls preserves the destination wall and its paint/coatings. Merge liquids adds matching kinds, capped at
-255; a different destination kind is preserved. Unselected layers stay unchanged. Each placement is one undo
-entry in the brush history, including copied entity records, with renderer invalidation updating adjacent framing.
+By default the copy replaces what is there. **Transparent air** keeps the destination block and its paint/coatings
+under empty copied tiles; **Keep walls** preserves the destination wall and its paint/coatings; **Merge liquids**
+adds matching kinds, capped at 255, and preserves a different destination kind. Unselected layers stay unchanged.
+Each placement is one undo entry in the brush history, including copied entity records, with renderer invalidation
+updating adjacent framing.
 
 Frame-important tiles are grouped conservatively into connected same-content components. A component crossing
 the selection or world boundary is omitted whole; adjacent identical objects may therefore be omitted together.

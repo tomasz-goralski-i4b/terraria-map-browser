@@ -101,3 +101,13 @@ test("invalid overlap disables placement and option-only recovery clears the err
   expect(useAreaStore.getState()).toMatchObject({ canPlace: true, message: "Click or Enter to place · Escape to cancel" });
   placePaste(); expect(view.tileAt(5, 5)).toMatchObject({ block: { id: 21 }, wall: { id: 1 } });
 });
+
+test("Escape drops a floating paste first and keeps the selection, then deselects", () => {
+  const world = meadow(); setBrushWorld(world); setAreaWorld(world);
+  selectArea({ x: 2, y: 2 }, { x: 3, y: 3 }); copySelection(); startPaste(); movePaste({ x: 5, y: 5 });
+  cancelArea();
+  expect(useAreaStore.getState().pasting).toBe(false);
+  expect(useAreaStore.getState().selection).toEqual({ x: 2, y: 2, width: 2, height: 2 });
+  cancelArea();
+  expect(useAreaStore.getState().selection).toBeNull();
+});
