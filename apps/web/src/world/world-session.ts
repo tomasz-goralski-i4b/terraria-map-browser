@@ -1,6 +1,8 @@
 import { WorldWorkerClient, WorldWorkerError, type WorldTilesResult } from "@studio/world-codec";
 import { useAppStore, type LoadError } from "../store.js";
 import { resetWorldSave } from "./save-world.js";
+import { finishBrush, setBrushWorld } from "./brush-session.js";
+import { confirmDiscardChanges } from "./discard-guard.js";
 import type { OpenedWorldFile, OpenWorldHandle, WorldSaveDirectory } from "./world-file.js";
 
 /** Small display facts about the loaded world; the planes and palette themselves stay outside React and the store. */
@@ -66,16 +68,20 @@ export function createWorldSession(parser: WorldParser): WorldSession {
   };
 
   const open = async (file: File, handle?: OpenWorldHandle, directory?: WorldSaveDirectory): Promise<void> => {
-    resetWorldSave();
+    finishBrush();
+    // Only an unsaved world waits for the question, before anything changes: declining leaves a load in flight going.
+    if (useAppStore.getState().unsavedChanges && !(await confirmDiscardChanges())) return;
     current?.abort();
     const controller = new AbortController();
     current = controller;
+    resetWorldSave();
     const store = useAppStore.getState();
     store.setLoading(file.name);
     try {
       const world = await parser.parse(file, { signal: controller.signal });
       if (current !== controller) return;
       loaded = world;
+      setBrushWorld("entities" in world ? world : null);
       openedFile = { file, handle: handle ?? null, directory: directory ?? null };
       useAppStore.getState().setLoaded(summarize(world, file));
     } catch (error) {
@@ -89,6 +95,8 @@ export function createWorldSession(parser: WorldParser): WorldSession {
   };
 
   const reset = (): void => {
+    finishBrush(true);
+    setBrushWorld(null);
     resetWorldSave();
     cancel();
     current = null;
@@ -115,7 +123,8 @@ export function getDefaultWorldSession(): WorldSession {
   return defaultSession;
 }
 
-/** File ▸ Close World: back to the start screen. */
-export function closeWorld(): void {
-  resetDefaultWorldSession();
+/** File ▸ Close World: back to the start screen, after asking about unsaved edits. */
+export async function closeWorld(): Promise<void> {
+  finishBrush();
+  if (await confirmDiscardChanges()) resetDefaultWorldSession();
 }

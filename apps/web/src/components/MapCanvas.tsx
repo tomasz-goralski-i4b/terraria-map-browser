@@ -3,9 +3,12 @@ import {
   CameraAnimator, clampCamera, createMapRenderer, fitWorld, terrariaMapPalette, visibleChunks, wheelPixels,
 } from "@studio/renderer";
 import type { Camera, MapRenderer, RenderableWorld, Size } from "@studio/renderer";
+import { brushFootprint, type BrushShape } from "@studio/world-model";
 import { getDefaultAssetSession, useAssetStore } from "../assets/asset-session.js";
 import { registerMapController, rendererLayers, useViewStore, type ToolId } from "../shell/view-store.js";
 import { getBlockFraming } from "../world/block-framing.js";
+import { beginBrush, finishBrush, moveBrush, pickBrushMaterial, subscribeBrushChanges, useBrushStore } from "../world/brush-session.js";
+import { createBrushStabilizer } from "../world/brush-stabilizer.js";
 
 const KEY_PAN_PIXELS_PER_MS = 0.384;
 const KEY_ZOOM_FACTOR = 1.25;
@@ -18,7 +21,7 @@ const CLICK_SLOP = 4;
 const CANVAS_STYLE: React.CSSProperties = {
   position: "absolute", inset: 0, width: "100%", height: "100%", touchAction: "none", cursor: "grab",
 };
-const TOOL_CURSORS: Partial<Record<ToolId, string>> = { inspect: "crosshair" };
+const TOOL_CURSORS: Partial<Record<ToolId, string>> = { inspect: "crosshair", brush: "crosshair", erase: "crosshair" };
 
 // Overlays are positioned inline for the same reason: they must stay above the canvas and clickable.
 const CONTROLS_STYLE: React.CSSProperties = { position: "absolute", top: 8, right: 8, zIndex: 1, display: "flex", gap: 4 };
@@ -63,6 +66,34 @@ function applySprites(renderer: MapRenderer, shown: boolean): void {
   renderer.setSpriteMode(shown);
 }
 
+let footprintCache: { readonly key: string; readonly fill: string; readonly edge: string } | null = null;
+
+/**
+ * The brush footprint around its centre tile, clipped to [left, right) × [top, bottom) (offsets from the centre):
+ * `fill`, one unit square per tile, and `edge`, the outline where a footprint tile meets one outside it, as image
+ * editors outline a brush. Both in tiles from the clipped top-left corner.
+ */
+function footprintPaths(size: number, shape: BrushShape, left: number, top: number, right: number, bottom: number): { readonly fill: string; readonly edge: string } {
+  const key = `${String(size)} ${shape} ${String(left)} ${String(top)} ${String(right)} ${String(bottom)}`;
+  if (footprintCache?.key === key) return footprintCache;
+  const cells = brushFootprint(size, shape).filter(({ x, y }) => x >= left && x < right && y >= top && y < bottom);
+  const inside = new Set(cells.map(({ x, y }) => `${String(x)},${String(y)}`));
+  const has = (x: number, y: number): boolean => inside.has(`${String(x)},${String(y)}`);
+  let fill = "";
+  let edge = "";
+  for (const { x, y } of cells) {
+    const px = x - left;
+    const py = y - top;
+    fill += `M${String(px)} ${String(py)}h1v1h-1z`;
+    if (!has(x, y - 1)) edge += `M${String(px)} ${String(py)}h1`;
+    if (!has(x, y + 1)) edge += `M${String(px)} ${String(py + 1)}h1`;
+    if (!has(x - 1, y)) edge += `M${String(px)} ${String(py)}v1`;
+    if (!has(x + 1, y)) edge += `M${String(px + 1)} ${String(py)}v1`;
+  }
+  footprintCache = { key, fill, edge };
+  return footprintCache;
+}
+
 /**
  * The canvas that owns the renderer and turns input into camera moves; it draws nothing itself. The tile under the
  * pointer and the zoom go to the view store for the status bar; the chrome reaches the camera through the registered
@@ -70,6 +101,7 @@ function applySprites(renderer: MapRenderer, shown: boolean): void {
  */
 export function MapCanvas({ world }: { readonly world: RenderableWorld }): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const footprintRef = useRef<HTMLDivElement>(null);
   const sessionRef = useRef<MapSession | null>(null);
   const worldRef = useRef(world);
   const [error, setError] = useState<string | null>(null);
@@ -83,6 +115,24 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
    * slop on its way (an out-and-back drag is still a drag).
    */
   const pressRef = useRef<{ readonly at: Point; moved: boolean } | null>(null);
+  const brushPointer = useRef<number | null>(null);
+  const brushPointerType = useRef<string>("mouse");
+  // Where the painting pointer last was (CSS pixels), so a second finger can turn the stroke into a pinch.
+  const brushLast = useRef<Point | null>(null);
+  const brushTrail = useRef<{
+    readonly filter: ReturnType<typeof createBrushStabilizer>;
+    point: Point | null;
+    time: number;
+  } | null>(null);
+  /**
+   * Ends the stroke in progress. Navigation, a lost pointer or focus keep what was painted (one undo entry); only
+   * Escape (`cancel`) takes the stroke back.
+   */
+  const endStroke = (cancel = false): void => {
+    finishBrush(cancel);
+    brushPointer.current = null;
+    brushTrail.current = null;
+  };
 
   /** Canvas backing-store pixels of a point in CSS pixels relative to the canvas, at the current canvas geometry. */
   const toBacking = useCallback((point: Point): Point => {
@@ -95,11 +145,46 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
   const refreshHover = useCallback((session: MapSession): void => {
     const hover = session.hover === null ? null : toBacking(session.hover);
     const tile = hover === null ? null : session.renderer.tileAt(hover.x, hover.y);
+    const footprint = footprintRef.current;
+    const selected = useViewStore.getState().tool;
+    const brush = useBrushStore.getState();
+    if (footprint !== null) {
+      const trail = brushTrail.current;
+      const placement = trail === null ? hover : trail.point === null ? null : toBacking(trail.point);
+      const target = placement === null ? null : session.renderer.tileAt(placement.x, placement.y);
+      const show = target !== null && brush.placementPreview && (selected === "brush" || selected === "erase") && brush.reason === null && session.pointers.size === 0;
+      footprint.hidden = !show;
+      const canvas = canvasRef.current;
+      if (show && canvas !== null) {
+        const offset = Math.floor(brush.size / 2);
+        const left = Math.max(0, target.x - offset);
+        const top = Math.max(0, target.y - offset);
+        const right = Math.min(session.world.width, target.x - offset + brush.size);
+        const bottom = Math.min(session.world.height, target.y - offset + brush.size);
+        const scaleX = session.camera.zoom * canvas.clientWidth / canvas.width;
+        const scaleY = session.camera.zoom * canvas.clientHeight / canvas.height;
+        footprint.style.left = `${String((left - session.camera.x) * scaleX)}px`;
+        footprint.style.top = `${String((top - session.camera.y) * scaleY)}px`;
+        footprint.style.width = `${String((right - left) * scaleX)}px`;
+        footprint.style.height = `${String((bottom - top) * scaleY)}px`;
+        footprint.querySelector("svg")?.setAttribute("viewBox", `0 0 ${String(right - left)} ${String(bottom - top)}`);
+        const outline = footprintPaths(brush.size, brush.shape, left - target.x, top - target.y, right - target.x, bottom - target.y);
+        const [fill, ...edges] = footprint.querySelectorAll("path");
+        fill?.setAttribute("d", outline.fill);
+        for (const edge of edges) edge.setAttribute("d", outline.edge);
+      }
+    }
     const previous = session.hoverTile;
     if (previous?.x === tile?.x && previous?.y === tile?.y) return;
     session.hoverTile = tile;
     useViewStore.getState().setHoverTile(tile);
   }, [toBacking]);
+
+  const drawBrushPoint = (session: MapSession, local: Point | null): void => {
+    const point = local === null ? null : toBacking(local);
+    const tile = point === null ? null : session.renderer.tileAt(point.x, point.y);
+    moveBrush(tile?.x ?? -1, tile?.y ?? -1);
+  };
 
   const applyCamera = useCallback((session: MapSession, camera: Camera): void => {
     session.camera = camera;
@@ -160,16 +245,36 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
             session.animator.reset(first ? fitWorld(size, session.world) : clampCamera(session.animator.current, size, session.world), size, session.world);
           }
           const { camera, settled } = session.animator.step();
+          const trail = brushTrail.current;
+          let brushSettled = true;
+          if (trail !== null && useBrushStore.getState().active) {
+            const now = performance.now();
+            const sample = trail.filter.step(now - trail.time);
+            trail.time = now;
+            trail.point = sample.point;
+            brushSettled = sample.settled;
+            drawBrushPoint(session, sample.point);
+          }
           if (session.cameraDirty || camera.x !== session.camera.x || camera.y !== session.camera.y || camera.zoom !== session.camera.zoom) {
             session.cameraDirty = false;
             applyCamera(session, camera);
           } else refreshHover(session);
-          if (!settled) session.requestFrame();
+          if (!settled || !brushSettled) session.requestFrame();
         });
       },
     };
     sessionRef.current = session;
+    const unsubscribeBrushOptions = useBrushStore.subscribe((state) => {
+      if (!state.active) { brushTrail.current = null; brushPointer.current = null; }
+      session.requestFrame();
+    });
+    const unsubscribeTool = useViewStore.subscribe((state, previous) => {
+      if (state.tool !== previous.tool) session.requestFrame();
+    });
     renderer.setWorld(session.world);
+    const unsubscribeEdits = subscribeBrushChanges((edited, tiles) => {
+      if (edited.planes === session.world.planes) renderer.invalidateTiles(tiles);
+    });
     renderer.setLayers(rendererLayers(useViewStore.getState().layers));
     applySprites(renderer, useViewStore.getState().layers.sprites);
     // Self-framed blocks (dirt, stone, ores, grass, …) keep their map colours until the framing database is inflated.
@@ -189,11 +294,13 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
     motionPreference.addEventListener("change", updateMotionPreference);
 
     const stopMotion = (): void => {
+      endStroke();
       session.keys.clear();
       session.animator.cancelMotion();
     };
     window.addEventListener("blur", stopMotion);
 
+    // The wheel zooms at the pointer, so the tile under a painting pointer stays put and the stroke goes on.
     const onWheel = (event: WheelEvent): void => {
       event.preventDefault();
       if (session.viewport.width === 0) return;
@@ -209,6 +316,7 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
       const width = Math.round(canvas.clientWidth * window.devicePixelRatio);
       const height = Math.round(canvas.clientHeight * window.devicePixelRatio);
       if (width === 0 || height === 0 || (width === canvas.width && height === canvas.height && session.viewport.width !== 0)) return;
+      endStroke();
       // Geometry and camera must change in the same frame, including the test hooks and resting-pointer status.
       session.pendingResize = { width, height };
       queueCamera(session);
@@ -221,6 +329,7 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
     window.addEventListener("resize", resize);
 
     const zoomBy = (factor: number): void => {
+      endStroke();
       if (session.viewport.width === 0) return;
       session.keys.clear();
       session.animator.zoom(factor, session.viewport.width / 2, session.viewport.height / 2);
@@ -228,6 +337,7 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
     };
     registerMapController({
       centerOn: (x, y) => {
+        endStroke();
         if (session.viewport.width === 0) return;
         session.keys.clear();
         session.animator.pan(0, 0); // settles which camera the next pan starts from
@@ -246,6 +356,7 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
         zoomBy(zoom / session.animator.target.zoom);
       },
       jumpTo: (camera) => {
+        endStroke();
         if (session.viewport.width === 0) return;
         session.keys.clear();
         session.animator.reset(clampCamera(camera, session.viewport, session.world), session.viewport, session.world);
@@ -258,6 +369,10 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
     });
 
     return () => {
+      endStroke();
+      unsubscribeEdits();
+      unsubscribeBrushOptions();
+      unsubscribeTool();
       registerMapController(null);
       useViewStore.getState().setHoverTile(null);
       useViewStore.getState().setZoom(null);
@@ -336,8 +451,47 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
 
   const onPointerDown = (event: React.PointerEvent<HTMLCanvasElement>): void => {
     withSession((session) => {
+      const selected = useViewStore.getState().tool;
+      if (brushPointer.current !== null) {
+        // Another finger while painting: keep the stroke and pinch with both.
+        const last = brushLast.current;
+        const painting = brushPointer.current;
+        endStroke();
+        // A palm landing during a pen stroke ends it but does not pinch.
+        if (event.pointerType === "touch" && brushPointerType.current === "touch" && last !== null) session.pointers.set(painting, last);
+      }
+      const point = toBacking(localPoint(event.clientX, event.clientY));
+      const tile = (selected === "brush" || selected === "erase") && event.isPrimary && event.button === 0 && session.pointers.size === 0
+        ? session.renderer.tileAt(point.x, point.y)
+        : null;
+      // Alt+click picks the materials under the pointer, as an image editor's eyedropper.
+      if (tile !== null && event.altKey && selected === "brush") {
+        pickBrushMaterial(tile.x, tile.y);
+        return;
+      }
+      // Shift+click draws a straight line from where the last stroke ended.
+      if (tile !== null && beginBrush(selected === "erase", event.shiftKey)) {
+        session.animator.cancelMotion();
+        session.keys.clear();
+        brushPointer.current = event.pointerId;
+        brushPointerType.current = event.pointerType;
+        const local = localPoint(event.clientX, event.clientY);
+        brushLast.current = local;
+        const strength = useBrushStore.getState().smoothing;
+        brushTrail.current = { filter: createBrushStabilizer(local, strength), point: local, time: performance.now() };
+        session.hover = local;
+        moveBrush(tile.x, tile.y);
+        session.requestFrame();
+        try {
+          event.currentTarget.setPointerCapture(event.pointerId);
+        } catch {
+          // A pointer that ended before capture can still finish its stroke over the canvas.
+        }
+        return;
+      }
       session.keys.clear();
       session.animator.beginDrag();
+      event.currentTarget.style.cursor = "grabbing";
       session.pointers.set(event.pointerId, localPoint(event.clientX, event.clientY));
       // Only a lone primary-button press can pin; a second finger, or another button, makes it a gesture.
       pressRef.current = session.pointers.size === 1 && event.isPrimary && event.button === 0
@@ -354,6 +508,34 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
   const onPointerMove = (event: React.PointerEvent<HTMLCanvasElement>): void => {
     withSession((session) => {
       const local = localPoint(event.clientX, event.clientY);
+      if (brushPointer.current === event.pointerId) {
+        brushLast.current = local;
+        if ((event.pointerType === "mouse" || event.pointerType === "pen") && event.buttons !== 1) {
+          // Another button joined (or the primary one was released unseen): keep the stroke; a held button pans.
+          endStroke();
+          if (event.buttons !== 0) {
+            session.animator.beginDrag();
+            session.pointers.set(event.pointerId, local);
+            pressRef.current = null;
+            event.currentTarget.style.cursor = "grabbing";
+          }
+          session.hover = local;
+          session.requestFrame();
+          return;
+        }
+        const point = toBacking(local);
+        const tile = session.renderer.tileAt(point.x, point.y);
+        const trail = brushTrail.current;
+        if (trail !== null) {
+          const now = performance.now();
+          trail.point = trail.filter.move(tile === null ? null : local, now - trail.time);
+          trail.time = now;
+          drawBrushPoint(session, trail.point);
+        }
+        session.hover = local;
+        session.requestFrame();
+        return;
+      }
       const last = session.pointers.get(event.pointerId);
       const press = pressRef.current;
       if (press !== null && Math.hypot(local.x - press.at.x, local.y - press.at.y) >= CLICK_SLOP) press.moved = true;
@@ -384,6 +566,16 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
 
   const onPointerEnd = (event: React.PointerEvent<HTMLCanvasElement>): void => {
     withSession((session) => {
+      if (brushPointer.current === event.pointerId) {
+        if (event.type === "pointerup") {
+          const local = localPoint(event.clientX, event.clientY);
+          const point = toBacking(local);
+          brushTrail.current?.filter.move(session.renderer.tileAt(point.x, point.y) === null ? null : local);
+          drawBrushPoint(session, brushTrail.current?.filter.finish() ?? null);
+        }
+        endStroke();
+        return;
+      }
       if (!session.pointers.delete(event.pointerId)) return;
       const press = pressRef.current;
       pressRef.current = null;
@@ -395,6 +587,7 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
       if (session.pointers.size === 0) session.animator.endDrag(event.type !== "pointerup");
       else session.animator.beginDrag();
       session.requestFrame();
+      event.currentTarget.style.cursor = TOOL_CURSORS[useViewStore.getState().tool] ?? "grab";
     });
   };
 
@@ -415,8 +608,15 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
         pinAt(session, anchor);
         return;
       }
+      if (event.key === "Escape" && brushPointer.current !== null) {
+        event.preventDefault();
+        event.stopPropagation();
+        endStroke(true);
+        return;
+      }
       const arrow = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key);
       const factor = { "+": KEY_ZOOM_FACTOR, "=": KEY_ZOOM_FACTOR, "-": 1 / KEY_ZOOM_FACTOR, _: 1 / KEY_ZOOM_FACTOR }[event.key];
+      if (arrow || factor !== undefined) endStroke();
       if (!arrow && factor === undefined) {
         session.keys.clear();
         session.animator.cancelMotion();
@@ -445,6 +645,7 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
         tabIndex={0}
         aria-label="World map"
         data-map-palette={terrariaMapPalette.gameVersion}
+        onContextMenu={(event) => { event.preventDefault(); }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerEnd}
@@ -463,18 +664,21 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
           });
         }}
         onBlur={() => {
+          endStroke();
           withSession((session) => {
             session.keys.clear();
             session.animator.cancelMotion();
           });
         }}
       />
+      <div ref={footprintRef} className="brush-footprint" aria-hidden="true" hidden style={{ position: "absolute", pointerEvents: "none" }}><svg width="100%" height="100%"><path className="brush-footprint-fill" /><path className="brush-footprint-halo" /><path className="brush-footprint-edge" /></svg></div>
       <div className="map-controls" style={CONTROLS_STYLE}>
         <button
           type="button"
           className="button button-overlay"
           aria-keyshortcuts="F"
           onClick={() => {
+            endStroke();
             withSession((session) => {
               session.keys.clear();
               session.animator.zoom(fitWorld(session.viewport, session.world).zoom / session.animator.target.zoom,
@@ -490,6 +694,7 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
           className="button button-overlay"
           aria-keyshortcuts="1"
           onClick={() => {
+            endStroke();
             withSession((session) => {
               session.keys.clear();
               session.animator.zoom(1 / session.animator.target.zoom, session.viewport.width / 2, session.viewport.height / 2);

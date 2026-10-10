@@ -249,8 +249,10 @@ test("the menu bar works from the keyboard: Alt+letter, arrows between menus and
   await userEvent.keyboard("{Alt>}f{/Alt}");
   await expect.element(page.getByRole("menuitem", { name: "Open World…" })).toHaveFocus();
   await userEvent.keyboard("{ArrowRight}");
+  await expect.element(page.getByRole("menuitem", { name: "Undo", exact: true })).toHaveFocus();
+  await userEvent.keyboard("{ArrowRight}");
   await expect.element(page.getByRole("menuitemcheckbox", { name: "Show panels" })).toHaveFocus();
-  await userEvent.keyboard("{ArrowLeft}");
+  await userEvent.keyboard("{ArrowLeft}{ArrowLeft}");
   await expect.element(page.getByRole("menuitem", { name: "Open World…" })).toHaveFocus();
   // Open World…, Open Folder…, Worlds, Open Recent.
   await userEvent.keyboard("{ArrowDown}{ArrowDown}{ArrowDown}");
@@ -303,14 +305,15 @@ test("the dock tabs follow the arrow keys, Home and End", async () => {
   await userEvent.keyboard("{Home}");
   await expect.element(world).toHaveAttribute("aria-selected", "true");
   await userEvent.keyboard("{End}");
-  await expect.element(view).toHaveAttribute("aria-selected", "true");
-  // The Inspector stays visible with either tab.
+  await expect.element(page.getByRole("tab", { name: "Swatches" })).toHaveAttribute("aria-selected", "true");
+  await expect.element(page.getByRole("tabpanel")).toMatchTextContent("Open a vanilla world first");
+  // The Inspector stays visible with any tab.
   await expect.element(page.getByRole("region", { name: "Inspector" })).toBeVisible();
 });
 
 test("every dock section opens and closes from the keyboard", async () => {
   await render(<App layoutStorage={storage} />);
-  for (const [tab, name] of [["World", "World"], ["World", "Content"], ["World", "Entities"], ["World", "Inspector"], ["View", "Layers"], ["View", "Inspector"]] as const) {
+  for (const [tab, name] of [["World", "World"], ["World", "Content"], ["World", "Entities"], ["World", "Inspector"], ["View", "Layers"], ["View", "Inspector"], ["Swatches", "Swatches"]] as const) {
     await dockTab(tab);
     const toggle = sectionToggle(name);
     const before = toggle.getAttribute("aria-expanded");
@@ -397,4 +400,41 @@ test("below 1024 px the rail runs along the top, the dock sits under the map and
   expect(rail.bottom).toBeLessThanOrEqual(map.top + 1);
   expect(map.height).toBeGreaterThanOrEqual(700 / 2 - 1);
   expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(800);
+});
+
+test("the Inspector's top edge resizes it against the tabs, by dragging or the keys, and the height persists", async () => {
+  const first = await render(<App layoutStorage={storage} />);
+  const splitter = page.getByRole("separator", { name: "Resize Inspector" });
+  await expect.element(splitter).toHaveAttribute("aria-orientation", "horizontal");
+  const inspector = document.querySelector<HTMLElement>(".dock-inspector");
+  if (inspector === null) throw new Error("The Inspector is missing");
+  const start = inspector.getBoundingClientRect().height;
+  const handle = splitter.element() as HTMLElement;
+  const box = handle.getBoundingClientRect();
+  const at = (type: string, dy: number): void => {
+    handle.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerId: 3, clientX: box.left + 10, clientY: box.top + dy }));
+  };
+  at("pointerdown", 0);
+  at("pointermove", -30);
+  at("pointerup", -30);
+  await expect.poll(() => Math.round(inspector.getBoundingClientRect().height)).toBe(Math.round(start + 30));
+  handle.focus();
+  await userEvent.keyboard("{ArrowDown}");
+  await expect.poll(() => Math.round(inspector.getBoundingClientRect().height)).toBe(Math.round(start + 30 - 16));
+  await first.unmount();
+  await render(<App layoutStorage={storage} />);
+  await expect.poll(() => Math.round(document.querySelector<HTMLElement>(".dock-inspector")?.getBoundingClientRect().height ?? 0)).toBe(Math.round(start + 14));
+});
+
+test("a right click opens no browser menu, except in text fields", async () => {
+  await render(<App layoutStorage={storage} />);
+  const click = (target: Element): boolean => {
+    const event = new MouseEvent("contextmenu", { button: 2, bubbles: true, cancelable: true });
+    target.dispatchEvent(event);
+    return event.defaultPrevented;
+  };
+  expect(click(page.getByRole("tab", { name: "World" }).element())).toBe(true);
+  expect(click(document.body)).toBe(true);
+  await page.getByRole("button", { name: "Command palette" }).click();
+  expect(click(page.getByRole("combobox", { name: "Command" }).element())).toBe(false);
 });

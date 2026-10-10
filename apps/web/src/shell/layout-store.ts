@@ -1,15 +1,15 @@
 import { create } from "zustand";
 
 /** The dock sections, in display order. */
-export const SECTION_IDS = ["world", "layers", "inspector", "content", "entities"] as const;
+export const SECTION_IDS = ["world", "layers", "inspector", "content", "entities", "swatches"] as const;
 export type SectionId = (typeof SECTION_IDS)[number];
 
-/** The dock's tabs: what the world is (properties, content, entities) and what is shown (layers). */
-export const DOCK_TABS = ["world", "view"] as const;
+/** The dock's tabs: what the world is (properties, content, entities), what is shown (layers) and what is painted. */
+export const DOCK_TABS = ["world", "view", "swatches"] as const;
 export type DockTab = (typeof DOCK_TABS)[number];
 /** Which tab each section lives in; the Inspector is under the tabs, visible with either. */
 export const SECTION_TAB: Readonly<Record<Exclude<SectionId, "inspector">, DockTab>> = {
-  layers: "view", world: "world", content: "world", entities: "world",
+  layers: "view", world: "world", content: "world", entities: "world", swatches: "swatches",
 };
 
 export type ThemeChoice = "system" | "dark" | "light";
@@ -28,6 +28,8 @@ export interface Layout {
   readonly dockWidth: number;
   readonly dockHidden: boolean;
   readonly dockTab: DockTab;
+  /** The open Inspector's height in CSS pixels, set by its splitter; null fits its content (up to half the dock). */
+  readonly inspectorHeight: number | null;
   /** Table columns, keyed by table id and column id. */
   readonly columns: Readonly<Record<string, Readonly<Record<string, ColumnLayout>>>>;
   readonly theme: ThemeChoice;
@@ -38,11 +40,12 @@ export interface Layout {
 }
 
 export const DEFAULT_LAYOUT = {
-  sections: { world: true, layers: true, inspector: true, content: false, entities: false },
+  sections: { world: true, layers: true, inspector: true, content: false, entities: false, swatches: true },
   groups: {},
   dockWidth: 320,
   dockHidden: false,
   dockTab: "world",
+  inspectorHeight: null,
   columns: {},
   theme: "system",
   inspectorShowAll: false,
@@ -66,6 +69,7 @@ export interface LayoutState extends Layout {
   /** Opens or closes several groups at once (Expand all / Collapse all). */
   readonly setGroupsOpen: (keys: readonly string[], open: boolean) => void;
   readonly setDockWidth: (width: number) => void;
+  readonly setInspectorHeight: (height: number | null) => void;
   readonly setDockHidden: (hidden: boolean) => void;
   readonly setDockTab: (tab: DockTab) => void;
   readonly setColumn: (table: string, column: string, layout: ColumnLayout) => void;
@@ -119,13 +123,14 @@ function parseLayout(text: string | null): Layout {
   const sections = Object.fromEntries(
     SECTION_IDS.map((id) => [id, storedSections[id] ?? DEFAULT_LAYOUT.sections[id]]),
   ) as Record<SectionId, boolean>;
-  const { dockWidth, dockHidden, dockTab, theme, inspectorShowAll, chestView } = value;
+  const { dockWidth, dockHidden, dockTab, inspectorHeight, theme, inspectorShowAll, chestView } = value;
   return {
     sections,
     groups: booleans(value["groups"]),
     dockWidth: typeof dockWidth === "number" && Number.isFinite(dockWidth) ? clampDockWidth(dockWidth) : DEFAULT_LAYOUT.dockWidth,
     dockHidden: typeof dockHidden === "boolean" ? dockHidden : DEFAULT_LAYOUT.dockHidden,
     dockTab: DOCK_TABS.find((tab) => tab === dockTab) ?? DEFAULT_LAYOUT.dockTab,
+    inspectorHeight: typeof inspectorHeight === "number" && Number.isFinite(inspectorHeight) && inspectorHeight > 0 ? inspectorHeight : null,
     columns: columnLayouts(value["columns"]),
     theme: theme === "dark" || theme === "light" || theme === "system" ? theme : DEFAULT_LAYOUT.theme,
     inspectorShowAll: typeof inspectorShowAll === "boolean" ? inspectorShowAll : DEFAULT_LAYOUT.inspectorShowAll,
@@ -148,9 +153,9 @@ function browserStorage(): LayoutStorage | null {
 let storage: LayoutStorage | null = null;
 
 function save(layout: Layout): void {
-  const { sections, groups, dockWidth, dockHidden, dockTab, columns, theme, inspectorShowAll, chestView } = layout;
+  const { sections, groups, dockWidth, dockHidden, dockTab, inspectorHeight, columns, theme, inspectorShowAll, chestView } = layout;
   try {
-    storage?.setItem(LAYOUT_STORAGE_KEY, JSON.stringify({ sections, groups, dockWidth, dockHidden, dockTab, columns, theme, inspectorShowAll, chestView }));
+    storage?.setItem(LAYOUT_STORAGE_KEY, JSON.stringify({ sections, groups, dockWidth, dockHidden, dockTab, inspectorHeight, columns, theme, inspectorShowAll, chestView }));
   } catch {
     // Private mode, quota or blocked storage: the layout still works for this visit.
   }
@@ -174,6 +179,9 @@ export const useLayoutStore = create<LayoutState>()((set, get) => {
     },
     setDockWidth: (width) => {
       update({ dockWidth: clampDockWidth(width) });
+    },
+    setInspectorHeight: (height) => {
+      update({ inspectorHeight: height });
     },
     setDockHidden: (hidden) => {
       update({ dockHidden: hidden });

@@ -6,6 +6,7 @@ import { Table, type Column } from "../ui/Table.js";
 import { countContentInSlices, type ContentCounts, type CountablePlanes } from "../world/content-counts.js";
 import { contentKey, contentName, LIQUID_NAMES } from "../world/content-names.js";
 import { getDefaultWorldSession } from "../world/world-session.js";
+import { subscribeBrushChanges, useBrushStore } from "../world/brush-session.js";
 
 /** What the Content panel reads of a world: three planes and the palette, by reference. */
 export interface ContentWorld {
@@ -31,6 +32,29 @@ const countCache = new WeakMap<CountablePlanes, ContentCounts>();
 /** A small number per world, so React state can name a world's count without holding its planes. */
 const generations = new WeakMap<CountablePlanes, number>();
 let lastGeneration = 0;
+
+// Counts already computed for these same planes are updated by sparse diffs, never a scan per pointer sample.
+subscribeBrushChanges((world, tiles, direction) => {
+  generations.set(world.planes, ++lastGeneration);
+  const cached = countCache.get(world.planes);
+  if (cached === undefined) return;
+  const grow = (array: Uint32Array): Uint32Array => {
+    if (array.length >= world.palette.length) return array;
+    const copy = new Uint32Array(world.palette.length);
+    copy.set(array);
+    return copy;
+  };
+  const counts = { blocks: grow(cached.blocks), walls: grow(cached.walls), liquids: cached.liquids };
+  for (const tile of tiles) for (const change of tile.changes) {
+    const values = change.plane === "block" ? counts.blocks : change.plane === "wall" ? counts.walls : change.plane === "liquid" ? counts.liquids : null;
+    if (values === null) continue;
+    const old = direction === "after" ? change.before : change.after;
+    const next = change[direction];
+    if (old < values.length && (change.plane !== "liquid" || old !== 0)) values[old] = (values[old] ?? 0) - 1;
+    if (next < values.length && (change.plane !== "liquid" || next !== 0)) values[next] = (values[next] ?? 0) + 1;
+  }
+  countCache.set(world.planes, counts);
+});
 
 function generationOf(planes: CountablePlanes): number {
   let generation = generations.get(planes);
@@ -92,6 +116,8 @@ function sessionContentWorld(): ContentWorld | null {
  * input; progress shows in the panel. Later this table is also where a material is picked for painting.
  */
 export function ContentPanel({ world }: { readonly world?: ContentWorld | null }): React.JSX.Element {
+  const revision = useBrushStore((state) => state.revision);
+  const active = useBrushStore((state) => state.active);
   const summary = useAppStore((state) => state.summary);
   const sessionWorld = useMemo(() => (summary === null ? null : sessionContentWorld()), [summary]);
   const shown = world === undefined ? sessionWorld : world;
@@ -106,14 +132,16 @@ export function ContentPanel({ world }: { readonly world?: ContentWorld | null }
   const cached = shown === null ? undefined : countCache.get(shown.planes);
 
   useEffect(() => {
-    if (shown === null || countCache.has(shown.planes)) return undefined;
+    if (shown === null || active || countCache.has(shown.planes)) return undefined;
     const controller = new AbortController();
+    const countingGeneration = generationOf(shown.planes);
     countContentInSlices(shown.planes, shown.palette.length, {
       signal: controller.signal,
       onProgress: (done, total) => {
         setProgress({ generation: generationOf(shown.planes), done: done / total });
       },
     }).then((result) => {
+      if (controller.signal.aborted || generationOf(shown.planes) !== countingGeneration) return;
       countCache.set(shown.planes, result);
       setCompleted((count) => count + 1);
     }, (error: unknown) => {
@@ -122,7 +150,7 @@ export function ContentPanel({ world }: { readonly world?: ContentWorld | null }
     return () => {
       controller.abort();
     };
-  }, [shown]);
+  }, [shown, revision, active]);
 
   const rows = useMemo(() => (shown === null || cached === undefined ? null : contentRows(shown, cached)), [shown, cached]);
   const filtered = useMemo(() => (rows === null || kind === "all" ? rows : rows.filter((row) => row.kind === kind)), [rows, kind]);

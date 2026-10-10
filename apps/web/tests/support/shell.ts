@@ -22,7 +22,7 @@ export async function hoverSubmenu(name: string): Promise<void> {
 }
 
 /** Selects a dock tab ("World" or "View"). */
-export async function dockTab(name: "World" | "View"): Promise<void> {
+export async function dockTab(name: "World" | "View" | "Swatches"): Promise<void> {
   await page.getByRole("tab", { name, exact: true }).click();
   await expect.element(page.getByRole("tab", { name, exact: true })).toHaveAttribute("aria-selected", "true");
 }

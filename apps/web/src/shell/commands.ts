@@ -6,11 +6,12 @@ import { chooseWorldFile } from "../world/open-world.js";
 import { openSaveAs, useSaveStore } from "../world/save-world.js";
 import { chooseWorldsFolder, hasFolderPicker } from "../world/world-library.js";
 import { closeWorld } from "../world/world-session.js";
+import { finishBrush, redoBrush, setBrushSize, undoBrush, useBrushStore } from "../world/brush-session.js";
 import { WORLD_GROUP_IDS } from "../panels/world-fields.js";
 import { resetLayout, useLayoutStore, type ThemeChoice } from "./layout-store.js";
 import { getMapController, useViewStore, type MapLayers, type ToolId } from "./view-store.js";
 
-export type CommandGroup = "File" | "View" | "Layers" | "Tools" | "Assets" | "Help";
+export type CommandGroup = "File" | "Edit" | "View" | "Layers" | "Tools" | "Assets" | "Help";
 
 /**
  * One user action. Menus, the tool rail, tooltips, the shortcut help and the command palette are all built from this
@@ -47,28 +48,76 @@ const EDITING_LATER = "World editing is not available yet";
 export const TOOLS: readonly ToolDefinition[] = [
   { id: "pan", label: "Pan", icon: "pan", shortcut: "H", group: "navigate", available: true, hint: "Drag to pan · Wheel or +/− to zoom · Arrow keys to move" },
   { id: "inspect", label: "Inspect", icon: "inspect", shortcut: "I", group: "navigate", available: true, hint: "Click a tile (or press Enter) to pin it in the Inspector · Hover to preview · Drag to pan" },
-  { id: "brush", label: "Brush", icon: "brush", shortcut: "B", group: "edit", available: false, hint: "" },
-  { id: "erase", label: "Erase", icon: "erase", shortcut: "E", group: "edit", available: false, hint: "" },
+  { id: "brush", label: "Brush", icon: "brush", shortcut: "B", group: "edit", available: true, hint: "Drag to paint simple blocks or walls" },
+  { id: "erase", label: "Erase", icon: "erase", shortcut: "E", group: "edit", available: true, hint: "Drag to erase the selected layer" },
   { id: "fill", label: "Fill", icon: "fill", shortcut: "G", group: "edit", available: false, hint: "" },
   { id: "select", label: "Select", icon: "select", shortcut: "M", group: "edit", available: false, hint: "" },
   { id: "picker", label: "Pick content", icon: "picker", shortcut: "K", group: "edit", available: false, hint: "" },
   { id: "object", label: "Place object", icon: "object", shortcut: "O", group: "objects", available: false, hint: "" },
 ];
 
-export function toolCommands(tool: ToolId, setTool: (tool: ToolId) => void): Command[] {
-  return TOOLS.map((definition) => ({
+export function toolCommands(tool: ToolId, setTool: (tool: ToolId) => void, editReason: string | null = "Open a vanilla world first"): Command[] {
+  return TOOLS.map((definition) => {
+    const reason = !definition.available ? EDITING_LATER : definition.id === "brush" || definition.id === "erase" ? editReason : null;
+    return ({
     id: `tool.${definition.id}`,
     group: "Tools",
     label: definition.label,
     icon: definition.icon,
     shortcut: definition.shortcut,
-    enabled: definition.available,
-    ...(definition.available ? {} : { disabledReason: EDITING_LATER }),
+    enabled: reason === null,
+    ...(reason === null ? {} : { disabledReason: reason }),
     checked: tool === definition.id,
     run: () => {
+      finishBrush();
       setTool(definition.id);
     },
+  });
+  });
+}
+
+/** `[` and `]` change the brush size as in image editors: one tile at a time up to 8, then in larger steps. */
+export function brushSizeCommands(editing: boolean): Command[] {
+  // The size is read when the key arrives: several presses can come before the next render.
+  const step = (size: number, direction: 1 | -1): number => {
+    // The step is chosen by the smaller of the two sizes, so ] and [ retrace each other's sizes.
+    const from = direction > 0 ? size : size - 1;
+    const delta = from < 8 ? 1 : from < 24 ? 2 : 4;
+    return size + direction * delta;
+  };
+  const reason = editing ? null : "Choose Brush or Erase first";
+  return ([["tool.brushSmaller", "Smaller brush", "[", -1], ["tool.brushLarger", "Larger brush", "]", 1]] as const).map(([id, label, shortcut, direction]) => ({
+    id, group: "Tools", label, shortcut, enabled: reason === null,
+    ...(reason === null ? {} : { disabledReason: reason }),
+    run: () => {
+      // The footprint of a stroke in progress is fixed; so is its outline.
+      if (!useBrushStore.getState().active) setBrushSize(step(useBrushStore.getState().size, direction));
+    },
   }));
+}
+
+/**
+ * Brush settings from the keyboard, as image editors give their options keys: X swaps blocks and walls (Shift+X
+ * both), Shift+B the shape, S Smooth edges, R Place and Paint. Not during a stroke, whose settings are fixed.
+ */
+export function brushOptionCommands(tool: ToolId): Command[] {
+  const editing = tool === "brush" || tool === "erase";
+  const set = (change: (state: ReturnType<typeof useBrushStore.getState>) => Partial<ReturnType<typeof useBrushStore.getState>>) => () => {
+    const state = useBrushStore.getState();
+    if (!state.active) useBrushStore.setState(change(state));
+  };
+  const reason = (brushOnly: boolean): string | null => (!editing ? "Choose Brush or Erase first" : brushOnly && tool !== "brush" ? "Choose Brush first" : null);
+  const options: readonly (readonly [string, string, string, boolean, ReturnType<typeof set>])[] = [
+    ["tool.brushSwapLayer", "Swap block and wall target", "X", false, set((state) => ({ layer: state.layer === "block" ? "wall" : "block" }))],
+    ["tool.brushBothLayers", "Target blocks and walls", "Shift+X", false, set(() => ({ layer: "both" }))],
+    ["tool.brushShape", "Toggle square and round brush", "Shift+B", false, set((state) => ({ shape: state.shape === "square" ? "circle" : "square" }))],
+    ["tool.brushSmooth", "Toggle Smooth edges", "S", false, set((state) => ({ smooth: !state.smooth }))],
+    ["tool.brushPaintOnly", "Toggle Place and Paint", "R", true, set((state) => ({ paintOnly: !state.paintOnly }))],
+  ];
+  return options.map(([id, label, shortcut, brushOnly, run]) => {
+    const why = reason(brushOnly);
+    return { id, group: "Tools", label, shortcut, enabled: why === null, ...(why === null ? {} : { disabledReason: why }), run };
+  });
 }
 
 /** Layer toggles, in the order of the Layers panel, with their shortcuts. Sprites has its own row (with the assets). */
@@ -94,6 +143,11 @@ export function useCommands(): Command[] {
   const hasWorld = useAppStore((state) => state.summary !== null);
   const loadingWorld = useAppStore((state) => state.phase === "loading");
   const saving = useSaveStore((state) => state.open);
+  const unsaved = useAppStore((state) => state.unsavedChanges);
+  const brushReason = useBrushStore((state) => state.reason);
+  const canUndo = useBrushStore((state) => state.canUndo);
+  const canRedo = useBrushStore((state) => state.canRedo);
+  const editReason = loadingWorld ? "A world is loading" : saving ? "Finish exporting first" : brushReason;
   const dockHidden = useLayoutStore((state) => state.dockHidden);
   const setDockHidden = useLayoutStore((state) => state.setDockHidden);
   const theme = useLayoutStore((state) => state.theme);
@@ -115,6 +169,10 @@ export function useCommands(): Command[] {
   const setSpritePreviewOpen = useViewStore((state) => state.setSpritePreviewOpen);
 
   return [
+    { id: "edit.undo", group: "Edit", label: "Undo", icon: "undo", shortcut: "Control+Z", enabled: canUndo && editReason === null,
+      ...(editReason !== null ? { disabledReason: editReason } : !canUndo ? { disabledReason: "No stroke to undo" } : {}), run: undoBrush },
+    { id: "edit.redo", group: "Edit", label: "Redo", icon: "redo", shortcut: "Control+Shift+Z", enabled: canRedo && editReason === null,
+      ...(editReason !== null ? { disabledReason: editReason } : !canRedo ? { disabledReason: "No stroke to redo" } : {}), run: redoBrush },
     { id: "file.open", group: "File", label: "Open World…", icon: "file", shortcut: "Control+O", enabled: true, run: chooseWorldFile },
     {
       id: "file.openFolder", group: "File", label: "Open Folder…", icon: "folder", enabled: hasFolderPicker(),
@@ -123,7 +181,14 @@ export function useCommands(): Command[] {
         void chooseWorldsFolder();
       },
     },
-    { id: "file.save", group: "File", label: "Save", icon: "save", shortcut: "Control+S", enabled: false, disabledReason: "Editing is not available yet", run: () => undefined },
+    {
+      // Writing over the opened file is not offered yet: Save asks where to write a verified copy, as Save As does.
+      id: "file.save", group: "File", label: "Save…", icon: "save", shortcut: "Control+S", enabled: hasWorld && unsaved && !loadingWorld && !saving,
+      ...(!hasWorld ? noWorld : loadingWorld ? { disabledReason: "A world is loading" } : !unsaved ? { disabledReason: "No unsaved changes" } : {}),
+      run: () => {
+        void openSaveAs();
+      },
+    },
     {
       id: "file.saveAs", group: "File", label: "Save As…", shortcut: "Control+Shift+S", enabled: hasWorld && !loadingWorld && !saving,
       ...(!hasWorld ? noWorld : loadingWorld ? { disabledReason: "A world is loading" } : {}),
@@ -134,7 +199,9 @@ export function useCommands(): Command[] {
     {
       id: "file.close", group: "File", label: "Close World", enabled: hasWorld && !loadingWorld,
       ...(!hasWorld ? noWorld : loadingWorld ? { disabledReason: "A world is loading" } : {}),
-      run: closeWorld,
+      run: () => {
+        void closeWorld();
+      },
     },
     {
       id: "file.assets", group: "Assets", label: "Connect Terraria assets…", enabled: !assetsBuilding,
@@ -200,13 +267,6 @@ export function useCommands(): Command[] {
         setGroupsOpen(WORLD_GROUP_KEYS, false);
       },
     },
-    ...LAYER_TOGGLES.map(({ layer, label, shortcut }): Command => ({
-      id: `layer.${layer}`, group: "Layers", label: `Show ${label.toLowerCase()}`, shortcut, enabled: true,
-      checked: layerShown(layers, layer),
-      run: () => {
-        setLayers({ [layer]: !layers[layer] });
-      },
-    })),
     {
       id: "layer.sprites", group: "Layers", label: "Show sprites", shortcut: "Alt+1", enabled: assetsReady,
       ...(assetsReady ? {} : { disabledReason: "Connect Terraria assets first" }),
@@ -215,7 +275,16 @@ export function useCommands(): Command[] {
         setLayers({ sprites: !layers.sprites });
       },
     },
-    ...toolCommands(tool, setTool),
+    ...LAYER_TOGGLES.map(({ layer, label, shortcut }): Command => ({
+      id: `layer.${layer}`, group: "Layers", label: `Show ${label.toLowerCase()}`, shortcut, enabled: true,
+      checked: layerShown(layers, layer),
+      run: () => {
+        setLayers({ [layer]: !layers[layer] });
+      },
+    })),
+    ...toolCommands(tool, setTool, editReason),
+    ...brushSizeCommands(tool === "brush" || tool === "erase"),
+    ...brushOptionCommands(tool),
     {
       id: "tool.unpin", group: "Tools", label: "Unpin inspected tile", shortcut: "Escape", enabled: pinnedTile !== null,
       ...(pinnedTile === null ? { disabledReason: "No tile is pinned" } : {}),
