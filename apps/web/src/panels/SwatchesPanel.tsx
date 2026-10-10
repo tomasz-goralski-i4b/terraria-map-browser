@@ -50,12 +50,12 @@ function positionSwatchTooltip(button: HTMLButtonElement): void {
   if (grid === null) return;
   const bounds = grid.getBoundingClientRect();
   const cell = button.getBoundingClientRect();
-  button.style.setProperty("--swatch-tooltip-width", `${Math.max(0, bounds.width - 4)}px`);
+  button.style.setProperty("--swatch-tooltip-width", `${String(Math.max(0, bounds.width - 4))}px`);
   const width = parseFloat(getComputedStyle(button, "::after").width);
   if (!Number.isFinite(width)) return;
   const centre = Math.max(bounds.left + 2 + width / 2,
     Math.min(cell.left + cell.width / 2, bounds.right - 2 - width / 2));
-  button.style.setProperty("--swatch-tooltip-left", `${centre - cell.left}px`);
+  button.style.setProperty("--swatch-tooltip-left", `${String(centre - cell.left)}px`);
 }
 
 interface ShownSwatch {
