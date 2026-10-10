@@ -1,5 +1,6 @@
 import { expect, test } from "vitest";
 import { CameraAnimator, wheelPixels } from "../src/camera/animator.js";
+import type { CameraStep } from "../src/camera/animator.js";
 import { MAX_ZOOM, clampCamera, fitWorld, screenToTile, tileToScreen } from "../src/camera/camera.js";
 import type { Camera, Size } from "../src/camera/camera.js";
 
@@ -401,4 +402,114 @@ test("zooming in from fit-world moves the camera continuously when the world out
     }
     expect(before.zoom).toBeGreaterThan(size.height / bounds.height);
   }
+});
+
+/**
+ * A steady drag sampled by a mouse that reports at `rate` Hz, drawn at `refresh` Hz: the map's per-frame moves, after
+ * the first few frames. Events carry their own timestamps (PointerEvent.timeStamp); frames step at their vsync time.
+ */
+function steadyDrag(rate: number, refresh: number, speed = 1): number[] {
+  let time = 0;
+  const animator = new CameraAnimator({ ...initial, zoom: 4 }, viewport, world, () => time);
+  animator.beginDrag();
+  const eventMs = 1000 / rate;
+  const frameMs = 1000 / refresh;
+  let nextEvent = eventMs;
+  let previous = animator.current.x;
+  const moves: number[] = [];
+  for (let frame = 1; frame <= 60; frame++) {
+    const frameTime = frame * frameMs;
+    time = frameTime;
+    // Browsers deliver the events that arrived since the last frame just before it (rAF-aligned input).
+    for (; nextEvent <= frameTime; nextEvent += eventMs) animator.drag(-speed * eventMs, 0, nextEvent);
+    const { camera } = animator.step(frameTime);
+    moves.push((camera.x - previous) * 4);
+    previous = camera.x;
+  }
+  return moves.slice(5);
+}
+
+test.each([
+  [125, 60], [125, 144], [250, 144], [1000, 60], [60, 60],
+])("a steady %s Hz mouse drag moves the map evenly on a %s Hz display", (rate, refresh) => {
+  const moves = steadyDrag(rate, refresh);
+  const frameMs = 1000 / refresh;
+  for (const move of moves) expect(move).toBeCloseTo(frameMs, 0);
+});
+
+test("a drag that stops holds still where the pointer stopped, and then settles", () => {
+  let time = 0;
+  const animator = new CameraAnimator({ ...initial, zoom: 4 }, viewport, world, () => time);
+  animator.beginDrag();
+  time = 80;
+  for (let event = 1; event <= 10; event++) animator.drag(-8, 0, event * 8);
+  const frames: CameraStep[] = [];
+  for (let frame = 1; frame <= 12; frame++) {
+    time = frame * 16;
+    frames.push(animator.step(time));
+  }
+  const last = frames.at(-1);
+  expect(last?.camera.x).toBeCloseTo(initial.x + 80 / 4, 9);
+  expect(last?.settled).toBe(true);
+});
+
+test("a flick released at speed glides on without a kick from the resampled lag", () => {
+  let time = 0;
+  const animator = new CameraAnimator({ ...initial, zoom: 4 }, viewport, world, () => time);
+  animator.beginDrag();
+  let previous = animator.current.x;
+  let last = 0;
+  for (let frame = 1; frame <= 10; frame++) {
+    time = frame * 16;
+    animator.drag(-16, 0, frame * 16 - 2);
+    const x = animator.step(time).camera.x;
+    last = x - previous;
+    previous = x;
+  }
+  time = 160;
+  animator.endDrag(false, 158);
+  time = 176;
+  const first = animator.step(time).camera.x - previous;
+  expect(first / last).toBeGreaterThan(0.8);
+  expect(first / last).toBeLessThan(1.2);
+});
+
+test("irregular pointer input never steps the map back while dragging one way", () => {
+  let time = 0;
+  const animator = new CameraAnimator({ ...initial, zoom: 4 }, viewport, world, () => time);
+  animator.beginDrag();
+  // Event gaps from 1 to 45 ms (a busy main thread, an automation driver), drawn at 60 Hz.
+  const gaps = [8, 9, 1, 30, 8, 8, 45, 2, 12, 16, 3, 25, 8, 8, 8, 40, 5, 9, 14, 7];
+  let event = 0;
+  let next = gaps[0] ?? 8;
+  let previous = animator.current.x;
+  for (let frame = 1; frame <= 40; frame++) {
+    time = frame * FRAME_MS;
+    for (; next <= time; next += gaps[++event % gaps.length] ?? 8) animator.drag(-4, 0, next);
+    const x = animator.step(time).camera.x;
+    expect(x).toBeGreaterThanOrEqual(previous);
+    previous = x;
+  }
+});
+
+test("a 1000 Hz drag with timestamps rounded to 1 ms (pairs sharing one) glides on at the drag's speed", () => {
+  let time = 0;
+  const animator = new CameraAnimator({ ...initial, zoom: 4 }, viewport, world, () => time);
+  animator.beginDrag();
+  const moves: number[] = [];
+  let previous = animator.current.x;
+  for (let frame = 1; frame <= 20; frame++) {
+    time = frame * 16;
+    // Two samples per millisecond stamp: half the moves have no duration of their own.
+    for (let ms = (frame - 1) * 16 + 1; ms <= frame * 16; ms += 2) {
+      animator.drag(-1, 0, ms);
+      animator.drag(-1, 0, ms);
+    }
+    const x = animator.step(time).camera.x;
+    moves.push((x - previous) * 4);
+    previous = x;
+  }
+  for (const move of moves.slice(3)) expect(move).toBeCloseTo(16, 0);
+  animator.endDrag(false, 320);
+  expect(animator.velocity.x).toBeCloseTo(-1, 1);
 });
