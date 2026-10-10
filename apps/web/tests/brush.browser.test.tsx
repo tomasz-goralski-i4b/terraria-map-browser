@@ -164,7 +164,7 @@ test("Both takes its materials and paint from the swatches, paints/erases one fo
   const view = canonicalWorldOf(world);
   setBrushWorld(world);
   useAppStore.setState({ phase: "loaded", unsavedChanges: false });
-  useBrushStore.setState({ layer: BRUSH_LAYER.block, blockId: 1, wallId: 1, size: 1, shape: "square", smoothing: 0, placementPreview: true });
+  useBrushStore.setState({ layer: BRUSH_LAYER.block, eraseLayers: { block: true, wall: false, liquid: false, wires: false }, blockId: 1, wallId: 1, size: 1, shape: "square", smoothing: 0, placementPreview: true });
   useViewStore.setState({ tool: "brush" });
   await render(<><Shortcuts /><ToolOptions /><SwatchesPanel /><div style={{ position: "relative", width: 128, height: 128 }}><MapCanvas world={toRenderableWorld(world)} /></div></>);
   const canvas = document.querySelector("canvas");
@@ -212,7 +212,10 @@ test("Both takes its materials and paint from the swatches, paints/erases one fo
   expect(view.tileAt(10, 10).wall).toBeUndefined();
   await page.getByRole("button", { name: "Redo", exact: true }).click();
   act(() => { useViewStore.getState().setTool("erase"); });
-  await expect.element(page.getByRole("button", { name: "Both", exact: true })).toHaveAttribute("aria-pressed", "true");
+  // Erase has its own layer mask (Blocks by default): Walls is turned on beside it.
+  const eraseLayers = page.getByRole("group", { name: "Erase layers" });
+  await eraseLayers.getByRole("button", { name: "Walls", exact: true }).click();
+  await expect.poll(() => useBrushStore.getState().eraseLayers).toMatchObject({ block: true, wall: true });
   act(() => { pointer("pointerdown", 10, 10); pointer("pointerup", 10, 10); });
   expect(view.tileAt(10, 10).block).toBeUndefined();
   expect(view.tileAt(10, 10).wall).toBeUndefined();
@@ -291,7 +294,7 @@ test("pointer strokes update only their chunk; controls, keyboard history and ca
   await page.getByRole("button", { name: "Undo", exact: true }).click();
   expect(view.tileAt(40, 3).block).toEqual({ kind: "vanilla", id: 1 });
   await expect.element(page.getByLabelText("Brush size", { exact: true })).toHaveAttribute("max", "64");
-  await expect.element(page.getByRole("group", { name: "Brush layer" }).getByRole("button", { name: "Both", exact: true })).toBeEnabled();
+  await expect.element(page.getByRole("group", { name: "Erase layers" }).getByRole("button", { name: "Walls", exact: true })).not.toHaveAttribute("aria-disabled");
   act(() => { useViewStore.getState().setTool("brush"); });
   // The wheel zooms at the pointer: the stroke goes on through it.
   act(() => {

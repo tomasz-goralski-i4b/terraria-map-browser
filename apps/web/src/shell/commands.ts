@@ -110,8 +110,13 @@ export function brushOptionCommands(tool: ToolId): Command[] {
   };
   const reason = (brushOnly: boolean): string | null => (!editing ? "Choose Brush or Erase first" : brushOnly && tool !== "brush" ? "Choose Brush first" : null);
   const options: readonly (readonly [string, string, string, boolean, ReturnType<typeof set>])[] = [
-    ["tool.brushSwapLayer", "Swap block and wall target", "X", false, set((state) => ({ layer: state.layer === "block" ? "wall" : "block" }))],
-    ["tool.brushBothLayers", "Target blocks and walls", "Shift+X", false, set(() => ({ layer: "both" }))],
+    // Erase has its own layer mask: X swaps its blocks and walls, Shift+X turns both on; liquids and wires stay.
+    ["tool.brushSwapLayer", "Swap block and wall target", "X", false, set((state) => (tool === "erase"
+      ? { eraseLayers: { ...state.eraseLayers, block: state.eraseLayers.wall, wall: state.eraseLayers.block } }
+      : { layer: state.layer === "block" ? "wall" : "block" }))],
+    ["tool.brushBothLayers", "Target blocks and walls", "Shift+X", false, set((state) => (tool === "erase"
+      ? { eraseLayers: { ...state.eraseLayers, block: true, wall: true } }
+      : { layer: "both" }))],
     ["tool.brushShape", "Toggle square and round brush", "Shift+B", false, set((state) => ({ shape: state.shape === "square" ? "circle" : "square" }))],
     ["tool.brushSmooth", "Toggle Smooth edges", "S", false, set((state) => ({ smooth: !state.smooth }))],
     ["tool.brushPaintOnly", "Toggle Place and Paint", "R", true, set((state) => ({ paintOnly: !state.paintOnly }))],

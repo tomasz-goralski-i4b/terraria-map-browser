@@ -25,6 +25,20 @@ describe("brush", () => {
     expect(world.tileAt(4, 4).block).toEqual({ kind: "vanilla", id: 1 });
   });
 
+  it("erases liquids and wires with actuators on their own, leaving blocks and walls, and undoes them", () => {
+    const world = createWorld(5, 5);
+    world.setTile(2, 2, { block: { kind: "vanilla", id: 1 }, wall: { kind: "vanilla", id: 4 }, wires: 0b1011, actuator: true, liquid: { kind: "water", amount: 200 } });
+    const history = createBrushHistory(world);
+    expect(stroke(history, { wires: "erase", size: 1 }, [2, 2])).toHaveLength(1);
+    expect(world.tileAt(2, 2)).toMatchObject({ block: { id: 1 }, wall: { id: 4 }, wires: 0, actuator: false, liquid: { kind: "water", amount: 200 } });
+    stroke(history, { liquid: "erase", size: 1 }, [2, 2]);
+    expect(world.tileAt(2, 2).liquid).toBeUndefined();
+    expect(world.tileAt(2, 2).block).toEqual({ kind: "vanilla", id: 1 });
+    history.undo(); history.undo();
+    expect(world.tileAt(2, 2)).toMatchObject({ wires: 0b1011, actuator: true, liquid: { kind: "water", amount: 200 } });
+    expect(() => { history.begin({ size: 1 }); }).toThrow(RangeError);
+  });
+
   it("uses a circular tile mask with exact history and edge clipping", () => {
     const world = createWorld(9, 9);
     const history = createBrushHistory(world);

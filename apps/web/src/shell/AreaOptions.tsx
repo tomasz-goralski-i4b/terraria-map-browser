@@ -2,6 +2,7 @@ import { PASTE_ANCHORS, useAreaStore, type PasteAnchor } from "../world/area-ses
 import type { CopyLayers, PasteOptions } from "../world/area-clipboard.js";
 import { shortcutText } from "../ui/IconButton.js";
 import { TOOLS, type Command, commandById } from "./commands.js";
+import { Toggle } from "./LayerToggles.js";
 
 const LAYERS: readonly { readonly key: keyof CopyLayers; readonly label: string; readonly tooltip: string }[] = [
   { key: "blocks", label: "Blocks", tooltip: "Blocks with their shape and actuation" },
@@ -19,20 +20,6 @@ const PASTE_TOGGLES: readonly { readonly label: string; readonly tooltip: string
   { label: "Merge liquids", tooltip: "Copied liquid adds to the same kind, up to full; other liquid, and liquid where the copy has none, stays", on: (options) => options.liquids === "merge", set: (options, on) => ({ ...options, liquids: on ? "merge" : "replace" }) },
 ];
 
-/**
- * One of several independent toggles (Brush's `Segments` picks one of many). `aria-disabled` keeps it focusable, so
- * its tooltip can say why it is off.
- */
-function Toggle({ label, tooltip, pressed, disabled, onChange }: {
-  readonly label: string; readonly tooltip: string; readonly pressed: boolean; readonly disabled: boolean; readonly onChange: (pressed: boolean) => void;
-}): React.JSX.Element {
-  return (
-    <button
-      type="button" aria-pressed={pressed} aria-disabled={disabled || undefined} data-tooltip={tooltip} data-tooltip-side="bottom"
-      onClick={() => { if (!disabled) onChange(!pressed); }}
-    >{label}</button>
-  );
-}
 
 const anchorName = (anchor: PasteAnchor): string => anchor === "center" ? "Centre" : `${anchor.charAt(0).toUpperCase()}${anchor.slice(1).replace("-", " ")}`;
 
@@ -93,7 +80,7 @@ export function AreaOptions({ commands, disabled }: { readonly commands: readonl
       <div className="brush-option-group" role="group" aria-label="Paste options">
         <span className="brush-option-label area-option-label">Paste</span>
         <AnchorPicker value={state.anchor} disabled={disabled} onChange={(anchor) => { useAreaStore.setState({ anchor }); }} />
-        <div className="brush-segments area-toggles">
+        <div className="brush-segments layer-toggles">
           {PASTE_TOGGLES.map((toggle) => (
             <Toggle
               key={toggle.label} label={toggle.label} tooltip={lockedReason ?? toggle.tooltip} pressed={toggle.on(state.options)} disabled={disabled}
@@ -105,7 +92,7 @@ export function AreaOptions({ commands, disabled }: { readonly commands: readonl
     ) : (
       <div className="brush-option-group" role="group" aria-label="Copy layers">
         <span className="brush-option-label area-option-label">Layers</span>
-        <div className="brush-segments area-toggles">
+        <div className="brush-segments layer-toggles">
           {LAYERS.map(({ key, label, tooltip }) => {
             const needsBlocks = key === "objects" && !state.layers.blocks;
             return (

@@ -72,8 +72,12 @@ export function createWorldBrush(world: WorldTilesResult, onProtectedTile?: (x: 
   });
 }
 
+/** What the Eraser removes: its own layer mask, as Select's Layers, so liquids or wires can go on their own. */
+export interface EraseLayers { readonly block: boolean; readonly wall: boolean; readonly liquid: boolean; readonly wires: boolean }
+
 interface BrushState {
   readonly layer: BrushLayer;
+  readonly eraseLayers: EraseLayers;
   readonly blockId: number;
   readonly wallId: number;
   /** Paint applied with the block or wall (0: none). */
@@ -96,7 +100,7 @@ interface BrushState {
   readonly world: number;
 }
 export const useBrushStore = create<BrushState>()(() => ({
-  layer: BRUSH_LAYER.block, blockId: 1, wallId: 1, blockPaint: 0, wallPaint: 0, paintOnly: false, smooth: false, size: 1,
+  layer: BRUSH_LAYER.block, eraseLayers: { block: true, wall: false, liquid: false, wires: false }, blockId: 1, wallId: 1, blockPaint: 0, wallPaint: 0, paintOnly: false, smooth: false, size: 1,
   reason: "Open a vanilla world first", shape: BRUSH_SHAPE.square, placementPreview: true, smoothing: 0,
   canUndo: false, canRedo: false, active: false, revision: 0, world: 0,
 }));
@@ -104,6 +108,11 @@ export const useBrushStore = create<BrushState>()(() => ({
 /** The layers a target edits. */
 export function brushLayers(layer: BrushLayer): readonly BrushContentLayer[] {
   return layer === BRUSH_LAYER.both ? ["block", "wall"] : [layer];
+}
+
+/** The block and wall layers an Eraser mask removes. */
+export function eraseContentLayers(layers: EraseLayers): readonly BrushContentLayer[] {
+  return (["block", "wall"] as const).filter((layer) => layers[layer]);
 }
 
 /** The model options of the current settings, for the Brush (or, with `erase`, the Erase) tool. */
@@ -114,8 +123,10 @@ export function brushOptions(state: BrushState, erase: boolean): BrushOptions {
     if (state.paintOnly) return { kind: "paint", paint };
     return { kind: "place", id: layer === "block" ? state.blockId : state.wallId, paint };
   };
-  const options: { size: number; shape: BrushShape; smooth: boolean; block?: LayerEdit; wall?: LayerEdit } = { size: state.size, shape: state.shape, smooth: state.smooth };
-  for (const layer of brushLayers(state.layer)) options[layer] = editOf(layer);
+  const options: { size: number; shape: BrushShape; smooth: boolean; block?: LayerEdit; wall?: LayerEdit; liquid?: "erase"; wires?: "erase" } = { size: state.size, shape: state.shape, smooth: state.smooth };
+  for (const layer of erase ? eraseContentLayers(state.eraseLayers) : brushLayers(state.layer)) options[layer] = editOf(layer);
+  if (erase && state.eraseLayers.liquid) options.liquid = "erase";
+  if (erase && state.eraseLayers.wires) options.wires = "erase";
   return options;
 }
 
@@ -235,7 +246,7 @@ export function beginBrush(erase: boolean, lineFromLast = false): boolean {
   }
   dirtyBeforeStroke = useAppStore.getState().unsavedChanges;
   chestsBeforeStroke = loaded.entities.Chests.data;
-  erasingChests = erase && brushLayers(useBrushStore.getState().layer).includes("block");
+  erasingChests = erase && useBrushStore.getState().eraseLayers.block;
   pendingChests.clear();
   lastPointBeforeStroke = lastPoint;
   const state = useBrushStore.getState();

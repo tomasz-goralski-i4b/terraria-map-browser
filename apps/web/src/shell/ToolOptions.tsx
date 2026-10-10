@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AreaOptions } from "./AreaOptions.js";
+import { Toggle } from "./LayerToggles.js";
 import { BRUSH_LAYER, BRUSH_SHAPE, BRUSH_SIZE, type BrushContentLayer } from "@studio/world-model";
 import { MaterialSwatch, paintColor, paintLabel, swatchName } from "../panels/material-swatch.js";
 import { showSwatches } from "../panels/SwatchesPanel.js";
 import { Icon } from "../ui/Icon.js";
 import { IconButton } from "../ui/IconButton.js";
 import { findMaterial, type BrushMaterials } from "../world/brush-materials.js";
-import { brushLayers, chooseBrushPaint, finishBrush, loadedBrushMaterials, setBrushSize, useBrushStore } from "../world/brush-session.js";
+import { brushLayers, chooseBrushPaint, finishBrush, loadedBrushMaterials, setBrushSize, useBrushStore, type EraseLayers } from "../world/brush-session.js";
 import { commandById, TOOLS, useCommands, type Command } from "./commands.js";
 import { useViewStore } from "./view-store.js";
 
@@ -119,6 +120,14 @@ function Segments<T extends string>({ label, options, value, disabled, onChange 
   );
 }
 
+/** The Eraser's layers, the same toggles as Select's Layers row. */
+const ERASE_LAYERS: readonly { readonly key: keyof EraseLayers; readonly label: string; readonly tooltip: string }[] = [
+  { key: "block", label: "Blocks", tooltip: "Erase blocks, and whole chests and dressers (X swaps blocks and walls; Shift+X both)" },
+  { key: "wall", label: "Walls", tooltip: "Erase walls (X swaps blocks and walls; Shift+X both)" },
+  { key: "liquid", label: "Liquids", tooltip: "Erase water, lava, honey and shimmer" },
+  { key: "wires", label: "Wires", tooltip: "Erase wires of every colour and actuators" },
+];
+
 /**
  * The tool options bar: the active tool and its settings above the map, as in image editors. Brush shows its
  * materials first (swatch and paint for each layer it writes), then the target layers, size, shape, smoothing and
@@ -136,6 +145,7 @@ export function ToolOptions({ commands: supplied }: { readonly commands?: readon
   const editing = tool === "brush" || tool === "erase";
   const locked = brush.active || !commandById(commands, `tool.${tool}`).enabled;
   const layers = brushLayers(brush.layer);
+  const noBlocks = tool === "erase" ? !brush.eraseLayers.block : brush.layer === BRUSH_LAYER.wall;
   return (
     <div className="tool-options" role="region" aria-label="Tool options" data-editing={editing || tool === "select"}>
       <span className="tool-options-identity">
@@ -161,13 +171,28 @@ export function ToolOptions({ commands: supplied }: { readonly commands?: readon
             ))}
           </div>
         )}
-        <div className="brush-option-group brush-layer-options">
+        {tool === "erase" ? (
+          <div className="brush-option-group brush-layer-options" role="group" aria-label="Erase layers">
+            <div className="brush-segments layer-toggles">
+              {ERASE_LAYERS.map(({ key, label, tooltip }) => {
+                const last = brush.eraseLayers[key] && Object.values(brush.eraseLayers).filter(Boolean).length === 1;
+                return (
+                  <Toggle
+                    key={key} label={label} pressed={brush.eraseLayers[key]} disabled={locked || last}
+                    tooltip={locked ? brush.reason ?? "Finish the stroke first" : last ? "Erase needs at least one layer" : tooltip}
+                    onChange={(on) => { finishBrush(); useBrushStore.setState({ eraseLayers: { ...brush.eraseLayers, [key]: on } }); }}
+                  />
+                );
+              })}
+            </div>
+          </div>
+        ) : <div className="brush-option-group brush-layer-options">
           <Segments
             label="Brush layer" options={LAYER_OPTIONS.map((option) => ({ ...option, tooltip: option.id === BRUSH_LAYER.both ? "Blocks and walls together (Shift+X)" : `${option.label} only (X swaps blocks and walls)` }))}
             value={brush.layer} disabled={locked}
             onChange={(layer) => { finishBrush(); useBrushStore.setState({ layer }); }}
           />
-        </div>
+        </div>}
         <div className="brush-option-group brush-option-size">
           <label className="brush-field" data-tooltip="Size in tiles: a square's side or a circle's diameter ([ and ])" data-tooltip-side="bottom"><span className="brush-option-label">Size</span>
             <input
@@ -192,8 +217,8 @@ export function ToolOptions({ commands: supplied }: { readonly commands?: readon
         </div>
         <div className="brush-option-group brush-option-smooth">
           <IconButton
-            icon="hammer" label="Smooth edges: hammer edges into slopes" shortcut="S" pressed={brush.smooth} disabled={locked || (tool === "brush" && brush.paintOnly) || brush.layer === BRUSH_LAYER.wall}
-            disabledReason={brush.layer === BRUSH_LAYER.wall ? "Walls have no shape" : brush.paintOnly ? "Paint only changes no blocks" : brush.reason ?? "Finish the stroke first"}
+            icon="hammer" label="Smooth edges: hammer edges into slopes" shortcut="S" pressed={brush.smooth} disabled={locked || noBlocks || (tool === "brush" && brush.paintOnly)}
+            disabledReason={noBlocks ? tool === "erase" ? "Smooth edges shapes blocks: turn Blocks on" : "Walls have no shape" : brush.paintOnly ? "Paint only changes no blocks" : brush.reason ?? "Finish the stroke first"}
             onClick={() => { useBrushStore.setState({ smooth: !brush.smooth }); }}
           />
         </div>

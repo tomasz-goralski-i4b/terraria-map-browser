@@ -16,7 +16,7 @@ function miningChest(width = 2) {
   for (let x = 2; x < 2 + width; x++) for (let y = 2; y < 4; y++) view.setTile(x, y, { block: { kind: "vanilla", id }, frameX: (x - 2) * 18, frameY: (y - 2) * 18, wall: { kind: "vanilla", id: 1 }, paint: 3, wires: 5, actuator: true, liquid: { kind: "water", amount: 50 } });
   Object.assign(world.entities.Chests, { data: { entries: [{ x: 2, y: 2, name: "Mining supplies", slotCount: 40, items: [{ slot: 0, itemId: 8, stack: 27, prefix: 0 }] }] } });
   setBrushWorld(world); useAppStore.setState({ phase: "loaded", unsavedChanges: false });
-  useBrushStore.setState({ size: 1, shape: "square", layer: "block", smooth: false, paintOnly: false });
+  useBrushStore.setState({ size: 1, shape: "square", layer: "block", eraseLayers: { block: true, wall: false, liquid: false, wires: false }, smooth: false, paintOnly: false });
   return world;
 }
 afterEach(() => { setBrushWorld(null); });
@@ -45,9 +45,9 @@ test.each([2, 3])("Eraser deletes the whole %i-wide chest body and record and re
 
 test("wall-only Eraser and chest-support tiles preserve the chest; cancelling a body erase restores its contents", () => {
   const world = miningChest(), before = structuredClone(world.planes), records = structuredClone(world.entities.Chests.data);
-  useBrushStore.setState({ layer: "wall" }); beginBrush(true); moveBrush(2, 2); finishBrush();
+  useBrushStore.setState({ eraseLayers: { block: false, wall: true, liquid: false, wires: false } }); beginBrush(true); moveBrush(2, 2); finishBrush();
   expect(world.entities.Chests.data).toEqual(records); expect(world.planes).toEqual(before);
-  useBrushStore.setState({ layer: "block" }); beginBrush(true); moveBrush(2, 4); finishBrush(); expect(world.entities.Chests.data).toEqual(records);
+  useBrushStore.setState({ eraseLayers: { block: true, wall: false, liquid: false, wires: false } }); beginBrush(true); moveBrush(2, 4); finishBrush(); expect(world.entities.Chests.data).toEqual(records);
   beginBrush(true); moveBrush(3, 3); expect(world.entities.Chests.data?.entries).toEqual([]); finishBrush(true);
   expect(world.entities.Chests.data).toEqual(records); expect(world.planes).toEqual(before);
 });

@@ -42,11 +42,19 @@ unobserved) reports it before placement. Copied tile entities get new IDs and ke
 binary payload, including fields outside the semantic model. Selections are limited to 262,144 cells to bound
 clipboard/preview allocation; an oversized Copy reports its limit without replacing the previous clipboard.
 
+## Eraser layers
+
+Erase has its own layer mask, the same toggles as Select's Layers row: **Blocks** (on by default), **Walls**,
+**Liquids** and **Wires** (wires of every colour and the actuator), in any combination with at least one on. So
+liquids or wires can be erased on their own without touching blocks or walls. `X` swaps the Blocks and Walls
+toggles and `Shift+X` turns both on; Liquids and Wires stay as they are. The mask is independent of Brush's
+Blocks / Walls / Both target. Smooth edges needs Blocks.
+
 ## Chest Eraser
 
-Eraser targeting Blocks or Both removes a touched chest or dresser's entire block footprint and its record, including
+Eraser with Blocks on removes a touched chest or dresser's entire block footprint and its record, including
 contents, in the same stroke. Undo/redo and cancelling the stroke restore or remove tiles and the record together.
-Walls, wires/actuators and liquids outside the brush's ordinary layer edits are preserved. Wall-only Eraser and
+Walls, wires/actuators and liquids are erased only when their own toggles are on. An Eraser without Blocks and
 touching only a chest's protected supports do not delete the chest. Malformed footprints or overlapping entity
 anchors are left protected.
 
@@ -60,8 +68,8 @@ map is the canvas. Code: `packages/world-model/src/brush.ts` (the edit model), `
 
 ## Materials, paint and targets
 
-Open a supported vanilla `.wld` and choose Brush (`B`) or Erase (`E`). The target picks the layers a stroke writes:
-Blocks, Walls or Both (both layers of a tile change together or not at all).
+Open a supported vanilla `.wld` and choose Brush (`B`) or Erase (`E`). Brush's target picks the layers a stroke writes:
+Blocks, Walls or Both (both layers of a tile change together or not at all); Erase uses its own layer mask (above).
 
 - **Materials** are every block that frames itself from its neighbours (the framing database's block types: dirt,
   stone, ores, sand, bricks, …) and every named wall, limited to the content ids the world's format defines. Objects
