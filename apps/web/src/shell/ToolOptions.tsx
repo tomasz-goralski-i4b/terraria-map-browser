@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { AreaOptions } from "./AreaOptions.js";
 import { BRUSH_LAYER, BRUSH_SHAPE, BRUSH_SIZE, type BrushContentLayer } from "@studio/world-model";
 import { MaterialSwatch, paintColor, paintLabel, swatchName } from "../panels/material-swatch.js";
 import { showSwatches } from "../panels/SwatchesPanel.js";
@@ -136,7 +137,7 @@ export function ToolOptions({ commands: supplied }: { readonly commands?: readon
   const locked = brush.active || !commandById(commands, `tool.${tool}`).enabled;
   const layers = brushLayers(brush.layer);
   return (
-    <div className="tool-options" role="region" aria-label="Tool options" data-editing={editing}>
+    <div className="tool-options" role="region" aria-label="Tool options" data-editing={editing || tool === "select"} data-selection={tool === "select"}>
       <span className="tool-options-identity">
         {definition !== undefined && <Icon name={definition.icon} />}
         <span className="tool-options-name">{definition?.label}</span>
@@ -208,7 +209,7 @@ export function ToolOptions({ commands: supplied }: { readonly commands?: readon
           <IconButton icon="target" label="Brush outline" pressed={brush.placementPreview} onClick={() => { useBrushStore.setState({ placementPreview: !brush.placementPreview }); }} />
         </div>
         {brush.reason !== null && <span className="tool-options-notice">{brush.reason}</span>}
-      </> : <span className="tool-options-hint">{definition?.hint}</span>}
+      </> : tool === "select" ? <AreaOptions commands={commands} disabled={locked} /> : <span className="tool-options-hint">{definition?.hint}</span>}
       {/* Phones hide the top bar's Undo and Redo; the options bar carries them there. */}
       <div className="tool-options-history" role="group" aria-label="History">
         {(["edit.undo", "edit.redo"] as const).map((id) => {

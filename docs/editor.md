@@ -1,4 +1,37 @@
-# Brush and Erase
+# Editing tools
+
+## Area copy and paste
+
+Select (`M`) drags an inclusive rectangular selection. Copy (`Ctrl+C`, or Command on macOS) captures independent
+CWM planes and a content palette; subsequent edits do not change the clipboard. The options bar chooses Blocks,
+Walls, Liquids, Wires / actuators, Paint and Objects / entities. All are selected by default. Objects require Blocks.
+Changing a copy mask takes effect on the next Copy.
+
+Paste (`Ctrl+V`) switches Select to a floating, translucent map-colour preview, using the same compact options bar.
+Click or Enter places it; Escape cancels it or deselects a rectangle. The Edit menu, command palette and buttons
+use the same commands. Text fields retain native copy and paste. Right/middle drags still pan.
+
+Paste defaults replace air, walls and liquids. Transparent air keeps the destination block and its paint/coatings;
+Keep walls preserves the destination wall and its paint/coatings. Merge liquids adds matching kinds, capped at
+255; a different destination kind is preserved. Unselected layers stay unchanged. Each placement is one undo
+entry in the brush history, including copied entity records, with renderer invalidation updating adjacent framing.
+
+Frame-important tiles are grouped conservatively into connected same-content components. A component crossing
+the selection or world boundary is omitted whole; adjacent identical objects may therefore be omitted together.
+Chest/sign footprints must also be complete. Existing destination objects are protected from structural replacement:
+an overlapping paste reports the problem before placement. Copied tile entities get new IDs and keep their full
+binary payload, including fields outside the semantic model. Selections are limited to 262,144 cells to bound
+clipboard/preview allocation; an oversized Copy reports its limit without replacing the previous clipboard.
+
+## Chest Eraser
+
+Eraser targeting Blocks or Both removes a touched chest or dresser's entire block footprint and its record, including
+contents, in the same stroke. Undo/redo and cancelling the stroke restore or remove tiles and the record together.
+Walls, wires/actuators and liquids outside the brush's ordinary layer edits are preserved. Wall-only Eraser and
+touching only a chest's protected supports do not delete the chest. Malformed footprints or overlapping entity
+anchors are left protected.
+
+## Brush and Erase
 
 Painting works like an image editor's brush: a material is the colour, the Swatches panel is the palette, and the
 map is the canvas. Code: `packages/world-model/src/brush.ts` (the edit model), `apps/web/src/world/brush-session.ts`

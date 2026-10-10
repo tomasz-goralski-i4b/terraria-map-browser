@@ -6,6 +6,7 @@ import { WorldFormatError } from "./world-format-error.js";
 import type { TilePlanes, WorldTilesResult } from "./tiles.js";
 import { resolveWorldFormat, type WorldFormatProfile } from "./world-format.js";
 import { writeWorldMetadata, writeWorldFooter } from "./metadata-writer.js";
+import { EDITABLE_ENTITY_SECTIONS, writeEntitySection } from "./entity-writer.js";
 
 type TileInput = Pick<WorldTilesResult, "header" | "metadata" | "sections" | "planes" | "palette">;
 type WorldWriteInput = Omit<WorldTilesResult, "envelope"> & { readonly envelope?: WorldEnvelope };
@@ -214,7 +215,14 @@ function validateEnvelope(world: WorldWriteInput): asserts world is WorldTilesRe
     if (section?.name !== name || !sameValue(section.boundary, source.sections[name])) unsupported("opaque sections must keep their original order and boundaries");
     checkSpan(section.bytes, source.sections[name]);
   });
-  if (!sameValue(world.entities, readWorldEntities(envelope.source, source))) unsupported("entity editing is unsupported");
+  const originalEntities = readWorldEntities(envelope.source, source);
+  for (const name of Object.keys(originalEntities)) {
+    const section = world.entities[name as keyof typeof originalEntities];
+    const originalSection = originalEntities[name as keyof typeof originalEntities];
+    if (!sameValue({ ...section, data: originalSection.data }, originalSection) ||
+      (!Object.values(EDITABLE_ENTITY_SECTIONS).includes(name as typeof EDITABLE_ENTITY_SECTIONS[keyof typeof EDITABLE_ENTITY_SECTIONS]) && !sameValue(section.data, originalSection.data)) ||
+      (originalSection.data === null && section.data !== null)) unsupported("editing this entity section is unsupported");
+  }
   if (world.palette.some((ref) => ref.kind !== "vanilla" || !Number.isInteger(ref.id) || ref.id < 0 || ref.id > Math.max(profile.maxTileId, profile.maxWallId))) {
     unsupported("unknown, modded or out-of-range content references cannot be written");
   }
@@ -262,18 +270,27 @@ export function writeWorld(world: WorldWriteInput): ArrayBuffer {
   const metadata = writeWorldMetadata(world, envelope.source, original);
   const footer = writeWorldFooter(world.metadata.name, world.metadata.worldId);
   const metadataDelta = metadata.length - envelope.metadata.length;
-  const unchangedLength = envelope.source.length - envelope.tiles.length + metadataDelta + footer.length - envelope.footer.length;
+  const originalEntities = readWorldEntities(envelope.source, original);
+  const entitySections = envelope.opaqueSections.map((section) => {
+    const name = Object.hasOwn(EDITABLE_ENTITY_SECTIONS, section.name) ? EDITABLE_ENTITY_SECTIONS[section.name as keyof typeof EDITABLE_ENTITY_SECTIONS] : null;
+    return name !== null && !sameValue(world.entities[name].data, originalEntities[name].data) ? writeEntitySection(world, name) : section.bytes;
+  });
+  const entityDelta = entitySections.reduce((sum, bytes, index) => sum + bytes.length - (envelope.opaqueSections[index]?.bytes.length ?? 0), 0);
+  const unchangedLength = envelope.source.length - envelope.tiles.length + metadataDelta + footer.length - envelope.footer.length + entityDelta;
   const tiles = new TileEncoder(world).encode(MAX_FILE_LENGTH - 1 - unchangedLength);
   const delta = tiles.length - envelope.tiles.length;
   const output = new Uint8Array(unchangedLength + tiles.length);
   output.set(envelope.fileHeader);
   output.set(metadata, sections.metadata.start);
   output.set(tiles, sections.tiles.start + metadataDelta);
-  output.set(envelope.source.subarray(sections.tiles.end, sections.footer.start), sections.tiles.start + metadataDelta + tiles.length);
+  let offset = sections.tiles.start + metadataDelta + tiles.length;
+  const entityPointers: number[] = [];
+  for (const bytes of entitySections) { entityPointers.push(offset); output.set(bytes, offset); offset += bytes.length; }
+  entityPointers.push(offset);
   output.set(footer, output.length - footer.length);
   const view = new DataView(output.buffer);
   view.setUint32(12, world.header.revision, true);
   view.setBigUint64(16, world.header.flags, true);
-  sections.pointers.forEach((pointer, index) => { view.setInt32(26 + index * 4, pointer + (index === 0 ? 0 : metadataDelta) + (index < 2 ? 0 : delta), true); });
+  sections.pointers.forEach((pointer, index) => { view.setInt32(26 + index * 4, index < 2 ? pointer + (index === 0 ? 0 : metadataDelta) : entityPointers[index - 2] ?? pointer + metadataDelta + delta, true); });
   return output.buffer;
 }

@@ -1,4 +1,4 @@
-import { SUPPORTED_VANILLA_FORMATS, type WorldTilesResult } from "@studio/world-codec";
+import { SUPPORTED_VANILLA_FORMATS, type WorldChest, type WorldTilesResult } from "@studio/world-codec";
 import {
   BRUSH_LAYER, BRUSH_SHAPE, BRUSH_SIZE, createBrushHistory,
   type BrushContentLayer, type BrushHistory, type BrushLayer, type BrushOptions, type BrushShape, type LayerEdit, type TileDiff,
@@ -10,6 +10,7 @@ import { canonicalWorldOf } from "./canonical-world.js";
 import { useAppStore } from "../store.js";
 import { useSaveStore } from "./save-world.js";
 import { propertiesAreDirty } from "./world-properties.js";
+import { chestLookupOf } from "./chests.js";
 
 export function brushDisabledReason(world: WorldTilesResult | null): string | null {
   if (world === null) return "Open a vanilla world first";
@@ -34,7 +35,7 @@ const ENTITY_HALOS = {
  * contents and text would otherwise lose their tiles. Everything else, objects without such records included (plants,
  * torches, furniture), may be painted over or erased, as the game lets a player do.
  */
-export function createWorldBrush(world: WorldTilesResult): BrushHistory | null {
+export function createWorldBrush(world: WorldTilesResult, onProtectedTile?: (x: number, y: number, layer: BrushContentLayer) => void): BrushHistory | null {
   if (brushDisabledReason(world) !== null) return null;
   const { width, height } = world.metadata;
   const protectedIndices = new Set<number>();
@@ -47,9 +48,24 @@ export function createWorldBrush(world: WorldTilesResult): BrushHistory | null {
   for (const sign of world.entities.Signs.data?.entries ?? []) protect(sign.x, sign.y, ENTITY_HALOS.sign);
   for (const entity of world.entities.TileEntities.data?.entries ?? []) protect(entity.x, entity.y, ENTITY_HALOS.tileEntity);
   for (const plate of world.entities.WeightedPressurePlates.data?.entries ?? []) protect(plate.x, plate.y, ENTITY_HALOS.pressurePlate);
+  let entityLists = [world.entities.Chests.data, world.entities.Signs.data, world.entities.TileEntities.data, world.entities.WeightedPressurePlates.data];
+  const refreshProtection = (): void => {
+    const current = [world.entities.Chests.data, world.entities.Signs.data, world.entities.TileEntities.data, world.entities.WeightedPressurePlates.data];
+    if (current.every((value, index) => value === entityLists[index])) return;
+    entityLists = current; protectedIndices.clear();
+    for (const chest of world.entities.Chests.data?.entries ?? []) protect(chest.x, chest.y, ENTITY_HALOS.chest);
+    for (const sign of world.entities.Signs.data?.entries ?? []) protect(sign.x, sign.y, ENTITY_HALOS.sign);
+    for (const entity of world.entities.TileEntities.data?.entries ?? []) protect(entity.x, entity.y, ENTITY_HALOS.tileEntity);
+    for (const plate of world.entities.WeightedPressurePlates.data?.entries ?? []) protect(plate.x, plate.y, ENTITY_HALOS.pressurePlate);
+  };
   const materials = brushMaterials(world);
   return createBrushHistory(canonicalWorldOf(world), {
-    protectedTile: (x, y) => protectedIndices.has(x * height + y),
+    protectedTile: (x, y, layer) => {
+      refreshProtection();
+      const protectedTile = protectedIndices.has(x * height + y);
+      if (protectedTile) onProtectedTile?.(x, y, layer);
+      return protectedTile;
+    },
     placeable: (layer, id) => findMaterial(materials, layer, id) !== undefined,
     paintable: (paint) => materials.paints.some((candidate) => candidate.id === paint),
     shapeable: (id) => isShapeable(materials, id),
@@ -132,6 +148,28 @@ export function setBrushSize(size: number): void {
 let loaded: WorldTilesResult | null = null;
 let history: BrushHistory | null = null;
 let savedPosition: ReturnType<BrushHistory["position"]> = null;
+const areaEdits = new WeakMap<readonly TileDiff[], (direction: "before" | "after") => void>();
+let erasingChests = false;
+let chestsBeforeStroke: WorldTilesResult["entities"]["Chests"]["data"] = null;
+const pendingChests = new Set<WorldChest>();
+function chestCells(world: WorldTilesResult, chest: WorldChest): readonly { readonly x: number; readonly y: number }[] {
+  const origin = world.palette[world.planes.block[chest.x * world.metadata.height + chest.y] ?? 0xffff];
+  if (origin?.kind !== "vanilla" || (origin.id !== 21 && origin.id !== 88 && origin.id !== 467)) return [];
+  const width = origin.id === 88 ? 3 : 2;
+  const cells = Array.from({ length: width * 2 }, (_, index) => ({ x: chest.x + Math.floor(index / 2), y: chest.y + index % 2 }));
+  if (cells.some(({ x, y }) => x < 0 || y < 0 || x >= world.metadata.width || y >= world.metadata.height || world.planes.block[x * world.metadata.height + y] !== world.planes.block[chest.x * world.metadata.height + chest.y])) return [];
+  // Other entity records are not part of the requested chest Eraser operation.
+  if (cells.some(({ x, y }) => [...world.entities.Signs.data?.entries ?? [], ...world.entities.TileEntities.data?.entries ?? [], ...world.entities.WeightedPressurePlates.data?.entries ?? []].some((entry) => entry.x === x && entry.y === y))) return [];
+  return cells;
+}
+function makeHistory(world: WorldTilesResult): BrushHistory | null {
+  const lookup = chestLookupOf(world);
+  return createWorldBrush(world, (x, y, layer) => {
+    if (!erasingChests || layer !== "block") return;
+    const chest = lookup(x, y);
+    if (chest !== null && chestCells(world, chest).length !== 0) pendingChests.add(chest);
+  });
+}
 let dirtyBeforeStroke = false;
 // Where the last stroke ended, for Shift-click straight lines, and where the one before ended (a cancelled stroke
 // gives its line origin back).
@@ -157,6 +195,7 @@ const publish = (): void => {
   useBrushStore.setState((state) => ({ canUndo: history?.canUndo() ?? false, canRedo: history?.canRedo() ?? false, revision: state.revision + 1 }));
 };
 export function setBrushWorld(world: WorldTilesResult | null): void {
+  erasingChests = false; chestsBeforeStroke = null; pendingChests.clear();
   loaded = world;
   history = null; // lazy: opening a world must not allocate an editor before it is used
   savedPosition = null;
@@ -180,7 +219,7 @@ export function loadedBrushMaterials(): ReturnType<typeof brushMaterials> | null
 /** Starts a stroke; with `lineFromLast` it first joins the previous stroke's end, drawing a straight line. */
 export function beginBrush(erase: boolean, lineFromLast = false): boolean {
   if (loaded === null || useBrushStore.getState().reason !== null || useBrushStore.getState().active || editingLocked()) return false;
-  history ??= createWorldBrush(loaded);
+  history ??= makeHistory(loaded);
   if (history === null) return false;
   try {
     history.begin(brushOptions(useBrushStore.getState(), erase));
@@ -189,6 +228,9 @@ export function beginBrush(erase: boolean, lineFromLast = false): boolean {
     throw error;
   }
   dirtyBeforeStroke = useAppStore.getState().unsavedChanges;
+  chestsBeforeStroke = loaded.entities.Chests.data;
+  erasingChests = erase && brushLayers(useBrushStore.getState().layer).includes("block");
+  pendingChests.clear();
   lastPointBeforeStroke = lastPoint;
   const state = useBrushStore.getState();
   if (!erase && !state.paintOnly) {
@@ -197,7 +239,7 @@ export function beginBrush(erase: boolean, lineFromLast = false): boolean {
     }
   }
   useBrushStore.setState({ active: true, canUndo: false, canRedo: false });
-  if (lineFromLast && lastPoint !== null) notify(history.move(lastPoint.x, lastPoint.y));
+  if (lineFromLast && lastPoint !== null) moveBrush(lastPoint.x, lastPoint.y);
   return true;
 }
 /** Whether a stroke can be continued from the previous one (Shift-click). */
@@ -209,32 +251,62 @@ export function moveBrush(x: number, y: number): void {
   if (!useBrushStore.getState().active) return;
   if (x >= 0 && y >= 0) lastPoint = { x, y };
   notify(history?.move(x, y) ?? []);
+  if (loaded !== null && history !== null && pendingChests.size !== 0) {
+    const world = loaded;
+    for (const chest of pendingChests) notify(history.eraseBlocks(chestCells(world, chest)));
+    Object.assign(world.entities.Chests, { data: { entries: (world.entities.Chests.data?.entries ?? []).filter((entry) => !pendingChests.has(entry)) } });
+    pendingChests.clear();
+  }
 }
 /** Ends the stroke: committed as one undo entry, or with `cancel` restored. */
 export function finishBrush(cancel = false): void {
   if (!useBrushStore.getState().active) return;
   if (cancel) {
+    if (loaded !== null && erasingChests) Object.assign(loaded.entities.Chests, { data: chestsBeforeStroke });
     notify(history?.cancel() ?? [], "before");
     lastPoint = lastPointBeforeStroke;
   }
-  else history?.commit(); // The planes were already changed and invalidated by move.
+  else {
+    const tiles = history?.commit(); // The planes were already changed and invalidated by move.
+    if (loaded !== null && tiles !== undefined && tiles.length !== 0 && loaded.entities.Chests.data !== chestsBeforeStroke) {
+      const world = loaded, before = chestsBeforeStroke, after = loaded.entities.Chests.data;
+      areaEdits.set(tiles, (direction) => { Object.assign(world.entities.Chests, { data: direction === "before" ? before : after }); });
+    }
+  }
+  erasingChests = false; pendingChests.clear();
   useBrushStore.setState({ active: false });
   useAppStore.getState().setUnsavedChanges(cancel ? dirtyBeforeStroke : propertiesAreDirty() || history?.position() !== savedPosition);
   publish();
 }
 export function undoBrush(): void {
   if (!editingLocked() && history?.canUndo() === true) {
-    notify(history.undo(), "before");
+    const entry = history.position();
+    const tiles = history.undo();
+    if (entry !== null) areaEdits.get(entry)?.("before");
+    notify(tiles, "before");
     useAppStore.getState().setUnsavedChanges(propertiesAreDirty() || history.position() !== savedPosition);
     publish();
   }
 }
 export function redoBrush(): void {
   if (!editingLocked() && history?.canRedo() === true) {
-    notify(history.redo());
+    const tiles = history.redo();
+    const entry = history.position();
+    if (entry !== null) areaEdits.get(entry)?.("after");
+    notify(tiles);
     useAppStore.getState().setUnsavedChanges(propertiesAreDirty() || history.position() !== savedPosition);
     publish();
   }
+}
+
+/** Commits a previewed area edit as one entry in the existing brush history. */
+export function commitAreaEdit(world: WorldTilesResult, tiles: readonly TileDiff[], apply: (direction: "before" | "after") => void): boolean {
+  if (loaded !== world || editingLocked() || useBrushStore.getState().active || useBrushStore.getState().reason !== null || tiles.length === 0) return false;
+  history ??= makeHistory(world);
+  if (history === null) return false;
+  apply("after"); history.record(tiles); areaEdits.set(tiles, apply);
+  notify(tiles); publish();
+  return true;
 }
 
 /**

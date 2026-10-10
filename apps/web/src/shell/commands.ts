@@ -8,6 +8,7 @@ import { chooseWorldsFolder, hasFolderPicker } from "../world/world-library.js";
 import { closeWorld } from "../world/world-session.js";
 import { finishBrush, redoBrush, setBrushSize, undoBrush, useBrushStore } from "../world/brush-session.js";
 import { WORLD_GROUP_IDS } from "../panels/world-fields.js";
+import { cancelArea, copySelection, placePaste, startPaste, useAreaStore } from "../world/area-session.js";
 import { resetLayout, useLayoutStore, type ThemeChoice } from "./layout-store.js";
 import { getMapController, useViewStore, type MapLayers, type ToolId } from "./view-store.js";
 
@@ -51,14 +52,14 @@ export const TOOLS: readonly ToolDefinition[] = [
   { id: "brush", label: "Brush", icon: "brush", shortcut: "B", group: "edit", available: true, hint: "Drag to paint simple blocks or walls" },
   { id: "erase", label: "Erase", icon: "erase", shortcut: "E", group: "edit", available: true, hint: "Drag to erase the selected layer" },
   { id: "fill", label: "Fill", icon: "fill", shortcut: "G", group: "edit", available: false, hint: "" },
-  { id: "select", label: "Select", icon: "select", shortcut: "M", group: "edit", available: false, hint: "" },
+  { id: "select", label: "Select", icon: "select", shortcut: "M", group: "edit", available: true, hint: "Drag a rectangle · Ctrl+C to copy · Ctrl+V to preview · Escape to cancel" },
   { id: "picker", label: "Pick content", icon: "picker", shortcut: "K", group: "edit", available: false, hint: "" },
   { id: "object", label: "Place object", icon: "object", shortcut: "O", group: "objects", available: false, hint: "" },
 ];
 
 export function toolCommands(tool: ToolId, setTool: (tool: ToolId) => void, editReason: string | null = "Open a vanilla world first"): Command[] {
   return TOOLS.map((definition) => {
-    const reason = !definition.available ? EDITING_LATER : definition.id === "brush" || definition.id === "erase" ? editReason : null;
+    const reason = !definition.available ? EDITING_LATER : definition.id === "brush" || definition.id === "erase" || definition.id === "select" ? editReason : null;
     return ({
     id: `tool.${definition.id}`,
     group: "Tools",
@@ -147,6 +148,7 @@ export function useCommands(): Command[] {
   const brushReason = useBrushStore((state) => state.reason);
   const canUndo = useBrushStore((state) => state.canUndo);
   const canRedo = useBrushStore((state) => state.canRedo);
+  const area = useAreaStore();
   const editReason = loadingWorld ? "A world is loading" : saving ? "Finish exporting first" : brushReason;
   const dockHidden = useLayoutStore((state) => state.dockHidden);
   const setDockHidden = useLayoutStore((state) => state.setDockHidden);
@@ -169,6 +171,12 @@ export function useCommands(): Command[] {
   const setSpritePreviewOpen = useViewStore((state) => state.setSpritePreviewOpen);
 
   return [
+    ...([
+      ["edit.copy", "Copy area", "Control+C", area.selection !== null && !area.pasting, "Select a rectangle first", copySelection],
+      ["edit.paste", "Paste area", "Control+V", area.hasClipboard, "Copy an area first", startPaste],
+      ["edit.placePaste", "Place paste", "Enter", area.pasting && area.position !== null, "Preview a paste first", placePaste],
+      ["edit.cancelArea", "Deselect / cancel paste", "Escape", area.pasting || area.selection !== null, "No selection or paste", cancelArea],
+    ] as const).map(([id, label, shortcut, available, reason, run]): Command => ({ id, group: "Edit", label, shortcut, enabled: available && editReason === null, ...(!available || editReason !== null ? { disabledReason: editReason ?? reason } : {}), run })),
     { id: "edit.undo", group: "Edit", label: "Undo", icon: "undo", shortcut: "Control+Z", enabled: canUndo && editReason === null,
       ...(editReason !== null ? { disabledReason: editReason } : !canUndo ? { disabledReason: "No stroke to undo" } : {}), run: undoBrush },
     { id: "edit.redo", group: "Edit", label: "Redo", icon: "redo", shortcut: "Control+Shift+Z", enabled: canRedo && editReason === null,
@@ -343,8 +351,10 @@ export function useGlobalShortcuts(commands: readonly Command[]): void {
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.defaultPrevented || event.repeat || isTextEntry(event.target)) return;
       if (event.target instanceof Element && event.target.closest("[role=menu], dialog[open]") !== null) return;
-      const command = commands.find((candidate) => candidate.shortcut !== undefined && matchesShortcut(event, candidate.shortcut));
+      const matching = commands.filter((candidate) => candidate.shortcut !== undefined && matchesShortcut(event, candidate.shortcut));
+      const command = matching.find((candidate) => candidate.enabled) ?? matching[0];
       if (command === undefined) return;
+      if (command.id === "edit.placePaste" && event.target instanceof Element && event.target.closest("button, input, select, [role=button]") !== null) return;
       // A disabled Ctrl shortcut is still ours: Ctrl+S must not open the browser's "Save page" instead.
       if (!command.enabled) {
         if (event.ctrlKey || event.metaKey) event.preventDefault();

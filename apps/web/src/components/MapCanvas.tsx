@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  CameraAnimator, clampCamera, createMapRenderer, fitWorld, terrariaMapPalette, visibleChunks, wheelPixels,
+  CameraAnimator, clampCamera, createMapRenderer, fitWorld, renderChunk, terrariaMapPalette, visibleChunks, wheelPixels,
 } from "@studio/renderer";
 import type { Camera, MapRenderer, RenderableWorld, Size } from "@studio/renderer";
 import { brushFootprint, type BrushShape } from "@studio/world-model";
@@ -9,6 +9,7 @@ import { registerMapController, rendererLayers, useViewStore, type ToolId } from
 import { getBlockFraming } from "../world/block-framing.js";
 import { beginBrush, finishBrush, moveBrush, pickBrushMaterial, subscribeBrushChanges, useBrushStore } from "../world/brush-session.js";
 import { createBrushStabilizer } from "../world/brush-stabilizer.js";
+import { cancelArea, movePaste, pasteBounds, pastePreviewWorld, placePaste, selectArea, useAreaStore } from "../world/area-session.js";
 
 const KEY_PAN_PIXELS_PER_MS = 0.384;
 const KEY_ZOOM_FACTOR = 1.25;
@@ -21,7 +22,7 @@ const CLICK_SLOP = 4;
 const CANVAS_STYLE: React.CSSProperties = {
   position: "absolute", inset: 0, width: "100%", height: "100%", touchAction: "none", cursor: "grab",
 };
-const TOOL_CURSORS: Partial<Record<ToolId, string>> = { inspect: "crosshair", brush: "crosshair", erase: "crosshair" };
+const TOOL_CURSORS: Partial<Record<ToolId, string>> = { inspect: "crosshair", brush: "crosshair", erase: "crosshair", select: "crosshair" };
 
 // Overlays are positioned inline for the same reason: they must stay above the canvas and clickable.
 const CONTROLS_STYLE: React.CSSProperties = { position: "absolute", top: 8, right: 8, zIndex: 1, display: "flex", gap: 4 };
@@ -116,6 +117,10 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
    */
   const pressRef = useRef<{ readonly at: Point; moved: boolean } | null>(null);
   const brushPointer = useRef<number | null>(null);
+  const selectionPointer = useRef<{ readonly id: number; readonly origin: { readonly x: number; readonly y: number } } | null>(null);
+  const areaRef = useRef<HTMLDivElement>(null);
+  const pasteCanvasRef = useRef<HTMLCanvasElement>(null);
+  const previewRevision = useRef<unknown>(null);
   const brushPointerType = useRef<string>("mouse");
   // Where the painting pointer last was (CSS pixels), so a second finger can turn the stroke into a pinch.
   const brushLast = useRef<Point | null>(null);
@@ -148,6 +153,37 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
     const footprint = footprintRef.current;
     const selected = useViewStore.getState().tool;
     const brush = useBrushStore.getState();
+    if (selected === "select" && useAreaStore.getState().pasting && tile !== null) movePaste(tile);
+    const areaState = useAreaStore.getState();
+    const bounds = areaState.pasting ? pasteBounds() : areaState.selection;
+    const areaElement = areaRef.current, canvasElement = canvasRef.current;
+    if (areaElement !== null && canvasElement !== null) {
+      areaElement.hidden = bounds === null;
+      if (bounds !== null) {
+        const scaleX = session.camera.zoom * canvasElement.clientWidth / canvasElement.width;
+        const scaleY = session.camera.zoom * canvasElement.clientHeight / canvasElement.height;
+        areaElement.style.left = `${String((bounds.x - session.camera.x) * scaleX)}px`;
+        areaElement.style.top = `${String((bounds.y - session.camera.y) * scaleY)}px`;
+        areaElement.style.width = `${String(Math.min(bounds.width, session.world.width - bounds.x) * scaleX)}px`;
+        areaElement.style.height = `${String(Math.min(bounds.height, session.world.height - bounds.y) * scaleY)}px`;
+        const previewCanvas = pasteCanvasRef.current;
+        if (previewCanvas !== null) {
+          previewCanvas.hidden = !areaState.pasting;
+          if (areaState.pasting && previewRevision.current !== areaState) {
+            previewRevision.current = areaState;
+            const previewWorld = pastePreviewWorld();
+            const context = previewCanvas.getContext("2d");
+            previewCanvas.width = previewWorld?.width ?? 1; previewCanvas.height = previewWorld?.height ?? 1;
+            if (previewWorld !== null && context !== null) {
+              for (let cx = 0; cx * 128 < previewWorld.width; cx++) for (let cy = 0; cy * 128 < previewWorld.height; cy++) {
+                const chunk = renderChunk(previewWorld, cx, cy, { surfaceY: session.world.surfaceY - bounds.y, ...(session.world.rockY === undefined ? {} : { rockY: session.world.rockY - bounds.y }), layers: rendererLayers(useViewStore.getState().layers), mapPalette: terrariaMapPalette });
+                context.putImageData(new ImageData(new Uint8ClampedArray(chunk.pixels), chunk.width, chunk.height), cx * 128, cy * 128);
+              }
+            }
+          }
+        }
+      }
+    }
     if (footprint !== null) {
       const trail = brushTrail.current;
       const placement = trail === null ? hover : trail.point === null ? null : toBacking(trail.point);
@@ -278,6 +314,10 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
     const unsubscribeTool = useViewStore.subscribe((state, previous) => {
       if (state.tool !== previous.tool) session.requestFrame();
     });
+    const unsubscribeArea = useAreaStore.subscribe((state) => {
+      if (state.selection === null) selectionPointer.current = null;
+      session.requestFrame();
+    });
     renderer.setWorld(session.world);
     const unsubscribeEdits = subscribeBrushChanges((edited, tiles) => {
       if (edited.planes === session.world.planes) renderer.invalidateTiles(tiles);
@@ -383,6 +423,7 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
       unsubscribeEdits();
       unsubscribeBrushOptions();
       unsubscribeTool();
+      unsubscribeArea();
       registerMapController(null);
       useViewStore.getState().setHoverTile(null);
       useViewStore.getState().setZoom(null);
@@ -462,6 +503,20 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
   const onPointerDown = (event: React.PointerEvent<HTMLCanvasElement>): void => {
     withSession((session) => {
       const selected = useViewStore.getState().tool;
+      if (selectionPointer.current !== null) selectionPointer.current = null;
+      if (selected === "select" && event.isPrimary && event.button === 0 && session.pointers.size === 0 && useBrushStore.getState().reason === null) {
+        const point = toBacking(localPoint(event.clientX, event.clientY));
+        const tile = session.renderer.tileAt(point.x, point.y);
+        if (tile !== null) {
+          session.animator.cancelMotion(); event.currentTarget.focus();
+          if (useAreaStore.getState().pasting) { movePaste(tile); placePaste(); }
+          else {
+            selectionPointer.current = { id: event.pointerId, origin: tile }; selectArea(tile, tile);
+            try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* The pointer may already have ended. */ }
+          }
+          return;
+        }
+      }
       if (brushPointer.current !== null) {
         // Another finger while painting: keep the stroke and pinch with both.
         const last = brushLast.current;
@@ -518,6 +573,11 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
   const onPointerMove = (event: React.PointerEvent<HTMLCanvasElement>): void => {
     withSession((session) => {
       const local = localPoint(event.clientX, event.clientY);
+      if (selectionPointer.current?.id === event.pointerId) {
+        const point = toBacking(local), tile = session.renderer.tileAt(point.x, point.y);
+        if (tile !== null) selectArea(selectionPointer.current.origin, tile);
+        session.hover = local; session.requestFrame(); return;
+      }
       if (brushPointer.current === event.pointerId) {
         brushLast.current = local;
         if ((event.pointerType === "mouse" || event.pointerType === "pen") && event.buttons !== 1) {
@@ -575,6 +635,16 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
   };
 
   const onPointerEnd = (event: React.PointerEvent<HTMLCanvasElement>): void => {
+    if (selectionPointer.current?.id === event.pointerId) {
+      const origin = selectionPointer.current.origin;
+      if (event.type === "pointerup") withSession((session) => {
+        const point = toBacking(localPoint(event.clientX, event.clientY)), tile = session.renderer.tileAt(point.x, point.y);
+        if (tile !== null) selectArea(origin, tile);
+      });
+      selectionPointer.current = null;
+      if (event.type === "pointercancel") cancelArea();
+      return;
+    }
     withSession((session) => {
       if (brushPointer.current === event.pointerId) {
         if (event.type === "pointerup") {
@@ -674,6 +744,7 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
           });
         }}
         onBlur={() => {
+          selectionPointer.current = null;
           endStroke();
           withSession((session) => {
             session.keys.clear();
@@ -682,6 +753,7 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
         }}
       />
       <div ref={footprintRef} className="brush-footprint" aria-hidden="true" hidden style={{ position: "absolute", pointerEvents: "none" }}><svg width="100%" height="100%"><path className="brush-footprint-fill" /><path className="brush-footprint-halo" /><path className="brush-footprint-edge" /></svg></div>
+      <div ref={areaRef} className="area-outline" aria-hidden="true" hidden><canvas ref={pasteCanvasRef} className="area-paste-preview" hidden /></div>
       <div className="map-controls" style={CONTROLS_STYLE}>
         <button
           type="button"

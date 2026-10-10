@@ -70,7 +70,7 @@ Code: `apps/web/src/ui/` (primitives), `apps/web/src/shell/` (layout, commands, 
   - *Objects*: Place object `O`.
 
   The rail is one Tab stop; the arrow keys move inside it. The active tool shows as pressed. Brush and Erase
-  are available for supported vanilla worlds; the remaining edit tools show their unavailable reason.
+  and Select are available for supported vanilla worlds; the remaining edit tools show their unavailable reason.
 - **Tool options bar** (`shell/ToolOptions.tsx`) shows the active tool's name and settings. Its material chips show
   sprites when assets are ready and Sprites is enabled, using the same interior thumbnails as the Swatches tab.
   Disconnecting assets or a missing sheet restores map colours; paint corners and accessible names are unchanged.

@@ -1,4 +1,4 @@
-import { readWorldTiles, type TilePlanes, type WorldTilesResult } from "@studio/world-codec";
+import { readTileEntityPayloads, readWorldTiles, type TilePlanes, type WorldTilesResult } from "@studio/world-codec";
 
 const CONTENT_PLANES = ["block", "wall"] as const;
 const VALUE_PLANES = ["frameX", "frameY", "paint", "wallPaint", "liquid", "liquidAmount", "shape", "flags"] as const satisfies readonly (keyof TilePlanes)[];
@@ -26,12 +26,18 @@ function difference(expected: unknown, actual: unknown, path: string): string | 
 
 /** What a save must keep besides the tiles; section offsets are left out, since re-encoded tiles may move them. */
 function keptFields(world: WorldTilesResult): unknown {
+  const tileEntities = world.entities.TileEntities.data;
+  const payloads = tileEntities === null || tileEntities.entries.length === 0 ? [] : world.envelope.tileEntityPayloads ?? readTileEntityPayloads(world.envelope.source, world.sections.tileEntities, world.header.version);
   return {
     header: world.header,
     metadata: world.metadata,
     details: world.details,
     entities: Object.fromEntries(Object.entries(world.entities).map(([name, section]) => [name, section.data])),
-    opaque: world.envelope.opaqueSections.map(({ name, bytes }) => ({ name, bytes })),
+    opaque: world.envelope.opaqueSections.filter(({ name }) => !["chests", "signs", "tileEntities", "weightedPressurePlates"].includes(name)).map(({ name, bytes }) => ({ name, bytes })),
+    tileEntityPayloads: tileEntities === null ? null : tileEntities.entries.map((entry) => {
+      const payload = payloads.find((candidate) => candidate.entityId === entry.entityId);
+      return { entityId: entry.entityId, kind: payload?.kind, payload: payload?.payload };
+    }),
   };
 }
 

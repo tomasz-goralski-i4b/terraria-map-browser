@@ -81,6 +81,10 @@ export interface TileCoordinate { readonly x: number; readonly y: number }
 export interface PlaneChange { readonly plane: keyof WorldPlanes; readonly before: number; readonly after: number }
 export interface TileDiff extends TileCoordinate { readonly changes: readonly PlaneChange[] }
 export interface BrushHistory {
+  /** Removes a caller-validated whole object's blocks within the active stroke. */
+  readonly eraseBlocks: (cells: readonly TileCoordinate[]) => readonly TileDiff[];
+  /** Records an already applied atomic plane edit, sharing undo order with brush strokes. */
+  readonly record: (tiles: readonly TileDiff[]) => void;
   readonly begin: (options: BrushOptions) => void;
   readonly move: (x: number, y: number) => readonly TileDiff[];
   readonly commit: () => readonly TileDiff[];
@@ -242,6 +246,20 @@ export function createBrushHistory(world: CanonicalWorld, rules: BrushRules = {}
   };
   const assertIdle = (): void => { if (targets !== null) throw new Error("Finish the active brush stroke first"); };
   return {
+    eraseBlocks: (cells) => {
+      if (targets === null) throw new Error("Start a brush stroke first");
+      const changed: TileDiff[] = [];
+      for (const { x, y } of cells) {
+        const tile = world.tileAt(x, y);
+        edit(tile, "block", { kind: "erase" });
+        write(x, y, tile, changed);
+      }
+      return changed;
+    },
+    record: (diff) => {
+      assertIdle();
+      if (diff.length !== 0) { past.push(diff); future.length = 0; }
+    },
     begin: (options) => {
       assertIdle();
       const selected = (["block", "wall"] as const).flatMap((layer) => {
