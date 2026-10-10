@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
-import { TRACK_EXTRA_OFFSET, trackExtraCell, trackPiece } from "../src/index.js";
-import type { TrackExtra } from "../src/index.js";
+import { TRACK_EXTRA_OFFSET, objectSprites, trackExtraCell, trackPiece } from "../src/index.js";
+import type { ObjectWorld, TrackExtra } from "../src/index.js";
 
 // docs/assets.md, "Minecart tracks": the Tiles_314 cell (column, row) of every stored piece and the extras it draws,
 // written out here so the test pins the documented table rather than the generated one.
@@ -34,5 +34,45 @@ describe("minecart track pieces", () => {
     expect(trackExtraCell("bumper")).toEqual({ column: 0, row: 7 });
     expect(trackExtraCell("bouncyBumper")).toEqual({ column: 1, row: 7 });
     expect(TRACK_EXTRA_OFFSET).toEqual({ leftDown: 1, rightDown: 1, bumper: -1, bouncyBumper: -1 });
+  });
+});
+
+describe("minecart track extras", () => {
+  const ABSENT = 0xffff;
+  const STONE = 1;
+  const TRACK = 314;
+
+  /** A left-down slope piece (4) at (2, 2) over a stone block of `shape` at (2, 3); 0 full, 1 half, 2–5 slopes. */
+  function slopeOver(shape: number | null): ObjectWorld {
+    const height = 6;
+    const block = new Uint16Array(6 * height).fill(ABSENT);
+    const frameX = new Int16Array(6 * height).fill(-1);
+    const frameY = new Int16Array(6 * height).fill(-1);
+    const shapes = new Uint8Array(6 * height);
+    block[2 * height + 2] = 0;
+    frameX[2 * height + 2] = 4;
+    if (shape !== null) {
+      block[2 * height + 3] = 1;
+      shapes[2 * height + 3] = shape;
+    }
+    return {
+      width: 6, height, planes: { block, frameX, frameY, shape: shapes },
+      palette: [{ kind: "vanilla", id: TRACK }, { kind: "vanilla", id: STONE }],
+    };
+  }
+
+  const decoration = { kind: "tile", id: TRACK, sx: 0, sy: 6 * 18, width: 16, height: 16, dx: 32, dy: 48 };
+  const all = { left: 0, top: 0, right: 6, bottom: 6 };
+
+  test("a slope's decoration is drawn on the tile below it when that tile is empty", () => {
+    expect(objectSprites(slopeOver(null), all)).toEqual([decoration]);
+  });
+
+  test.each([1, 2, 3, 4, 5])("a slope's decoration is drawn over a block of shape %i below it (its open part)", (shape) => {
+    expect(objectSprites(slopeOver(shape), all)).toEqual([decoration]);
+  });
+
+  test("a full block below a slope keeps its pixels", () => {
+    expect(objectSprites(slopeOver(0), all)).toEqual([]);
   });
 });
