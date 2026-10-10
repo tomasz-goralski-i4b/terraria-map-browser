@@ -142,7 +142,15 @@ export function TopBar({ commands }: { readonly commands: readonly Command[] }):
     },
     {
       label: "Edit", mnemonic: "E",
-      items: commands.filter((command) => command.group === "Edit").map(menuItem),
+      items: [
+        menuItem(get("edit.undo")),
+        menuItem(get("edit.redo")),
+        { kind: "separator" },
+        menuItem(get("edit.copy")),
+        menuItem(get("edit.paste")),
+        menuItem(get("edit.placePaste")),
+        menuItem(get("edit.cancelArea")),
+      ],
     },
     {
       label: "View", mnemonic: "V",

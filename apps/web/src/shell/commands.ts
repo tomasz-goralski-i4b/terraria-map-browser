@@ -8,6 +8,8 @@ import { chooseWorldsFolder, hasFolderPicker } from "../world/world-library.js";
 import { closeWorld } from "../world/world-session.js";
 import { finishBrush, redoBrush, setBrushSize, undoBrush, useBrushStore } from "../world/brush-session.js";
 import { WORLD_GROUP_IDS } from "../panels/world-fields.js";
+import { cancelArea, copySelection, placePaste, startPaste, useAreaStore } from "../world/area-session.js";
+import { MAX_AREA_TILES } from "../world/area-clipboard.js";
 import { resetLayout, useLayoutStore, type ThemeChoice } from "./layout-store.js";
 import { getMapController, useViewStore, type MapLayers, type ToolId } from "./view-store.js";
 
@@ -51,14 +53,14 @@ export const TOOLS: readonly ToolDefinition[] = [
   { id: "brush", label: "Brush", icon: "brush", shortcut: "B", group: "edit", available: true, hint: "Drag to paint simple blocks or walls" },
   { id: "erase", label: "Erase", icon: "erase", shortcut: "E", group: "edit", available: true, hint: "Drag to erase the selected layer" },
   { id: "fill", label: "Fill", icon: "fill", shortcut: "G", group: "edit", available: false, hint: "" },
-  { id: "select", label: "Select", icon: "select", shortcut: "M", group: "edit", available: false, hint: "" },
+  { id: "select", label: "Select", icon: "select", shortcut: "M", group: "edit", available: true, hint: "Drag a rectangle · Ctrl+C to copy · Ctrl+V to paste" },
   { id: "picker", label: "Pick content", icon: "picker", shortcut: "K", group: "edit", available: false, hint: "" },
   { id: "object", label: "Place object", icon: "object", shortcut: "O", group: "objects", available: false, hint: "" },
 ];
 
 export function toolCommands(tool: ToolId, setTool: (tool: ToolId) => void, editReason: string | null = "Open a vanilla world first"): Command[] {
   return TOOLS.map((definition) => {
-    const reason = !definition.available ? EDITING_LATER : definition.id === "brush" || definition.id === "erase" ? editReason : null;
+    const reason = !definition.available ? EDITING_LATER : definition.id === "brush" || definition.id === "erase" || definition.id === "select" ? editReason : null;
     return ({
     id: `tool.${definition.id}`,
     group: "Tools",
@@ -108,8 +110,13 @@ export function brushOptionCommands(tool: ToolId): Command[] {
   };
   const reason = (brushOnly: boolean): string | null => (!editing ? "Choose Brush or Erase first" : brushOnly && tool !== "brush" ? "Choose Brush first" : null);
   const options: readonly (readonly [string, string, string, boolean, ReturnType<typeof set>])[] = [
-    ["tool.brushSwapLayer", "Swap block and wall target", "X", false, set((state) => ({ layer: state.layer === "block" ? "wall" : "block" }))],
-    ["tool.brushBothLayers", "Target blocks and walls", "Shift+X", false, set(() => ({ layer: "both" }))],
+    // Erase has its own layer mask: X swaps its blocks and walls, Shift+X turns both on; liquids and wires stay.
+    ["tool.brushSwapLayer", "Swap block and wall target", "X", false, set((state) => (tool === "erase"
+      ? { eraseLayers: { ...state.eraseLayers, block: state.eraseLayers.wall, wall: state.eraseLayers.block } }
+      : { layer: state.layer === "block" ? "wall" : "block" }))],
+    ["tool.brushBothLayers", "Target blocks and walls", "Shift+X", false, set((state) => (tool === "erase"
+      ? { eraseLayers: { ...state.eraseLayers, block: true, wall: true } }
+      : { layer: "both" }))],
     ["tool.brushShape", "Toggle square and round brush", "Shift+B", false, set((state) => ({ shape: state.shape === "square" ? "circle" : "square" }))],
     ["tool.brushSmooth", "Toggle Smooth edges", "S", false, set((state) => ({ smooth: !state.smooth }))],
     ["tool.brushPaintOnly", "Toggle Place and Paint", "R", true, set((state) => ({ paintOnly: !state.paintOnly }))],
@@ -147,6 +154,9 @@ export function useCommands(): Command[] {
   const brushReason = useBrushStore((state) => state.reason);
   const canUndo = useBrushStore((state) => state.canUndo);
   const canRedo = useBrushStore((state) => state.canRedo);
+  const area = useAreaStore();
+  const areaCopyReason = area.pasting ? "Place or cancel the paste first" : area.selection === null ? "Select an area first"
+    : area.selection.width * area.selection.height > MAX_AREA_TILES ? `Too large: select up to ${MAX_AREA_TILES.toLocaleString("en-US")} tiles` : null;
   const editReason = loadingWorld ? "A world is loading" : saving ? "Finish exporting first" : brushReason;
   const dockHidden = useLayoutStore((state) => state.dockHidden);
   const setDockHidden = useLayoutStore((state) => state.setDockHidden);
@@ -173,6 +183,13 @@ export function useCommands(): Command[] {
       ...(editReason !== null ? { disabledReason: editReason } : !canUndo ? { disabledReason: "No stroke to undo" } : {}), run: undoBrush },
     { id: "edit.redo", group: "Edit", label: "Redo", icon: "redo", shortcut: "Control+Shift+Z", enabled: canRedo && editReason === null,
       ...(editReason !== null ? { disabledReason: editReason } : !canRedo ? { disabledReason: "No stroke to redo" } : {}), run: redoBrush },
+    ...([
+      ["edit.copy", "Copy", "Control+C", areaCopyReason === null, areaCopyReason, copySelection],
+      ["edit.paste", "Paste", "Control+V", area.hasClipboard, "Copy an area first", startPaste],
+      ["edit.placePaste", "Place paste", "Enter", area.pasting && area.canPlace, area.pasting ? area.problem ?? "Preparing preview…" : "Paste first", placePaste],
+      // Outside Select, Escape keeps its other meanings (unpinning the Inspector's tile, taking back a stroke).
+      ["edit.cancelArea", area.pasting ? "Cancel paste" : "Deselect", "Escape", area.pasting || (area.selection !== null && tool === "select"), area.selection === null ? "Nothing is selected" : "Switch to Select first", cancelArea],
+    ] as const).map(([id, label, shortcut, available, reason, run]): Command => ({ id, group: "Edit", label, shortcut, enabled: available && editReason === null, ...(!available || editReason !== null ? { disabledReason: editReason ?? reason ?? "" } : {}), run })),
     { id: "file.open", group: "File", label: "Open World…", icon: "file", shortcut: "Control+O", enabled: true, run: chooseWorldFile },
     {
       id: "file.openFolder", group: "File", label: "Open Folder…", icon: "folder", enabled: hasFolderPicker(),
@@ -343,8 +360,12 @@ export function useGlobalShortcuts(commands: readonly Command[]): void {
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.defaultPrevented || event.repeat || isTextEntry(event.target)) return;
       if (event.target instanceof Element && event.target.closest("[role=menu], dialog[open]") !== null) return;
-      const command = commands.find((candidate) => candidate.shortcut !== undefined && matchesShortcut(event, candidate.shortcut));
+      const matching = commands.filter((candidate) => candidate.shortcut !== undefined && matchesShortcut(event, candidate.shortcut));
+      const command = matching.find((candidate) => candidate.enabled) ?? matching[0];
       if (command === undefined) return;
+      if (command.id === "edit.placePaste" && event.target instanceof Element && event.target.closest("button, input, select, [role=button]") !== null) return;
+      // Ctrl+C / Ctrl+V stay the browser's for selected page text and whenever there is no area to copy or paste.
+      if ((command.id === "edit.copy" || command.id === "edit.paste") && (!command.enabled || window.getSelection()?.isCollapsed === false)) return;
       // A disabled Ctrl shortcut is still ours: Ctrl+S must not open the browser's "Save page" instead.
       if (!command.enabled) {
         if (event.ctrlKey || event.metaKey) event.preventDefault();

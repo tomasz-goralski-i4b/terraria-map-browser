@@ -12,7 +12,7 @@ const source = (): Uint8Array<ArrayBuffer> => brushSource(8, 8, Array.from({ len
 beforeEach(() => {
   useSaveStore.setState({ open: false });
   useAppStore.setState({ phase: "loaded", unsavedChanges: false });
-  useBrushStore.setState({ layer: "block", blockId: 1, size: 1 });
+  useBrushStore.setState({ layer: "block", eraseLayers: { block: true, wall: false, liquid: false, wires: false }, blockId: 1, size: 1 });
 });
 afterEach(() => { setBrushWorld(null); useSaveStore.setState({ open: false }); });
 const paint = (x: number, y: number): void => {
@@ -164,4 +164,20 @@ test("declining the question for a second open leaves the first one loading, nev
   } finally {
     setDiscardConfirmer(null);
   }
+});
+
+test("the Eraser's own mask removes only wires and liquids, keeping blocks, and the brush's target is untouched", () => {
+  const world = readWorldTiles(source());
+  const view = canonicalWorldOf(world);
+  view.setTile(3, 3, { block: { kind: "vanilla", id: 1 }, wires: 5, actuator: true, liquid: { kind: "lava", amount: 120 } });
+  setBrushWorld(world);
+  useBrushStore.setState({ eraseLayers: { block: false, wall: false, liquid: true, wires: true } });
+  expect(beginBrush(true)).toBe(true);
+  moveBrush(3, 3);
+  finishBrush();
+  expect(view.tileAt(3, 3)).toMatchObject({ block: { kind: "vanilla", id: 1 }, wires: 0, actuator: false });
+  expect(view.tileAt(3, 3).liquid).toBeUndefined();
+  expect(useBrushStore.getState().layer).toBe("block");
+  undoBrush();
+  expect(view.tileAt(3, 3)).toMatchObject({ wires: 5, actuator: true, liquid: { kind: "lava", amount: 120 } });
 });

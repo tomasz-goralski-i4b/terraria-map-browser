@@ -63,6 +63,8 @@ export interface CanonicalWorld {
   readonly height: number;
   readonly planes: WorldPlanes;
   readonly palette: readonly ContentRef[];
+  /** Interns content without changing tiles; area previews can reserve their planned palette additions on commit. */
+  internContent(ref: ContentRef): number;
   /** Populate in column-major order, block before wall, to preserve palette order. */
   setTile(x: number, y: number, tile: Tile): void;
   tileAt(x: number, y: number): Tile;
@@ -252,6 +254,7 @@ function worldOver(
 
   return {
     width, height, planes, palette,
+    internContent: (ref) => intern(ref, contentKey(ref)),
     setTile(x, y, tile) {
       const index = coordinateIndex(x, y);
       validateTile(tile);

@@ -27,16 +27,19 @@ export function createChestLookup(chests: readonly WorldChest[], width: number, 
   return (x, y) => (x < 0 || y < 0 || x >= width || y >= height ? null : byTile.get(y * width + x) ?? null);
 }
 
-const lookups = new WeakMap<WorldTilesResult, ChestAt>();
+const lookups = new WeakMap<WorldTilesResult, { readonly entries: readonly WorldChest[] | undefined; readonly lookup: ChestAt }>();
 
 /** The chest lookup of a loaded world, built on first use; a chest section that failed to decode has no chests. */
 export function chestLookupOf(loaded: WorldTilesResult): ChestAt {
-  let lookup = lookups.get(loaded);
-  if (lookup === undefined) {
-    const { width, height } = loaded.metadata;
-    const world = canonicalWorldOf(loaded);
-    lookup = createChestLookup(loaded.entities.Chests.data?.entries ?? [], width, height, (x, y) => world.tileAt(x, y));
-    lookups.set(loaded, lookup);
-  }
-  return lookup;
+  return (x, y) => {
+    let cached = lookups.get(loaded);
+    const entries = loaded.entities.Chests.data?.entries;
+    if (cached === undefined || cached.entries !== entries) {
+      const { width, height } = loaded.metadata;
+      const world = canonicalWorldOf(loaded);
+      cached = { entries, lookup: createChestLookup(entries ?? [], width, height, (cx, cy) => world.tileAt(cx, cy)) };
+      lookups.set(loaded, cached);
+    }
+    return cached.lookup(x, y);
+  };
 }

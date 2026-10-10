@@ -1,5 +1,6 @@
 import type { WorldMetadataResult } from "./metadata.js";
 import type { SectionBoundary } from "./header.js";
+import type { TileEntityPayload } from "./entities.js";
 
 export const OPAQUE_SECTION_NAMES = [
   "chests", "signs", "npcsAndMobs", "tileEntities", "weightedPressurePlates", "townManager", "bestiary", "creativePowers",
@@ -14,6 +15,8 @@ export interface OpaqueWorldSection {
 
 /** Original bytes and decoded values retained independently of later edits. */
 export interface WorldEnvelope {
+  /** Lossless payloads of current tile entities after copying; omitted until an entity edit needs them. */
+  readonly tileEntityPayloads?: readonly TileEntityPayload[];
   /** Borrowed input view. Callers must keep its bytes unchanged until saving or discarding the result. */
   readonly source: Uint8Array;
   readonly fileHeader: Uint8Array;

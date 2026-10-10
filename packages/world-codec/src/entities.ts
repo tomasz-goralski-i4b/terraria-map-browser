@@ -8,6 +8,7 @@ export interface WorldSign { readonly x: number; readonly y: number; readonly te
 export interface WorldTownNpc { readonly npcId: number; readonly displayName: string; readonly x: number; readonly y: number; readonly homeless: boolean; readonly homeX: number; readonly homeY: number }
 export interface WorldMob { readonly npcId: number; readonly x: number; readonly y: number }
 export interface WorldTileEntity { readonly kind: number; readonly entityId: number; readonly x: number; readonly y: number; readonly items: readonly EntityItem[]; readonly dyes: readonly EntityItem[]; readonly misc: readonly EntityItem[]; readonly anchorItemId: number | null }
+export interface TileEntityPayload { readonly entityId: number; readonly kind: number; readonly payload: Uint8Array }
 export interface WorldPressurePlate { readonly x: number; readonly y: number }
 export interface WorldRoom { readonly npcId: number; readonly x: number; readonly y: number }
 export interface WorldCreativePower { readonly powerId: number; readonly booleanValue: boolean | null; readonly sliderValue: number | null }
@@ -223,6 +224,18 @@ class EntityReader {
 }
 
 const strictUtf8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
+
+/** Lossless object-specific payloads, including fields not represented by the semantic entity model. */
+export function readTileEntityPayloads(bytes: Uint8Array, boundary: SectionBoundary, version = 326): readonly TileEntityPayload[] {
+  // Validate through the normal section contract before extracting borrowed payload spans.
+  readEntitySection(bytes, "TileEntities", boundary, version);
+  const reader = new EntityReader(bytes, "TileEntities", boundary, requireWorldFormat(version).entities);
+  return reader.records(4, 9, () => {
+    const start = reader.pos;
+    const entity = reader.tileEntity();
+    return { entityId: entity.entityId, kind: entity.kind, payload: bytes.subarray(start + 9, reader.pos) };
+  });
+}
 
 /** Strict entity section entry point for one readable format's layout; diagnostics use absolute offsets. */
 export function readEntitySection<K extends EntitySectionName>(bytes: Uint8Array, section: K, boundary: SectionBoundary, version = 326): EntityDataBySection[K] {

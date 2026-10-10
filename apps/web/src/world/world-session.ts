@@ -6,6 +6,7 @@ import { confirmDiscardChanges } from "./discard-guard.js";
 import type { OpenedWorldFile, OpenWorldHandle, WorldSaveDirectory } from "./world-file.js";
 import { setPropertiesWorld, propertyReadOnly, checkPropertyRange, type PropertyValue } from "./world-properties.js";
 import { resizeWorld } from "./resize-world.js";
+import { setAreaWorld } from "./area-session.js";
 
 /** Small display facts about the loaded world; the planes and palette themselves stay outside React and the store. */
 export interface WorldSummary {
@@ -84,6 +85,7 @@ export function createWorldSession(parser: WorldParser): WorldSession {
       const world = await parser.parse(file, { signal: controller.signal });
       if (current !== controller) return;
       loaded = world;
+      setAreaWorld(world);
       setPropertiesWorld(world);
       setBrushWorld("entities" in world ? world : null);
       openedFile = { file, handle: handle ?? null, directory: directory ?? null };
@@ -99,6 +101,7 @@ export function createWorldSession(parser: WorldParser): WorldSession {
   };
 
   const reset = (): void => {
+    setAreaWorld(null);
     finishBrush(true);
     setBrushWorld(null);
     resetWorldSave();
@@ -116,6 +119,7 @@ export function createWorldSession(parser: WorldParser): WorldSession {
       if (typeof value !== "number") throw new Error("Enter a dimension in tiles.");
       const resized = resizeWorld(loaded, path === "metadata.width" ? value : loaded.metadata.width, path === "metadata.height" ? value : loaded.metadata.height);
       loaded = resized;
+      setAreaWorld(resized);
       setBrushWorld(resized);
       setPropertiesWorld(resized, false);
       const resizedSummary = summarize(resized, openedFile.file);

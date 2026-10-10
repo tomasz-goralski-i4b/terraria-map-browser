@@ -6,6 +6,8 @@ import { chestTitle } from "../panels/chest-fields.js";
 import { useAppStore } from "../store.js";
 import { canonicalWorldOf } from "../world/canonical-world.js";
 import { useBrushStore } from "../world/brush-session.js";
+import { MAX_AREA_TILES } from "../world/area-clipboard.js";
+import { pasteBounds, useAreaStore } from "../world/area-session.js";
 import { chestLookupOf } from "../world/chests.js";
 import { describeTile } from "../world/content-names.js";
 import { depthLabel, type DepthLevels } from "../world/depth.js";
@@ -26,6 +28,21 @@ function sessionStatusWorld(): StatusWorld | null {
 }
 
 const STATS_INTERVAL_MS = 500;
+
+/** The selection's size, or the floating paste's while one is placed; over the Copy limit it reads as a problem. */
+function AreaSize(): React.JSX.Element | null {
+  const selection = useAreaStore((state) => state.selection);
+  const pasting = useAreaStore((state) => state.pasting);
+  useAreaStore((state) => state.position);
+  const area = pasting ? pasteBounds() : selection;
+  if (area === null) return null;
+  const tooLarge = !pasting && area.width * area.height > MAX_AREA_TILES;
+  return (
+    <span className="status-cell status-selection" data-too-large={tooLarge} title={pasting ? "Paste size" : `Selection size (Copy takes up to ${MAX_AREA_TILES.toLocaleString("en-US")} tiles)`} data-testid="selection-size">
+      {`${String(area.width)} × ${String(area.height)}`}
+    </span>
+  );
+}
 
 /** "Chest: Ores · 2 of 40 slots": the object, its name when it has one, and how many slots are filled. */
 function describeChest(chest: WorldChest, origin: Tile): string {
@@ -158,6 +175,7 @@ export function StatusBar({ world }: { readonly world?: StatusWorld | null }): R
         {chestText}
       </span>
       <span className="status-spacer" />
+      <AreaSize />
       {statsVisible && <RenderStats />}
       <ZoomField zoom={zoom} />
     </footer>

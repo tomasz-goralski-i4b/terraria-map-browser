@@ -40,6 +40,10 @@ export interface BrushOptions {
   readonly shape?: BrushShape;
   readonly block?: LayerEdit;
   readonly wall?: LayerEdit;
+  /** Removes the liquid of every tile the stroke reaches (the Eraser's Liquids). */
+  readonly liquid?: "erase";
+  /** Removes the wires of all four colours and the actuator (the Eraser's Wires). */
+  readonly wires?: "erase";
   /**
    * Smooth edges (an automatic hammer): a stroke that edits blocks also shapes the blocks it reaches and the ones
    * beside them by their exposed sides (`smoothShape`), as a player would hammer the edge of a hill or a tunnel.
@@ -81,6 +85,10 @@ export interface TileCoordinate { readonly x: number; readonly y: number }
 export interface PlaneChange { readonly plane: keyof WorldPlanes; readonly before: number; readonly after: number }
 export interface TileDiff extends TileCoordinate { readonly changes: readonly PlaneChange[] }
 export interface BrushHistory {
+  /** Removes a caller-validated whole object's blocks within the active stroke. */
+  readonly eraseBlocks: (cells: readonly TileCoordinate[]) => readonly TileDiff[];
+  /** Records an already applied atomic plane edit, sharing undo order with brush strokes. */
+  readonly record: (tiles: readonly TileDiff[]) => void;
   readonly begin: (options: BrushOptions) => void;
   readonly move: (x: number, y: number) => readonly TileDiff[];
   readonly commit: () => readonly TileDiff[];
@@ -94,6 +102,7 @@ export interface BrushHistory {
 }
 
 type Targets = readonly (readonly [BrushContentLayer, LayerEdit])[];
+interface Extras { readonly liquid: boolean; readonly wires: boolean }
 
 const isPaint = (paint: number): boolean => Number.isInteger(paint) && paint >= 0 && paint <= MAX_PAINT;
 
@@ -143,6 +152,7 @@ function edit(tile: Tile, layer: BrushContentLayer, change: LayerEdit): void {
 export function createBrushHistory(world: CanonicalWorld, rules: BrushRules = {}): BrushHistory {
   const { protectedTile = () => false, placeable = () => true, paintable = () => true, shapeable = () => true } = rules;
   let targets: Targets | null = null;
+  let extras: Extras = { liquid: false, wires: false };
   let smoothing = false;
   let previous: TileCoordinate | null = null;
   let footprint: readonly TileCoordinate[] = [];
@@ -195,6 +205,8 @@ export function createBrushHistory(world: CanonicalWorld, rules: BrushRules = {}
       // Unknown and mod content stays as it is: the editor knows nothing about its rules.
       if (selected.some(([layer]) => { const content = tile[layer]; return content !== undefined && content.kind !== "vanilla"; })) continue;
       for (const [layer, change] of selected) edit(tile, layer, change);
+      if (extras.liquid) delete tile.liquid;
+      if (extras.wires) { tile.wires = 0; tile.actuator = false; }
       write(x, y, tile, changed);
     }
   };
@@ -242,6 +254,20 @@ export function createBrushHistory(world: CanonicalWorld, rules: BrushRules = {}
   };
   const assertIdle = (): void => { if (targets !== null) throw new Error("Finish the active brush stroke first"); };
   return {
+    eraseBlocks: (cells) => {
+      if (targets === null) throw new Error("Start a brush stroke first");
+      const changed: TileDiff[] = [];
+      for (const { x, y } of cells) {
+        const tile = world.tileAt(x, y);
+        edit(tile, "block", { kind: "erase" });
+        write(x, y, tile, changed);
+      }
+      return changed;
+    },
+    record: (diff) => {
+      assertIdle();
+      if (diff.length !== 0) { past.push(diff); future.length = 0; }
+    },
     begin: (options) => {
       assertIdle();
       const selected = (["block", "wall"] as const).flatMap((layer) => {
@@ -252,10 +278,12 @@ export function createBrushHistory(world: CanonicalWorld, rules: BrushRules = {}
       if (!Number.isInteger(size) || size < BRUSH_SIZE.minimum || size > BRUSH_SIZE.maximum) {
         throw new RangeError(`Brush size must be ${String(BRUSH_SIZE.minimum)}–${String(BRUSH_SIZE.maximum)} tiles`);
       }
-      if (selected.length === 0 || !selected.every(([layer, change]) => validEdit(layer, change))) {
-        throw new RangeError("A brush edits a block or a wall layer with placeable vanilla content and a valid paint");
+      const erasing: Extras = { liquid: options.liquid === "erase", wires: options.wires === "erase" };
+      if ((selected.length === 0 && !erasing.liquid && !erasing.wires) || !selected.every(([layer, change]) => validEdit(layer, change))) {
+        throw new RangeError("A brush edits a block or a wall layer with placeable vanilla content and a valid paint, or erases liquids or wires");
       }
       targets = selected;
+      extras = erasing;
       smoothing = options.smooth === true && selected.some(([layer, change]) => layer === "block" && change.kind !== "paint");
       footprint = brushFootprint(size, options.shape);
       const inFootprint = new Set(footprint.map(({ x, y }) => `${String(x)},${String(y)}`));

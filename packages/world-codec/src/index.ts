@@ -17,7 +17,7 @@ export { WorldFormatError, type WorldFormatErrorKind } from "./world-format-erro
 export { readWorldMetadata, type WorldBounds, type WorldMetadata, type WorldMetadataResult, type WorldMode } from "./metadata.js";
 export { type WorldDetails, type WorldPoint } from "./details.js";
 export {
-  readEntitySection, readWorldEntities,
+  readEntitySection, readWorldEntities, readTileEntityPayloads, type TileEntityPayload,
   type EntityItem, type WorldChest, type WorldSign, type WorldTownNpc, type WorldMob,
   type WorldTileEntity, type WorldPressurePlate, type WorldRoom, type WorldCreativePower,
   type EntityDataBySection, type EntitySectionName, type EntitySectionFailure, type EntitySectionResult, type WorldEntities,

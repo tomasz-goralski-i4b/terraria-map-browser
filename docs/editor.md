@@ -1,4 +1,64 @@
-# Brush and Erase
+# Editing tools
+
+## Area copy and paste
+
+Select (`M`) drags an inclusive rectangular selection; the status bar shows its size (in the danger colour above the
+Copy limit). Copy (`Ctrl+C`, or Command on macOS) captures independent CWM planes and a content palette; subsequent
+edits do not change the clipboard. The options bar is one row, like Brush's: a **Layers** row of independent toggles
+(Blocks, Walls, Liquids, Wires, Paint, Objects; all on by default) chooses what Copy takes, then the Copy, Paste and
+Deselect buttons. Objects need Blocks: while Blocks is off, the Objects toggle shows as off and disabled, and its
+tooltip says why; turning Blocks back on restores it. Changing the toggles takes effect on the next Copy. The
+selection stays on the map when another tool is chosen (Copy still works), but Escape deselects only in Select, so
+elsewhere it keeps its own meaning (unpinning the Inspector's tile, taking back a stroke). With no area to copy or
+paste, or with page text selected, `Ctrl+C` and `Ctrl+V` stay the browser's.
+
+Paste (`Ctrl+V`) switches Select to a floating, translucent map-colour preview that follows the pointer. The options
+bar then shows the anchor, the paste toggles and Place paste / Cancel paste. The **anchor** is a 3 × 3 reference-point
+grid, as in an image editor's transform options (the arrow keys move it): the chosen point of the paste sits under
+the pointer, the centre by default. A paste may hang over the world's edge; only the part inside is drawn and placed.
+From the menu with the pointer off the map, the paste lands over the current selection. Click or Enter places it; a click while a large
+preview is still being prepared places it as soon as it is ready, unless the pointer moves first. Escape works as in image
+editors: it drops a floating paste and keeps the selection; pressed again, it deselects. The Edit menu (after Undo
+and Redo), command palette and buttons use the same commands, and each disabled one says why. Text fields retain
+native copy and paste. Right/middle drags still pan.
+
+By default the whole rectangle replaces what is there, its empty cells included. **Skip empty blocks** keeps the
+destination block and its paint/coatings where the copy has no block; **Skip empty walls** does the same for walls.
+Copied blocks and walls always land; to leave the destination's walls untouched, turn Walls off under Layers before
+Copy. **Merge liquids** adds matching kinds, capped at 255, and keeps a different destination kind and liquid where
+the copy has none. Unselected layers stay unchanged.
+Each placement is one undo entry in the brush history, including copied entity records, with renderer invalidation
+updating adjacent framing.
+
+Frame-important tiles are grouped conservatively into connected same-content components. A component crossing
+the selection or world boundary is omitted whole; adjacent identical objects may therefore be omitted together.
+Chest/sign footprints must also be complete. A paste replaces the destination objects it writes blocks into, as the
+Eraser removes a chest: each one goes whole (the same connected same-content component, also its tiles outside the
+rectangle), with the chest, sign, tile-entity or pressure-plate record anchored on it, a chest's items included. The
+hint says so before placing (*replaces 2 objects (1 chest with its items)*), and Undo restores tiles and records
+together. Empty copied cells under Skip empty blocks touch nothing. A paste that would break an object it does not
+replace (the supports of a chest or sign one tile around it; four tiles around a tile entity, whose orientation is
+unobserved) reports it before placement. Copied tile entities get new IDs and keep their full
+binary payload, including fields outside the semantic model. Selections are limited to 262,144 cells to bound
+clipboard/preview allocation; an oversized Copy reports its limit without replacing the previous clipboard.
+
+## Eraser layers
+
+Erase has its own layer mask, the same toggles as Select's Layers row: **Blocks** (on by default), **Walls**,
+**Liquids** and **Wires** (wires of every colour and the actuator), in any combination with at least one on. So
+liquids or wires can be erased on their own without touching blocks or walls. `X` swaps the Blocks and Walls
+toggles and `Shift+X` turns both on; Liquids and Wires stay as they are. The mask is independent of Brush's
+Blocks / Walls / Both target. Smooth edges needs Blocks.
+
+## Chest Eraser
+
+Eraser with Blocks on removes a touched chest or dresser's entire block footprint and its record, including
+contents, in the same stroke. Undo/redo and cancelling the stroke restore or remove tiles and the record together.
+Walls, wires/actuators and liquids are erased only when their own toggles are on. An Eraser without Blocks and
+touching only a chest's protected supports do not delete the chest. Malformed footprints or overlapping entity
+anchors are left protected.
+
+## Brush and Erase
 
 Painting works like an image editor's brush: a material is the colour, the Swatches panel is the palette, and the
 map is the canvas. Code: `packages/world-model/src/brush.ts` (the edit model), `apps/web/src/world/brush-session.ts`
@@ -8,8 +68,8 @@ map is the canvas. Code: `packages/world-model/src/brush.ts` (the edit model), `
 
 ## Materials, paint and targets
 
-Open a supported vanilla `.wld` and choose Brush (`B`) or Erase (`E`). The target picks the layers a stroke writes:
-Blocks, Walls or Both (both layers of a tile change together or not at all).
+Open a supported vanilla `.wld` and choose Brush (`B`) or Erase (`E`). Brush's target picks the layers a stroke writes:
+Blocks, Walls or Both (both layers of a tile change together or not at all); Erase uses its own layer mask (above).
 
 - **Materials** are every block that frames itself from its neighbours (the framing database's block types: dirt,
   stone, ores, sand, bricks, …) and every named wall, limited to the content ids the world's format defines. Objects
