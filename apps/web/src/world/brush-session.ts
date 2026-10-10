@@ -158,6 +158,12 @@ function chestCells(world: WorldTilesResult, chest: WorldChest): readonly { read
   const width = origin.id === 88 ? 3 : 2;
   const cells = Array.from({ length: width * 2 }, (_, index) => ({ x: chest.x + Math.floor(index / 2), y: chest.y + index % 2 }));
   if (cells.some(({ x, y }) => x < 0 || y < 0 || x >= world.metadata.width || y >= world.metadata.height || world.planes.block[x * world.metadata.height + y] !== world.planes.block[chest.x * world.metadata.height + chest.y])) return [];
+  if ((world.entities.Chests.data?.entries ?? []).some((other) => {
+    if (other === chest) return false;
+    const ref = world.palette[world.planes.block[other.x * world.metadata.height + other.y] ?? 0xffff];
+    const otherWidth = ref?.kind === "vanilla" && ref.id === 88 ? 3 : 2;
+    return cells.some(({ x, y }) => x >= other.x && x < other.x + otherWidth && y >= other.y && y < other.y + 2);
+  })) return [];
   // Other entity records are not part of the requested chest Eraser operation.
   if (cells.some(({ x, y }) => [...world.entities.Signs.data?.entries ?? [], ...world.entities.TileEntities.data?.entries ?? [], ...world.entities.WeightedPressurePlates.data?.entries ?? []].some((entry) => entry.x === x && entry.y === y))) return [];
   return cells;

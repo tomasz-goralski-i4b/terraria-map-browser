@@ -5,7 +5,7 @@ import { useAppStore } from "../store.js";
 import { useViewStore, type TilePoint } from "../shell/view-store.js";
 import { useSaveStore } from "./save-world.js";
 import { commitAreaEdit, finishBrush, useBrushStore } from "./brush-session.js";
-import { copyArea, planAreaPaste, DEFAULT_COPY_LAYERS, DEFAULT_PASTE_OPTIONS, type Area, type AreaClipboard, type AreaPaste, type CopyLayers, type PasteOptions } from "./area-clipboard.js";
+import { copyArea, areaPasteSteps, DEFAULT_COPY_LAYERS, DEFAULT_PASTE_OPTIONS, type Area, type AreaClipboard, type AreaPaste, type CopyLayers, type PasteOptions } from "./area-clipboard.js";
 
 interface AreaState {
   readonly selection: Area | null;
@@ -15,16 +15,30 @@ interface AreaState {
   readonly pasting: boolean;
   readonly position: TilePoint | null;
   readonly message: string | null;
+  readonly canPlace: boolean;
+  readonly previewRevision: number;
 }
-export const useAreaStore = create<AreaState>()(() => ({ selection: null, layers: DEFAULT_COPY_LAYERS, options: DEFAULT_PASTE_OPTIONS, hasClipboard: false, pasting: false, position: null, message: null }));
+export const useAreaStore = create<AreaState>()(() => ({ selection: null, layers: DEFAULT_COPY_LAYERS, options: DEFAULT_PASTE_OPTIONS, hasClipboard: false, pasting: false, position: null, message: null, canPlace: false, previewRevision: 0 }));
 let loaded: WorldTilesResult | null = null;
 let clipboard: AreaClipboard | null = null;
 let preview: AreaPaste | null = null;
 let previewKey = "";
+let generation = 0;
+let followingHistory = false;
 const locked = (): boolean => loaded === null || useBrushStore.getState().reason !== null || useAppStore.getState().phase === "loading" || useSaveStore.getState().open;
 export function setAreaWorld(world: WorldTilesResult | null): void {
+  if (!followingHistory) {
+    followingHistory = true;
+    useBrushStore.subscribe((state, previous) => {
+      if ((state.revision !== previous.revision || state.reason !== previous.reason) && useAreaStore.getState().pasting) movePaste(useAreaStore.getState().position);
+    });
+    const refresh = (): void => { if (useAreaStore.getState().pasting) movePaste(useAreaStore.getState().position); };
+    useSaveStore.subscribe((state, previous) => { if (state.open !== previous.open) refresh(); });
+    useAppStore.subscribe((state, previous) => { if (state.phase !== previous.phase) refresh(); });
+  }
   loaded = world; clipboard = null; preview = null; previewKey = "";
-  useAreaStore.setState({ selection: null, hasClipboard: false, pasting: false, position: null, message: null });
+  generation++;
+  useAreaStore.setState({ selection: null, hasClipboard: false, pasting: false, position: null, message: null, canPlace: false });
 }
 export function selectArea(from: TilePoint, to: TilePoint): void {
   if (locked() || loaded === null) return;
@@ -54,13 +68,26 @@ export function movePaste(position: TilePoint | null): void {
   const key = JSON.stringify([position, useAreaStore.getState().options, useBrushStore.getState().revision, locked()]);
   if (key === previewKey) return;
   previewKey = key;
+  const request = ++generation;
   preview = null;
+  useAreaStore.setState({ position, canPlace: false, message: locked() ? "Editing is unavailable while loading or saving" : "Preparing preview…", previewRevision: useAreaStore.getState().previewRevision + 1 });
   if (!locked() && loaded !== null && clipboard !== null && position !== null) {
-    try { preview = planAreaPaste(loaded, clipboard, position.x, position.y, useAreaStore.getState().options); }
-    catch (error) { useAreaStore.setState({ position, message: error instanceof Error ? error.message : String(error) }); return; }
+    const steps = areaPasteSteps(loaded, clipboard, position.x, position.y, useAreaStore.getState().options);
+    const large = clipboard.world.width * clipboard.world.height > 4096;
+    const run = (): void => {
+      if (request !== generation || locked()) return;
+      try {
+        const deadline = performance.now() + 8;
+        let step = steps.next();
+        while (!step.done && (!large || performance.now() < deadline)) step = steps.next();
+        if (!step.done) { setTimeout(run, 0); return; }
+        preview = step.value;
+        const canPlace = preview.tiles.length !== 0;
+        useAreaStore.setState({ canPlace, message: canPlace ? "Click or Enter to place · Escape to cancel" : "Paste makes no changes · Escape to cancel", previewRevision: useAreaStore.getState().previewRevision + 1 });
+      } catch (error) { useAreaStore.setState({ message: error instanceof Error ? error.message : String(error) }); }
+    };
+    if (large) setTimeout(run, 0); else run();
   }
-  const state = useAreaStore.getState();
-  if (state.position?.x !== position?.x || state.position?.y !== position?.y) useAreaStore.setState({ position, message: "Click or Enter to place · Escape to cancel" });
 }
 export function pasteBounds(): Area | null {
   const state = useAreaStore.getState();
@@ -80,11 +107,11 @@ export function pastePreviewWorld(): CanonicalWorld | null {
 export function placePaste(): void {
   if (locked() || loaded === null || clipboard === null || !useAreaStore.getState().pasting) return;
   movePaste(useAreaStore.getState().position);
-  if (preview === null) return;
+  if (preview === null || !useAreaStore.getState().canPlace) return;
   if (commitAreaEdit(loaded, preview.tiles, preview.apply)) cancelArea();
 }
 export function cancelArea(): void {
-  preview = null; previewKey = ""; useAreaStore.setState({ pasting: false, position: null, selection: null, message: null });
+  generation++; preview = null; previewKey = ""; useAreaStore.setState({ pasting: false, position: null, selection: null, message: null, canPlace: false });
 }
 useAreaStore.subscribe((state, previous) => {
   if (state.options !== previous.options && state.pasting) movePaste(state.position);

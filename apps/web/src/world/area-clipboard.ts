@@ -45,6 +45,7 @@ export function copyArea(world: WorldTilesResult, area: Area, layers: CopyLayers
       const gx = Math.floor(index / height), gy = index % height;
       for (const [nx, ny] of [[gx - 1, gy], [gx + 1, gy], [gx, gy - 1], [gx, gy + 1]] as const) {
         if (!framed(world, left + nx, top + ny)) continue;
+        if (world.planes.block[(left + nx) * world.metadata.height + top + ny] !== block) continue;
         if (nx < 0 || ny < 0 || nx >= width || ny >= height) { complete = false; continue; }
         const neighbor = nx * height + ny;
         if (snapshot.planes.block[neighbor] !== block || visited.has(neighbor)) continue;
@@ -85,6 +86,14 @@ export function copyArea(world: WorldTilesResult, area: Area, layers: CopyLayers
 
 /** Builds a read-only preview diff. Existing objects are protected; place the preview in free space. */
 export function planAreaPaste(world: WorldTilesResult, clipboard: AreaClipboard, x: number, y: number, options: PasteOptions = DEFAULT_PASTE_OPTIONS): AreaPaste {
+  const steps = areaPasteSteps(world, clipboard, x, y, options);
+  let step = steps.next();
+  while (!step.done) step = steps.next();
+  return step.value;
+}
+
+/** Each yield bounds preview work; callers can discard the iterator when its inputs change. */
+export function* areaPasteSteps(world: WorldTilesResult, clipboard: AreaClipboard, x: number, y: number, options: PasteOptions = DEFAULT_PASTE_OPTIONS): Generator<void, AreaPaste> {
   editable(world);
   if (![x, y].every(Number.isSafeInteger)) throw new RangeError("Paste coordinates must be integers");
   const source = clipboard.world, target = canonicalWorldOf(world), layers = clipboard.layers;
@@ -106,15 +115,21 @@ export function planAreaPaste(world: WorldTilesResult, clipboard: AreaClipboard,
     paletteKeys.set(key, palette.length); palette.push({ ...ref }); return palette.length - 1;
   };
   const tiles: TileDiff[] = [];
-  const entityBody = (tx: number, ty: number): boolean => OBJECT_SECTIONS.some((name) => world.entities[name].data?.entries.some((entry) => {
-    if (name === "TileEntities") return Math.abs(tx - entry.x) <= 4 && Math.abs(ty - entry.y) <= 4;
-    if (name === "WeightedPressurePlates") return tx === entry.x && ty === entry.y;
+  const protectedCells = new Set<number>();
+  for (const name of OBJECT_SECTIONS) for (const entry of world.entities[name].data?.entries ?? []) {
     const origin = world.palette[world.planes.block[entry.x * target.height + entry.y] ?? 0xffff];
-    const width = name === "Chests" && origin?.kind === "vanilla" && origin.id === 88 ? 3 : 2;
-    return tx >= entry.x && ty >= entry.y && tx < entry.x + width && ty < entry.y + 2;
-  }) === true);
+    const width = name === "TileEntities" ? 9 : name === "WeightedPressurePlates" ? 1 : name === "Chests" && origin?.kind === "vanilla" && origin.id === 88 ? 3 : 2;
+    const height = name === "TileEntities" ? 9 : name === "WeightedPressurePlates" ? 1 : 2;
+    const offset = name === "TileEntities" ? 4 : 0;
+    for (let dx = 0; dx < width; dx++) for (let dy = 0; dy < height; dy++) {
+      const tx = entry.x + dx - offset, ty = entry.y + dy - offset;
+      if (tx >= 0 && ty >= 0 && tx < target.width && ty < target.height) protectedCells.add(tx * target.height + ty);
+    }
+    yield;
+  }
   for (let sx = 0; sx < source.width; sx++) for (let sy = 0; sy < source.height; sy++) {
     const si = sx * source.height + sy, tx = x + sx, ty = y + sy;
+    if (si % 256 === 0) yield;
     if (!inside(si)) continue;
     const ti = tx * target.height + ty;
     const blockWrite = layers.blocks && skip[si] === 0 && (options.air === "replace" || source.planes.block[si] !== 0xffff);
@@ -127,7 +142,7 @@ export function planAreaPaste(world: WorldTilesResult, clipboard: AreaClipboard,
     }
     if (wallWrite) { values.wall = remap(source.planes.wall[si] ?? 0xffff); values.flags = (values.flags & ~0x280) | (sourceFlags & 0x280); }
     if (layers.paint) {
-      if (blockWrite || (!layers.blocks && skip[si] === 0 && source.planes.block[si] !== 0xffff && values.block !== 0xffff)) values.paint = source.planes.paint[si] ?? 0;
+      if (blockWrite || (!layers.blocks && source.planes.block[si] !== 0xffff && values.block !== 0xffff)) values.paint = source.planes.paint[si] ?? 0;
       if (wallWrite || (!layers.walls && options.walls !== "keep" && source.planes.wall[si] !== 0xffff && values.wall !== 0xffff)) values.wallPaint = source.planes.wallPaint[si] ?? 0;
     } else {
       if (blockWrite && values.block === 0xffff) values.paint = 0;
@@ -143,7 +158,7 @@ export function planAreaPaste(world: WorldTilesResult, clipboard: AreaClipboard,
       const before = target.planes[plane][ti] ?? 0, after = values[plane];
       return before === after ? [] : [{ plane, before, after }];
     });
-    if (blockWrite && (framed(world, tx, ty) || entityBody(tx, ty)) && changes.some((change) => ["block", "frameX", "frameY", "shape"].includes(change.plane))) throw new Error("Paste would overwrite an existing object. Choose free space.");
+    if (blockWrite && (framed(world, tx, ty) || protectedCells.has(ti)) && changes.some((change) => ["block", "frameX", "frameY", "shape"].includes(change.plane))) throw new Error("Paste would overwrite an existing object. Choose free space.");
     if (changes.length !== 0) tiles.push({ x: tx, y: ty, changes });
   }
   const beforeRecords = Object.fromEntries(OBJECT_SECTIONS.map((name) => [name, world.entities[name].data])) as Record<ObjectSection, unknown>;

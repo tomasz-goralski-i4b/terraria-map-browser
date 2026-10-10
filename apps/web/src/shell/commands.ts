@@ -174,7 +174,7 @@ export function useCommands(): Command[] {
     ...([
       ["edit.copy", "Copy area", "Control+C", area.selection !== null && !area.pasting, "Select a rectangle first", copySelection],
       ["edit.paste", "Paste area", "Control+V", area.hasClipboard, "Copy an area first", startPaste],
-      ["edit.placePaste", "Place paste", "Enter", area.pasting && area.position !== null, "Preview a paste first", placePaste],
+      ["edit.placePaste", "Place paste", "Enter", area.pasting && area.canPlace, area.message ?? "Preview a paste first", placePaste],
       ["edit.cancelArea", "Deselect / cancel paste", "Escape", area.pasting || area.selection !== null, "No selection or paste", cancelArea],
     ] as const).map(([id, label, shortcut, available, reason, run]): Command => ({ id, group: "Edit", label, shortcut, enabled: available && editReason === null, ...(!available || editReason !== null ? { disabledReason: editReason ?? reason } : {}), run })),
     { id: "edit.undo", group: "Edit", label: "Undo", icon: "undo", shortcut: "Control+Z", enabled: canUndo && editReason === null,

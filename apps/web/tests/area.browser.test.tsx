@@ -8,8 +8,8 @@ import { ToolOptions } from "../src/shell/ToolOptions.js";
 import { useCommands, useGlobalShortcuts } from "../src/shell/commands.js";
 import { getMapController, useViewStore } from "../src/shell/view-store.js";
 import { useAppStore } from "../src/store.js";
-import { setBrushWorld } from "../src/world/brush-session.js";
-import { copySelection, selectArea, startPaste, cancelArea, setAreaWorld, useAreaStore } from "../src/world/area-session.js";
+import { setBrushWorld, commitAreaEdit, undoBrush, redoBrush } from "../src/world/brush-session.js";
+import { copySelection, selectArea, startPaste, cancelArea, movePaste, setAreaWorld, useAreaStore } from "../src/world/area-session.js";
 import { canonicalWorldOf } from "../src/world/canonical-world.js";
 import { toRenderableWorld } from "../src/world/renderable-world.js";
 import { brushSource } from "./support/brush-source.js";
@@ -18,12 +18,40 @@ import { App } from "../src/App.js";
 import { getDefaultWorldSession } from "../src/world/world-session.js";
 import "./support/commands.js";
 import "../src/styles.css";
+import { copyArea, planAreaPaste, DEFAULT_COPY_LAYERS } from "../src/world/area-clipboard.js";
 
 function ShortcutHost(): React.JSX.Element {
   const commands = useCommands(); useGlobalShortcuts(commands);
   return <ToolOptions commands={commands} />;
 }
 afterEach(() => { setAreaWorld(null); setBrushWorld(null); useViewStore.setState({ tool: "pan", hoverTile: null }); useAppStore.setState({ phase: "idle", unsavedChanges: false }); });
+
+test("stationary paste pixels follow destination Undo/Redo and invalid preview disables its command", async () => {
+  const bytes = brushSource(32, 32, Array.from({ length: 32 }, () => [0x40, 31]).flat());
+  bytes[74] = (bytes[74] ?? 0) | 32;
+  const world = readWorldTiles(bytes), view = canonicalWorldOf(world);
+  view.setTile(2, 2, { wall: { kind: "vanilla", id: 1 }, wires: 0, actuator: false });
+  view.setTile(3, 3, { block: { kind: "vanilla", id: 1 }, wires: 0, actuator: false });
+  view.setTile(12, 12, { block: { kind: "vanilla", id: 21 }, wires: 0, actuator: false });
+  setBrushWorld(world); setAreaWorld(world); useViewStore.setState({ tool: "select" }); useAppStore.setState({ phase: "loaded" });
+  const edit = planAreaPaste(world, copyArea(world, { x: 3, y: 3, width: 1, height: 1 }), 10, 10);
+  commitAreaEdit(world, edit.tiles, edit.apply);
+  await render(<><ShortcutHost /><div style={{ position: "relative", width: 512, height: 384 }}><MapCanvas world={toRenderableWorld(world)} /></div></>);
+  useAreaStore.setState({ layers: { ...DEFAULT_COPY_LAYERS, blocks: false, objects: false } });
+  selectArea({ x: 2, y: 2 }, { x: 2, y: 2 }); copySelection(); startPaste(); movePaste({ x: 10, y: 10 });
+  const pixel = (): number[] => Array.from(document.querySelector<HTMLCanvasElement>(".area-paste-preview")?.getContext("2d")?.getImageData(0, 0, 1, 1).data ?? []);
+  await expect.poll(() => pixel()[3]).toBe(255);
+  const before = pixel(); undoBrush();
+  await expect.poll(pixel).not.toEqual(before);
+  redoBrush(); await expect.poll(pixel).toEqual(before);
+  expect(useAreaStore.getState().position).toEqual({ x: 10, y: 10 });
+  cancelArea(); useAreaStore.setState({ layers: DEFAULT_COPY_LAYERS });
+  selectArea({ x: 2, y: 2 }, { x: 2, y: 2 }); copySelection(); startPaste(); movePaste({ x: 12, y: 12 });
+  await expect.element(page.getByRole("button", { name: "Place paste", exact: true })).toBeDisabled();
+  await page.getByRole("combobox", { name: "Paste air" }).selectOptions("transparent");
+  await expect.element(page.getByRole("button", { name: "Place paste", exact: true })).toBeEnabled();
+  useAreaStore.setState({ layers: DEFAULT_COPY_LAYERS });
+});
 
 test("rectangle drag, copy, read-only coloured preview, Enter placement and Escape cancellation use shared commands", async () => {
   const world = readWorldTiles(brushSource(32, 32, Array.from({ length: 32 }, () => [0x40, 31]).flat()));
@@ -50,6 +78,12 @@ test("rectangle drag, copy, read-only coloured preview, Enter placement and Esca
   expect(view.tileAt(10, 10).block).toBeUndefined();
   const preview = document.querySelector<HTMLCanvasElement>(".area-paste-preview");
   expect(preview?.getContext("2d")?.getImageData(0, 0, 1, 1).data[3]).toBe(255);
+  const pixel = (): number[] => Array.from(preview?.getContext("2d")?.getImageData(0, 0, 1, 1).data ?? []);
+  const visible = pixel();
+  useViewStore.getState().setLayers({ blocks: false });
+  await expect.poll(pixel).not.toEqual(visible);
+  useViewStore.getState().setLayers({ blocks: true });
+  await expect.poll(pixel).toEqual(visible);
   await userEvent.keyboard("{Enter}");
   expect(view.tileAt(10, 10).block).toEqual({ kind: "vanilla", id: 1 });
   await userEvent.keyboard("{Control>}z{/Control}"); expect(view.tileAt(10, 10).block).toBeUndefined();
@@ -60,6 +94,19 @@ test("rectangle drag, copy, read-only coloured preview, Enter placement and Esca
   await userEvent.keyboard("{Control>}v{/Control}"); expect(useAreaStore.getState().pasting).toBe(false);
   await expect.element(page.getByRole("group", { name: "Copy layers" })).toBeVisible();
   startPaste(); await expect.element(page.getByRole("combobox", { name: "Paste air" })).toBeVisible();
+  cancelArea();
+  getMapController()?.jumpTo({ x: 0, y: 0, zoom: 8 });
+  const rect = canvas.getBoundingClientRect();
+  const touch = (type: string, id: number, x: number): void => {
+    canvas.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerType: "touch", pointerId: id, isPrimary: id === 21, button: 0, buttons: 1, clientX: rect.left + x, clientY: rect.top + 100 }));
+  };
+  touch("pointerdown", 21, 100); touch("pointerdown", 22, 200);
+  const selection = useAreaStore.getState().selection;
+  const zoom = useViewStore.getState().zoom;
+  touch("pointermove", 22, 260);
+  await expect.poll(() => useViewStore.getState().zoom).not.toBe(zoom);
+  expect(useAreaStore.getState().selection).toEqual(selection);
+  touch("pointerup", 21, 100); touch("pointerup", 22, 260);
 });
 
 test("Select options fit the existing shell in both themes and desktop/tablet/phone widths", async () => {
@@ -99,6 +146,22 @@ test("Select options fit the existing shell in both themes and desktop/tablet/ph
       }
       if (width === 1440 || width === 360) await page.screenshot({ path: `.tdd/paste-${theme}-${String(width)}.png` });
     }
+  }
+  await page.viewport(1440, 900);
+  const loaded = getDefaultWorldSession().getLoadedWorld();
+  if (loaded === null) throw new Error("Forest workshop is missing");
+  const x = Math.floor(loaded.metadata.width / 2);
+  let y = 100;
+  while (y < loaded.metadata.height - 25 && loaded.planes.block[x * loaded.metadata.height + y] === 0xffff) y++;
+  getMapController()?.jumpTo({ x: x - 10, y: y - 40, zoom: 8 });
+  for (const theme of ["dark", "light"] as const) {
+    document.documentElement.dataset["theme"] = theme;
+    cancelArea(); selectArea({ x, y }, { x: x + 19, y: y + 19 });
+    await page.screenshot({ path: `.tdd/terrain-selection-${theme}.png` });
+    document.querySelector("canvas[aria-label='World map']")?.dispatchEvent(new PointerEvent("pointerleave", { bubbles: true }));
+    copySelection(); startPaste(); movePaste({ x: x + 25, y: y - 25 });
+    await expect.poll(() => document.querySelector<HTMLCanvasElement>(".area-paste-preview")?.width).toBe(20);
+    await page.screenshot({ path: `.tdd/terrain-paste-${theme}.png` });
   }
   delete document.documentElement.dataset["theme"];
   await page.viewport(1280, 720);

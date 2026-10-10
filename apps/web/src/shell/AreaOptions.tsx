@@ -11,7 +11,8 @@ export function AreaOptions({ commands, disabled }: { readonly commands: readonl
   return <>
     {!state.pasting && <div className="brush-option-group area-layer-options" role="group" aria-label="Copy layers">
       <span className="brush-option-label">Copy</span>
-      {LAYERS.map(([key, label]) => <label key={key} className="brush-field"><input type="checkbox" checked={state.layers[key]} disabled={disabled || state.pasting || (key === "objects" && !state.layers.blocks)} onChange={(event) => { useAreaStore.setState({ layers: { ...state.layers, [key]: event.target.checked } }); }} />{label}</label>)}
+      {LAYERS.map(([key, label]) => <label key={key} className="brush-field"><input type="checkbox" checked={state.layers[key] && (key !== "objects" || state.layers.blocks)} aria-describedby={key === "objects" && !state.layers.blocks ? "objects-requires-blocks" : undefined} disabled={disabled || state.pasting || (key === "objects" && !state.layers.blocks)} onChange={(event) => { useAreaStore.setState({ layers: { ...state.layers, [key]: event.target.checked } }); }} />{label}</label>)}
+      {!state.layers.blocks && <span id="objects-requires-blocks" className="tool-options-hint">Objects / entities: Requires Blocks</span>}
     </div>}
     {state.pasting && <div className="brush-option-group" role="group" aria-label="Paste options">
       {OPTIONS.map(({ key, label, choices }) => <label key={key} className="brush-field">{label}<select aria-label={`Paste ${key}`} disabled={disabled} value={state.options[key]} onChange={(event) => {

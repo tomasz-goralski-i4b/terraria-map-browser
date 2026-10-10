@@ -33,7 +33,10 @@ function keptFields(world: WorldTilesResult): unknown {
     metadata: world.metadata,
     details: world.details,
     entities: Object.fromEntries(Object.entries(world.entities).map(([name, section]) => [name, section.data])),
-    opaque: world.envelope.opaqueSections.filter(({ name }) => !["chests", "signs", "tileEntities", "weightedPressurePlates"].includes(name)).map(({ name, bytes }) => ({ name, bytes })),
+    opaque: world.envelope.opaqueSections.filter(({ name }) => {
+      const readable = name === "chests" ? world.entities.Chests.data : name === "signs" ? world.entities.Signs.data : name === "tileEntities" ? world.entities.TileEntities.data : name === "weightedPressurePlates" ? world.entities.WeightedPressurePlates.data : null;
+      return readable === null;
+    }).map(({ name, bytes }) => ({ name, bytes })),
     tileEntityPayloads: tileEntities === null ? null : tileEntities.entries.map((entry) => {
       const payload = payloads.find((candidate) => candidate.entityId === entry.entityId);
       return { entityId: entry.entityId, kind: payload?.kind, payload: payload?.payload };

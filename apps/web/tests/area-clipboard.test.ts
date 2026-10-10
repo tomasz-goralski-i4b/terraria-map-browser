@@ -62,6 +62,25 @@ function chestWorld() {
   return world;
 }
 
+test("a different framed neighbor does not exclude a complete chest; identical neighbors remain conservative", () => {
+  const world = chestWorld(), view = canonicalWorldOf(world);
+  world.envelope.frameImportantBits[0] = (world.envelope.frameImportantBits[0] ?? 0) | 8;
+  view.setTile(0, 1, { block: { kind: "vanilla", id: 3 }, wires: 0, actuator: false });
+  expect(copyArea(world, area).records.Chests.data?.entries).toHaveLength(1);
+  view.setTile(0, 1, { block: { kind: "vanilla", id: 21 }, wires: 0, actuator: false });
+  expect(copyArea(world, area).records.Chests.data?.entries).toHaveLength(0);
+});
+
+test.each([1, 2])("paint-only copy from a %i-column chest selection preserves destination structure and records", (width) => {
+  const world = chestWorld(), view = canonicalWorldOf(world);
+  view.setTile(1, 1, { ...view.tileAt(1, 1), paint: 9 });
+  view.setTile(4, 4, { block: { kind: "vanilla", id: 1 }, wires: 0, actuator: false });
+  const before = world.entities.Chests.data;
+  planAreaPaste(world, copyArea(world, { ...area, width }, { blocks: false, walls: false, liquids: false, wires: false, paint: true, objects: false }), 4, 4).apply("after");
+  expect(view.tileAt(4, 4)).toMatchObject({ block: { id: 1 }, paint: 9 });
+  expect(world.entities.Chests.data).toBe(before);
+});
+
 test("whole chests retain independent contents; partial selections, object exclusions and edge clipping copy no chest fragment", () => {
   for (const scenario of ["whole", "partial", "excluded", "clipped"] as const) {
     const world = chestWorld(); const view = canonicalWorldOf(world);

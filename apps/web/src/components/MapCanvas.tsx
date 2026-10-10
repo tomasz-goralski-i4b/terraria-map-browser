@@ -117,7 +117,7 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
    */
   const pressRef = useRef<{ readonly at: Point; moved: boolean } | null>(null);
   const brushPointer = useRef<number | null>(null);
-  const selectionPointer = useRef<{ readonly id: number; readonly origin: { readonly x: number; readonly y: number } } | null>(null);
+  const selectionPointer = useRef<{ readonly id: number; readonly origin: { readonly x: number; readonly y: number }; last: Point; readonly type: string } | null>(null);
   const areaRef = useRef<HTMLDivElement>(null);
   const pasteCanvasRef = useRef<HTMLCanvasElement>(null);
   const previewRevision = useRef<unknown>(null);
@@ -169,16 +169,23 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
         const previewCanvas = pasteCanvasRef.current;
         if (previewCanvas !== null) {
           previewCanvas.hidden = !areaState.pasting;
-          if (areaState.pasting && previewRevision.current !== areaState) {
-            previewRevision.current = areaState;
+          const signature = JSON.stringify([areaState.previewRevision, brush.revision, useViewStore.getState().layers]);
+          if (areaState.pasting && previewRevision.current !== signature) {
+            previewRevision.current = signature;
             const previewWorld = pastePreviewWorld();
             const context = previewCanvas.getContext("2d");
             previewCanvas.width = previewWorld?.width ?? 1; previewCanvas.height = previewWorld?.height ?? 1;
             if (previewWorld !== null && context !== null) {
-              for (let cx = 0; cx * 128 < previewWorld.width; cx++) for (let cy = 0; cy * 128 < previewWorld.height; cy++) {
+              let cx = 0, cy = 0;
+              const draw = (): void => {
+                if (previewRevision.current !== signature || !useAreaStore.getState().pasting) return;
                 const chunk = renderChunk(previewWorld, cx, cy, { surfaceY: session.world.surfaceY - bounds.y, ...(session.world.rockY === undefined ? {} : { rockY: session.world.rockY - bounds.y }), layers: rendererLayers(useViewStore.getState().layers), mapPalette: terrariaMapPalette });
                 context.putImageData(new ImageData(new Uint8ClampedArray(chunk.pixels), chunk.width, chunk.height), cx * 128, cy * 128);
-              }
+                cy++;
+                if (cy * 128 >= previewWorld.height) { cy = 0; cx++; }
+                if (cx * 128 < previewWorld.width) setTimeout(draw, 0);
+              };
+              draw();
             }
           }
         }
@@ -480,6 +487,7 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
     // Layers are a uniform in the renderer: switching them uploads nothing.
     const shown = rendererLayers(layers);
     sessionRef.current?.renderer.setLayers(shown);
+    sessionRef.current?.requestFrame();
     const canvas = canvasRef.current;
     if (canvas !== null) canvas.dataset["layers"] = JSON.stringify(shown);
   }, [layers]);
@@ -503,7 +511,11 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
   const onPointerDown = (event: React.PointerEvent<HTMLCanvasElement>): void => {
     withSession((session) => {
       const selected = useViewStore.getState().tool;
-      if (selectionPointer.current !== null) selectionPointer.current = null;
+      if (selectionPointer.current !== null) {
+        const selecting = selectionPointer.current;
+        selectionPointer.current = null;
+        if (selecting.type === "touch" && event.pointerType === "touch") session.pointers.set(selecting.id, selecting.last);
+      }
       if (selected === "select" && event.isPrimary && event.button === 0 && session.pointers.size === 0 && useBrushStore.getState().reason === null) {
         const point = toBacking(localPoint(event.clientX, event.clientY));
         const tile = session.renderer.tileAt(point.x, point.y);
@@ -511,7 +523,7 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
           session.animator.cancelMotion(); event.currentTarget.focus();
           if (useAreaStore.getState().pasting) { movePaste(tile); placePaste(); }
           else {
-            selectionPointer.current = { id: event.pointerId, origin: tile }; selectArea(tile, tile);
+            selectionPointer.current = { id: event.pointerId, origin: tile, last: localPoint(event.clientX, event.clientY), type: event.pointerType }; selectArea(tile, tile);
             try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* The pointer may already have ended. */ }
           }
           return;
@@ -574,6 +586,7 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
     withSession((session) => {
       const local = localPoint(event.clientX, event.clientY);
       if (selectionPointer.current?.id === event.pointerId) {
+        selectionPointer.current.last = local;
         const point = toBacking(local), tile = session.renderer.tileAt(point.x, point.y);
         if (tile !== null) selectArea(selectionPointer.current.origin, tile);
         session.hover = local; session.requestFrame(); return;

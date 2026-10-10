@@ -21,6 +21,16 @@ function miningChest(width = 2) {
 }
 afterEach(() => { setBrushWorld(null); });
 
+test.each([0, 1])("Eraser preserves duplicate or intersecting chest records (offset %i)", (offset) => {
+  const world = miningChest(), chest = world.entities.Chests.data?.entries[0];
+  if (chest === undefined) throw new Error("Mining chest is missing");
+  Object.assign(world.entities.Chests, { data: { entries: [chest, { ...chest, x: chest.x + offset, name: "Building materials" }] } });
+  const before = structuredClone(world.planes), records = structuredClone(world.entities.Chests.data);
+  beginBrush(true); moveBrush(2, 2); finishBrush();
+  expect(world.planes).toEqual(before); expect(world.entities.Chests.data).toEqual(records);
+  expect(useBrushStore.getState().canUndo).toBe(false);
+});
+
 test.each([2, 3])("Eraser deletes the whole %i-wide chest body and record and restores both through undo/redo and save", (width) => {
   const world = miningChest(width), view = canonicalWorldOf(world), lookup = chestLookupOf(world), before = structuredClone(world.planes), record = structuredClone(world.entities.Chests.data);
   expect(lookup(2, 2)?.name).toBe("Mining supplies");

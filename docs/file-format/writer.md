@@ -130,10 +130,10 @@ save:
 `writeWorld` accepts a parsed world in any [reader-admitted format](compatibility.md#reading-versus-writing)
 (269–279, 315–319, 325–326) with its preserved envelope and returns a fresh `ArrayBuffer` in the **same format**.
 Format 326 has generated-world fixture evidence; older-format writes are experimental and synthetic-tested.
-The original snapshots, structural header, section layout, frame-important data and decoded entity sections must
+The original snapshots, structural header, section layout, frame-important data and uneditable entity sections must
 still match the preserved source. Current metadata/details, revision and favorite flags may be edited; dimensions
 must match all ten current plane lengths. Envelope byte views must keep their source buffer, offsets, order and
-lengths. The source footer must pass the footer contract above. Entity editing, unadmitted formats, version
+lengths. The source footer must pass the footer contract above. Unadmitted formats, version
 conversion, worlds without an envelope, and unknown or modded content references are refused with
 `UnsupportedWrite`; this API makes no claim to save modded worlds. The caller must keep the source bytes intact.
 
@@ -159,8 +159,13 @@ dates. The footer is rebuilt from current identity after validating the original
 array lengths, finite floats, UInt64, GUID and string caps are validated. Kill-count and claimable-banner arrays
 are exposed alongside their derived lengths. Revision and all 64 header flag bits are emitted from the model;
 the UI's favorite toggle preserves reserved bits. See [world-properties.md](../world-properties.md) for controls,
-normalization, validation and canvas resizing. Frame-important data and entity sections are still copied in their
-original physical layout, including the older chest/NPC/display-doll layouts. Independent tests
+normalization, validation and canvas resizing. Frame-important data and untouched entity sections retain their
+original physical layout. Changed readable chests, signs, tile entities and weighted pressure plates are serialized
+in the source format and section pointers include their length deltas. Chest inventories validate slot counts,
+unique slots, stack sizes and item fields; coordinates, identities and duplicate anchors are checked. Tile entities
+retain their full original object-specific payload (including fields outside the semantic model), with copied records
+assigned fresh identities. Editing a tile entity without a matching lossless payload is refused. Other entity sections
+remain byte-preserved and uneditable. Independent tests
 cover byte-identical synthetic saves, all tile-field edits, content bounds, tile-span growth/shrinkage and
 opaque-section preservation for every admitted version, plus parse/save through a real Worker.
 
