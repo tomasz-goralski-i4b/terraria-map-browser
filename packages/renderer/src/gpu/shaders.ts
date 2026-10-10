@@ -824,9 +824,33 @@ void main() {
 }
 `;
 
+/** Per-instance attribute of the wire pass: the run of tiles (x, y, width, height) its quad covers. */
+export const WIRE_RUN_ATTRIBUTE = 2;
+
 /**
- * Wire pass (docs/assets.md, "Wires"): in sprite mode, after the object pass, every chunk again (chunkVertexSource)
- * drawing only its wires and actuators: per colour (red, blue, green, yellow, in that order) the WiresNew piece its four
+ * Wire pass vertex: the chunk pass's instance inputs (its chunk's rectangle and page layer, which the fragment reads the
+ * flags by), but the quad covers only the instance's run of tiles with a wire or actuator.
+ */
+export const wireVertexSource: string = header + `
+uniform vec2 uCamera;
+uniform float uZoom;
+uniform vec2 uViewport;
+${instanceInputs}
+layout(location = ${String(WIRE_RUN_ATTRIBUTE)}) in ivec4 aRun;
+void main() {
+  vec2 corner = vec2(float(gl_VertexID & 1), float(gl_VertexID >> 1));
+  vec2 tile = vec2(aRun.xy) + corner * vec2(aRun.zw);
+  vec2 screen = (tile - uCamera) * uZoom;
+  gl_Position = vec4(screen.x / uViewport.x * 2.0 - 1.0, 1.0 - screen.y / uViewport.y * 2.0, 0.0, 1.0);
+  vRect = aRect;
+  vLayer = aLayer & ${String(CELLS_INSTANCE_BIT - 1)};
+  vCells = (aLayer >> 16) & 3;
+}
+`;
+
+/**
+ * Wire pass (docs/assets.md, "Wires"): in sprite mode, after the object pass, the runs of tiles with a wire or actuator
+ * of every chunk (wireVertexSource), drawing only its wires and actuators: per colour (red, blue, green, yellow, in that order) the WiresNew piece its four
  * same-colour side neighbours give, then the actuator over them, faded in over the colour overlay below
  * SPRITE_FULL_ZOOM. Without the wire sheet it draws the overlay; an actuator without its sheet its overlay colour.
  */

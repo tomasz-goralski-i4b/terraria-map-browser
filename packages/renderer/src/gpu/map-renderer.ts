@@ -11,6 +11,7 @@ import { NO_CELL } from "../framing/cells.js";
 import { createChunkCellCache } from "../framing/chunk-cells.js";
 import { SPRITE_FRAME_WRAPS } from "./frame-wrap.js";
 import { TRACK_TILE } from "../objects/tracks.js";
+import { collectWireRuns, type WireRuns } from "../objects/wires.js";
 import type { ChunkCellCache } from "../framing/chunk-cells.js";
 import { createChunkWallCellCache } from "../framing/chunk-wall-cells.js";
 import type { ChunkWallCellCache } from "../framing/chunk-wall-cells.js";
@@ -22,6 +23,7 @@ import {
   RULE_HEADER_ROWS, RULE_ROW, SPRITE_MIN_ZOOM, SPRITE_SHEET_ROW, SPRITE_SHEET_TEXELS, spriteSampling, SPRITE_STATE, chunkFragmentSource, chunkSpriteFragmentSource, chunkVertexSource, overviewBuildFragmentSource,
   halfAtlasFragmentSource, halfAtlasVertexSource, overviewBuildVertexSource, overviewFragmentSource, overviewVertexSource,
   OBJECT_DEST_ATTRIBUTE, OBJECT_SOURCE_ATTRIBUTE, objectFragmentSource, objectVertexSource, wireFragmentSource,
+  WIRE_RUN_ATTRIBUTE, wireVertexSource,
 } from "./shaders.js";
 import { OBJECT_TILES, objectSprites, type ObjectSprite, type TreeSettings } from "../objects/object-sprites.js";
 
@@ -251,6 +253,8 @@ const WIRE_UNIFORMS = [
 ] as const;
 /** Ints per object pass instance: its rectangle in world sprite pixels, then (atlas page, x, y, 0) of its source. */
 const OBJECT_INTS = 8;
+/** Ints per wire pass instance: its chunk's rectangle and page layer (as the chunk pass), then its run (x, y, w, h). */
+const WIRE_INTS = 9;
 
 
 const BUILD_UNIFORMS = [...TILE_UNIFORMS, ...OVERLAY_UNIFORMS, "uFactor", "uTarget"] as const;
@@ -321,6 +325,9 @@ interface GpuResources {
   /** Instance attributes of the chunk passes. */
   readonly instances: WebGLBuffer;
   readonly instanceArray: WebGLVertexArrayObject;
+  /** Instance attributes of the wire pass (WIRE_INTS per run of wire tiles). */
+  readonly wireInstances: WebGLBuffer;
+  readonly wireArray: WebGLVertexArrayObject;
   /** Instance attributes of the object pass (OBJECT_INTS per object sprite). */
   readonly objectInstances: WebGLBuffer;
   readonly objectArray: WebGLVertexArrayObject;
@@ -453,6 +460,19 @@ function instanceArray(gl: WebGL2RenderingContext, buffer: WebGLBuffer): WebGLVe
   return array;
 }
 
+/** The wire pass's vertex array: the chunk pass's attributes and the run (WIRE_INTS per instance); pointers set per draw. */
+function wireArray(gl: WebGL2RenderingContext, buffer: WebGLBuffer): WebGLVertexArrayObject {
+  const array = requireValue(gl.createVertexArray(), "a vertex array");
+  gl.bindVertexArray(array);
+  gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+  for (const location of [RECT_ATTRIBUTE, LAYER_ATTRIBUTE, WIRE_RUN_ATTRIBUTE]) {
+    gl.enableVertexAttribArray(location);
+    gl.vertexAttribDivisor(location, 1);
+  }
+  gl.bindVertexArray(null);
+  return array;
+}
+
 /** The object pass's vertex array: two ivec4 per instance (OBJECT_INTS), read from `buffer`. */
 function objectArray(gl: WebGL2RenderingContext, buffer: WebGLBuffer): WebGLVertexArrayObject {
   const array = requireValue(gl.createVertexArray(), "a vertex array");
@@ -519,6 +539,7 @@ function createResources(gl: WebGL2RenderingContext, rules: RuleTable): GpuResou
   defaultUnpack(gl);
   const instances = requireValue(gl.createBuffer(), "a buffer");
   const objectInstances = requireValue(gl.createBuffer(), "a buffer");
+  const wireInstances = requireValue(gl.createBuffer(), "a buffer");
   const rulesTexture = integerTexture(gl, gl.RGBA32I, RULE_ROW, RULE_HEADER_ROWS + rules.rows);
   if (rules.rows > 0) {
     gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, RULE_HEADER_ROWS, RULE_ROW, rules.rows, gl.RGBA_INTEGER, gl.INT, rules.ranges);
@@ -531,6 +552,8 @@ function createResources(gl: WebGL2RenderingContext, rules: RuleTable): GpuResou
     instanceArray: instanceArray(gl, instances),
     objectInstances,
     objectArray: objectArray(gl, objectInstances),
+    wireInstances,
+    wireArray: wireArray(gl, wireInstances),
     emptyArray: requireValue(gl.createVertexArray(), "a vertex array"),
     framebuffer: requireValue(gl.createFramebuffer(), "a framebuffer"),
     palette: integerTexture(gl, gl.RGBA8UI, PALETTE_WIDTH, PALETTE_HEIGHT),
@@ -620,9 +643,10 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   // The chunk keys whose instances the object buffer holds, in order, and their instance count: a frame showing the
   // same chunks with none of their lists collected again draws the buffer as it is, without uploading it again.
   let objectUploaded: { readonly keys: readonly number[]; readonly instances: number } | null = null;
-  // Per chunk key, the wire and actuator bits (0–4) set anywhere in the chunk: the wire pass skips chunks without one
-  // shown, so a view without wires costs no pass at all. Dropped around changed tiles.
-  const wireChunks = new Map<number, number>();
+  // Per chunk key, the wire and actuator bits (0–4) set anywhere in the chunk and its runs of tiles with any (WireRuns):
+  // the wire pass draws only those runs, so a view without wires costs no pass at all. Dropped around changed tiles.
+  const wireChunks = new Map<number, WireRuns>();
+  let wireData = new Int32Array(WIRE_INTS * 256);
   const sheetMirror = new Int32Array(SPRITE_SHEET_WIDTH * PALETTE_HEIGHT * 4);
   let spriteMode = false;
   let atlasUploads = 0;
@@ -1364,33 +1388,50 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     return 1;
   };
 
-  /** The wire and actuator bits (0–4) set anywhere in `chunk` (cached), 0 without a flags plane. */
-  const wireBitsOf = (source: RenderableWorld, chunk: ChunkCoord, key: number): number => {
+  /** The wire and actuator bits and runs of `chunk` (cached); none without a flags plane. */
+  const wireRunsOf = (source: RenderableWorld, chunk: ChunkCoord, key: number): WireRuns => {
     const cached = wireChunks.get(key);
     if (cached !== undefined) return cached;
-    const { flags } = source.planes;
-    let bits = 0;
-    if (flags !== undefined) {
-      const top = chunk.y * CHUNK_SIZE;
-      const bottom = Math.min(source.height, top + CHUNK_SIZE);
-      const right = Math.min(source.width, (chunk.x + 1) * CHUNK_SIZE);
-      for (let x = chunk.x * CHUNK_SIZE; x < right && bits !== WIRE_LAYER.all; x++) {
-        const column = x * source.height;
-        for (let y = top; y < bottom; y++) bits |= flags[column + y] ?? 0;
-        bits &= WIRE_LAYER.all;
-      }
-    }
-    wireChunks.set(key, bits);
-    return bits;
+    const runs = source.planes.flags === undefined ? { bits: 0, runs: new Int32Array(0) } : collectWireRuns(source, chunk);
+    wireChunks.set(key, runs);
+    return runs;
   };
 
-  /** Draws the wires and actuators of the chunks of `ready` with any shown over everything else, premultiplied. */
+  /**
+   * Draws the wires and actuators of the chunks of `ready` with any shown over everything else, premultiplied: one quad
+   * per run of tiles with a wire or actuator (wireVertexSource), so the pass shades only those tiles.
+   */
   const drawWires = (source: RenderableWorld, ready: readonly (readonly [ChunkCoord, number])[]): number => {
     const shown = (layers >> 4) & WIRE_LAYER.all;
     const chunksX = Math.ceil(source.width / CHUNK_SIZE);
-    const items = ready.filter(([chunk]) => (wireBitsOf(source, chunk, chunk.y * chunksX + chunk.x) & shown) !== 0);
+    const items = ready
+      .map(([chunk, slot]) => [chunk, slot, wireRunsOf(source, chunk, chunk.y * chunksX + chunk.x)] as const)
+      .filter(([, , runs]) => (runs.bits & shown) !== 0)
+      .sort((first, second) => first[1] - second[1]);
     if (items.length === 0) return 0;
-    wireProgram ??= link(gl, chunkVertexSource, wireFragmentSource, WIRE_UNIFORMS);
+    const total = items.reduce((sum, [, , runs]) => sum + runs.runs.length / 4, 0);
+    if (wireData.length < total * WIRE_INTS) wireData = new Int32Array(total * WIRE_INTS * 2);
+    // Per page (its instances contiguous), where its instances start.
+    const pageStarts: (readonly [page: number, start: number])[] = [];
+    let at = 0;
+    for (const [chunk, slot, { runs }] of items) {
+      const page = Math.floor(slot / CHUNKS_PER_PAGE);
+      if (pageStarts.at(-1)?.[0] !== page) pageStarts.push([page, at / WIRE_INTS]);
+      const originX = chunk.x * CHUNK_SIZE;
+      const originY = chunk.y * CHUNK_SIZE;
+      const width = Math.min(CHUNK_SIZE, source.width - originX);
+      const height = Math.min(CHUNK_SIZE, source.height - originY);
+      for (let k = 0; k < runs.length; k += 4) {
+        wireData[at] = originX;
+        wireData[at + 1] = originY;
+        wireData[at + 2] = width;
+        wireData[at + 3] = height;
+        wireData[at + 4] = slot % CHUNKS_PER_PAGE;
+        wireData.set(runs.subarray(k, k + 4), at + 5);
+        at += WIRE_INTS;
+      }
+    }
+    wireProgram ??= link(gl, wireVertexSource, wireFragmentSource, WIRE_UNIFORMS);
     const program = wireProgram;
     gl.useProgram(program.program);
     setSpritePassUniforms(program.uniforms);
@@ -1406,7 +1447,25 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     gl.uniform4iv(uniforms.uActuatorSheet, actuatorSheet);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-    const calls = drawInstances(source, items);
+    gl.bindVertexArray(resources.wireArray);
+    gl.bindBuffer(gl.ARRAY_BUFFER, resources.wireInstances);
+    gl.bufferData(gl.ARRAY_BUFFER, wireData.subarray(0, at), gl.STREAM_DRAW);
+    const stride = WIRE_INTS * 4;
+    let calls = 0;
+    pageStarts.forEach(([pageIndex, start], index) => {
+      const end = pageStarts[index + 1]?.[1] ?? at / WIRE_INTS;
+      const page = pages[pageIndex];
+      if (page === undefined) return;
+      gl.activeTexture(gl.TEXTURE0 + UNIT_PLANES_16);
+      gl.bindTexture(gl.TEXTURE_2D_ARRAY, page.planes16);
+      // No base instance in WebGL2: each page's instances start at an attribute offset.
+      gl.vertexAttribIPointer(RECT_ATTRIBUTE, 4, gl.INT, stride, start * stride);
+      gl.vertexAttribIPointer(LAYER_ATTRIBUTE, 1, gl.INT, stride, start * stride + 16);
+      gl.vertexAttribIPointer(WIRE_RUN_ATTRIBUTE, 4, gl.INT, stride, start * stride + 20);
+      gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, end - start);
+      calls++;
+    });
+    gl.bindVertexArray(null);
     gl.disable(gl.BLEND);
     return calls;
   };
@@ -1883,6 +1942,8 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
         releaseAtlas();
         gl.deleteBuffer(resources.instances);
         gl.deleteVertexArray(resources.instanceArray);
+        gl.deleteBuffer(resources.wireInstances);
+        gl.deleteVertexArray(resources.wireArray);
         gl.deleteBuffer(resources.objectInstances);
         gl.deleteVertexArray(resources.objectArray);
         gl.deleteVertexArray(resources.emptyArray);
