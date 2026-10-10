@@ -66,6 +66,26 @@ test("Swatches tooltips anchor to the hovered material instead of the panel", as
   expect(parseFloat(tooltip.bottom)).toBeCloseTo(button.getBoundingClientRect().height + 6, 0);
 });
 
+test("long Swatches tooltips stay inside a narrow panel at both ends of a grid row", async () => {
+  setBrushWorld(readWorldTiles(brushSource()));
+  useSwatchesView.setState({ category: "block", source: "all", mode: "grid", query: "" });
+  const screen = await render(<div style={{ width: 180, overflow: "auto" }}><SwatchesPanel /></div>);
+  const grid = screen.container.querySelector<HTMLElement>(".swatches-grid");
+  if (grid === null) throw new Error("Swatches grid missing");
+  const buttons = [...grid.querySelectorAll<HTMLButtonElement>(".swatch-button")];
+  const first = buttons[0];
+  if (first === undefined) throw new Error("Material swatches missing");
+  const row = buttons.filter((button) => button.getBoundingClientRect().top === first.getBoundingClientRect().top);
+  for (const button of [first, row.at(-1)]) {
+    if (button === undefined) throw new Error("Grid row missing");
+    await page.getByRole("button", { name: button.getAttribute("aria-label") ?? "", exact: true }).hover();
+    const tooltip = getComputedStyle(button, "::after");
+    const left = button.getBoundingClientRect().left + parseFloat(tooltip.left) - parseFloat(tooltip.width) / 2;
+    expect(left).toBeGreaterThanOrEqual(grid.getBoundingClientRect().left);
+    expect(left + parseFloat(tooltip.width)).toBeLessThanOrEqual(grid.getBoundingClientRect().right);
+  }
+});
+
 test("fallback, paint and accessible names survive connecting and disconnecting assets", async () => {
   const screen = await render(<button aria-label="Dirt Block"><MaterialSwatch color={0x976b4b} layer="block" content={{ kind: "vanilla", id: 0 }} paint={0xff0000} /></button>);
   const swatch = screen.container.querySelector<HTMLElement>(".material-swatch");
