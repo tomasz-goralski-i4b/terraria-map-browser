@@ -2445,6 +2445,15 @@ kbd {
 .brush-segments.area-toggles { gap: 2px; border: 0; overflow: visible; }
 .area-toggles button { border: 1px solid var(--border-strong); border-radius: var(--radius); }
 .area-toggles button + button { border-left: 1px solid var(--border-strong); }
+/* A 3 × 3 reference-point grid that fits the 30 px bar. */
+.anchor-picker { display: inline-grid; grid-template-columns: repeat(3, 7px); grid-template-rows: repeat(3, 7px); gap: 1px; }
+.anchor-picker button { width: 7px; height: 7px; padding: 0; border: 1px solid var(--border-strong); border-radius: 1px; background: var(--surface-2); cursor: pointer; }
+.anchor-picker button:hover { background: var(--surface-3); }
+.anchor-picker button[aria-checked="true"] { border-color: var(--accent-text); background: var(--accent-text); }
+.anchor-picker[aria-disabled="true"] button { opacity: .5; cursor: not-allowed; }
 @media (max-width: 639px) {
   .tool-options .area-option-label { display: none; }
+  /* Phones: the toggles wrap inside their group rather than past the screen's edge. */
+  .tool-options .brush-option-group:has(.area-toggles) { max-width: 100%; flex-shrink: 1; min-width: 0; }
+  .brush-segments.area-toggles { flex-wrap: wrap; flex-shrink: 1; min-width: 0; }
 }

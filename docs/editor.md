@@ -13,7 +13,10 @@ elsewhere it keeps its own meaning (unpinning the Inspector's tile, taking back 
 paste, or with page text selected, `Ctrl+C` and `Ctrl+V` stay the browser's.
 
 Paste (`Ctrl+V`) switches Select to a floating, translucent map-colour preview that follows the pointer. The options
-bar then shows the paste toggles and Place paste / Cancel paste. Click or Enter places it; a click while a large
+bar then shows the anchor, the paste toggles and Place paste / Cancel paste. The **anchor** is a 3 × 3 reference-point
+grid, as in an image editor's transform options (the arrow keys move it): the chosen point of the paste sits under
+the pointer, the centre by default. A paste may hang over the world's edge; only the part inside is drawn and placed.
+From the menu with the pointer off the map, the paste lands over the current selection. Click or Enter places it; a click while a large
 preview is still being prepared places it as soon as it is ready, unless the pointer moves first. Escape works as in image
 editors: it drops a floating paste and keeps the selection; pressed again, it deselects. The Edit menu (after Undo
 and Redo), command palette and buttons use the same commands, and each disabled one says why. Text fields retain

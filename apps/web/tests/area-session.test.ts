@@ -5,7 +5,7 @@ import { useViewStore } from "../src/shell/view-store.js";
 import { setBrushWorld, beginBrush, useBrushStore } from "../src/world/brush-session.js";
 import { useSaveStore } from "../src/world/save-world.js";
 import { canonicalWorldOf } from "../src/world/canonical-world.js";
-import { cancelArea, copySelection, movePaste, pastePreview, placePaste, selectArea, setAreaWorld, startPaste, useAreaStore } from "../src/world/area-session.js";
+import { cancelArea, copySelection, movePaste, pastePreview, pastePreviewWorld, placePaste, selectArea, setAreaWorld, startPaste, useAreaStore } from "../src/world/area-session.js";
 import { DEFAULT_COPY_LAYERS, DEFAULT_PASTE_OPTIONS } from "../src/world/area-clipboard.js";
 import { brushSource } from "./support/brush-source.js";
 
@@ -17,7 +17,7 @@ function meadow() {
 beforeEach(() => {
   useSaveStore.setState({ open: false }); useAppStore.setState({ phase: "loaded", unsavedChanges: false });
   useViewStore.setState({ tool: "select", hoverTile: null });
-  useAreaStore.setState({ layers: DEFAULT_COPY_LAYERS, options: DEFAULT_PASTE_OPTIONS });
+  useAreaStore.setState({ layers: DEFAULT_COPY_LAYERS, options: DEFAULT_PASTE_OPTIONS, anchor: "center" });
 });
 afterEach(() => { setAreaWorld(null); setBrushWorld(null); useSaveStore.setState({ open: false }); });
 
@@ -68,7 +68,7 @@ test("world replacement and closing clear selection and clipboard; opening paste
 test("maximum clipboard planning yields, cancels stale work and only places completed current previews", async () => {
   const world = readWorldTiles(brushSource(1024, 512, Array.from({ length: 1024 }, () => [0x80, 0xff, 1]).flat()));
   canonicalWorldOf(world).setTile(0, 0, { block: { kind: "vanilla", id: 1 }, wires: 0, actuator: false });
-  setBrushWorld(world); setAreaWorld(world);
+  setBrushWorld(world); setAreaWorld(world); useAreaStore.setState({ anchor: "top-left" });
   selectArea({ x: 0, y: 0 }, { x: 511, y: 511 }); copySelection(); startPaste();
   movePaste({ x: 512, y: 0 }); placePaste();
   expect(useAreaStore.getState().canPlace).toBe(false);
@@ -109,4 +109,20 @@ test("Escape drops a floating paste first and keeps the selection, then deselect
   expect(useAreaStore.getState().selection).toEqual({ x: 2, y: 2, width: 2, height: 2 });
   cancelArea();
   expect(useAreaStore.getState().selection).toBeNull();
+});
+
+test("the paste anchor is the point of the paste under the pointer", () => {
+  const world = meadow(); setBrushWorld(world); setAreaWorld(world);
+  selectArea({ x: 1, y: 1 }, { x: 3, y: 3 }); copySelection(); startPaste();
+  movePaste({ x: 5, y: 5 });
+  expect(useAreaStore.getState().position).toEqual({ x: 4, y: 4 });
+  useAreaStore.setState({ anchor: "bottom-right" });
+  expect(useAreaStore.getState().position).toEqual({ x: 3, y: 3 });
+  useAreaStore.setState({ anchor: "top-left" });
+  expect(useAreaStore.getState().position).toEqual({ x: 5, y: 5 });
+  expect(pastePreviewWorld()?.width).toBe(3);
+  useAreaStore.setState({ anchor: "bottom-right" }); movePaste({ x: 0, y: 0 });
+  // Partly outside the world: the preview covers only the part inside.
+  expect(useAreaStore.getState().position).toEqual({ x: -2, y: -2 });
+  expect(pastePreviewWorld()).toMatchObject({ width: 1, height: 1 });
 });

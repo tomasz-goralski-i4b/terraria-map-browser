@@ -18,15 +18,15 @@ import { App } from "../src/App.js";
 import { getDefaultWorldSession } from "../src/world/world-session.js";
 import "./support/commands.js";
 import "../src/styles.css";
-import { copyArea, planAreaPaste, DEFAULT_COPY_LAYERS } from "../src/world/area-clipboard.js";
+import { copyArea, planAreaPaste, DEFAULT_COPY_LAYERS, DEFAULT_PASTE_OPTIONS } from "../src/world/area-clipboard.js";
 
 function ShortcutHost(): React.JSX.Element {
   const commands = useCommands(); useGlobalShortcuts(commands);
   return <ToolOptions commands={commands} />;
 }
-afterEach(() => { setAreaWorld(null); setBrushWorld(null); useViewStore.setState({ tool: "pan", hoverTile: null }); useAppStore.setState({ phase: "idle", unsavedChanges: false }); });
+afterEach(() => { useAreaStore.setState({ anchor: "center" }); setAreaWorld(null); setBrushWorld(null); useViewStore.setState({ tool: "pan", hoverTile: null }); useAppStore.setState({ phase: "idle", unsavedChanges: false }); });
 
-test("stationary paste pixels follow destination Undo/Redo and invalid preview disables its command", async () => {
+test("stationary paste pixels follow destination Undo/Redo and a paste over an object says it replaces it", async () => {
   const bytes = brushSource(32, 32, Array.from({ length: 32 }, () => [0x40, 31]).flat());
   bytes[74] = (bytes[74] ?? 0) | 32;
   const world = readWorldTiles(bytes), view = canonicalWorldOf(world);
@@ -47,10 +47,10 @@ test("stationary paste pixels follow destination Undo/Redo and invalid preview d
   expect(useAreaStore.getState().position).toEqual({ x: 10, y: 10 });
   cancelArea(); useAreaStore.setState({ layers: DEFAULT_COPY_LAYERS });
   selectArea({ x: 2, y: 2 }, { x: 2, y: 2 }); copySelection(); startPaste(); movePaste({ x: 12, y: 12 });
-  await expect.element(page.getByRole("button", { name: "Place paste", exact: true })).toBeDisabled();
+  await expect.element(page.getByText("Click or Enter to place · replaces 1 object · Escape to cancel")).toBeVisible();
   await page.getByRole("button", { name: "Skip empty blocks" }).click();
-  await expect.element(page.getByRole("button", { name: "Place paste", exact: true })).toBeEnabled();
-  useAreaStore.setState({ layers: DEFAULT_COPY_LAYERS });
+  await expect.element(page.getByText("Click or Enter to place · Escape to cancel")).toBeVisible();
+  useAreaStore.setState({ layers: DEFAULT_COPY_LAYERS, options: DEFAULT_PASTE_OPTIONS });
 });
 
 test("rectangle drag, copy, read-only coloured preview, Enter placement and Escape cancellation use shared commands", async () => {

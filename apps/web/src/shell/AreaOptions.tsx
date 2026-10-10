@@ -1,4 +1,4 @@
-import { useAreaStore } from "../world/area-session.js";
+import { PASTE_ANCHORS, useAreaStore, type PasteAnchor } from "../world/area-session.js";
 import type { CopyLayers, PasteOptions } from "../world/area-clipboard.js";
 import { shortcutText } from "../ui/IconButton.js";
 import { TOOLS, type Command, commandById } from "./commands.js";
@@ -34,6 +34,36 @@ function Toggle({ label, tooltip, pressed, disabled, onChange }: {
   );
 }
 
+const anchorName = (anchor: PasteAnchor): string => anchor === "center" ? "Centre" : `${anchor.charAt(0).toUpperCase()}${anchor.slice(1).replace("-", " ")}`;
+
+/**
+ * The paste's reference point, as in an image editor's transform options: a 3 × 3 radio grid; the arrow keys move
+ * the choice. The point chosen is the one under the pointer.
+ */
+function AnchorPicker({ value, disabled, onChange }: { readonly value: PasteAnchor; readonly disabled: boolean; readonly onChange: (anchor: PasteAnchor) => void }): React.JSX.Element {
+  const current = PASTE_ANCHORS.indexOf(value);
+  const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>): void => {
+    const step = { ArrowLeft: current % 3 === 0 ? 0 : -1, ArrowRight: current % 3 === 2 ? 0 : 1, ArrowUp: current < 3 ? 0 : -3, ArrowDown: current > 5 ? 0 : 3 }[event.key];
+    if (step === undefined) return;
+    event.preventDefault();
+    const next = PASTE_ANCHORS[current + step];
+    if (next === undefined || disabled) return;
+    onChange(next);
+    event.currentTarget.querySelectorAll<HTMLButtonElement>("button")[current + step]?.focus();
+  };
+  return (
+    <div className="anchor-picker" role="radiogroup" aria-label="Paste anchor" aria-disabled={disabled || undefined} onKeyDown={onKeyDown}>
+      {PASTE_ANCHORS.map((anchor) => (
+        <button
+          key={anchor} type="button" role="radio" aria-checked={anchor === value} aria-label={anchorName(anchor)} tabIndex={anchor === value ? 0 : -1}
+          data-tooltip={`Anchor: ${anchorName(anchor).toLowerCase()} of the paste under the pointer`} data-tooltip-side="bottom"
+          onClick={() => { if (!disabled) onChange(anchor); }}
+        />
+      ))}
+    </div>
+  );
+}
+
 /** A command as a text button: the same label, shortcut and disabled reason as its menu item. */
 function CommandButton({ command, primary = false }: { readonly command: Command; readonly primary?: boolean }): React.JSX.Element {
   const tooltip = [command.shortcut === undefined ? "" : shortcutText(command.shortcut), command.enabled ? "" : command.disabledReason ?? ""]
@@ -62,6 +92,7 @@ export function AreaOptions({ commands, disabled }: { readonly commands: readonl
     {state.pasting ? (
       <div className="brush-option-group" role="group" aria-label="Paste options">
         <span className="brush-option-label area-option-label">Paste</span>
+        <AnchorPicker value={state.anchor} disabled={disabled} onChange={(anchor) => { useAreaStore.setState({ anchor }); }} />
         <div className="brush-segments area-toggles">
           {PASTE_TOGGLES.map((toggle) => (
             <Toggle

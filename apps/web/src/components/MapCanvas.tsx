@@ -9,7 +9,7 @@ import { registerMapController, rendererLayers, useViewStore, type ToolId } from
 import { getBlockFraming } from "../world/block-framing.js";
 import { beginBrush, finishBrush, moveBrush, pickBrushMaterial, subscribeBrushChanges, useBrushStore } from "../world/brush-session.js";
 import { createBrushStabilizer } from "../world/brush-stabilizer.js";
-import { cancelArea, movePaste, pasteBounds, pastePreviewWorld, placePaste, selectArea, useAreaStore } from "../world/area-session.js";
+import { cancelArea, movePaste, pastePreviewWorld, pasteVisibleBounds, placePaste, selectArea, useAreaStore } from "../world/area-session.js";
 
 const KEY_PAN_PIXELS_PER_MS = 0.384;
 const KEY_ZOOM_FACTOR = 1.25;
@@ -155,7 +155,7 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
     const brush = useBrushStore.getState();
     if (selected === "select" && useAreaStore.getState().pasting && tile !== null) movePaste(tile);
     const areaState = useAreaStore.getState();
-    const bounds = areaState.pasting ? pasteBounds() : areaState.selection;
+    const bounds = areaState.pasting ? pasteVisibleBounds() : areaState.selection;
     const areaElement = areaRef.current, canvasElement = canvasRef.current;
     if (areaElement !== null && canvasElement !== null) {
       areaElement.hidden = bounds === null;
