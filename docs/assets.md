@@ -337,6 +337,34 @@ source = (x = 18 × column, y = 18 × row, w = 16, h = 16)   // per piece; back 
 dest   = the track's tile; a decoration the tile below it, a bumper the tile above it
 ```
 
+### Wires
+
+`WiresNew` (288 × 288) holds 16 × 16 wire pieces at a stride of 18: **16 columns**, one per combination of the four
+sides a wire continues to, and **16 rows**. Measured in the art (S): a piece's art reaches the top edge of its cell
+exactly when its column has bit 1, the right edge with bit 2, the bottom edge with bit 4 and the left edge with bit 8
+(column 0 is a lone dot, column 15 a cross), so
+
+```text
+column = (up ? 1 : 0) + (right ? 2 : 0) + (down ? 4 : 0) + (left ? 8 : 0)   // the same colour on that side neighbour
+row    = 0 red, 1 blue, 2 green, 3 yellow                                   // rows 0–3 by their colour (S)
+source = (x = 18 × column, y = 18 × row, w = 16, h = 16)
+```
+
+Rows 4–15 repeat the four colours with other looks (thinner, broken, diagonal); which one the game shows when is not
+observable without its renderer, so the viewer uses rows 0–3 (chosen; open question). `Actuator` is one 16 × 16 image.
+The older `Wires`, `Wires2`–`Wires4` sheets (90 × 72, one colour each) are not used.
+
+How the viewer draws them (#241): only a side neighbour with a wire of the **same colour** counts; a neighbour outside
+the world counts as none. In sprite mode a **wire pass** draws every chunk once more after the chunk pass and the
+object pass ("Trees"): per tile the shown colours in the order **red, blue, green, yellow** (each over the ones
+before, so yellow ends on top as in the colour overlay), then the **actuator** over them. The layer toggles (red, blue,
+green, yellow, actuators) select what is drawn, and a neighbour's hidden colour still connects (the piece does not
+change when another colour is hidden). Below `SPRITE_MIN_ZOOM` the colour overlay of the chunk pass stays; from there
+to `SPRITE_FULL_ZOOM` the pieces fade in over the overlay. Without `WiresNew` in the atlas the wire pass draws the
+overlay; an actuator without its sheet its overlay colour. The pass blends over what is drawn (premultiplied), so over
+a fully transparent pixel (background hidden and nothing behind the wire) a half-transparent wire pixel darkens
+slightly, unlike the chunk pass's overlay rule (chosen).
+
 ### Worked examples
 
 | # | Case | Input | Source rectangle (x, y, w, h) | Basis |
@@ -362,7 +390,8 @@ Expected sheet sizes (consistent with the size arithmetic, confirmed only by the
 | Animated tiles (173 ids flagged `isAnimated` in A12, all frame-important) | draw the stored frame (static) | animation |
 | Minecart tracks (314) | the stored pieces' cells, a junction's back piece under its front piece, decorations below and bumpers above (#239, "Minecart tracks") | pressure-plate and booster animation, minecarts, paint |
 | Trees (5, 323, …), tree tops/branches, variant sheets (`Tiles_5_N`, `Tiles_2_Beach`, `Tiles_59_2`, …) | placeholder | yes |
-| Paint, actuated/inactive tint, illumination, liquids, wires | — | yes |
+| Wires and actuators | the `WiresNew` piece the four same-colour side neighbours give, red to yellow, the actuator on top, over everything in a wire pass; the colour overlay below `SPRITE_MIN_ZOOM` (#241, "Wires") | animation, the wiring tools' translucency modes, the other `WiresNew` rows |
+| Paint, actuated/inactive tint, illumination, liquids | — | yes |
 
 ## Tile framing
 

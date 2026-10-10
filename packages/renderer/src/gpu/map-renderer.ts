@@ -21,7 +21,9 @@ import {
   CELLS_INSTANCE_BIT, WALLS_INSTANCE_BIT, LAYER_ATTRIBUTE, PAGE_APRON, PLANES_16, PLANES_8, PLANE_COUNT_16, PLANE_COUNT_8, PRESENT, RECT_ATTRIBUTE,
   RULE_HEADER_ROWS, RULE_ROW, SPRITE_MIN_ZOOM, SPRITE_SHEET_ROW, SPRITE_SHEET_TEXELS, spriteSampling, SPRITE_STATE, chunkFragmentSource, chunkSpriteFragmentSource, chunkVertexSource, overviewBuildFragmentSource,
   halfAtlasFragmentSource, halfAtlasVertexSource, overviewBuildVertexSource, overviewFragmentSource, overviewVertexSource,
+  OBJECT_DEST_ATTRIBUTE, OBJECT_SOURCE_ATTRIBUTE, objectFragmentSource, objectVertexSource, wireFragmentSource,
 } from "./shaders.js";
+import { objectSprites, type ObjectSprite } from "../objects/object-sprites.js";
 
 /** The slice of a world the renderer reads. Planes are column-major (`x * height + y`); never copied by the caller. */
 export interface RenderableWorld {
@@ -231,16 +233,43 @@ const SPRITE_SHEET_WIDTH = SPRITE_SHEET_ROW * SPRITE_SHEET_TEXELS;
 
 const TILE_UNIFORMS = [
   "uPlanes16", "uPlanes8", "uPresent", "uPalette", "uBackground", "uRules", "uPaintRow", "uPaintCount", "uPaletteLength",
-  "uLayers", "uLiquids", "uWireColors", "uWireBits", "uWireAlpha",
+  "uLayers", "uLiquids",
 ] as const;
-const CHUNK_UNIFORMS = [...TILE_UNIFORMS, "uCamera", "uZoom", "uViewport", "uFilter", "uStep", "uWorldSize"] as const;
+/** The wire overlay's uniforms: the map program and the overview build pass draw it, in sprite mode the wire pass does. */
+const OVERLAY_UNIFORMS = ["uWireColors", "uWireBits", "uWireAlpha"] as const;
+const CHUNK_PASS_UNIFORMS = [...TILE_UNIFORMS, "uCamera", "uZoom", "uViewport", "uFilter", "uStep", "uWorldSize"] as const;
+const CHUNK_UNIFORMS = [...CHUNK_PASS_UNIFORMS, ...OVERLAY_UNIFORMS] as const;
 /** The sprite program's own uniforms (chunkSpriteFragmentSource), besides CHUNK_UNIFORMS. */
 const SPRITE_UNIFORMS = [
   "uAtlas", "uAtlasHalf", "uSpriteSheets", "uSpriteSamples", "uSpriteStep", "uSpriteLevel", "uSpriteWeight",
 ] as const;
 const HALF_ATLAS_UNIFORMS = ["uAtlas", "uPage"] as const;
-const SPRITE_CHUNK_UNIFORMS = [...CHUNK_UNIFORMS, ...SPRITE_UNIFORMS] as const;
-const BUILD_UNIFORMS = [...TILE_UNIFORMS, "uFactor", "uTarget"] as const;
+const SPRITE_CHUNK_UNIFORMS = [...CHUNK_PASS_UNIFORMS, ...SPRITE_UNIFORMS] as const;
+/** The object pass's uniforms (objectFragmentSource): the camera and the sprite sampling. */
+const OBJECT_UNIFORMS = [
+  "uCamera", "uZoom", "uViewport", "uAtlas", "uAtlasHalf", "uSpriteSamples", "uSpriteStep", "uSpriteLevel", "uSpriteWeight",
+] as const;
+/** The wire pass's uniforms (wireFragmentSource). */
+const WIRE_UNIFORMS = [
+  ...OBJECT_UNIFORMS, "uPlanes16", "uPresent", "uLayers", "uWireColors", "uWireBits", "uWireAlpha", "uWorldSize", "uWireSheet",
+  "uActuatorSheet",
+] as const;
+/** Ints per object pass instance: its rectangle in world sprite pixels, then (atlas page, x, y, 0) of its source. */
+const OBJECT_INTS = 8;
+
+/** The programs of sprite mode, linked together on first use: the chunk pass's sprite program, the object and wire passes. */
+interface SpritePrograms {
+  readonly chunk: Program<(typeof SPRITE_CHUNK_UNIFORMS)[number]>;
+  readonly objects: Program<(typeof OBJECT_UNIFORMS)[number]>;
+  readonly wires: Program<(typeof WIRE_UNIFORMS)[number]>;
+}
+
+interface SpriteLinking {
+  readonly chunk: Linking;
+  readonly objects: Linking;
+  readonly wires: Linking;
+}
+const BUILD_UNIFORMS = [...TILE_UNIFORMS, ...OVERLAY_UNIFORMS, "uFactor", "uTarget"] as const;
 const OVERVIEW_UNIFORMS = ["uCamera", "uZoom", "uViewport", "uWorld", "uExtent", "uOverview"] as const;
 
 interface Program<Name extends string> {
@@ -308,6 +337,9 @@ interface GpuResources {
   /** Instance attributes of the chunk passes. */
   readonly instances: WebGLBuffer;
   readonly instanceArray: WebGLVertexArrayObject;
+  /** Instance attributes of the object pass (OBJECT_INTS per object sprite). */
+  readonly objectInstances: WebGLBuffer;
+  readonly objectArray: WebGLVertexArrayObject;
   /** No attributes: the overview quad comes from gl_VertexID. */
   readonly emptyArray: WebGLVertexArrayObject;
   readonly framebuffer: WebGLFramebuffer;
@@ -437,6 +469,20 @@ function instanceArray(gl: WebGL2RenderingContext, buffer: WebGLBuffer): WebGLVe
   return array;
 }
 
+/** The object pass's vertex array: two ivec4 per instance (OBJECT_INTS), read from `buffer`. */
+function objectArray(gl: WebGL2RenderingContext, buffer: WebGLBuffer): WebGLVertexArrayObject {
+  const array = requireValue(gl.createVertexArray(), "a vertex array");
+  gl.bindVertexArray(array);
+  gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+  for (const [location, offset] of [[OBJECT_DEST_ATTRIBUTE, 0], [OBJECT_SOURCE_ATTRIBUTE, 16]] as const) {
+    gl.enableVertexAttribArray(location);
+    gl.vertexAttribIPointer(location, 4, gl.INT, OBJECT_INTS * 4, offset);
+    gl.vertexAttribDivisor(location, 1);
+  }
+  gl.bindVertexArray(null);
+  return array;
+}
+
 /**
  * The rules of every tile ID with a frame → option rule and map colours, in ID order: each range carries the colour
  * of its option (`optionColor`: an option the ID lacks falls back to option 0), each header the colour of option 0,
@@ -488,6 +534,7 @@ function defaultUnpack(gl: WebGL2RenderingContext): void {
 function createResources(gl: WebGL2RenderingContext, rules: RuleTable): GpuResources {
   defaultUnpack(gl);
   const instances = requireValue(gl.createBuffer(), "a buffer");
+  const objectInstances = requireValue(gl.createBuffer(), "a buffer");
   const rulesTexture = integerTexture(gl, gl.RGBA32I, RULE_ROW, RULE_HEADER_ROWS + rules.rows);
   if (rules.rows > 0) {
     gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, RULE_HEADER_ROWS, RULE_ROW, rules.rows, gl.RGBA_INTEGER, gl.INT, rules.ranges);
@@ -498,6 +545,8 @@ function createResources(gl: WebGL2RenderingContext, rules: RuleTable): GpuResou
     overview: link(gl, overviewVertexSource, overviewFragmentSource, OVERVIEW_UNIFORMS),
     instances,
     instanceArray: instanceArray(gl, instances),
+    objectInstances,
+    objectArray: objectArray(gl, objectInstances),
     emptyArray: requireValue(gl.createVertexArray(), "a vertex array"),
     framebuffer: requireValue(gl.createFramebuffer(), "a framebuffer"),
     palette: integerTexture(gl, gl.RGBA8UI, PALETTE_WIDTH, PALETTE_HEIGHT),
@@ -539,9 +588,9 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   // Looked up once: getExtension returns null while the context is lost. Used only to restore a forced loss.
   const loseContext = gl.getExtension("WEBGL_lose_context");
   let resources = createResources(gl, rules);
-  let spriteProgram: Program<(typeof SPRITE_CHUNK_UNIFORMS)[number]> | null = null;
-  // The sprite program while the driver links it in the background (KHR_parallel_shader_compile, where offered).
-  let spriteLinking: Linking | null = null;
+  let spriteProgram: SpritePrograms | null = null;
+  // The sprite programs while the driver links them in the background (KHR_parallel_shader_compile, where offered).
+  let spriteLinking: SpriteLinking | null = null;
   let parallelCompile = parallelShaderCompile(gl);
   // The timer that asks whether the background link is done; 0 when none is pending.
   let linkPoll = 0;
@@ -571,6 +620,15 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   let halfAtlasProgram: Program<(typeof HALF_ATLAS_UNIFORMS)[number]> | null = null;
   let tileSheets = new Map<number, SpriteSheetEntry>();
   let wallSheets = new Map<number, SpriteSheetEntry>();
+  // Every sheet of the atlas by kind and id (`${kind}:${id}`), for the object pass and the wire pass.
+  let sheetsByKey = new Map<string, SpriteSheetEntry>();
+  // The wire pieces and the actuator (docs/assets.md, "Wires"): (page, x, y, 1), or zeros without the sheet.
+  let wireSheet: Int32Array = new Int32Array(4);
+  let actuatorSheet: Int32Array = new Int32Array(4);
+  // The object pass's instances by chunk key, for the current world and atlas: computed on the CPU from the world's
+  // planes on first draw, dropped by invalidateTiles around changed tiles.
+  const objectCache = new Map<number, Int32Array>();
+  let objectData = new Int32Array(OBJECT_INTS * 256);
   const sheetMirror = new Int32Array(SPRITE_SHEET_WIDTH * PALETTE_HEIGHT * 4);
   let spriteMode = false;
   let atlasUploads = 0;
@@ -818,6 +876,14 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       .filter((entry) => entry.kind === "tile" && !SPRITE_DEFERRED_TILES.has(entry.id))
       .map((entry) => [entry.id, entry]));
     wallSheets = new Map(source?.index.entries.filter((entry) => entry.kind === "wall").map((entry) => [entry.id, entry]));
+    sheetsByKey = new Map(source?.index.entries.map((entry) => [`${entry.kind}:${String(entry.id)}`, entry]));
+    const placeOf = (kind: SpriteSheetEntry["kind"]): Int32Array => {
+      const entry = sheetsByKey.get(`${kind}:0`);
+      return new Int32Array(entry === undefined ? [0, 0, 0, 0] : [entry.page, entry.x, entry.y, 1]);
+    };
+    wireSheet = placeOf("wire");
+    actuatorSheet = placeOf("actuator");
+    objectCache.clear();
     if (source !== null) uploadAtlas(source);
     if (world !== null) uploadSheets(world.palette, 0, paletteUploaded);
   };
@@ -1076,7 +1142,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
    * compile about twice as long. Null while the driver still links it and `wait` is false: animation frames then draw
    * map colours and ask for another frame; `render` waits for it.
    */
-  const spriteProgramOf = (wait: boolean): Program<(typeof SPRITE_CHUNK_UNIFORMS)[number]> | null => {
+  const spriteProgramOf = (wait: boolean): SpritePrograms | null => {
     if (spriteProgram !== null) return spriteProgram;
     // A program that failed to link: animation frames keep map colours, `render` reports why.
     if (spriteLinkError !== null) {
@@ -1095,7 +1161,11 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
    */
   const startSpriteLink = (): void => {
     if (spriteProgram !== null || spriteLinking !== null || spriteLinkError !== null) return;
-    spriteLinking = startLink(gl, chunkVertexSource, chunkSpriteFragmentSource);
+    spriteLinking = {
+      chunk: startLink(gl, chunkVertexSource, chunkSpriteFragmentSource),
+      objects: startLink(gl, objectVertexSource, objectFragmentSource),
+      wires: startLink(gl, chunkVertexSource, wireFragmentSource),
+    };
     if (parallelCompile === null) {
       finishSpriteLink();
       return;
@@ -1118,21 +1188,33 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     linkPoll = window.setTimeout(poll, LINK_POLL_MILLISECONDS);
   };
 
-  const spriteLinkDone = (): boolean => spriteLinking === null || parallelCompile === null
-    || (gl.getProgramParameter(spriteLinking.program, parallelCompile.COMPLETION_STATUS_KHR) as boolean);
+  const spriteLinkDone = (): boolean => {
+    if (spriteLinking === null || parallelCompile === null) return true;
+    const { COMPLETION_STATUS_KHR } = parallelCompile;
+    return [spriteLinking.chunk, spriteLinking.objects, spriteLinking.wires]
+      .every((linking) => gl.getProgramParameter(linking.program, COMPLETION_STATUS_KHR) as boolean);
+  };
 
   /**
    * Waits for the sprite program's link (if it is still running) and keeps the program; a failure is kept in
    * spriteLinkError and thrown. Either way the link has ended.
    */
-  const finishSpriteLink = (): Program<(typeof SPRITE_CHUNK_UNIFORMS)[number]> => {
+  const finishSpriteLink = (): SpritePrograms => {
     if (spriteProgram !== null) return spriteProgram;
     if (spriteLinking === null) throw new Error("the sprite program is not being linked");
     const inBackground = parallelCompile !== null;
+    const linking = spriteLinking;
+    const finished: WebGLProgram[] = [];
     try {
-      spriteProgram = finishLink(gl, spriteLinking, SPRITE_CHUNK_UNIFORMS);
+      const chunk = finishLink(gl, linking.chunk, SPRITE_CHUNK_UNIFORMS);
+      finished.push(chunk.program);
+      const objects = finishLink(gl, linking.objects, OBJECT_UNIFORMS);
+      finished.push(objects.program);
+      const wires = finishLink(gl, linking.wires, WIRE_UNIFORMS);
+      spriteProgram = { chunk, objects, wires };
       return spriteProgram;
     } catch (error) {
+      for (const program of finished) gl.deleteProgram(program);
       spriteLinkError = error instanceof Error ? error : new Error(String(error));
       throw spriteLinkError;
     } finally {
@@ -1151,7 +1233,8 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
 
   /** Uniforms of the tile colour function shared by both chunk passes; `sprites` those of the sprite program. */
   const setTileUniforms = (
-    uniforms: Readonly<Record<(typeof TILE_UNIFORMS)[number], WebGLUniformLocation>>, cells = false,
+    uniforms: Readonly<Record<(typeof TILE_UNIFORMS)[number], WebGLUniformLocation>
+      & Partial<Record<(typeof OVERLAY_UNIFORMS)[number], WebGLUniformLocation>>>, cells = false,
     sprites: Readonly<Record<(typeof SPRITE_UNIFORMS)[number], WebGLUniformLocation>> | null = null,
   ): void => {
     gl.uniform1i(uniforms.uPlanes16, UNIT_PLANES_16);
@@ -1162,9 +1245,10 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     gl.uniform1i(uniforms.uRules, UNIT_RULES);
     gl.uniform1i(uniforms.uPaletteLength, paletteUploaded);
     gl.uniform1i(uniforms.uLayers, layers);
-    gl.uniform3iv(uniforms.uWireColors, wireColorUniform);
-    gl.uniform1iv(uniforms.uWireBits, wireBitUniform);
-    gl.uniform1i(uniforms.uWireAlpha, WIRE_ALPHA);
+    // The sprite program has no wire overlay: the wire pass draws wires in sprite mode.
+    if (uniforms.uWireColors !== undefined) gl.uniform3iv(uniforms.uWireColors, wireColorUniform);
+    if (uniforms.uWireBits !== undefined) gl.uniform1iv(uniforms.uWireBits, wireBitUniform);
+    if (uniforms.uWireAlpha !== undefined) gl.uniform1i(uniforms.uWireAlpha, WIRE_ALPHA);
     gl.uniform3iv(uniforms.uLiquids, liquidUniform);
     gl.uniform1i(uniforms.uPaintRow, background?.paintRow ?? 0);
     gl.uniform1i(uniforms.uPaintCount, paintCount);
@@ -1223,6 +1307,106 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     }
     gl.bindVertexArray(null);
     return calls;
+  };
+
+  /**
+   * The object pass's instances of `chunk` (cached): its object sprites whose sheet is in the atlas, each as its
+   * rectangle in world sprite pixels and the atlas place of its source rectangle. A rectangle past its sheet is dropped.
+   */
+  const objectsOf = (source: RenderableWorld, chunk: ChunkCoord, key: number): Int32Array => {
+    const cached = objectCache.get(key);
+    if (cached !== undefined) return cached;
+    const area = {
+      left: chunk.x * CHUNK_SIZE, top: chunk.y * CHUNK_SIZE, right: (chunk.x + 1) * CHUNK_SIZE, bottom: (chunk.y + 1) * CHUNK_SIZE,
+    };
+    const placed = objectSprites(source, area).flatMap((sprite: ObjectSprite) => {
+      const sheet = sheetsByKey.get(`${sprite.kind}:${String(sprite.id)}`);
+      if (sheet === undefined || sprite.sx < 0 || sprite.sy < 0) return [];
+      if (sprite.sx + sprite.width > sheet.width || sprite.sy + sprite.height > sheet.height) return [];
+      return [sprite.dx, sprite.dy, sprite.width, sprite.height, sheet.page, sheet.x + sprite.sx, sheet.y + sprite.sy, 0];
+    });
+    const instances = new Int32Array(placed);
+    objectCache.set(key, instances);
+    return instances;
+  };
+
+  /**
+   * Draws the object sprites of the visible chunks and the chunks around them (an object may reach a few tiles past
+   * its own chunk) over the chunk pass, blended by straight alpha. Returns the number of draw calls.
+   */
+  const drawObjects = (
+    source: RenderableWorld, program: Program<(typeof OBJECT_UNIFORMS)[number]>, visible: readonly ChunkCoord[],
+  ): number => {
+    const chunksX = Math.ceil(source.width / CHUNK_SIZE);
+    const chunksY = Math.ceil(source.height / CHUNK_SIZE);
+    const keys = new Set<number>();
+    for (const chunk of visible) {
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const x = chunk.x + dx;
+          const y = chunk.y + dy;
+          if (x >= 0 && y >= 0 && x < chunksX && y < chunksY) keys.add(y * chunksX + x);
+        }
+      }
+    }
+    const lists = [...keys].sort((a, b) => a - b)
+      .map((key) => objectsOf(source, { x: key % chunksX, y: Math.floor(key / chunksX) }, key));
+    const total = lists.reduce((sum, list) => sum + list.length, 0);
+    if (total === 0) return 0;
+    if (objectData.length < total) objectData = new Int32Array(total * 2);
+    let at = 0;
+    for (const list of lists) {
+      objectData.set(list, at);
+      at += list.length;
+    }
+    gl.useProgram(program.program);
+    setSpritePassUniforms(program.uniforms);
+    gl.bindVertexArray(resources.objectArray);
+    gl.bindBuffer(gl.ARRAY_BUFFER, resources.objectInstances);
+    gl.bufferData(gl.ARRAY_BUFFER, objectData.subarray(0, total), gl.STREAM_DRAW);
+    gl.enable(gl.BLEND);
+    gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, total / OBJECT_INTS);
+    gl.disable(gl.BLEND);
+    gl.bindVertexArray(null);
+    return 1;
+  };
+
+  /** Draws the wires and actuators of `items` over everything else (wireFragmentSource), premultiplied. */
+  const drawWires = (
+    source: RenderableWorld, program: Program<(typeof WIRE_UNIFORMS)[number]>, items: readonly (readonly [ChunkCoord, number])[],
+  ): number => {
+    gl.useProgram(program.program);
+    setSpritePassUniforms(program.uniforms);
+    const { uniforms } = program;
+    gl.uniform1i(uniforms.uPlanes16, UNIT_PLANES_16);
+    gl.uniform1i(uniforms.uPresent, planeSources?.present ?? 0);
+    gl.uniform1i(uniforms.uLayers, layers);
+    gl.uniform3iv(uniforms.uWireColors, wireColorUniform);
+    gl.uniform1iv(uniforms.uWireBits, wireBitUniform);
+    gl.uniform1i(uniforms.uWireAlpha, WIRE_ALPHA);
+    gl.uniform2i(uniforms.uWorldSize, source.width, source.height);
+    gl.uniform4iv(uniforms.uWireSheet, wireSheet);
+    gl.uniform4iv(uniforms.uActuatorSheet, actuatorSheet);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    const calls = drawInstances(source, items);
+    gl.disable(gl.BLEND);
+    return calls;
+  };
+
+  /** The camera and sprite sampling uniforms the object and wire passes share. */
+  const setSpritePassUniforms = (uniforms: Readonly<Record<(typeof OBJECT_UNIFORMS)[number], WebGLUniformLocation>>): void => {
+    gl.uniform2f(uniforms.uCamera, camera.x, camera.y);
+    gl.uniform1f(uniforms.uZoom, camera.zoom);
+    gl.uniform2f(uniforms.uViewport, canvas.width, canvas.height);
+    gl.uniform1i(uniforms.uAtlas, UNIT_ATLAS);
+    gl.uniform1i(uniforms.uAtlasHalf, UNIT_ATLAS_HALF);
+    const sampling = spriteSampling(camera.zoom);
+    gl.uniform1i(uniforms.uSpriteSamples, sampling.samples);
+    gl.uniform1f(uniforms.uSpriteStep, sampling.step);
+    gl.uniform1i(uniforms.uSpriteLevel, sampling.level);
+    gl.uniform1i(uniforms.uSpriteWeight, sampling.weight);
   };
 
   /** Draws the chunks' overview texels with the build pass, then regenerates the overview mipmaps. */
@@ -1319,7 +1503,8 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     const keyOf = (chunk: ChunkCoord): number => chunk.y * chunksX + chunk.x;
     const visible = visibleChunks(camera, viewport, source);
     const spriteZoom = spriteMode && atlasTexture !== null && camera.zoom >= SPRITE_MIN_ZOOM;
-    const spriteChunk = spriteZoom ? spriteProgramOf(wait) : null;
+    const spritePrograms = spriteZoom ? spriteProgramOf(wait) : null;
+    const spriteChunk = spritePrograms?.chunk ?? null;
     // Until the sprite program is linked, frames are drawn in map colours.
     const sprites = spriteChunk !== null;
     // Self-framed blocks draw their cells: a chunk is framed on its first upload at a sprite zoom, never below one.
@@ -1484,6 +1669,13 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       gl.activeTexture(gl.TEXTURE0 + UNIT_SPRITE_SHEETS);
       gl.bindTexture(gl.TEXTURE_2D, resources.spriteSheets);
       drawCalls += drawInstances(source, ready);
+      // Sprite mode draws the objects (trees, track extras) over the chunks, and the wires over everything.
+      if (spritePrograms !== null) {
+        if ((layers & 4) !== 0) drawCalls += drawObjects(source, spritePrograms.objects, visible);
+        if (((layers >> 4) & WIRE_LAYER.all) !== 0 && (planeSources?.present ?? 0) & PRESENT.flags) {
+          drawCalls += drawWires(source, spritePrograms.wires, ready);
+        }
+      }
       const drawnKeys = new Set(ready.map(([chunk]) => keyOf(chunk)));
       drawn = visible.filter((chunk) => drawnKeys.has(keyOf(chunk)));
     } else {
@@ -1552,6 +1744,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
         releaseOverview();
         paletteUploaded = 0;
         planeSources = null;
+        objectCache.clear();
         // Also drops the reference that would keep the previous world's planes alive.
         if (gl.isContextLost()) unpackWorld = null;
         else resetUnpack();
@@ -1611,6 +1804,13 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
         const bottom = area.top + area.height - 1;
         touch(area.left - PAGE_APRON, area.top - PAGE_APRON, right + PAGE_APRON, bottom + PAGE_APRON);
       }
+      // An object's look can depend on tiles far from it (a tree's on the ground under its trunk): the object lists of
+      // every chunk within one chunk of a changed tile are collected again.
+      for (const { x, y } of tiles) {
+        const chunkX = Math.floor(x / CHUNK_SIZE);
+        const chunkY = Math.floor(y / CHUNK_SIZE);
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) objectCache.delete((chunkY + dy) * chunksX + chunkX + dx);
+      }
       for (const [key, area] of touched) {
         if (chunks.has(key)) dirtyChunks.set(key, union(dirtyChunks.get(key), area));
         if (overview?.world === source && overview.built[key] === 1) {
@@ -1651,8 +1851,12 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
         clearChunks();
         releaseOverview();
         for (const program of [resources.chunk, resources.build, resources.overview]) gl.deleteProgram(program.program);
-        if (spriteProgram !== null) gl.deleteProgram(spriteProgram.program);
-        if (spriteLinking !== null) gl.deleteProgram(spriteLinking.program);
+        if (spriteProgram !== null) {
+          for (const { program } of [spriteProgram.chunk, spriteProgram.objects, spriteProgram.wires]) gl.deleteProgram(program);
+        }
+        if (spriteLinking !== null) {
+          for (const { program } of [spriteLinking.chunk, spriteLinking.objects, spriteLinking.wires]) gl.deleteProgram(program);
+        }
         if (halfAtlasProgram !== null) gl.deleteProgram(halfAtlasProgram.program);
         gl.deleteTexture(resources.palette);
         gl.deleteTexture(resources.rules);
@@ -1660,6 +1864,8 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
         releaseAtlas();
         gl.deleteBuffer(resources.instances);
         gl.deleteVertexArray(resources.instanceArray);
+        gl.deleteBuffer(resources.objectInstances);
+        gl.deleteVertexArray(resources.objectArray);
         gl.deleteVertexArray(resources.emptyArray);
         gl.deleteFramebuffer(resources.framebuffer);
       }

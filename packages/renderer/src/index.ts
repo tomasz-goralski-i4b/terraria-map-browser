@@ -44,3 +44,5 @@ export {
 export type { TrackCell, TrackExtra, TrackPiece } from "./objects/tracks.js";
 export type { SpriteObjectData } from "./objects/sprite-object-data.js";
 export { terrariaSpriteObjects } from "./objects/terraria-sprite-objects.generated.js";
+export { WIRE_CELL_STRIDE, WIRE_DRAW_ORDER, wireCell, wirePiece } from "./objects/wires.js";
+export type { WireColor, WireNeighbours } from "./objects/wires.js";

@@ -1,7 +1,7 @@
 // Wires and actuators in sprite mode (docs/assets.md, "Wires"): read-back pixels of crossing red and blue wires and of
 // actuators against a synthetic WiresNew and Actuator; hiding one colour removes exactly its pixels.
 import { afterEach, describe, expect, test } from "vitest";
-import { WIRE_LAYER, createMapRenderer, renderChunk } from "../src/index.js";
+import { SPRITE_MIN_ZOOM, WIRE_LAYER, createMapRenderer, renderChunk } from "../src/index.js";
 import type { ChunkLayers, MapRenderer, RenderableWorld, SpriteAtlasSource } from "../src/index.js";
 
 const created: MapRenderer[] = [];
@@ -54,9 +54,9 @@ const PAGE = 512;
 const WIRES = { kind: "wire", id: 0, page: 0, x: 4, y: 2, width: 288, height: 288, frameWidth: 16, frameHeight: 16, gapX: 2, gapY: 2 } as const;
 const ACTUATOR_SHEET = { kind: "actuator", id: 0, page: 0, x: 300, y: 2, width: 16, height: 16, frameWidth: 16, frameHeight: 16, gapX: 0, gapY: 0 } as const;
 
-/** Distinct per sheet pixel; every fourth diagonal transparent, so a wire drawn over another shows the one below. */
+/** Distinct per sheet pixel; every fourth diagonal transparent, shifted per row of cells, so a wire drawn over another shows the one below. */
 function sheetPixel(sheet: number, x: number, y: number): Rgba {
-  return [(x * 3 + sheet * 101) % 256, (y * 7 + 13) % 256, (x * y + sheet * 50) % 256, (x + y + sheet) % 4 === 0 ? 0 : 255];
+  return [(x * 3 + sheet * 101) % 256, (y * 7 + 13) % 256, (x * y + sheet * 50) % 256, (x + y + Math.floor(y / 18) + sheet) % 4 === 0 ? 0 : 255];
 }
 
 function syntheticAtlas(): SpriteAtlasSource {
@@ -107,17 +107,17 @@ function expectedCanvas(world: RenderableWorld, shown: number): Uint8Array {
   return out;
 }
 
-function draw(world: RenderableWorld, shown: number): Uint8Array {
+function draw(world: RenderableWorld, shown: number, zoom = ZOOM, sprites = true): Uint8Array {
   const canvas = document.createElement("canvas");
-  canvas.width = WIDTH * ZOOM;
-  canvas.height = HEIGHT * ZOOM;
+  canvas.width = WIDTH * zoom;
+  canvas.height = HEIGHT * zoom;
   const renderer = createMapRenderer(canvas);
   created.push(renderer);
   renderer.setWorld(world);
   renderer.setLayers({ ...BASE, wires: shown });
   renderer.setAtlas(syntheticAtlas());
-  renderer.setSpriteMode(true);
-  renderer.setCamera({ x: 0, y: 0, zoom: ZOOM });
+  renderer.setSpriteMode(sprites);
+  renderer.setCamera({ x: 0, y: 0, zoom });
   renderer.render();
   expect(canvas.getContext("webgl2")?.getError()).toBe(0);
   return readCanvas(canvas);
@@ -153,5 +153,14 @@ describe("wires in sprite mode", () => {
     });
     expect(changed.length).toBeGreaterThan(0);
     expect(new Set(changed)).toEqual(new Set(["1,2", "2,2", "3,2", "4,2", "5,2", "6,2", "7,2"]));
+  });
+
+  test(`below ${String(SPRITE_MIN_ZOOM)} pixels per tile the wires keep their colour overlay`, () => {
+    const world = wireWorld();
+    const zoom = SPRITE_MIN_ZOOM - 1;
+    const overlay = draw(world, WIRE_LAYER.all, zoom, false);
+    expect(draw(world, WIRE_LAYER.all, zoom)).toEqual(overlay);
+    // The overlay really shows: a red wire's tile differs from the same world without wires.
+    expect(draw(world, 0, zoom, false)).not.toEqual(overlay);
   });
 });
