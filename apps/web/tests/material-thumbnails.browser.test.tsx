@@ -17,6 +17,7 @@ import { brushSource } from "./support/brush-source.js";
 import * as blockFraming from "../src/world/block-framing.js";
 import { PropertyGrid } from "../src/ui/PropertyGrid.js";
 import * as thumbnailSession from "../src/assets/thumbnail-session.js";
+import { CONTENT_COLUMNS, type ContentRow } from "../src/panels/ContentPanel.js";
 import "../src/styles.css";
 
 vi.mock("../src/world/block-framing.js", { spy: true });
@@ -334,4 +335,25 @@ test("disconnecting and reconnecting a different atlas never shows the previous 
   await act(async () => { useAssetStore.setState({ status: { ...ready, wallSheets: 0 } }); await Promise.resolve(); });
   expect(screen.container.querySelector("canvas")).toBeNull();
   await expect.poll(() => screen.container.querySelector("canvas")?.getContext("2d")?.getImageData(0, 0, 1, 1).data[0]).toBe(151);
+});
+
+test("Content rows show block and wall sprites; liquids keep their colour swatch", async () => {
+  connect();
+  const name = CONTENT_COLUMNS[0];
+  if (name === undefined) throw new Error("Content name column missing");
+  const row = (kind: ContentRow["kind"], id: number): ContentRow => ({ key: `${kind}:${String(id)}`, kind, name: `${kind} ${String(id)}`, id: String(id),
+    count: 1, share: 1, color: [151, 107, 75, 255], ...(kind === "liquid" ? {} : { ref: { kind: "vanilla", id } as const }) });
+  const screen = await render(<div>{name.render(row("block", 0))}{name.render(row("wall", 1))}{name.render(row("liquid", 1))}</div>);
+  await expect.poll(() => screen.container.querySelectorAll("canvas.material-thumbnail").length, { timeout: 10_000 }).toBe(2);
+  expect(screen.container.querySelectorAll(".swatch")).toHaveLength(1);
+});
+
+test("prewarming a palette fills the cell cache, so swatches draw without waiting", async () => {
+  connect();
+  const content = { kind: "vanilla", id: 0 } as const;
+  thumbnailSession.prewarmThumbnails([content, { kind: "vanilla", id: 1 }]);
+  await expect.poll(() => thumbnailSession.cachedMaterialThumbnail("block", content), { timeout: 10_000 }).not.toBeUndefined();
+  expect(thumbnailSession.cachedMaterialThumbnail("wall", { kind: "vanilla", id: 1 })).not.toBeUndefined();
+  const screen = await render(<MaterialSwatch color={0x976b4b} layer="block" content={content} />);
+  expect(screen.container.querySelector("canvas.material-thumbnail")).not.toBeNull();
 });
