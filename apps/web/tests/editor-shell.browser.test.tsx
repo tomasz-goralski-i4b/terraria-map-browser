@@ -425,3 +425,16 @@ test("the Inspector's top edge resizes it against the tabs, by dragging or the k
   await render(<App layoutStorage={storage} />);
   await expect.poll(() => Math.round(document.querySelector<HTMLElement>(".dock-inspector")?.getBoundingClientRect().height ?? 0)).toBe(Math.round(start + 14));
 });
+
+test("a right click opens no browser menu, except in text fields", async () => {
+  await render(<App layoutStorage={storage} />);
+  const click = (target: Element): boolean => {
+    const event = new MouseEvent("contextmenu", { button: 2, bubbles: true, cancelable: true });
+    target.dispatchEvent(event);
+    return event.defaultPrevented;
+  };
+  expect(click(page.getByRole("tab", { name: "World" }).element())).toBe(true);
+  expect(click(document.body)).toBe(true);
+  await page.getByRole("button", { name: "Command palette" }).click();
+  expect(click(page.getByRole("combobox", { name: "Command" }).element())).toBe(false);
+});

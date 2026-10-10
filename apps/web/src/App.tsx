@@ -65,6 +65,25 @@ function useUnsavedChangesGuard(): void {
   }, []);
 }
 
+/**
+ * The browser's own context menu (Back, Save image as, Inspect, …) has nothing for an editor, so a right click
+ * opens only the app's menus (the swatches' and others', which handle the event themselves). Text fields keep the
+ * native menu for copy and paste.
+ */
+function useNoBrowserContextMenu(): void {
+  useEffect(() => {
+    const onContextMenu = (event: MouseEvent): void => {
+      const target = event.target;
+      const editable = target instanceof HTMLElement && (target.isContentEditable || target.closest("input, textarea") !== null);
+      if (!editable) event.preventDefault();
+    };
+    window.addEventListener("contextmenu", onContextMenu);
+    return () => {
+      window.removeEventListener("contextmenu", onContextMenu);
+    };
+  }, []);
+}
+
 /** The theme choice applies to the document root, so tokens resolve the same in dialogs and the page. */
 function useTheme(): void {
   const theme = useLayoutStore((state) => state.theme);
@@ -108,6 +127,7 @@ export function App({ layoutStorage }: AppProps = {}): React.JSX.Element {
   }, []);
   useTheme();
   useUnsavedChangesGuard();
+  useNoBrowserContextMenu();
   const commands = useCommands();
   useGlobalShortcuts(commands);
   const dockHidden = useLayoutStore((state) => state.dockHidden);
