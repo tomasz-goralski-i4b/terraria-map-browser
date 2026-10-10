@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useId, useLayoutEffect, useRef, useState } from "react";
 import { ContentPanel } from "../panels/ContentPanel.js";
 import { EntitiesPanel } from "../panels/placeholders.js";
 import { InspectorPanel } from "../panels/InspectorPanel.js";
@@ -36,10 +36,13 @@ const TABS_MIN_HEIGHT = 140;
 /** An element's height in CSS pixels, kept current by a ResizeObserver (0 before it is laid out). */
 function useHeight(ref: React.RefObject<HTMLElement | null>, hidden: boolean): number {
   const [height, setHeight] = useState(0);
-  useEffect(() => {
+  // Measured before paint, so a drag right after mounting starts from the real height and limit, then kept current.
+  useLayoutEffect(() => {
     const element = ref.current;
     if (element === null || hidden) return undefined;
-    const observer = new ResizeObserver(() => { setHeight(element.getBoundingClientRect().height); });
+    const measure = (): void => { setHeight(element.getBoundingClientRect().height); };
+    measure();
+    const observer = new ResizeObserver(measure);
     observer.observe(element);
     return () => { observer.disconnect(); };
   }, [ref, hidden]);
