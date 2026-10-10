@@ -32,7 +32,7 @@ Code: `apps/web/src/ui/` (primitives), `apps/web/src/shell/` (layout, commands, 
 ```
 ┌ top bar: ▦ File View Assets Help ·········· world name · file · size · format ········ assets ⌘K ? ▣ ┐
 ├ rail ┬ tool options: active tool · its settings ──────────────────────────────────────────────────────┤
-│ Pan  │                                                               ┊ [World] [View]          (dock) │
+│ Pan  │                                                               ┊ [World] [View] [Swatches] (dock) │
 │ Insp │                       map canvas                              ┊ WORLD    (World tab)            │
 │ ──── │      (zoom controls top right; minimap; loading and errors;   ┊ CONTENT                         │
 │ Brush│       with no world: the start screen)                        ┊ ENTITIES                        │
@@ -52,8 +52,9 @@ Code: `apps/web/src/ui/` (primitives), `apps/web/src/shell/` (layout, commands, 
   world); while it is set, reloading or closing the tab asks first with the browser's own "Leave site?" dialog.
 - **Menu bar** (WAI-ARIA `menubar`, as in code and image editors), built from commands:
   - *File*: Open World… `Ctrl+O`, Open Folder…, **Worlds ▸** (the remembered folder's worlds, newest first, with size
-    and age; the submenu flies out on hover or `→`), **Open Recent ▸**, Save `Ctrl+S` (disabled until editing),
-    Save As… `Ctrl+Shift+S`, Close World.
+    and age; the submenu flies out on hover or `→`), **Open Recent ▸**, Save… `Ctrl+S` (with unsaved edits; asks where to
+    write a verified copy until saving over the opened file exists), Save As… `Ctrl+Shift+S`, Close World (asks
+    before dropping unsaved edits, as opening another world does).
   - *View*: Show panels, Fit world, Actual size, Show render stats, **Theme ▸**, Reset layout.
   - *Edit*: Undo `Ctrl+Z`, Redo `Ctrl+Shift+Z` (Command on macOS), with availability shared by the options bar.
   - *Assets*: Connect, Preview sprite sheets, Disconnect.
@@ -70,23 +71,25 @@ Code: `apps/web/src/ui/` (primitives), `apps/web/src/shell/` (layout, commands, 
   are available for supported vanilla worlds; the remaining edit tools show their unavailable reason.
 - **Tool options bar** (`shell/ToolOptions.tsx`) shows the active tool's name and settings. Edit tools put their
   settings here: brush size and shape, and the layer mask, i.e. which of block, wall, paint, liquid and wires a stroke
-  writes (as TEdit does). A tool never opens a dialog to change a setting. The first brush uses a compact
-  Blocks / Walls / Both target control, independent material fields for Both, square/round shape, a size slider
-  with 1–9 world tiles across, optional placement preview, a smoothing slider (Off to 100%) and Undo/Redo
-  from the shared command registry. Erase keeps the same target and size controls without material fields.
-  On narrow screens the fields wrap into compact rows; controls remain visible rather than moving into a menu.
+  writes (as TEdit does). A tool never opens a dialog to change a setting. Brush shows, in the order of an image
+  editor's options bar: each written layer's material (a swatch and name that opens the Swatches tab) with its paint
+  well, Paint only, the Blocks / Walls / Both target, size (slider and number, 1–64; `[` `]`), square/round shape,
+  smoothing (Off to 100%) and the outline toggle, then Undo/Redo from the shared command registry. Erase keeps the
+  target, size, shape and smoothing. On narrow screens the fields wrap, materials first. See [editor.md](editor.md).
 - **Map** (`components/MapView.tsx`, `MapCanvas.tsx`) holds the zoom controls (Fit world `F`, 1:1 `1`) in its top
   right corner. The minimap (#145) and transient messages (loading, errors) also go over the map. With no world it shows the **start screen** (`components/StartScreen.tsx`),
   as an editor's start page: Open World, Open Worlds Folder, Connect assets, the folder's worlds and the recent ones,
   where Terraria keeps worlds, and that files stay on this computer.
   The primary mouse button uses the active tool; right-button and middle-button drags pan with every tool.
-  The canvas suppresses the browser image context menu and previews the clipped brush/erase footprint.
+  With Brush, Alt+click picks materials and Shift+click draws a line from the last stroke; Escape takes back a stroke
+  in progress. The canvas suppresses the browser image context menu and outlines the clipped brush footprint.
 - **Notifications** (`shell/Notifications.tsx`, `notify()` in `shell/notification-store.ts`) report finished
   background actions (a saved world, a listed folder) in the map's bottom-right corner, never over its middle.
   Successes close themselves after 6 s; errors stay until closed.
-- **Dock** (`shell/Dock.tsx`) has two tabs, as in image editors (#225): **World**, what the world *is* (World
-  properties, Content, Entities), and **View**, what is *shown* (Layers). The **Inspector** sits under the tabs and is
-  visible with either; open, it takes up to half the dock. World is the default tab: after opening a world it shows
+- **Dock** (`shell/Dock.tsx`) has three tabs, as in image editors (#225): **World**, what the world *is* (World
+  properties, Content, Entities), **View**, what is *shown* (Layers), and **Swatches**, what the brush *paints with*
+  (`panels/SwatchesPanel.tsx`: materials, paints, recent swatches and custom palettes). The **Inspector** sits under
+  the tabs and is visible with any; open, it takes up to half the dock. World is the default tab: after opening a world it shows
   what was opened. Inside a tab, sections are an accordion; several may be open at once. A splitter resizes the dock
   (240–640 px; drag it, or use the arrow keys, Shift for bigger steps, Home and End). `P` hides or shows the whole
   dock.

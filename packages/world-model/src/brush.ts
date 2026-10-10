@@ -72,9 +72,11 @@ type Targets = readonly (readonly [BrushContentLayer, LayerEdit])[];
 const isPaint = (paint: number): boolean => Number.isInteger(paint) && paint >= 0 && paint <= MAX_PAINT;
 
 function setPaint(tile: Tile, layer: BrushContentLayer, paint: number): void {
-  const key = layer === "block" ? "paint" : "wallPaint";
-  if (paint === 0) delete tile[key];
-  else tile[key] = paint;
+  if (layer === "block") {
+    if (paint === 0) delete tile.paint;
+    else tile.paint = paint;
+  } else if (paint === 0) delete tile.wallPaint;
+  else tile.wallPaint = paint;
 }
 
 /** Applies one layer edit to the tile view; the caller has checked that the layer may change. */
@@ -89,14 +91,22 @@ function edit(tile: Tile, layer: BrushContentLayer, change: LayerEdit): void {
     return;
   }
   if (layer === "block") {
-    for (const key of ["frameX", "frameY", "paint", "shape", "inactive", "invisibleBlock", "fullBrightBlock"] as const) delete tile[key];
+    delete tile.frameX;
+    delete tile.frameY;
+    delete tile.paint;
+    delete tile.shape;
+    delete tile.inactive;
+    delete tile.invisibleBlock;
+    delete tile.fullBrightBlock;
     if (change.kind === "place") {
       tile.block = { kind: "vanilla", id: change.id };
       delete tile.liquid;
       setPaint(tile, layer, change.paint);
     } else delete tile.block;
   } else {
-    for (const key of ["wallPaint", "invisibleWall", "fullBrightWall"] as const) delete tile[key];
+    delete tile.wallPaint;
+    delete tile.invisibleWall;
+    delete tile.fullBrightWall;
     if (change.kind === "place") {
       tile.wall = { kind: "vanilla", id: change.id };
       setPaint(tile, layer, change.paint);
@@ -109,6 +119,9 @@ export function createBrushHistory(world: CanonicalWorld, rules: BrushRules = {}
   let targets: Targets | null = null;
   let previous: TileCoordinate | null = null;
   let footprint: readonly TileCoordinate[] = [];
+  // The cells a footprint gains when its centre moves by one tile, by direction ((dx + 1) * 3 + dy + 1): consecutive
+  // stamps of a stroke are at most one tile apart, so after the first stamp only these leading-edge cells are new.
+  let leadingEdges: readonly (readonly TileCoordinate[])[] = [];
   // Every coordinate this stroke reached, changed or not: a footprint sweeping over a tile decides it once.
   const visited = new Set<number>();
   const stroke = new Map<number, TileDiff>();
@@ -119,8 +132,8 @@ export function createBrushHistory(world: CanonicalWorld, rules: BrushRules = {}
     for (const tile of diff) for (const change of tile.changes) world.planes[change.plane][tile.x * world.height + tile.y] = change[direction];
     return diff;
   };
-  const stamp = (cx: number, cy: number, selected: Targets, changed: TileDiff[]): void => {
-    for (const delta of footprint) {
+  const stamp = (cx: number, cy: number, cells: readonly TileCoordinate[], selected: Targets, changed: TileDiff[]): void => {
+    for (const delta of cells) {
       const x = cx + delta.x;
       const y = cy + delta.y;
       if (x < 0 || y < 0 || x >= world.width || y >= world.height) continue;
@@ -175,6 +188,12 @@ export function createBrushHistory(world: CanonicalWorld, rules: BrushRules = {}
       }
       targets = selected;
       footprint = brushFootprint(size, options.shape);
+      const inFootprint = new Set(footprint.map(({ x, y }) => `${String(x)},${String(y)}`));
+      leadingEdges = Array.from({ length: 9 }, (_, direction) => {
+        const dx = Math.floor(direction / 3) - 1;
+        const dy = (direction % 3) - 1;
+        return footprint.filter(({ x, y }) => !inFootprint.has(`${String(x + dx)},${String(y + dy)}`));
+      });
       previous = null;
       visited.clear();
       stroke.clear();
@@ -186,9 +205,17 @@ export function createBrushHistory(world: CanonicalWorld, rules: BrushRules = {}
         return [];
       }
       const changed: TileDiff[] = [];
+      // `previous` was stamped whole by the last move; a stroke's first point (or one after leaving the world) is not.
+      let last = previous;
       const from = previous ?? { x, y };
       const steps = Math.max(Math.abs(x - from.x), Math.abs(y - from.y), 1);
-      for (let i = 0; i <= steps; i++) stamp(Math.round(from.x + (x - from.x) * i / steps), Math.round(from.y + (y - from.y) * i / steps), targets, changed);
+      for (let i = 0; i <= steps; i++) {
+        const cx = Math.round(from.x + (x - from.x) * i / steps);
+        const cy = Math.round(from.y + (y - from.y) * i / steps);
+        if (last === null) stamp(cx, cy, footprint, targets, changed);
+        else if (cx !== last.x || cy !== last.y) stamp(cx, cy, leadingEdges[(cx - last.x + 1) * 3 + cy - last.y + 1] ?? footprint, targets, changed);
+        last = { x: cx, y: cy };
+      }
       previous = { x, y };
       return changed;
     },

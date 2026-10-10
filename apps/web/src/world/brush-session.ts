@@ -1,10 +1,11 @@
-import { isFrameImportant, SUPPORTED_VANILLA_FORMATS, type WorldTilesResult } from "@studio/world-codec";
+import { SUPPORTED_VANILLA_FORMATS, type WorldTilesResult } from "@studio/world-codec";
 import {
   BRUSH_LAYER, BRUSH_SHAPE, BRUSH_SIZE, createBrushHistory,
   type BrushContentLayer, type BrushHistory, type BrushLayer, type BrushOptions, type BrushShape, type LayerEdit, type TileDiff,
 } from "@studio/world-model";
 import { create } from "zustand";
 import { brushMaterials, findMaterial } from "./brush-materials.js";
+import { pushRecentSwatch } from "./brush-palettes.js";
 import { canonicalWorldOf } from "./canonical-world.js";
 import { useAppStore } from "../store.js";
 import { useSaveStore } from "./save-world.js";
@@ -27,9 +28,10 @@ const ENTITY_HALOS = {
 } as const;
 
 /**
- * The brush of a loaded world, or null when it cannot be edited safely. Objects (frame-important blocks) and the
- * footprints of entities keep both layers; the tiles next to an object also keep their block, which may support it
- * or carry it. Ordinary blocks protect nothing: they frame themselves again from their new neighbours.
+ * The brush of a loaded world, or null when it cannot be edited safely. Only what the world keeps beside its tiles is
+ * protected: the footprints of chests, signs, tile entities and weighted pressure plates (with their supports), whose
+ * contents and text would otherwise lose their tiles. Everything else, objects without such records included (plants,
+ * torches, furniture), may be painted over or erased, as the game lets a player do.
  */
 export function createWorldBrush(world: WorldTilesResult): BrushHistory | null {
   if (brushDisabledReason(world) !== null) return null;
@@ -44,33 +46,9 @@ export function createWorldBrush(world: WorldTilesResult): BrushHistory | null {
   for (const sign of world.entities.Signs.data?.entries ?? []) protect(sign.x, sign.y, ENTITY_HALOS.sign);
   for (const entity of world.entities.TileEntities.data?.entries ?? []) protect(entity.x, entity.y, ENTITY_HALOS.tileEntity);
   for (const plate of world.entities.WeightedPressurePlates.data?.entries ?? []) protect(plate.x, plate.y, ENTITY_HALOS.pressurePlate);
-  const view = canonicalWorldOf(world);
-  // Per palette index: 1 an object, 0 not; the palette only grows, so the cache grows with it.
-  let objects = new Int8Array(0);
-  const isObject = (x: number, y: number): boolean => {
-    const index = view.planes.block[x * height + y] ?? 0xffff;
-    if (index >= view.palette.length) return false;
-    if (index >= objects.length) {
-      const grown = new Int8Array(view.palette.length).fill(-1);
-      grown.set(objects);
-      objects = grown;
-    }
-    if (objects[index] === -1) {
-      const ref = view.palette[index];
-      objects[index] = ref?.kind === "vanilla" && isFrameImportant(world.sections, ref.id) ? 1 : 0;
-    }
-    return objects[index] === 1;
-  };
   const materials = brushMaterials(world);
-  return createBrushHistory(view, {
-    protectedTile: (x, y, layer) => {
-      if (protectedIndices.has(x * height + y) || isObject(x, y)) return true;
-      if (layer === "wall") return false;
-      for (let nx = Math.max(0, x - 1); nx <= Math.min(width - 1, x + 1); nx++) {
-        for (let ny = Math.max(0, y - 1); ny <= Math.min(height - 1, y + 1); ny++) if (isObject(nx, ny)) return true;
-      }
-      return false;
-    },
+  return createBrushHistory(canonicalWorldOf(world), {
+    protectedTile: (x, y) => protectedIndices.has(x * height + y),
     placeable: (layer, id) => findMaterial(materials, layer, id) !== undefined,
     paintable: (paint) => materials.paints.some((candidate) => candidate.id === paint),
   });
@@ -94,11 +72,13 @@ interface BrushState {
   readonly canRedo: boolean;
   readonly active: boolean;
   readonly revision: number;
+  /** Bumped whenever the brush gets another world (or none), so views of its materials know to read them again. */
+  readonly world: number;
 }
 export const useBrushStore = create<BrushState>()(() => ({
   layer: BRUSH_LAYER.block, blockId: 1, wallId: 1, blockPaint: 0, wallPaint: 0, paintOnly: false, size: 1,
   reason: "Open a vanilla world first", shape: BRUSH_SHAPE.square, placementPreview: true, smoothing: 0,
-  canUndo: false, canRedo: false, active: false, revision: 0,
+  canUndo: false, canRedo: false, active: false, revision: 0, world: 0,
 }));
 
 /** The layers a target edits. */
@@ -117,6 +97,26 @@ export function brushOptions(state: BrushState, erase: boolean): BrushOptions {
   const options: { size: number; shape: BrushShape; block?: LayerEdit; wall?: LayerEdit } = { size: state.size, shape: state.shape };
   for (const layer of brushLayers(state.layer)) options[layer] = editOf(layer);
   return options;
+}
+
+/**
+ * Makes a block or wall (with its paint, when given) the brush material, as clicking a swatch does. A target that
+ * does not edit that layer switches to it, so the choice is what the next stroke paints.
+ */
+export function chooseBrushMaterial(layer: BrushContentLayer, id: number, paint?: number): void {
+  const state = useBrushStore.getState();
+  const target = state.layer === BRUSH_LAYER.both || state.layer === layer ? state.layer : layer;
+  useBrushStore.setState(layer === "block"
+    ? { blockId: id, ...(paint === undefined ? {} : { blockPaint: paint }), layer: target, paintOnly: false }
+    : { wallId: id, ...(paint === undefined ? {} : { wallPaint: paint }), layer: target, paintOnly: false });
+}
+
+/** Sets the paint of every layer the target edits (0: none). */
+export function chooseBrushPaint(paint: number, layers: readonly BrushContentLayer[] = brushLayers(useBrushStore.getState().layer)): void {
+  useBrushStore.setState({
+    ...(layers.includes("block") ? { blockPaint: paint } : {}),
+    ...(layers.includes("wall") ? { wallPaint: paint } : {}),
+  });
 }
 
 /** Sets the brush size, clamped to its range. */
@@ -158,9 +158,9 @@ export function setBrushWorld(world: WorldTilesResult | null): void {
   const reason = brushDisabledReason(world);
   const materials = world === null || reason !== null ? null : brushMaterials(world);
   // Keep the chosen materials when the new world has them; otherwise fall back to its first one.
-  const { blockId, wallId } = useBrushStore.getState();
+  const { blockId, wallId, world: version } = useBrushStore.getState();
   useBrushStore.setState({
-    reason, active: false, canUndo: false, canRedo: false,
+    reason, active: false, canUndo: false, canRedo: false, world: version + 1,
     ...(materials === null ? {} : {
       blockId: findMaterial(materials, "block", blockId) === undefined ? materials.blocks[0]?.id ?? blockId : blockId,
       wallId: findMaterial(materials, "wall", wallId) === undefined ? materials.walls[0]?.id ?? wallId : wallId,
@@ -183,6 +183,12 @@ export function beginBrush(erase: boolean, lineFromLast = false): boolean {
     throw error;
   }
   dirtyBeforeStroke = useAppStore.getState().unsavedChanges;
+  const state = useBrushStore.getState();
+  if (!erase && !state.paintOnly) {
+    for (const layer of brushLayers(state.layer)) {
+      pushRecentSwatch(layer === "block" ? { layer, id: state.blockId, paint: state.blockPaint } : { layer, id: state.wallId, paint: state.wallPaint });
+    }
+  }
   useBrushStore.setState({ active: true, canUndo: false, canRedo: false });
   if (lineFromLast && lastPoint !== null) notify(history.move(lastPoint.x, lastPoint.y));
   return true;

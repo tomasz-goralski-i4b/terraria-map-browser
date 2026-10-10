@@ -2,6 +2,7 @@ import { WorldWorkerClient, WorldWorkerError, type WorldTilesResult } from "@stu
 import { useAppStore, type LoadError } from "../store.js";
 import { resetWorldSave } from "./save-world.js";
 import { finishBrush, setBrushWorld } from "./brush-session.js";
+import { confirmDiscardChanges } from "./discard-guard.js";
 import type { OpenedWorldFile, OpenWorldHandle, WorldSaveDirectory } from "./world-file.js";
 
 /** Small display facts about the loaded world; the planes and palette themselves stay outside React and the store. */
@@ -67,11 +68,16 @@ export function createWorldSession(parser: WorldParser): WorldSession {
   };
 
   const open = async (file: File, handle?: OpenWorldHandle, directory?: WorldSaveDirectory): Promise<void> => {
-    finishBrush(true);
-    resetWorldSave();
+    finishBrush();
     current?.abort();
     const controller = new AbortController();
     current = controller;
+    // Only an unsaved world waits for the question (which Cancel also ends); a clean one starts loading at once.
+    if (useAppStore.getState().unsavedChanges && (!(await confirmDiscardChanges()) || controller.signal.aborted)) {
+      if (current === controller) current = null;
+      return;
+    }
+    resetWorldSave();
     const store = useAppStore.getState();
     store.setLoading(file.name);
     try {
@@ -120,7 +126,8 @@ export function getDefaultWorldSession(): WorldSession {
   return defaultSession;
 }
 
-/** File ▸ Close World: back to the start screen. */
-export function closeWorld(): void {
-  resetDefaultWorldSession();
+/** File ▸ Close World: back to the start screen, after asking about unsaved edits. */
+export async function closeWorld(): Promise<void> {
+  finishBrush();
+  if (await confirmDiscardChanges()) resetDefaultWorldSession();
 }

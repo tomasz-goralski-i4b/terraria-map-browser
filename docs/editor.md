@@ -1,17 +1,80 @@
-# First vanilla brush
+# Brush and Erase
 
-Open a supported vanilla `.wld`, choose Brush (`B`) or Erase (`E`), then choose Blocks, Walls or Both. The size slider selects 1–9 world tiles across: the width of a square or diameter of a round brush, rather than a count of changed tiles. The compact options bar keeps the target, material fields, shape, size, smoothing, placement preview and history actions visible above the map. Brush offers dirt, stone, wood and gray brick; Both has independent block and wall materials. Erase removes the selected layer or both layers together. Placement preview can be toggled off; it shows the actual square or pixelated round mask, clipped at world edges. A round mask samples tile centres inside a disk with a quarter-tile radius inset: size 3 is a five-tile plus, size 5 contains 21 tiles. The inset keeps small round brushes distinct from squares. The footprint is centered on the cursor, with even sizes extending one extra tile toward the top and left. Fast drags interpolate between sampled tile coordinates. Leaving the world breaks the interpolated path.
+Painting works like an image editor's brush: a material is the colour, the Swatches panel is the palette, and the
+map is the canvas. Code: `packages/world-model/src/brush.ts` (the edit model), `apps/web/src/world/brush-session.ts`
+(the loaded world's rules, history and save point), `brush-materials.ts`, `brush-palettes.ts`,
+`apps/web/src/shell/ToolOptions.tsx`, `apps/web/src/panels/SwatchesPanel.tsx` and the pointer handling in
+`apps/web/src/components/MapCanvas.tsx`.
 
-Smoothing defaults to Off. Its 0–100% slider controls a trailing cursor in screen coordinates before tile quantization, with an exponential time constant up to 400 ms. While held still, the brush catches up; normal release finishes at the release coordinate, joining the remaining tail in the same stroke. The preview follows the delayed painting position. Cancellation, navigation, tool/world changes and export stop delayed updates together with the active history entry.
+## Materials, paint and targets
 
-The primary mouse button runs the selected tool: Pan drags the view, Inspect pins a tile, Brush paints and Erase removes content. Right-button and middle-button drags pan with every tool, without changing the world. Adding another button during a paint gesture cancels that stroke and starts a pan gesture, preventing a right-button-only tail from painting. The map suppresses the browser image context menu. Wheel zoom and camera navigation cancel an in-progress paint gesture before changing the view.
+Open a supported vanilla `.wld` and choose Brush (`B`) or Erase (`E`). The target picks the layers a stroke writes:
+Blocks, Walls or Both (both layers of a tile change together or not at all).
 
-Both edits a coordinate atomically: if either selected layer is protected, neither changes. A complete stroke, including both layers, is one undo entry.
+- **Materials** are every block that frames itself from its neighbours (the framing database's block types: dirt,
+  stone, ores, sand, bricks, …) and every named wall, limited to the content ids the world's format defines. Objects
+  and other frame-important tiles are not materials: they need their own placement rules (a later tool). The options
+  bar shows each written layer's material as a swatch and name; clicking it opens the **Swatches** tab of the dock
+  on that layer with the search field focused. Alt+click on the map picks the block, wall and their paints under the
+  pointer (an eyedropper).
+- **Paint** is chosen per layer from the colour well next to the material (No paint, or one of the 30 paints) and is
+  applied with the material, as a player paints a placed block. **Paint only** (the roller) changes the paint of
+  what is there and places nothing; with No paint it removes paint.
+- Placing a block puts it as the game places one: a full, unframed, active block without coatings, with the chosen
+  paint, displacing any liquid. Over the same block only the paint changes (its shape and coatings stay). Placing a
+  wall gives it the chosen paint and no coating. Erase removes the content with its paint, shape and coatings and
+  keeps wires and actuators. Unknown and mod content is never changed.
 
-Undo (`Ctrl+Z`) and redo (`Ctrl+Shift+Z`, also Command on macOS) apply one complete stroke. Cancelled pointer gestures, lost capture and window blur restore the in-progress stroke. Save As exports the current planes using the existing writer; editing and history actions are locked while its dialog is open or another world is loading. Opening another world clears history; a failed or cancelled open retains the previous committed history.
+## Footprint
 
-The whitelist is block IDs 0, 1, 30, 38 and wall IDs 2, 1, 4, 5. Existing content outside the applicable whitelist is protected. Other blocks and frame-important objects also protect their immediate neighbours, including supports and attachments, for both layers. Chests and signs protect their 2 × 2 body plus a one-tile halo; weighted pressure plates protect a one-tile halo. Tile-entity anchor orientation has not been observed ([entities.md](file-format/entities.md)), so this slice conservatively protects four tiles in every direction around each anchor. All protection regions are clipped to the world bounds. Worlds with unknown content or unreadable protected entity sections cannot be edited. This first slice does not provide mod editing or entity editing.
+Size is 1–64 tiles across (the slider, the number field, or `[` and `]`: one tile at a time up to 8, then in
+steps of 2 and, from 24, of 4). Square or round: a round mask takes tile centres inside a disk with a quarter-tile
+inset, so size 3 is a five-tile plus and size 5 has 21 tiles. The footprint is centred on the pointer's tile; even
+sizes reach one more tile up and left. The outline (toggle with the target button) is drawn like an image editor's
+brush outline: a white line on a dark halo along the footprint's edge, clipped at the world's edges.
 
-The editor writes through the loaded `CanonicalWorld` view. History contains only numeric old/new plane values at changed coordinates, never world copies. Unchanged paints, slopes, liquids and wires are retained. Erasing content also clears its associated paint, shape, frames and display flags. Palette entries remain append-only across undo. Renderer invalidation refreshes changed chunks and their necessary aprons/framing neighbours; unaffected resident chunks retain their GPU planes.
+Fast drags are interpolated between sampled tiles; consecutive stamps are at most one tile apart, so after the first
+stamp only the footprint's leading edge is visited (one of nine precomputed edge lists). Shift+click draws a straight
+line from where the last stroke ended.
 
-Automated checks cover exact plane-byte undo/redo, protected footprints, browser strokes, dirty-chunk upload counts and edited exports in every admitted format. The remaining human game check is to paint a stone wall, undo part of the work, export a new copy, and open it in Terraria.
+**Smoothing** (Off to 100%) is a stroke stabilizer: the painting position trails the pointer in screen space with an
+exponential time constant up to 400 ms and catches up while the pointer rests; releasing finishes the tail in the
+same stroke. The outline follows the painting position.
+
+## Strokes, history and saving
+
+A stroke is one undo entry (`Ctrl+Z`, redo `Ctrl+Shift+Z`). History keeps only the numeric old and new plane values
+of changed tiles, never world copies. Keyboard panning, Fit world and other navigation, a lost pointer, losing focus,
+a second button (a held one then pans) and a second finger (which then pinches) end the stroke and keep it; only
+`Escape` takes the stroke in progress back. The wheel zooms at the pointer, so the tile under it stays put and the
+stroke goes on. Right- and middle-button drags pan with every tool.
+
+Editing and history are locked while a world loads or the Save As dialog is open. Save (`Ctrl+S`) asks where to write
+a verified copy, as Save As does; writing over the opened file is not offered yet. Opening another world or closing
+this one with unsaved edits asks first (Discard changes, Save As…, or Cancel); a failed or cancelled open keeps the
+world and its history.
+
+## Protection
+
+Only what the world keeps beside its tiles is protected, with both layers: chests and signs (their 2 × 2 body and one
+tile around it), weighted pressure plates (one tile around), and tile entities (four tiles in every direction, since
+their anchor orientation is unobserved: [entities.md](file-format/entities.md)). Their contents and text would lose
+their tiles otherwise. Everything else may be painted over or erased, objects without such records included
+(plants, torches, furniture), as a player can. Worlds with unknown content or undecoded entity sections cannot be
+edited.
+
+## Swatches and palettes
+
+The Swatches tab lists Blocks, Walls or Paints as a grid of map colours (walls round, painted swatches with the paint
+in a corner) or as a list of names, filtered by name or id. Its source is All materials, Recently used (the last 16
+swatches painted with) or a custom palette. Custom palettes hold swatches, a material with its paint, and are kept in
+the browser (`localStorage`):
+
+- right-click any swatch: Add to "<palette>", or New palette with this swatch (inside a palette also Remove);
+- `+` in the panel's toolbar: add the current materials (with their paints) to a palette, or start a new one;
+- `⋯`: new palette from the current materials, rename, delete, export palettes to a JSON file, import one.
+
+Arrow keys, Home and End move between swatches (the grid is one Tab stop); Delete removes the focused swatch from the
+palette shown.
+
+The remaining game check is to paint, undo part of the work, save a copy and open it in Terraria.

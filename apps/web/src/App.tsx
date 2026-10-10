@@ -5,6 +5,7 @@ import { SpritePreviewDialog } from "./panels/SpritePreviewDialog.js";
 import { MapView } from "./components/MapView.js";
 import { SaveAsDialog } from "./components/SaveAsDialog.js";
 import { useCommands, useGlobalShortcuts } from "./shell/commands.js";
+import { ConfirmDialog, confirmAction } from "./shell/ConfirmDialog.js";
 import { CommandPalette, HelpOverlay } from "./shell/dialogs.js";
 import { Dock } from "./shell/Dock.js";
 import { hydrateLayout, useLayoutStore, type LayoutStorage } from "./shell/layout-store.js";
@@ -16,6 +17,9 @@ import { ToolRail } from "./shell/ToolRail.js";
 import { TopBar } from "./shell/TopBar.js";
 import { useViewStore } from "./shell/view-store.js";
 import { useAppStore } from "./store.js";
+import { hydratePalettes } from "./world/brush-palettes.js";
+import { setDiscardConfirmer } from "./world/discard-guard.js";
+import { openSaveAs } from "./world/save-world.js";
 import { resetWorldLibrary, startWorldLibrary } from "./world/world-library.js";
 import { resetDefaultWorldSession } from "./world/world-session.js";
 
@@ -45,6 +49,20 @@ function useUnsavedChangesGuard(): void {
       window.removeEventListener("beforeunload", onBeforeUnload);
     };
   }, [unsaved]);
+  // Opening another world or closing this one asks in the app's own dialog, which can offer Save As.
+  useEffect(() => {
+    setDiscardConfirmer(async () => {
+      const name = useAppStore.getState().summary?.name ?? "this world";
+      const choice = await confirmAction({
+        title: "Unsaved changes",
+        message: `Your edits to ${name} are not saved. Discard them?`,
+        confirmLabel: "Discard changes", danger: true, alternativeLabel: "Save As…",
+      });
+      if (choice === "alternative") void openSaveAs();
+      return choice === "confirm";
+    });
+    return () => { setDiscardConfirmer(null); };
+  }, []);
 }
 
 /** The theme choice applies to the document root, so tokens resolve the same in dialogs and the page. */
@@ -65,8 +83,13 @@ export interface AppProps {
 export function App({ layoutStorage }: AppProps = {}): React.JSX.Element {
   // The stored layout is read before the first render, so panels never jump from defaults to the stored layout.
   useState(() => {
-    if (layoutStorage === undefined) hydrateLayout();
-    else hydrateLayout(layoutStorage);
+    if (layoutStorage === undefined) {
+      hydrateLayout();
+      hydratePalettes();
+    } else {
+      hydrateLayout(layoutStorage);
+      hydratePalettes(layoutStorage);
+    }
     return null;
   });
   // A freshly mounted app starts with no world: the session and store are module-level singletons.
@@ -103,6 +126,7 @@ export function App({ layoutStorage }: AppProps = {}): React.JSX.Element {
       <SpritePreview />
       <Notifications />
       <SaveAsDialog />
+      <ConfirmDialog />
     </div>
   );
 }

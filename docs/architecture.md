@@ -331,7 +331,7 @@ D1 is not used to store assets. R2 is for binary objects, D1 for metadata.
 
 ### M5 — vanilla editor
 
-The first brush slice and its safety/history contract are described in [editor.md](editor.md).
+Brush, Erase, swatches and their history and protection contract are described in [editor.md](editor.md).
 
 **Goal:** the first useful editing.
 

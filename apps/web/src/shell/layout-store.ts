@@ -1,15 +1,15 @@
 import { create } from "zustand";
 
 /** The dock sections, in display order. */
-export const SECTION_IDS = ["world", "layers", "inspector", "content", "entities"] as const;
+export const SECTION_IDS = ["world", "layers", "inspector", "content", "entities", "swatches"] as const;
 export type SectionId = (typeof SECTION_IDS)[number];
 
-/** The dock's tabs: what the world is (properties, content, entities) and what is shown (layers). */
-export const DOCK_TABS = ["world", "view"] as const;
+/** The dock's tabs: what the world is (properties, content, entities), what is shown (layers) and what is painted. */
+export const DOCK_TABS = ["world", "view", "swatches"] as const;
 export type DockTab = (typeof DOCK_TABS)[number];
 /** Which tab each section lives in; the Inspector is under the tabs, visible with either. */
 export const SECTION_TAB: Readonly<Record<Exclude<SectionId, "inspector">, DockTab>> = {
-  layers: "view", world: "world", content: "world", entities: "world",
+  layers: "view", world: "world", content: "world", entities: "world", swatches: "swatches",
 };
 
 export type ThemeChoice = "system" | "dark" | "light";
@@ -38,7 +38,7 @@ export interface Layout {
 }
 
 export const DEFAULT_LAYOUT = {
-  sections: { world: true, layers: true, inspector: true, content: false, entities: false },
+  sections: { world: true, layers: true, inspector: true, content: false, entities: false, swatches: true },
   groups: {},
   dockWidth: 320,
   dockHidden: false,

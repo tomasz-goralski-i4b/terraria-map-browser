@@ -3,6 +3,7 @@ import { ContentPanel } from "../panels/ContentPanel.js";
 import { EntitiesPanel } from "../panels/placeholders.js";
 import { InspectorPanel } from "../panels/InspectorPanel.js";
 import { LayersPanel } from "../panels/LayersPanel.js";
+import { SwatchesPanel } from "../panels/SwatchesPanel.js";
 import type { Command } from "./commands.js";
 import { WorldPanel, WorldPanelActions } from "../panels/WorldPanel.js";
 import { Section } from "../ui/Section.js";
@@ -22,9 +23,10 @@ const SECTIONS: Readonly<Record<SectionId, SectionDefinition>> = {
   inspector: { title: "Inspector", body: () => <InspectorPanel /> },
   content: { title: "Content", body: () => <ContentPanel /> },
   entities: { title: "Entities", body: () => <EntitiesPanel /> },
+  swatches: { title: "Swatches", body: () => <SwatchesPanel /> },
 };
 
-const TAB_LABELS: Readonly<Record<DockTab, string>> = { world: "World", view: "View" };
+const TAB_LABELS: Readonly<Record<DockTab, string>> = { world: "World", view: "View", swatches: "Swatches" };
 
 export const DOCK_ID = "dock";
 
@@ -47,8 +49,9 @@ function DockSection({ id, commands }: { readonly id: SectionId; readonly comman
 }
 
 /**
- * The right dock (as in image editors): World (what the world is: properties, content, entities) and View (what is
- * drawn: layers) as tabs, and the Inspector under them, visible with either. Resizable; hidden entirely with `P`.
+ * The right dock (as in image editors): World (what the world is: properties, content, entities), View (what is
+ * drawn: layers) and Swatches (what the brush paints with) as tabs, and the Inspector under them, visible with any.
+ * Resizable; hidden entirely with `P`.
  */
 export function Dock({ commands }: { readonly commands: readonly Command[] }): React.JSX.Element | null {
   const id = useId();

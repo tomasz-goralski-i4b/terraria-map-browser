@@ -6,7 +6,7 @@ import { chooseWorldFile } from "../world/open-world.js";
 import { openSaveAs, useSaveStore } from "../world/save-world.js";
 import { chooseWorldsFolder, hasFolderPicker } from "../world/world-library.js";
 import { closeWorld } from "../world/world-session.js";
-import { finishBrush, redoBrush, undoBrush, useBrushStore } from "../world/brush-session.js";
+import { finishBrush, redoBrush, setBrushSize, undoBrush, useBrushStore } from "../world/brush-session.js";
 import { WORLD_GROUP_IDS } from "../panels/world-fields.js";
 import { resetLayout, useLayoutStore, type ThemeChoice } from "./layout-store.js";
 import { getMapController, useViewStore, type MapLayers, type ToolId } from "./view-store.js";
@@ -69,11 +69,30 @@ export function toolCommands(tool: ToolId, setTool: (tool: ToolId) => void, edit
     ...(reason === null ? {} : { disabledReason: reason }),
     checked: tool === definition.id,
     run: () => {
-      finishBrush(true);
+      finishBrush();
       setTool(definition.id);
     },
   });
   });
+}
+
+/** `[` and `]` change the brush size as in image editors: one tile at a time up to 8, then in larger steps. */
+export function brushSizeCommands(editing: boolean): Command[] {
+  // The size is read when the key arrives: several presses can come before the next render.
+  const step = (size: number, direction: 1 | -1): number => {
+    // The step is chosen by the smaller of the two sizes, so ] and [ retrace each other's sizes.
+    const from = direction > 0 ? size : size - 1;
+    const delta = from < 8 ? 1 : from < 24 ? 2 : 4;
+    return size + direction * delta;
+  };
+  const reason = editing ? null : "Choose Brush or Erase first";
+  return ([["tool.brushSmaller", "Smaller brush", "[", -1], ["tool.brushLarger", "Larger brush", "]", 1]] as const).map(([id, label, shortcut, direction]) => ({
+    id, group: "Tools", label, shortcut, enabled: reason === null,
+    ...(reason === null ? {} : { disabledReason: reason }),
+    run: () => {
+      setBrushSize(step(useBrushStore.getState().size, direction));
+    },
+  }));
 }
 
 /** Layer toggles, in the order of the Layers panel, with their shortcuts. Sprites has its own row (with the assets). */
@@ -99,6 +118,7 @@ export function useCommands(): Command[] {
   const hasWorld = useAppStore((state) => state.summary !== null);
   const loadingWorld = useAppStore((state) => state.phase === "loading");
   const saving = useSaveStore((state) => state.open);
+  const unsaved = useAppStore((state) => state.unsavedChanges);
   const brushReason = useBrushStore((state) => state.reason);
   const canUndo = useBrushStore((state) => state.canUndo);
   const canRedo = useBrushStore((state) => state.canRedo);
@@ -136,7 +156,14 @@ export function useCommands(): Command[] {
         void chooseWorldsFolder();
       },
     },
-    { id: "file.save", group: "File", label: "Save", icon: "save", shortcut: "Control+S", enabled: false, disabledReason: "Editing is not available yet", run: () => undefined },
+    {
+      // Writing over the opened file is not offered yet: Save asks where to write a verified copy, as Save As does.
+      id: "file.save", group: "File", label: "Save…", icon: "save", shortcut: "Control+S", enabled: hasWorld && unsaved && !loadingWorld && !saving,
+      ...(!hasWorld ? noWorld : loadingWorld ? { disabledReason: "A world is loading" } : !unsaved ? { disabledReason: "No unsaved changes" } : {}),
+      run: () => {
+        void openSaveAs();
+      },
+    },
     {
       id: "file.saveAs", group: "File", label: "Save As…", shortcut: "Control+Shift+S", enabled: hasWorld && !loadingWorld && !saving,
       ...(!hasWorld ? noWorld : loadingWorld ? { disabledReason: "A world is loading" } : {}),
@@ -147,7 +174,9 @@ export function useCommands(): Command[] {
     {
       id: "file.close", group: "File", label: "Close World", enabled: hasWorld && !loadingWorld,
       ...(!hasWorld ? noWorld : loadingWorld ? { disabledReason: "A world is loading" } : {}),
-      run: closeWorld,
+      run: () => {
+        void closeWorld();
+      },
     },
     {
       id: "file.assets", group: "Assets", label: "Connect Terraria assets…", enabled: !assetsBuilding,
@@ -229,6 +258,7 @@ export function useCommands(): Command[] {
       },
     },
     ...toolCommands(tool, setTool, editReason),
+    ...brushSizeCommands(tool === "brush" || tool === "erase"),
     {
       id: "tool.unpin", group: "Tools", label: "Unpin inspected tile", shortcut: "Escape", enabled: pinnedTile !== null,
       ...(pinnedTile === null ? { disabledReason: "No tile is pinned" } : {}),

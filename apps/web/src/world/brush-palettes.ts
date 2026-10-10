@@ -80,7 +80,7 @@ function update(change: (state: PalettesState) => Partial<PalettesState>): void 
 /** Loads the stored palettes (the browser's `localStorage` by default); corrupt entries are dropped. */
 export function hydratePalettes(from: PaletteStorage | null = browserStorage()): void {
   storage = from;
-  let stored: unknown = null;
+  let stored: unknown;
   try {
     const text = storage?.getItem(PALETTES_STORAGE_KEY) ?? null;
     stored = text === null ? null : JSON.parse(text);
