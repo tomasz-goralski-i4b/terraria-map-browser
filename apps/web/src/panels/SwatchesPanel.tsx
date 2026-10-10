@@ -44,6 +44,20 @@ const CATEGORIES: readonly { readonly id: SwatchCategory; readonly label: string
   { id: "block", label: "Blocks" }, { id: "wall", label: "Walls" }, { id: "paint", label: "Paints" },
 ];
 
+/** Keep the existing CSS tooltip beside its cell without clipping it in the dock's scroll area. */
+function positionSwatchTooltip(button: HTMLButtonElement): void {
+  const grid = button.parentElement;
+  if (grid === null) return;
+  const bounds = grid.getBoundingClientRect();
+  const cell = button.getBoundingClientRect();
+  button.style.setProperty("--swatch-tooltip-width", `${Math.max(0, bounds.width - 4)}px`);
+  const width = parseFloat(getComputedStyle(button, "::after").width);
+  if (!Number.isFinite(width)) return;
+  const centre = Math.max(bounds.left + 2 + width / 2,
+    Math.min(cell.left + cell.width / 2, bounds.right - 2 - width / 2));
+  button.style.setProperty("--swatch-tooltip-left", `${centre - cell.left}px`);
+}
+
 interface ShownSwatch {
   readonly key: string;
   readonly swatch: PaletteSwatch | null;
@@ -287,6 +301,8 @@ export function SwatchesPanel(): React.JSX.Element {
             key={item.key} type="button" data-swatch="" className="swatch-button" aria-pressed={isSelected(item)} aria-label={item.name}
             data-tooltip={item.swatch === null ? item.name : `${item.name} — right-click: add to a palette`} data-tooltip-side="top"
             tabIndex={index === tabStop ? 0 : -1}
+            onMouseEnter={(event) => { positionSwatchTooltip(event.currentTarget); }}
+            onFocus={(event) => { positionSwatchTooltip(event.currentTarget); }}
             onClick={() => { choose(item); }}
             onContextMenu={(event) => {
               const swatch = item.swatch;
@@ -317,6 +333,8 @@ export function SwatchesPanel(): React.JSX.Element {
         ))}
         {palette !== null && view.category !== "paint" && (
           <button type="button" className="swatch-button swatch-add" aria-label={`Add current materials to “${palette.name}”`} data-tooltip={`Add current materials to “${palette.name}”`} data-tooltip-side="top"
+            onMouseEnter={(event) => { positionSwatchTooltip(event.currentTarget); }}
+            onFocus={(event) => { positionSwatchTooltip(event.currentTarget); }}
             onClick={() => { addSwatches(palette.id, current()); }}>
             <span className="material-swatch" aria-hidden="true">+</span>
             {view.mode === "list" && <span className="swatch-name">Add current</span>}
