@@ -371,6 +371,12 @@ bool spritePixel(uint index, ivec2 texel, ivec2 sub, out ivec4 color) {
 // pixels, kept inside the tile. One sample (16 pixels per tile and above) is spritePixel at the centre.
 bool spriteSample(uint index, ivec2 texel, vec2 centre, out ivec4 color) {
   int count = uSpriteSamples;
+  // One sample: its pixel is its own mean (fully transparent ones are zero), without the divisions below.
+  if (count == 1) {
+    if (!spritePixel(index, texel, samplePixel(centre, 0, 0), color)) return false;
+    if (color.a == 0) color = ivec4(0);
+    return true;
+  }
   ivec4 sum = ivec4(0);
   for (int y = 0; y < ${String(MAX_SPRITE_SAMPLES)}; y++) {
     if (y >= count) break;
