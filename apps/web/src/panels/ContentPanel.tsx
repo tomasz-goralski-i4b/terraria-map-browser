@@ -7,6 +7,7 @@ import { countContentInSlices, type ContentCounts, type CountablePlanes } from "
 import { contentKey, contentName, LIQUID_NAMES } from "../world/content-names.js";
 import { getDefaultWorldSession } from "../world/world-session.js";
 import { subscribeBrushChanges, useBrushStore } from "../world/brush-session.js";
+import { MaterialSwatch } from "./material-swatch.js";
 
 /** What the Content panel reads of a world: three planes and the palette, by reference. */
 export interface ContentWorld {
@@ -24,6 +25,8 @@ export interface ContentRow {
   readonly count: number;
   readonly share: number;
   readonly color: Rgba;
+  /** The palette entry of a block or wall row, for its sprite; liquids have none. */
+  readonly ref?: ContentRef;
 }
 
 /** Counts are computed once per loaded world and kept while it is loaded, so reopening the panel is instant. */
@@ -68,12 +71,12 @@ function generationOf(planes: CountablePlanes): number {
 export function contentRows(world: ContentWorld, counts: ContentCounts): ContentRow[] {
   const total = world.planes.block.length || 1;
   const rows: ContentRow[] = [];
-  const add = (kind: ContentKind, key: string, name: string, id: string, count: number, color: Rgba): void => {
-    if (count > 0) rows.push({ key, kind, name, id, count, share: count / total, color });
+  const add = (kind: ContentKind, key: string, name: string, id: string, count: number, color: Rgba, ref?: ContentRef): void => {
+    if (count > 0) rows.push({ key, kind, name, id, count, share: count / total, color, ...(ref === undefined ? {} : { ref }) });
   };
   world.palette.forEach((ref, index) => {
-    add("block", `block:${String(index)}`, contentName(ref, "block"), contentKey(ref), counts.blocks[index] ?? 0, contentColor(ref, "block", terrariaMapPalette));
-    add("wall", `wall:${String(index)}`, contentName(ref, "wall"), contentKey(ref), counts.walls[index] ?? 0, contentColor(ref, "wall", terrariaMapPalette));
+    add("block", `block:${String(index)}`, contentName(ref, "block"), contentKey(ref), counts.blocks[index] ?? 0, contentColor(ref, "block", terrariaMapPalette), ref);
+    add("wall", `wall:${String(index)}`, contentName(ref, "wall"), contentKey(ref), counts.walls[index] ?? 0, contentColor(ref, "wall", terrariaMapPalette), ref);
   });
   const liquids = liquidColors(terrariaMapPalette);
   LIQUID_NAMES.forEach((name, kind) => {
@@ -95,7 +98,9 @@ export const CONTENT_COLUMNS: readonly Column<ContentRow>[] = [
     id: "name", title: "Content", width: 96, hideable: false, sortValue: (row) => row.name,
     render: (row) => (
       <span className="content-name">
-        <span className="swatch" style={swatch(row.color)} aria-hidden="true" />
+        {row.kind === "liquid" || row.ref === undefined
+          ? <span className="swatch" style={swatch(row.color)} aria-hidden="true" />
+          : <MaterialSwatch color={(row.color[0] << 16) | (row.color[1] << 8) | row.color[2]} layer={row.kind} content={row.ref} />}
         <span className="content-name-text" title={row.name}>{row.name}</span>
       </span>
     ),
@@ -119,7 +124,11 @@ export function ContentPanel({ world }: { readonly world?: ContentWorld | null }
   const revision = useBrushStore((state) => state.revision);
   const active = useBrushStore((state) => state.active);
   const summary = useAppStore((state) => state.summary);
-  const sessionWorld = useMemo(() => (summary === null ? null : sessionContentWorld()), [summary]);
+  const worldRevision = useAppStore((state) => state.worldRevision);
+  const hasWorld = summary !== null;
+  const sessionWorld = useMemo(() => (hasWorld ? sessionContentWorld() : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- rebuild on new tiles, not on metadata edits
+    [hasWorld, worldRevision]);
   const shown = world === undefined ? sessionWorld : world;
   // Only a signal that a count finished: the counts live in `countCache`, keyed by the planes, outside React.
   const [, setCompleted] = useState(0);

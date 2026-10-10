@@ -183,22 +183,21 @@ describe("world save", () => {
   });
 
   it.each([
-    ["name", { name: "Crimson Observatory" }], ["dimensions", { width: 3 }], ["world id", { worldId: 866419627 }],
-  ] as const)("rejects metadata edits: %s", (_, change) => {
+    ["dimensions", { width: 3 }],
+  ] as const)("rejects dimensions without resized planes: %s", (_, change) => {
     const world = writerWorld();
     Object.assign(world.metadata, change);
     expectFailure(() => writeWorld(world), "UnsupportedWrite");
   });
 
-  it.each(["missing envelope", "other format", "header edit", "details edit", "entity edit", "short plane", "wrong plane type",
+  it.each(["missing envelope", "other format", "header edit", "entity edit", "short plane", "wrong plane type",
     "changed frame bits", "changed frame count", "changed section pointer", "opaque view mismatch", "opaque order", "raw metadata edit",
     "unknown palette entry", "out-of-range vanilla ref"])("rejects %s explicitly", (change) => {
     const world = writerWorld();
     switch (change) {
       case "missing envelope": Reflect.deleteProperty(world, "envelope"); break;
       case "other format": Object.assign(world.header, { version: 327 }); break;
-      case "header edit": Object.assign(world.header, { revision: 3 }); break;
-      case "details edit": Object.assign(world.details.spawnAndLandmarks.spawn, { x: 1 }); break;
+      case "header edit": Object.assign(world.header, { revision: -1 }); break;
       case "entity edit": Object.assign(world.entities.Chests, { error: { code: "MalformedSection", offset: 1, message: "edited chest" } }); break;
       case "short plane": Object.assign(world.planes, { flags: new Uint16Array(7) }); break;
       case "wrong plane type": Object.assign(world.planes, { paint: new Uint16Array(8) }); break;

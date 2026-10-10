@@ -68,12 +68,13 @@ test("the World panel shows exactly the decoded metadata fields with their value
   await render(<App layoutStorage={storage} />);
   const bytes = await openFixture("SCCO1.wld");
   const world = page.getByRole("region", { name: "World", exact: true });
-  await expect.element(world).toMatchTextContent("SCCR1");
+  await expect.element(world.getByRole("textbox", { name: "Name", exact: true })).toHaveValue("SCCR1");
 
   const identity = page.getByRole("region", { name: "Identity", exact: true });
-  await expect.element(identity).toMatchTextContent("948580918");
+  await expect.element(identity.getByRole("textbox", { name: "Seed", exact: true })).toHaveValue("948580918");
   const size = page.getByRole("region", { name: "Size & layers", exact: true });
-  await expect.element(size).toMatchTextContent("4200 × 1200 tiles");
+  await expect.element(size.getByRole("spinbutton", { name: "Size width", exact: true })).toHaveValue(4200);
+  await expect.element(size.getByRole("spinbutton", { name: "Size height", exact: true })).toHaveValue(1200);
   await expect.element(size).toMatchTextContent("Small");
   const generation = page.getByRole("region", { name: "Generation", exact: true });
   await expect.element(generation).toMatchTextContent("Classic");
@@ -83,7 +84,7 @@ test("the World panel shows exactly the decoded metadata fields with their value
   const decoded = readWorldMetadata(bytes);
   const shown = new Map([...document.querySelectorAll(".world-panel .property-row")].map((row) => [
     row.querySelector("dt")?.textContent ?? "",
-    row.querySelector("dd")?.textContent ?? "",
+    [...row.querySelectorAll<HTMLInputElement | HTMLSelectElement>("input, select")].map((control) => control instanceof HTMLInputElement && control.type === "checkbox" ? control.checked ? "Yes" : "No" : control.value).join(", ") || (row.querySelector("dd")?.textContent ?? ""),
   ]));
   const yesNo = (flag: boolean): string => (flag ? "Yes" : "No");
   const { metadata, details } = decoded;
@@ -117,7 +118,7 @@ test("the World panel shows exactly the decoded metadata fields with their value
 test("Collapse all and Expand all toggle every World group", async () => {
   await render(<App layoutStorage={storage} />);
   await openFixture("SCCO1.wld");
-  await expect.element(page.getByRole("region", { name: "World", exact: true })).toMatchTextContent("SCCR1");
+  await expect.element(page.getByRole("textbox", { name: "Name", exact: true })).toHaveValue("SCCR1");
   const groupToggles = (): HTMLButtonElement[] => [...document.querySelectorAll<HTMLButtonElement>(".world-panel .section-toggle")];
   await page.getByRole("button", { name: "Collapse all groups" }).click();
   await expect.poll(() => groupToggles().map((toggle) => toggle.getAttribute("aria-expanded"))).toEqual(groupToggles().map(() => "false"));
@@ -377,7 +378,7 @@ test("at 320 px nothing overflows: secondary actions stay in the menus", async (
 test("the main screen with a loaded world has no accessibility violations", async () => {
   await render(<App layoutStorage={storage} />);
   await openFixture("SCCO1.wld");
-  await expect.element(page.getByRole("region", { name: "World", exact: true })).toMatchTextContent("SCCR1");
+  await expect.element(page.getByRole("textbox", { name: "Name", exact: true })).toHaveValue("SCCR1");
   sectionToggle("Content").click();
   await expect.element(page.getByRole("grid", { name: "Content" })).toBeVisible();
   for (const theme of ["dark", "light"] as const) {

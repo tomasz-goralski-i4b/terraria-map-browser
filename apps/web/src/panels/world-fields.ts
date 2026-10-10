@@ -25,7 +25,7 @@ export const WORLD_GROUP_IDS = [
 
 export interface WorldFieldsInput {
   readonly metadata: WorldMetadata;
-  readonly header: { readonly version: number };
+  readonly header: { readonly version: number; readonly revision?: number; readonly isFavorite?: boolean };
   readonly details?: WorldDetails | undefined;
   readonly fileSize?: number | undefined;
 }
@@ -218,7 +218,9 @@ function detailGroups(details: WorldDetails, metadata: WorldMetadata): WorldFiel
         text("Invasion delay", integer(progression.invasion.delay), `${p}.invasion.delay`),
         text("Invasion position", decimal(progression.invasion.x), `${p}.invasion.x`),
         text("Kill counts stored", integer(other.killCountLength), "details.other.killCountLength"),
+        text("Kill counts", list(other.killCounts), "details.other.killCounts"),
         ...optional(other.claimableBannerLength, (value) => text("Claimable banners stored", integer(value), "details.other.claimableBannerLength")),
+        ...optional(other.claimableBanners, (value) => text("Claimable banners", list(value), "details.other.claimableBanners")),
       ],
     },
     { id: "bosses", title: "Bosses", fields: flags(progression.bosses, BOSS_NAMES, `${p}.bosses`) },
@@ -281,6 +283,8 @@ export function worldFieldGroups(world: WorldFieldsInput): WorldFieldGroup[] {
         text("GUID", metadata.guid, "metadata.guid"),
         text("World ID", String(metadata.worldId), "metadata.worldId"),
         text("Format version", String(header.version), "header.version"),
+        ...optional(header.revision, (value) => text("Save revision", String(value), "header.revision")),
+        ...optional(header.isFavorite, (value) => flag("Favorite", value, "header.isFavorite")),
         ...optional(fileSize, (value) => text("File size", formatBytes(value), "file.size")),
       ],
     },

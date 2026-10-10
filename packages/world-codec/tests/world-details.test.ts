@@ -48,6 +48,8 @@ describe("WorldDetails — independent .NET fixture cross-check", () => {
     expect(details.progression.hardmode).toBe(false);
     expect(Object.keys(details.progression.bosses)).toHaveLength(22);
     expect(Object.values(details.progression.bosses)).toEqual(Array<boolean>(22).fill(false));
-    expect(details.other).toEqual({ killCountLength: 293, claimableBannerLength: 293 });
+    expect(details.other).toMatchObject({ killCountLength: 293, claimableBannerLength: 293 });
+    expect(details.other.killCounts).toHaveLength(293);
+    expect(details.other.claimableBanners).toHaveLength(293);
   });
 });

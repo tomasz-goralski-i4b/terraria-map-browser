@@ -84,12 +84,16 @@ export function tileProperties(point: TilePoint, tile: Tile, showAll = true): Pr
 export function InspectorPanel({ world }: { readonly world?: InspectorWorld | null }): React.JSX.Element {
   const revision = useBrushStore((state) => state.revision);
   const summary = useAppStore((state) => state.summary);
+  const worldRevision = useAppStore((state) => state.worldRevision);
+  const hasWorld = summary !== null;
   const pinned = useViewStore((state) => state.pinnedTile);
   const setPinned = useViewStore((state) => state.setPinnedTile);
   const showAll = useLayoutStore((state) => state.inspectorShowAll);
   const setShowAll = useLayoutStore((state) => state.setInspectorShowAll);
   // A new summary means a newly loaded world; the session is not reactive, the store is.
-  const sessionWorld = useMemo(() => (summary === null ? null : sessionInspectorWorld()), [summary]);
+  const sessionWorld = useMemo(() => (hasWorld ? sessionInspectorWorld() : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- rebuild on new tiles, not on metadata edits
+    [hasWorld, worldRevision]);
   const shown = world === undefined ? sessionWorld : world;
   const chest = pinned === null ? null : shown?.chestAt?.(pinned.x, pinned.y) ?? null;
   const [openChest, setOpenChest] = useState<WorldChest | null>(null);

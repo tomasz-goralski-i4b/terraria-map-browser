@@ -129,11 +129,15 @@ function ZoomField({ zoom }: { readonly zoom: number | null }): React.JSX.Elemen
 export function StatusBar({ world }: { readonly world?: StatusWorld | null }): React.JSX.Element {
   useBrushStore((state) => state.revision);
   const summary = useAppStore((state) => state.summary);
+  const worldRevision = useAppStore((state) => state.worldRevision);
+  const hasWorld = summary !== null;
   const hover = useViewStore((state) => state.hoverTile);
   const zoom = useViewStore((state) => state.zoom);
   const statsVisible = useViewStore((state) => state.statsVisible);
   // A new summary means a newly loaded world; the session is not reactive, the store is.
-  const sessionWorld = useMemo(() => (summary === null ? null : sessionStatusWorld()), [summary]);
+  const sessionWorld = useMemo(() => (hasWorld ? sessionStatusWorld() : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- rebuild on new tiles, not on metadata edits
+    [hasWorld, worldRevision]);
   const shown = world === undefined ? sessionWorld : world;
   const inWorld = hover !== null && shown !== null && hover.y >= 0 && hover.y < shown.height;
   const chest = inWorld ? shown.chestAt?.(hover.x, hover.y) ?? null : null;

@@ -78,7 +78,7 @@ async function openWorld(bytes: Uint8Array<ArrayBuffer>, name = "SCCO1.wld"): Pr
   const handle = fileEntry(name, bytes);
   vi.stubGlobal("showOpenFilePicker", vi.fn().mockResolvedValue([handle]));
   await menu("File", "Open World…");
-  await expect.element(page.getByRole("region", { name: "World", exact: true })).toMatchTextContent("SCCR1");
+  await expect.element(page.getByRole("textbox", { name: "Name", exact: true })).toHaveValue("SCCR1");
   return handle;
 }
 
@@ -266,7 +266,7 @@ test("the opened world's own file is refused before a writable stream is created
   await render(<App />);
   vi.stubGlobal("showOpenFilePicker", vi.fn().mockResolvedValue([source]));
   await menu("File", "Open World…");
-  await expect.element(page.getByRole("region", { name: "World", exact: true })).toMatchTextContent("SCCR1");
+  await expect.element(page.getByRole("textbox", { name: "Name", exact: true })).toHaveValue("SCCR1");
   await openSaveAs();
   await chooseSaveFolder();
   useSaveStore.setState({ fileName: "SCCO1.wld" });
@@ -279,7 +279,7 @@ test("the opened world's own file is refused before a writable stream is created
 test("a world dropped without a file handle never replaces an existing file", async () => {
   await render(<App />);
   await getDefaultWorldSession().open(new File([writerSource()], "SCCO1.wld"));
-  await expect.element(page.getByRole("region", { name: "World", exact: true })).toMatchTextContent("SCCR1");
+  await expect.element(page.getByRole("textbox", { name: "Name", exact: true })).toHaveValue("SCCR1");
   const existing = fileEntry("SCCO1.wld", new Uint8Array(4));
   const saved = folderDouble({ files: [existing] });
   await saveInto(saved);
@@ -425,7 +425,7 @@ test("Open Folder… reads the folder only; its worlds are listed and Save As of
   const worlds = page.getByRole("menu", { name: "Worlds" });
   await expect.element(worlds.getByRole("menuitem", { name: "Worlds.txt" })).not.toBeInTheDocument();
   await worlds.getByRole("menuitem", { name: "SCCO1", exact: true }).click();
-  await expect.element(page.getByRole("region", { name: "World", exact: true })).toMatchTextContent("SCCR1");
+  await expect.element(page.getByRole("textbox", { name: "Name", exact: true })).toHaveValue("SCCR1");
   expect(saved.requestPermission).not.toHaveBeenCalled();
 
   await menu("File", "Save As…");
@@ -479,7 +479,7 @@ test("File ▸ Open Recent reopens a world by its name; Close World returns to t
   await menu("File");
   await hoverSubmenu("Open Recent");
   await page.getByRole("menu", { name: "Open Recent" }).getByRole("menuitem", { name: "SCCR1" }).click();
-  await expect.element(page.getByRole("region", { name: "World", exact: true })).toMatchTextContent("SCCR1");
+  await expect.element(page.getByRole("textbox", { name: "Name", exact: true })).toHaveValue("SCCR1");
   expect(reads).toHaveBeenCalledOnce();
 });
 

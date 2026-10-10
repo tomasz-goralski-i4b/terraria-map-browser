@@ -2242,6 +2242,19 @@ kbd {
   outline: 1px solid var(--focus);
 }
 
+/* One label column across every World section, so editors line up like an inspector. */
+.world-panel .property-grid dl { grid-template-columns: 9.5em minmax(0, 1fr); }
+.property-editors { display: flex; gap: var(--space-1); width: 100%; min-width: 0; }
+.property-editor { display: flex; flex-direction: column; flex: 1; min-width: 0; padding: 2px 0; }
+.property-editor .text-input, .property-editor .select { width: 100%; min-width: 0; height: 24px; padding: 0 var(--space-1); }
+.field-error { color: var(--danger); font-size: 11px; overflow-wrap: anywhere; }
+.property-list { display: flex; flex-direction: column; gap: var(--space-1); width: 100%; }
+.property-list-item { display: flex; gap: var(--space-1); align-items: center; min-width: 0; }
+.property-editor input[type="checkbox"] { align-self: flex-start; }
+.property-subfield { flex: 1; min-width: 0; }
+.property-subfield-label { font-size: 11px; }
+.property-editors[data-fields="4"] { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
 .save-folder {
   display: flex;
   align-items: center;

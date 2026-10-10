@@ -199,6 +199,11 @@ export class MetadataReader {
 /** Walks the admitted format's metadata profile, bounded by pointer[1]. */
 export function readWorldMetadata(bytes: Uint8Array): WorldMetadataResult {
   const world = readWorldHeader(bytes);
+  return readMetadataSection(bytes, world);
+}
+
+/** Decode against already validated section boundaries; also used to validate edited metadata in isolation. */
+export function readMetadataSection(bytes: Uint8Array, world: WorldHeader): WorldMetadataResult {
   const { metadata: features } = requireWorldFormat(world.header.version);
   const reader = new MetadataReader(bytes, world.sections.metadata.start, world.sections.metadata.end);
   const name = reader.string("name", 4096);

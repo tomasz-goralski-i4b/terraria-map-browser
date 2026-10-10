@@ -166,6 +166,10 @@ and removes the stored value (View ▸ Reset layout). The active tool, sorting a
 
 A future **History** section (undo stack, `Ctrl+Z` / `Ctrl+Shift+Z`) goes under Inspector.
 
+The World rows now edit the decoded properties in place: checkboxes for flags, finite selectors for variants,
+native date/time controls, numeric/text inputs and individual list entries with Add/Remove. See
+[world-properties.md](world-properties.md) for validation, commit behavior, finite domains and canvas resizing.
+
 ### Wire overlay
 
 The overlay is drawn over all other layers, at one colour per tile. Wires are drawn in the game's order (yellow over

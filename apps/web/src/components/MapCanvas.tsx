@@ -234,35 +234,42 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
         if (frame !== null) return;
         frame = window.requestAnimationFrame(() => {
           frame = null;
-          if (session.pendingResize !== null) {
-            const first = session.viewport.width === 0;
-            const size = session.pendingResize;
-            session.pendingResize = null;
-            canvas.width = size.width;
-            canvas.height = size.height;
-            session.viewport = size;
-            session.keys.clear();
-            session.animator.reset(first ? fitWorld(size, session.world) : clampCamera(session.animator.current, size, session.world), size, session.world);
-          }
-          const { camera, settled } = session.animator.step();
-          const trail = brushTrail.current;
-          let brushSettled = true;
-          if (trail !== null && useBrushStore.getState().active) {
-            const now = performance.now();
-            const sample = trail.filter.step(now - trail.time);
-            trail.time = now;
-            trail.point = sample.point;
-            brushSettled = sample.settled;
-            drawBrushPoint(session, sample.point);
-          }
-          if (session.cameraDirty || camera.x !== session.camera.x || camera.y !== session.camera.y || camera.zoom !== session.camera.zoom) {
-            session.cameraDirty = false;
-            applyCamera(session, camera);
-          } else refreshHover(session);
-          if (!settled || !brushSettled) session.requestFrame();
+          drawFrame();
         });
       },
     };
+    function drawFrame(): void {
+      if (session.pendingResize !== null) {
+        const first = session.viewport.width === 0;
+        const previous = session.viewport;
+        const size = session.pendingResize;
+        session.pendingResize = null;
+        canvas.width = size.width;
+        canvas.height = size.height;
+        session.viewport = size;
+        session.keys.clear();
+        // A docked panel opening or closing keeps the same tiles in the middle of the view, as image editors do.
+        const old = session.animator.current;
+        const centred = { ...old, x: old.x + (previous.width - size.width) / 2 / old.zoom, y: old.y + (previous.height - size.height) / 2 / old.zoom };
+        session.animator.reset(first ? fitWorld(size, session.world) : clampCamera(centred, size, session.world), size, session.world);
+      }
+      const { camera, settled } = session.animator.step();
+      const trail = brushTrail.current;
+      let brushSettled = true;
+      if (trail !== null && useBrushStore.getState().active) {
+        const now = performance.now();
+        const sample = trail.filter.step(now - trail.time);
+        trail.time = now;
+        trail.point = sample.point;
+        brushSettled = sample.settled;
+        drawBrushPoint(session, sample.point);
+      }
+      if (session.cameraDirty || camera.x !== session.camera.x || camera.y !== session.camera.y || camera.zoom !== session.camera.zoom) {
+        session.cameraDirty = false;
+        applyCamera(session, camera);
+      } else refreshHover(session);
+      if (!settled || !brushSettled) session.requestFrame();
+    }
     sessionRef.current = session;
     const unsubscribeBrushOptions = useBrushStore.subscribe((state) => {
       if (!state.active) { brushTrail.current = null; brushPointer.current = null; }
@@ -319,7 +326,10 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
       endStroke();
       // Geometry and camera must change in the same frame, including the test hooks and resting-pointer status.
       session.pendingResize = { width, height };
-      queueCamera(session);
+      // Resizing the backing store clears it, so draw in this same task: the observer runs after layout and before
+      // paint, and a frame later the browser would show one stretched or blank frame (a flicker when the dock toggles).
+      session.cameraDirty = true;
+      drawFrame();
     };
     resize();
     const observer = new ResizeObserver(resize);

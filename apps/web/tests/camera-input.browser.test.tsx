@@ -342,3 +342,18 @@ test("panning and zooming the map read no asset files and rebuild no atlas", asy
     useAssetStore.setState({ status: { kind: "none" } });
   }
 });
+
+test("a resized view draws before the next paint and keeps the same tiles centred", async () => {
+  await mount();
+  const before = drawn;
+  const centre = (camera: Camera, width: number): number => camera.x + width / 2 / camera.zoom;
+  const oldWidth = canvas().width;
+  const host = canvas().parentElement;
+  if (host === null) throw new Error("Map host missing");
+  host.style.width = "300px";
+  // No animation frame runs here: the ResizeObserver callback alone must resize and draw.
+  await vi.waitFor(() => { expect(canvas().width).toBe(Math.round(300 * window.devicePixelRatio)); });
+  expect(frames.size).toBe(0);
+  expect(renderer.setCamera).toHaveBeenCalled();
+  expect(centre(drawn, canvas().width)).toBeCloseTo(centre(before, oldWidth), 5);
+});

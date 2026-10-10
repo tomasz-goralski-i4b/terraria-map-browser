@@ -97,9 +97,10 @@ function spritesMenu(status: AssetStatus): MenuItem[] {
  */
 function SpritelessContent(): React.JSX.Element | null {
   const status = useAssetStore((state) => state.status);
-  const summary = useAppStore((state) => state.summary);
+  const loaded = useAppStore((state) => state.summary !== null);
+  const worldRevision = useAppStore((state) => state.worldRevision);
   const missing = useMemo(() => {
-    const world = summary === null ? null : getDefaultWorldSession().getLoadedWorld();
+    const world = !loaded ? null : getDefaultWorldSession().getLoadedWorld();
     const atlas = status.kind === "ready" ? getDefaultAssetSession().getAtlas() : null;
     if (world === null || atlas === null) return [];
     const sheets = (kind: "tile" | "wall"): Set<number> =>
@@ -108,7 +109,8 @@ function SpritelessContent(): React.JSX.Element | null {
       ...contentWithoutSprite(world.planes, world.palette, sheets("tile")).map((ref) => ({ ref, layer: "block" as const })),
       ...wallsWithoutSprite(world.planes.wall, world.palette, sheets("wall")).map((ref) => ({ ref, layer: "wall" as const })),
     ];
-  }, [status, summary]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- rescan on new tiles, not on metadata edits
+  }, [status, loaded, worldRevision]);
   if (missing.length === 0) return null;
   return (
     <details className="sprite-missing">

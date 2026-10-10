@@ -21,7 +21,8 @@ import { hydratePalettes } from "./world/brush-palettes.js";
 import { setDiscardConfirmer } from "./world/discard-guard.js";
 import { openSaveAs } from "./world/save-world.js";
 import { resetWorldLibrary, startWorldLibrary } from "./world/world-library.js";
-import { resetDefaultWorldSession } from "./world/world-session.js";
+import { getDefaultWorldSession, resetDefaultWorldSession } from "./world/world-session.js";
+import { prewarmThumbnails } from "./assets/thumbnail-session.js";
 
 /** The sprite-sheet preview, while it is open and an atlas is loaded. */
 function SpritePreview(): React.JSX.Element | null {
@@ -116,6 +117,15 @@ export function App({ layoutStorage }: AppProps = {}): React.JSX.Element {
     resetDefaultWorldSession();
     clearNotifications();
   }, []);
+  // Sprite cells of the loaded world's materials are built in idle time, so panels show them at once when opened.
+  const assetsReady = useAssetStore((state) => state.status.kind === "ready");
+  const sprites = useViewStore((state) => state.layers.sprites);
+  const worldRevision = useAppStore((state) => state.worldRevision);
+  useEffect(() => {
+    const palette = getDefaultWorldSession().getLoadedWorld()?.palette;
+    if (!assetsReady || !sprites || palette === undefined) return undefined;
+    return prewarmThumbnails(palette);
+  }, [assetsReady, sprites, worldRevision]);
   // The worlds folder and recent worlds of earlier visits; opened worlds are added to Open Recent.
   useEffect(() => {
     resetWorldLibrary();
