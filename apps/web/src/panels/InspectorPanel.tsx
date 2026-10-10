@@ -1,6 +1,9 @@
 import { useCallback, useMemo, useState } from "react";
 import type { WorldChest } from "@studio/world-codec";
 import type { Tile } from "@studio/world-model";
+import { contentColor, terrariaMapPalette } from "@studio/renderer";
+import type { TileThumbnailSource } from "../assets/thumbnails.js";
+import { MaterialSwatch } from "./material-swatch.js";
 import { useLayoutStore } from "../shell/layout-store.js";
 import { useViewStore, type TilePoint } from "../shell/view-store.js";
 import { useAppStore } from "../store.js";
@@ -20,13 +23,14 @@ export interface InspectorWorld {
   readonly height: number;
   readonly tileAt: (x: number, y: number) => Tile;
   readonly chestAt?: (x: number, y: number) => WorldChest | null;
+  readonly framingWorld?: TileThumbnailSource["world"];
 }
 
 function sessionInspectorWorld(): InspectorWorld | null {
   const loaded = getDefaultWorldSession().getLoadedWorld();
   if (loaded === null) return null;
   const { width, height } = loaded.metadata;
-  return { width, height, tileAt: (x, y) => canonicalWorldOf(loaded).tileAt(x, y), chestAt: chestLookupOf(loaded) };
+  return { width, height, tileAt: (x, y) => canonicalWorldOf(loaded).tileAt(x, y), chestAt: chestLookupOf(loaded), framingWorld: canonicalWorldOf(loaded) };
 }
 
 const NONE = "None";
@@ -78,7 +82,7 @@ export function tileProperties(point: TilePoint, tile: Tile, showAll = true): Pr
  * pointer, so this section changes only on a click and never resizes the dock while the pointer moves.
  */
 export function InspectorPanel({ world }: { readonly world?: InspectorWorld | null }): React.JSX.Element {
-  useBrushStore((state) => state.revision);
+  const revision = useBrushStore((state) => state.revision);
   const summary = useAppStore((state) => state.summary);
   const pinned = useViewStore((state) => state.pinnedTile);
   const setPinned = useViewStore((state) => state.setPinnedTile);
@@ -92,11 +96,15 @@ export function InspectorPanel({ world }: { readonly world?: InspectorWorld | nu
   const closeChest = useCallback(() => {
     setOpenChest(null);
   }, []);
+  const actual = useMemo(() => pinned === null || shown?.framingWorld === undefined || pinned.x < 0 || pinned.y < 0 || pinned.x >= shown.width || pinned.y >= shown.height ? undefined : {
+    world: shown.framingWorld, x: pinned.x, y: pinned.y, tile: shown.tileAt(pinned.x, pinned.y), revision,
+  }, [shown, pinned, revision]);
 
   if (shown === null) return <p className="panel-empty">Open a world to inspect its tiles.</p>;
   if (pinned === null || pinned.x < 0 || pinned.y < 0 || pinned.x >= shown.width || pinned.y >= shown.height) {
     return <p className="panel-empty">Click a tile with the Inspect tool (I) to inspect it.</p>;
   }
+  const tile = actual?.tile ?? shown.tileAt(pinned.x, pinned.y);
   return (
     <div className="inspector-panel">
       <div className="inspector-header">
@@ -111,7 +119,17 @@ export function InspectorPanel({ world }: { readonly world?: InspectorWorld | nu
           }} />
         </span>
       </div>
-      <PropertyGrid label="Tile" properties={tileProperties(pinned, shown.tileAt(pinned.x, pinned.y), showAll)} />
+      <PropertyGrid label="Tile" properties={tileProperties(pinned, tile, showAll).map((property) => {
+        if (property.kind !== "text" || (property.label !== "Block" && property.label !== "Wall")) return property;
+        const layer = property.label === "Block" ? "block" : "wall";
+        const ref = layer === "block" ? tile.block : tile.wall;
+        if (ref?.kind !== "vanilla") return property;
+        const rgba = contentColor(ref, layer, terrariaMapPalette, tile.frameX, tile.frameY);
+        const colors = (layer === "block" ? terrariaMapPalette.tiles : terrariaMapPalette.walls)[ref.id];
+        const color = colors === undefined || colors.length === 0 ? null : (rgba[0] << 16) | (rgba[1] << 8) | rgba[2];
+        const paint = layer === "block" ? tile.paint : tile.wallPaint;
+        return { ...property, icon: <MaterialSwatch color={color} layer={layer} {...(actual === undefined ? {} : { content: ref, actual })} revision={revision} paint={paint === undefined || paint === 0 ? null : terrariaMapPalette.paints[paint] ?? null} /> };
+      })} />
       {chest !== null && (
         <>
           <h3 className="inspector-subheading">{chestTitle(shown.tileAt(chest.x, chest.y))}</h3>

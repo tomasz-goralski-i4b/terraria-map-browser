@@ -71,10 +71,13 @@ Code: `apps/web/src/ui/` (primitives), `apps/web/src/shell/` (layout, commands, 
 
   The rail is one Tab stop; the arrow keys move inside it. The active tool shows as pressed. Brush and Erase
   are available for supported vanilla worlds; the remaining edit tools show their unavailable reason.
-- **Tool options bar** (`shell/ToolOptions.tsx`) shows the active tool's name and settings. Edit tools put their
-  settings here: brush size and shape, and the layer mask, i.e. which of block, wall, paint, liquid and wires a stroke
-  writes (as TEdit does). A tool never opens a dialog to change a setting. Brush shows, in the order of an image
-  editor's options bar: each written layer's material (a swatch and name that opens the Swatches tab) with its paint
+- **Tool options bar** (`shell/ToolOptions.tsx`) shows the active tool's name and settings. Its material chips show
+  sprites when assets are ready and Sprites is enabled, using the same interior thumbnails as the Swatches tab.
+  Disconnecting assets or a missing sheet restores map colours; paint corners and accessible names are unchanged.
+  Edit tools put their settings here: brush size and shape, and the layer mask, i.e. which of block, wall, paint,
+  liquid and wires a stroke writes (as TEdit does). A tool never opens a dialog to change a setting. Brush shows,
+  in the order of an image editor's options bar: each written layer's material (a swatch and name that opens
+  the Swatches tab) with its paint
   well, Paint only, the Blocks / Walls / Both target, size (slider and number, 1–64; `[` `]`), square/round shape,
   Smooth edges (the hammer), the stabilizer (Off to 100%) and the outline toggle, then Undo/Redo from the shared
   command registry. Erase keeps the target, size, shape, Smooth edges and the stabilizer. On narrow screens the
@@ -99,6 +102,12 @@ Code: `apps/web/src/ui/` (primitives), `apps/web/src/shell/` (layout, commands, 
   with the layout. `P` hides or shows the whole dock.
 
   `Tab` is **not** used for this, unlike some editors: Tab must keep moving focus for keyboard users.
+
+  Inspector Block and Wall rows show vanilla map-colour swatches. With connected assets and Sprites enabled they
+  show the pinned tile's actual framed cell: stored frames for objects, neighbours for self-framed blocks and walls.
+  Missing sheets, unavailable framing or disabling Sprites keeps map colours; unknown content remains text only.
+  Paint corners, copy text and accessible names remain unchanged.
+
 - **Status bar** (`shell/StatusBar.tsx`) shows, from left to right:
   - the tile under the pointer;
   - its depth band;

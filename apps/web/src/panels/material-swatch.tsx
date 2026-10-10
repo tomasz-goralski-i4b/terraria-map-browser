@@ -1,4 +1,9 @@
-import type { BrushContentLayer } from "@studio/world-model";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import type { BrushContentLayer, ContentRef } from "@studio/world-model";
+import { useAssetStore } from "../assets/asset-session.js";
+import { cachedMaterialThumbnail, getThumbnailSource, scheduleThumbnail } from "../assets/thumbnail-session.js";
+import { useViewStore } from "../shell/view-store.js";
+import type { Thumbnail, TileThumbnailSource } from "../assets/thumbnails.js";
 import { findMaterial, type BrushMaterials } from "../world/brush-materials.js";
 
 /** A map colour (0xRRGGBB) as CSS; null (no map colour) shows the transparency checkerboard. */
@@ -26,14 +31,74 @@ export function swatchName(materials: BrushMaterials | null, layer: BrushContent
  * A material as image editors show a colour: its map colour, with the paint it is put down with as a corner, so a
  * painted and an unpainted swatch of the same block stay apart.
  */
-export function MaterialSwatch({ color, paint, layer }: {
+export function MaterialSwatch({ color, paint, layer, content, actual, revision = 0 }: {
   readonly color: number | null;
   readonly paint?: number | null;
   readonly layer?: BrushContentLayer;
+  readonly content?: ContentRef;
+  readonly actual?: TileThumbnailSource | undefined;
+  readonly revision?: number;
 }): React.JSX.Element {
+  const status = useAssetStore((state) => state.status);
+  const sprites = useViewStore((state) => state.layers.sprites);
+  const host = useRef<HTMLSpanElement>(null);
+  const canvas = useRef<HTMLCanvasElement>(null);
+  const [image, setImage] = useState<{ readonly status: typeof status; readonly layer: BrushContentLayer; readonly content: ContentRef; readonly actual: typeof actual; readonly revision: number; readonly thumbnail: Thumbnail } | null>(null);
+  const id = content?.kind === "vanilla" ? content.id : undefined;
+  const reference = useMemo(() => id === undefined ? undefined : { kind: "vanilla", id } as const, [id]);
+  // Retain the last cell while neighbours are being reframed; a changed connection or material hides it immediately.
+  const cached = sprites && status.kind === "ready" && actual === undefined && layer !== undefined && reference !== undefined ? cachedMaterialThumbnail(layer, reference) : undefined;
+  const imageCurrent = image?.status === status && image.layer === layer && image.content === reference && image.actual === actual && image.revision === revision;
+  const thumbnail = !sprites ? null : cached !== undefined ? cached : image?.status === status && image.layer === layer && image.content === reference ? image.thumbnail : null;
+  useEffect(() => {
+    if (!sprites || imageCurrent || cached !== undefined || status.kind !== "ready" || layer === undefined || reference === undefined || host.current === null) return;
+    let disposed = false;
+    let visible = false;
+    let request = 0;
+    let cancel: (() => void) | undefined;
+    const observer = new IntersectionObserver((entries) => {
+      visible = entries.some((entry) => entry.isIntersecting);
+      if (!visible) { request++; cancel?.(); cancel = undefined; return; }
+      if (cancel !== undefined) return;
+      const generation = ++request;
+      let retriedAtlas = false;
+      const build = (): void => {
+        if (disposed || !visible || generation !== request) return;
+        const source = getThumbnailSource();
+        if (source === null) {
+          cancel = undefined;
+          if (!retriedAtlas) {
+            retriedAtlas = true;
+            cancel = scheduleThumbnail(build);
+          }
+          return;
+        }
+        void source.then((ready) => {
+          if (disposed || !visible || generation !== request) return;
+          cancel = scheduleThumbnail(() => {
+            if (disposed || !visible || generation !== request) return;
+            const result = actual === undefined ? ready.material(layer, reference) : ready.tile(layer, reference, actual);
+            setImage(result === null ? null : { status, layer, content: reference, actual, revision, thumbnail: result });
+            observer.disconnect();
+          });
+        }).catch(() => { /* Keep the exact map-colour fallback if framing cannot load. */ });
+      };
+      build();
+    });
+    observer.observe(host.current);
+    return () => { disposed = true; observer.disconnect(); cancel?.(); };
+  }, [status, sprites, cached, imageCurrent, layer, reference, actual, revision]);
+  useLayoutEffect(() => {
+    if (thumbnail === null || canvas.current === null) return;
+    const context = canvas.current.getContext("2d");
+    if (context === null) return;
+    context.imageSmoothingEnabled = false;
+    context.putImageData(new ImageData(thumbnail.pixels, thumbnail.width, thumbnail.height), 0, 0);
+  }, [thumbnail]);
   const paintCss = cssColor(paint ?? null);
   return (
-    <span className="material-swatch" data-layer={layer} data-empty={color === null} style={{ backgroundColor: cssColor(color) }} aria-hidden="true">
+    <span ref={host} className="material-swatch" data-layer={layer} data-sprite={thumbnail !== null} data-empty={color === null} style={{ backgroundColor: cssColor(color) }} aria-hidden="true">
+      {thumbnail !== null && <canvas ref={canvas} className="material-thumbnail" width={thumbnail.width} height={thumbnail.height} />}
       {paintCss !== undefined && <span className="material-swatch-paint" style={{ borderTopColor: paintCss }} />}
     </span>
   );

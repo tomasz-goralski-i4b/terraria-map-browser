@@ -1139,6 +1139,16 @@ committed. The .NET decoder (#73) must reproduce the same vectors.
   checkerboard.
 - Never write decoded pixels into the repository; renders made by hand go to `local-renders/` (gitignored).
 
+## Editor thumbnails
+
+Editor thumbnails (`apps/web/src/assets/thumbnails.ts`) use the same block and wall framing and source rectangles
+as the chunk pass. Material thumbnails select one interior cell; Inspector thumbnails select the actual cell
+from the world's neighbours or the stored, wrapped frame of frame-important blocks. Walls are always cropped to
+their 16 × 16 centre. Pixels are copied directly from the atlas page, so no decoded sheet is allocated or retained.
+Canvases store native cell pixels using `putImageData`; CSS `image-rendering: pixelated` fills the existing swatch
+boxes without interpolating colours. Larger object cells are cropped to their top-left 16 × 16;
+shorter cells retain their native height. Paint remains a corner mark.
+
 ## Open questions
 
 1. The repository has no `LICENSE` file. The "Depend" column assumes we want to stay free of copyleft; a license
