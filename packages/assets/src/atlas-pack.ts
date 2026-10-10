@@ -1,7 +1,7 @@
 import type { AtlasEntry, PackableSheet, SheetKind, SheetMetrics, SpriteAtlas } from "./atlas-types.js";
 
 /** Bump when the page layout or index shape changes; it is part of the cache key. */
-export const ATLAS_FORMAT_VERSION = 5;
+export const ATLAS_FORMAT_VERSION = 6;
 
 /** Page edge used when the caller passes none. */
 export const DEFAULT_PAGE_SIZE = 4096;
@@ -21,6 +21,11 @@ const METRICS: Readonly<Record<SheetKind, SheetMetrics>> = {
   // docs/assets.md, "Wires": 16 × 16 pieces at a stride of 18; the actuator is one 16 × 16 image.
   wire: { cell: 16, gap: 2 },
   actuator: { cell: 16, gap: 0 },
+  // Items (chest contents, …) and liquids are kept for later use; their frame layout is not described yet, so cell 0
+  // stands for the whole sheet.
+  item: { cell: 0, gap: 0 },
+  liquid: { cell: 0, gap: 0 },
+  liquidSlope: { cell: 0, gap: 0 },
 };
 
 interface SheetLayout {

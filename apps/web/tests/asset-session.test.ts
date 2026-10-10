@@ -23,7 +23,8 @@ function atlas(tiles: number, walls: number, pages = 1): SpriteAtlas {
     index: {
       formatVersion: 1, pageSize: 1, padding: 2, pageCount: pages, metrics: {
         tile: { cell: 16, gap: 2 }, wall: { cell: 32, gap: 4 }, treeTop: { cell: 80, gap: 2 }, treeBranch: { cell: 40, gap: 2 },
-        shroomTop: { cell: 60, gap: 2 }, wire: { cell: 16, gap: 2 }, actuator: { cell: 16, gap: 0 },
+        shroomTop: { cell: 60, gap: 2 }, wire: { cell: 16, gap: 2 }, actuator: { cell: 16, gap: 0 }, item: { cell: 0, gap: 0 },
+        liquid: { cell: 0, gap: 0 }, liquidSlope: { cell: 0, gap: 0 },
       },
       entries: [...Array.from({ length: tiles }, (_, id) => entry("tile", id)), ...Array.from({ length: walls }, (_, id) => entry("wall", id + 1))],
     },

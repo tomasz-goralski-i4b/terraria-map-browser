@@ -62,13 +62,14 @@ interface Scan {
 }
 
 // Case-insensitive: the casing of Tiles_/Wall_ files differs between installs (docs/assets.md).
-const SHEET_NAME = /^(tiles|wall|tree_tops|tree_branches)_(\d+)\.xnb$/i;
+const SHEET_NAME = /^(tiles|wall|tree_tops|tree_branches|item|liquid|liquidslope)_(\d+)\.xnb$/i;
 /** The single sheets the atlas holds by name, each as id 0 of its kind (docs/assets.md, "Atlas"). */
 const NAMED_SHEETS: ReadonlyMap<string, SheetKind> = new Map([
   ["shroom_tops.xnb", "shroomTop"], ["wiresnew.xnb", "wire"], ["actuator.xnb", "actuator"],
 ]);
 const NUMBERED_KINDS: ReadonlyMap<string, SheetKind> = new Map([
   ["tiles", "tile"], ["wall", "wall"], ["tree_tops", "treeTop"], ["tree_branches", "treeBranch"],
+  ["item", "item"], ["liquid", "liquid"], ["liquidslope", "liquidSlope"],
 ]);
 
 /** The kind and id of a sheet file the atlas holds, or undefined for any other file. */

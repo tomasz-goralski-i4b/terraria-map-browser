@@ -3,7 +3,8 @@
  * (docs/assets.md, "Atlas"): `Tree_Tops_<n>`, `Tree_Branches_<n>`, `Shroom_Tops` (id 0), `WiresNew` (id 0) and
  * `Actuator` (id 0).
  */
-export type SheetKind = "tile" | "wall" | "treeTop" | "treeBranch" | "shroomTop" | "wire" | "actuator";
+export type SheetKind =
+  "tile" | "wall" | "treeTop" | "treeBranch" | "shroomTop" | "wire" | "actuator" | "item" | "liquid" | "liquidSlope";
 
 /** Frame and gutter metrics of a family (docs/assets.md, "Sprite layout"). */
 export interface SheetMetrics {
