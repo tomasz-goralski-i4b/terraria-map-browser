@@ -28,7 +28,7 @@ function MaterialChip({ layer, materials, disabled }: { readonly layer: BrushCon
       data-tooltip={`${LAYER_NAMES[layer]}: ${name} — click to choose (Swatches panel), Alt+click the map to pick`} data-tooltip-side="bottom"
       onClick={() => { showSwatches(layer); }}
     >
-      <MaterialSwatch color={material?.color ?? null} paint={paintColor(materials, paint)} layer={layer} />
+      <MaterialSwatch color={material?.color ?? null} paint={paintColor(materials, paint)} layer={layer} content={{ kind: "vanilla", id }} />
       <span className="material-chip-name">{material?.name ?? "—"}</span>
     </button>
   );

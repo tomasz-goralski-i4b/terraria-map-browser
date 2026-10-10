@@ -320,6 +320,13 @@ Expected sheet sizes (consistent with the size arithmetic, confirmed only by the
 
 ## Tile framing
 
+Editor thumbnails (`apps/web/src/assets/thumbnails.ts`) use the same block and wall framing as the chunk pass.
+Material thumbnails select one interior cell; Inspector thumbnails select the actual cell from the world's
+neighbours or the stored, wrapped frame of frame-important blocks. Walls are always cropped to their 16 × 16
+centre. Pixels are copied directly from the atlas page, using the entry's frame and gutter metrics for blocks,
+so no decoded sheet is allocated or retained. Canvases store native cell pixels with smoothing disabled and
+CSS pixelated scaling; paint is still shown only as a corner mark.
+
 This section explains how a block or wall whose frame is **not** stored in the `.wld` picks its cell: diagonal
 corners, merging with other types (for example stone ↔ dirt), slopes and half blocks, the variant, grass and moss,
 large-frame blocks, walls. Cactus, vines, beams and the other non-block self-framed ids stay deferred ("Not covered").

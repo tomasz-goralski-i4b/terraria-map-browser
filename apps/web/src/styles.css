@@ -680,6 +680,7 @@ kbd {
   box-shadow: inset 0 0 0 1px rgb(0 0 0 / 35%), 0 0 0 1px rgb(255 255 255 / 8%);
 }
 .material-swatch[data-layer="wall"] { border-radius: 50%; }
+.material-thumbnail { display: block; width: 100%; height: 100%; image-rendering: pixelated; border-radius: inherit; }
 .material-swatch[data-empty="true"] {
   background: repeating-conic-gradient(var(--surface-3) 0 25%, var(--surface-2) 0 50%) 0 0 / 8px 8px;
 }

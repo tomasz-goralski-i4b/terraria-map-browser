@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import { Icon } from "./Icon.js";
 
 export type Property =
-  | { readonly kind: "text"; readonly label: string; readonly value: string }
+  | { readonly kind: "text"; readonly label: string; readonly value: string; readonly icon?: React.ReactNode }
   | { readonly kind: "flag"; readonly label: string; readonly value: boolean }
   | { readonly kind: "custom"; readonly label: string; readonly value: React.ReactNode };
 
@@ -44,7 +44,7 @@ export function PropertyGrid({ properties, label }: { readonly properties: reado
                 <button type="button" className="property-value" title="Click to copy" onClick={() => {
                   copy(property);
                 }}>
-                  {property.value}
+                  {property.icon}{property.value}
                 </button>
               )}
               {property.kind === "flag" && (

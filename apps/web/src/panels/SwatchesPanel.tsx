@@ -311,7 +311,7 @@ export function SwatchesPanel(): React.JSX.Element {
               }
             }}
           >
-            {item.paint !== null ? <MaterialSwatch color={item.color} /> : <MaterialSwatch color={item.color} paint={item.paintColor} />}
+            {item.swatch === null ? <MaterialSwatch color={item.color} /> : <MaterialSwatch color={item.color} paint={item.paintColor} layer={item.swatch.layer} content={{ kind: "vanilla", id: item.swatch.id }} />}
             {view.mode === "list" && <span className="swatch-name">{item.name}</span>}
           </button>
         ))}

@@ -71,8 +71,12 @@ Code: `apps/web/src/ui/` (primitives), `apps/web/src/shell/` (layout, commands, 
 
   The rail is one Tab stop; the arrow keys move inside it. The active tool shows as pressed. Brush and Erase
   are available for supported vanilla worlds; the remaining edit tools show their unavailable reason.
-- **Tool options bar** (`shell/ToolOptions.tsx`) shows the active tool's name and settings. Edit tools put their
-  settings here: brush size and shape, and the layer mask, i.e. which of block, wall, paint, liquid and wires a stroke
+- **Tool options bar** (`shell/ToolOptions.tsx`) shows the active tool's name and settings. Its material chips show
+  sprites when assets are ready, using the same interior thumbnails as the Swatches tab.
+  Inspector Block and Wall rows instead show the pinned tile's actual framed cell (stored frames for objects,
+  neighbouring tiles for self-framed blocks and walls). Disconnecting assets or a missing sheet restores map
+  colours; paint corners, round wall swatches and the existing accessible names remain unchanged.
+  Edit tools put their settings here: brush size and shape, and the layer mask, i.e. which of block, wall, paint, liquid and wires a stroke
   writes (as TEdit does). A tool never opens a dialog to change a setting. Brush shows, in the order of an image
   editor's options bar: each written layer's material (a swatch and name that opens the Swatches tab) with its paint
   well, Paint only, the Blocks / Walls / Both target, size (slider and number, 1–64; `[` `]`), square/round shape,
