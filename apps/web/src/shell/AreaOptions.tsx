@@ -12,11 +12,11 @@ const LAYERS: readonly { readonly key: keyof CopyLayers; readonly label: string;
   { key: "objects", label: "Objects", tooltip: "Whole objects with their chests, signs and tile entities" },
 ];
 
-/** Each paste option is a toggle that departs from "the copy replaces what is there". */
+/** Off, the whole rectangle replaces what is there, empty cells included; each toggle lets part of the destination through. */
 const PASTE_TOGGLES: readonly { readonly label: string; readonly tooltip: string; readonly on: (options: PasteOptions) => boolean; readonly set: (options: PasteOptions, on: boolean) => PasteOptions }[] = [
-  { label: "Transparent air", tooltip: "Empty tiles in the copy keep the block under them", on: (options) => options.air === "transparent", set: (options, on) => ({ ...options, air: on ? "transparent" : "replace" }) },
-  { label: "Keep walls", tooltip: "Keep the walls that are already there", on: (options) => options.walls === "keep", set: (options, on) => ({ ...options, walls: on ? "keep" : "replace" }) },
-  { label: "Merge liquids", tooltip: "Add to liquid of the same kind, up to a full tile; other liquids stay", on: (options) => options.liquids === "merge", set: (options, on) => ({ ...options, liquids: on ? "merge" : "replace" }) },
+  { label: "Skip empty blocks", tooltip: "Where the copy has no block, the block already there stays", on: (options) => options.air === "transparent", set: (options, on) => ({ ...options, air: on ? "transparent" : "replace" }) },
+  { label: "Skip empty walls", tooltip: "Where the copy has no wall, the wall already there stays", on: (options) => options.walls === "transparent", set: (options, on) => ({ ...options, walls: on ? "transparent" : "replace" }) },
+  { label: "Merge liquids", tooltip: "Copied liquid adds to the same kind, up to full; other liquid, and liquid where the copy has none, stays", on: (options) => options.liquids === "merge", set: (options, on) => ({ ...options, liquids: on ? "merge" : "replace" }) },
 ];
 
 /**

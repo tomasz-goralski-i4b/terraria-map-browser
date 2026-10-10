@@ -19,9 +19,11 @@ editors: it drops a floating paste and keeps the selection; pressed again, it de
 and Redo), command palette and buttons use the same commands, and each disabled one says why. Text fields retain
 native copy and paste. Right/middle drags still pan.
 
-By default the copy replaces what is there. **Transparent air** keeps the destination block and its paint/coatings
-under empty copied tiles; **Keep walls** preserves the destination wall and its paint/coatings; **Merge liquids**
-adds matching kinds, capped at 255, and preserves a different destination kind. Unselected layers stay unchanged.
+By default the whole rectangle replaces what is there, its empty cells included. **Skip empty blocks** keeps the
+destination block and its paint/coatings where the copy has no block; **Skip empty walls** does the same for walls.
+Copied blocks and walls always land; to leave the destination's walls untouched, turn Walls off under Layers before
+Copy. **Merge liquids** adds matching kinds, capped at 255, and keeps a different destination kind and liquid where
+the copy has none. Unselected layers stay unchanged.
 Each placement is one undo entry in the brush history, including copied entity records, with renderer invalidation
 updating adjacent framing.
 

@@ -5,7 +5,11 @@ import { brushDisabledReason } from "./brush-session.js";
 
 export interface Area { readonly x: number; readonly y: number; readonly width: number; readonly height: number }
 export interface CopyLayers { readonly blocks: boolean; readonly walls: boolean; readonly liquids: boolean; readonly wires: boolean; readonly paint: boolean; readonly objects: boolean }
-export interface PasteOptions { readonly air: "replace" | "transparent"; readonly walls: "replace" | "keep"; readonly liquids: "replace" | "merge" }
+/**
+ * How a paste combines with what is there. "transparent" makes the copy's empty cells (no block, no wall) keep the
+ * destination's block or wall; "merge" adds copied liquid to liquid of the same kind. Copied content always lands.
+ */
+export interface PasteOptions { readonly air: "replace" | "transparent"; readonly walls: "replace" | "transparent"; readonly liquids: "replace" | "merge" }
 export const DEFAULT_COPY_LAYERS: CopyLayers = { blocks: true, walls: true, liquids: true, wires: true, paint: true, objects: true };
 export const DEFAULT_PASTE_OPTIONS: PasteOptions = { air: "replace", walls: "replace", liquids: "replace" };
 /** The largest selection Copy accepts, bounding the clipboard and preview allocations. */
@@ -135,7 +139,7 @@ export function* areaPasteSteps(world: WorldTilesResult, clipboard: AreaClipboar
     if (!inside(si)) continue;
     const ti = tx * target.height + ty;
     const blockWrite = layers.blocks && skip[si] === 0 && (options.air === "replace" || source.planes.block[si] !== 0xffff);
-    const wallWrite = layers.walls && options.walls === "replace";
+    const wallWrite = layers.walls && (options.walls === "replace" || source.planes.wall[si] !== 0xffff);
     const values = Object.fromEntries(PLANE_NAMES.map((name) => [name, target.planes[name][ti] ?? 0])) as Record<keyof WorldPlanes, number>;
     const sourceFlags = source.planes.flags[si] ?? 0;
     if (blockWrite) {
@@ -145,7 +149,7 @@ export function* areaPasteSteps(world: WorldTilesResult, clipboard: AreaClipboar
     if (wallWrite) { values.wall = remap(source.planes.wall[si] ?? 0xffff); values.flags = (values.flags & ~0x280) | (sourceFlags & 0x280); }
     if (layers.paint) {
       if (blockWrite || (!layers.blocks && source.planes.block[si] !== 0xffff && values.block !== 0xffff)) values.paint = source.planes.paint[si] ?? 0;
-      if (wallWrite || (!layers.walls && options.walls !== "keep" && source.planes.wall[si] !== 0xffff && values.wall !== 0xffff)) values.wallPaint = source.planes.wallPaint[si] ?? 0;
+      if (wallWrite || (!layers.walls && source.planes.wall[si] !== 0xffff && values.wall !== 0xffff)) values.wallPaint = source.planes.wallPaint[si] ?? 0;
     } else {
       if (blockWrite && values.block === 0xffff) values.paint = 0;
       if (wallWrite && values.wall === 0xffff) values.wallPaint = 0;

@@ -25,13 +25,22 @@ test("clipboard is an independent plane snapshot; preview is read-only and overl
   expect(clipboard.world.tileAt(0, 0).paint).toBe(3);
 });
 
-test("transparent air, kept walls and merged liquids preserve destination layers and clamp matching liquid", () => {
+test("transparent air, transparent walls and merged liquids preserve destination layers and clamp matching liquid", () => {
   const world = meadow(); const view = canonicalWorldOf(world);
   view.setTile(1, 1, { wires: 0, actuator: false, liquid: { kind: "water", amount: 120 } });
   view.setTile(4, 4, { block: { kind: "vanilla", id: 1 }, wall: { kind: "vanilla", id: 2 }, paint: 9, wires: 0, actuator: false, liquid: { kind: "water", amount: 200 } });
-  const paste = planAreaPaste(world, copyArea(world, area), 4, 4, { air: "transparent", walls: "keep", liquids: "merge" });
+  const paste = planAreaPaste(world, copyArea(world, area), 4, 4, { air: "transparent", walls: "transparent", liquids: "merge" });
   paste.apply("after");
   expect(view.tileAt(4, 4)).toMatchObject({ block: { id: 1 }, wall: { id: 2 }, paint: 9, liquid: { kind: "water", amount: 255 } });
+});
+
+test("transparent walls paste the copied walls and keep the destination wall only where the copy has none", () => {
+  const world = meadow(); const view = canonicalWorldOf(world);
+  view.setTile(1, 1, { wall: { kind: "vanilla", id: 5 }, wallPaint: 4, wires: 0, actuator: false });
+  for (const [x, y] of [[4, 4], [4, 5]] as const) view.setTile(x, y, { wall: { kind: "vanilla", id: 2 }, wires: 0, actuator: false });
+  planAreaPaste(world, copyArea(world, area), 4, 4, { air: "replace", walls: "transparent", liquids: "replace" }).apply("after");
+  expect(view.tileAt(4, 4)).toMatchObject({ wall: { id: 5 }, wallPaint: 4 });
+  expect(view.tileAt(4, 5)).toMatchObject({ wall: { id: 2 } });
 });
 
 test("copy masks preserve every unselected plane and different liquid kinds never mix", () => {

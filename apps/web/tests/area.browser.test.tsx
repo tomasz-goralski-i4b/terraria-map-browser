@@ -48,7 +48,7 @@ test("stationary paste pixels follow destination Undo/Redo and invalid preview d
   cancelArea(); useAreaStore.setState({ layers: DEFAULT_COPY_LAYERS });
   selectArea({ x: 2, y: 2 }, { x: 2, y: 2 }); copySelection(); startPaste(); movePaste({ x: 12, y: 12 });
   await expect.element(page.getByRole("button", { name: "Place paste", exact: true })).toBeDisabled();
-  await page.getByRole("button", { name: "Transparent air" }).click();
+  await page.getByRole("button", { name: "Skip empty blocks" }).click();
   await expect.element(page.getByRole("button", { name: "Place paste", exact: true })).toBeEnabled();
   useAreaStore.setState({ layers: DEFAULT_COPY_LAYERS });
 });
@@ -93,7 +93,7 @@ test("rectangle drag, copy, read-only coloured preview, Enter placement and Esca
   await page.getByRole("textbox", { name: "Sign text" }).fill("Welcome to the forest village");
   await userEvent.keyboard("{Control>}v{/Control}"); expect(useAreaStore.getState().pasting).toBe(false);
   await expect.element(page.getByRole("group", { name: "Copy layers" })).toBeVisible();
-  startPaste(); await expect.element(page.getByRole("button", { name: "Transparent air" })).toBeVisible();
+  startPaste(); await expect.element(page.getByRole("button", { name: "Skip empty blocks" })).toBeVisible();
   cancelArea();
   getMapController()?.jumpTo({ x: 0, y: 0, zoom: 8 });
   const rect = canvas.getBoundingClientRect();
