@@ -419,9 +419,9 @@ function steadyDrag(rate: number, refresh: number, speed = 1): number[] {
   const moves: number[] = [];
   for (let frame = 1; frame <= 60; frame++) {
     const frameTime = frame * frameMs;
+    time = frameTime;
     // Browsers deliver the events that arrived since the last frame just before it (rAF-aligned input).
     for (; nextEvent <= frameTime; nextEvent += eventMs) animator.drag(-speed * eventMs, 0, nextEvent);
-    time = frameTime;
     const { camera } = animator.step(frameTime);
     moves.push((camera.x - previous) * 4);
     previous = camera.x;
@@ -441,6 +441,7 @@ test("a drag that stops holds still where the pointer stopped, and then settles"
   let time = 0;
   const animator = new CameraAnimator({ ...initial, zoom: 4 }, viewport, world, () => time);
   animator.beginDrag();
+  time = 80;
   for (let event = 1; event <= 10; event++) animator.drag(-8, 0, event * 8);
   const frames: CameraStep[] = [];
   for (let frame = 1; frame <= 12; frame++) {
@@ -459,8 +460,8 @@ test("a flick released at speed glides on without a kick from the resampled lag"
   let previous = animator.current.x;
   let last = 0;
   for (let frame = 1; frame <= 10; frame++) {
-    animator.drag(-16, 0, frame * 16 - 2);
     time = frame * 16;
+    animator.drag(-16, 0, frame * 16 - 2);
     const x = animator.step(time).camera.x;
     last = x - previous;
     previous = x;
@@ -471,4 +472,18 @@ test("a flick released at speed glides on without a kick from the resampled lag"
   const first = animator.step(time).camera.x - previous;
   expect(first / last).toBeGreaterThan(0.8);
   expect(first / last).toBeLessThan(1.2);
+});
+
+test("a flick released while the frame shows the path ahead of its last sample glides on without stepping back", () => {
+  let time = 0;
+  const animator = new CameraAnimator({ ...initial, zoom: 4 }, viewport, world, () => time);
+  animator.beginDrag();
+  time = 20;
+  animator.drag(-20, 0, 20);
+  time = 36;
+  const ahead = animator.step(time).camera.x;
+  expect(ahead).toBeGreaterThan(initial.x + 20 / 4);
+  animator.endDrag(false, 36);
+  time = 52;
+  expect(animator.step(time).camera.x).toBeGreaterThan(ahead);
 });

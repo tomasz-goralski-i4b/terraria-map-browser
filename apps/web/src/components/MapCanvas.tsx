@@ -275,13 +275,14 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
       pointers: new Map(), hover: null, hoverTile: null, keys: new Set(), cameraDirty: false, pendingResize: null,
       requestFrame: () => {
         if (frame !== null) return;
-        frame = window.requestAnimationFrame(() => {
+        frame = window.requestAnimationFrame((time) => {
           frame = null;
-          drawFrame();
+          drawFrame(time);
         });
       },
     };
-    function drawFrame(): void {
+    /** Steps the camera to `time` (the animation frame's timestamp) and draws the map in this same frame. */
+    function drawFrame(time: number = performance.now()): void {
       if (session.pendingResize !== null) {
         const first = session.viewport.width === 0;
         const previous = session.viewport;
@@ -296,7 +297,7 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
         const centred = { ...old, x: old.x + (previous.width - size.width) / 2 / old.zoom, y: old.y + (previous.height - size.height) / 2 / old.zoom };
         session.animator.reset(first ? fitWorld(size, session.world) : clampCamera(centred, size, session.world), size, session.world);
       }
-      const { camera, settled } = session.animator.step();
+      const { camera, settled } = session.animator.step(time);
       const trail = brushTrail.current;
       let brushSettled = true;
       if (trail !== null && useBrushStore.getState().active) {
@@ -312,6 +313,9 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
         applyCamera(session, camera);
       } else refreshHover(session);
       if (!settled || !brushSettled) session.requestFrame();
+      // The renderer scheduled its frame for the next animation frame; drawn now, the map moves in the frame the camera
+      // moved in, one frame closer to the pointer.
+      renderer.flushFrame();
     }
     sessionRef.current = session;
     const unsubscribeBrushOptions = useBrushStore.subscribe((state) => {
@@ -567,7 +571,7 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
         return;
       }
       session.keys.clear();
-      session.animator.beginDrag();
+      session.animator.beginDrag(event.timeStamp);
       event.currentTarget.style.cursor = "grabbing";
       session.pointers.set(event.pointerId, localPoint(event.clientX, event.clientY));
       // Only a lone primary-button press can pin; a second finger, or another button, makes it a gesture.
@@ -633,7 +637,16 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
       const previous = toBacking(last);
       const other = others[0];
       if (other === undefined) {
-        session.animator.drag(point.x - previous.x, point.y - previous.y);
+        // Every pointer sample since the last event, with its own timestamp, so the animator can resample the drag
+        // to frame time (browsers coalesce the moves of a frame into one event).
+        const coalesced = event.nativeEvent.getCoalescedEvents();
+        const rect = event.currentTarget.getBoundingClientRect();
+        let from = previous;
+        for (const sample of coalesced.length === 0 ? [event.nativeEvent] : coalesced) {
+          const to = toBacking({ x: sample.clientX - rect.left, y: sample.clientY - rect.top });
+          session.animator.drag(to.x - from.x, to.y - from.y, sample.timeStamp);
+          from = to;
+        }
         queueCamera(session);
         return;
       }
@@ -677,8 +690,8 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
         // A click, not a drag: the pointer never left a few CSS pixels around the press.
         if (!press.moved && Math.hypot(release.x - press.at.x, release.y - press.at.y) < CLICK_SLOP) pinAt(session, toBacking(release));
       }
-      if (session.pointers.size === 0) session.animator.endDrag(event.type !== "pointerup");
-      else session.animator.beginDrag();
+      if (session.pointers.size === 0) session.animator.endDrag(event.type !== "pointerup", event.timeStamp);
+      else session.animator.beginDrag(event.timeStamp);
       session.requestFrame();
       event.currentTarget.style.cursor = TOOL_CURSORS[useViewStore.getState().tool] ?? "grab";
     });
