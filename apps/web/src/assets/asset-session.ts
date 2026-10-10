@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { useLayoutStore } from "../shell/layout-store.js";
 import { deleteStored, readStored, writeStored } from "../handle-db.js";
+import { isAtlasSheetName } from "@studio/assets";
 import type { AtlasWorkerRequest, AtlasWorkerResponse, BuildProgress, BuildResult, MissingSheet, SpriteAtlas } from "@studio/assets";
 
 /** A picked `Content` folder with the permission calls of the File System Access API. */
@@ -133,9 +134,6 @@ function filesFolderName(files: readonly File[]): string {
   const first = files[0]?.webkitRelativePath.split("/")[0] ?? "";
   return first === "" ? "selected folder" : first;
 }
-
-/** The files the atlas is built from (docs/assets.md, "Atlas"); every other file of the folder is never read. */
-const SHEET_FILE = /^(tiles|wall)_\d+\.xnb$/i;
 
 const nextFrame = (run: () => void): void => {
   if (typeof requestAnimationFrame === "function") requestAnimationFrame(run);
@@ -293,7 +291,7 @@ export function createAssetSession({ builder, remembered, pickDirectory, openFol
     }
     const folderName = filesFolderName(files);
     // Only the sheets go to the Worker: copying all ~15 000 files of Content into it blocks the main thread.
-    const sheets = files.filter((file) => SHEET_FILE.test(file.name));
+    const sheets = files.filter((file) => isAtlasSheetName(file.name));
     return build(sheets, folderName, (result) => ({ kind: "files", folderName, fingerprint: result.fingerprint }));
   };
 

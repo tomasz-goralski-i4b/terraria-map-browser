@@ -81,6 +81,11 @@ function sheetOf(name: string): { readonly kind: SheetKind; readonly id: number 
   return kind === undefined ? undefined : { kind, id: Number(match[2]) };
 }
 
+/** Whether a file of this name is a sheet the atlas holds (docs/assets.md, "Atlas"); every other file is never read. */
+export function isAtlasSheetName(name: string): boolean {
+  return sheetOf(name) !== undefined;
+}
+
 /** The `Images` folder when `contentDir` is `Content`, otherwise `contentDir` itself. */
 async function imagesDirectory(contentDir: ContentDirectory): Promise<ContentDirectory> {
   try {
