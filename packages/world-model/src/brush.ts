@@ -47,6 +47,8 @@ export interface BrushRules {
   readonly protectedTile?: (x: number, y: number, layer: BrushContentLayer) => boolean;
   /** Whether vanilla content may be placed; `begin` throws a RangeError otherwise. */
   readonly placeable?: (layer: BrushContentLayer, id: number) => boolean;
+  /** Whether a paint id may be applied (0, no paint, always may); `begin` throws a RangeError otherwise. */
+  readonly paintable?: (paint: number) => boolean;
 }
 
 export interface TileCoordinate { readonly x: number; readonly y: number }
@@ -103,7 +105,7 @@ function edit(tile: Tile, layer: BrushContentLayer, change: LayerEdit): void {
 }
 
 export function createBrushHistory(world: CanonicalWorld, rules: BrushRules = {}): BrushHistory {
-  const { protectedTile = () => false, placeable = () => true } = rules;
+  const { protectedTile = () => false, placeable = () => true, paintable = () => true } = rules;
   let targets: Targets | null = null;
   let previous: TileCoordinate | null = null;
   let footprint: readonly TileCoordinate[] = [];
@@ -147,7 +149,7 @@ export function createBrushHistory(world: CanonicalWorld, rules: BrushRules = {}
   };
   const validEdit = (layer: BrushContentLayer, change: LayerEdit): boolean => {
     if (change.kind === "erase") return true;
-    if (!isPaint(change.paint)) return false;
+    if (!isPaint(change.paint) || (change.paint !== 0 && !paintable(change.paint))) return false;
     return change.kind === "paint" || (Number.isInteger(change.id) && change.id >= (layer === "wall" ? 1 : 0) && placeable(layer, change.id));
   };
   const finish = (): void => {
