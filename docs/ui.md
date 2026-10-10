@@ -82,7 +82,7 @@ Code: `apps/web/src/ui/` (primitives), `apps/web/src/shell/` (layout, commands, 
   well, Paint only, the Blocks / Walls / Both target, size (slider and number, 1–64; `[` `]`), square/round shape,
   Smooth edges (the hammer), the stabilizer (Off to 100%) and the outline toggle, then Undo/Redo from the shared
   command registry. Erase keeps the target, size, shape, Smooth edges and the stabilizer. Select shows the Copy
-  toggles (which layers Copy takes) and the Copy, Paste and Deselect buttons; while a paste floats, its toggles
+  toggles (which layers Copy takes) and the Copy, Paste and Deselect buttons; while a paste floats, the anchor grid and its toggles
   (Skip empty blocks, Skip empty walls, Merge liquids) and Place paste / Cancel paste. On desktop the bar is one fixed row for
   every tool, so switching tools never moves the map. On narrow screens the
   fields wrap, materials first. See [editor.md](editor.md).
