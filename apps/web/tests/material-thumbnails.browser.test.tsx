@@ -14,7 +14,11 @@ import { InspectorPanel } from "../src/panels/InspectorPanel.js";
 import { setBrushWorld, useBrushStore } from "../src/world/brush-session.js";
 import { useViewStore } from "../src/shell/view-store.js";
 import { brushSource } from "./support/brush-source.js";
+import * as blockFraming from "../src/world/block-framing.js";
+import { PropertyGrid } from "../src/ui/PropertyGrid.js";
 import "../src/styles.css";
+
+vi.mock("../src/world/block-framing.js", { spy: true });
 
 const ready = { kind: "ready", folderName: "Terraria Content", tileSheets: 1, wallSheets: 1, pages: 1, fromCache: false, missing: [] } as const;
 
@@ -26,6 +30,13 @@ function connect(): void {
   ], { pageSize: 1024 });
   vi.spyOn(getDefaultAssetSession(), "getAtlas").mockReturnValue(atlas);
   useAssetStore.setState({ status: ready });
+}
+
+/** Let visibility notifications and both idle stages complete before checking for unwanted extra work. */
+async function settleThumbnails(): Promise<void> {
+  await new Promise<void>((resolve) => { requestAnimationFrame(() => { requestAnimationFrame(() => { resolve(); }); }); });
+  await new Promise<void>((resolve) => { requestIdleCallback(() => { resolve(); }, { timeout: 300 }); });
+  await new Promise<void>((resolve) => { requestIdleCallback(() => { resolve(); }, { timeout: 300 }); });
 }
 
 afterEach(() => { useAssetStore.setState({ status: { kind: "none" } }); setBrushWorld(null); useViewStore.setState({ pinnedTile: null, tool: "pan" }); vi.restoreAllMocks(); });
@@ -64,7 +75,48 @@ test("only visible swatches build, scrolling and rerender reuse the same pixels"
   scroll.scrollTop = scroll.scrollHeight;
   await expect.poll(() => screen.container.querySelectorAll("canvas").length).toBe(2);
   scroll.scrollTop = 0;
+  await settleThumbnails();
   expect(material).toHaveBeenCalledTimes(2);
+});
+
+test("Swatches grid builds only visible cells once across scrolling, filtering and rerendering", async () => {
+  const framing = await blockFraming.getBlockFraming();
+  const builds = vi.spyOn(framing, "frameBlock");
+  setBrushWorld(readWorldTiles(brushSource()));
+  useSwatchesView.setState({ category: "block", source: "all", query: "", mode: "grid" });
+  connect();
+  const screen = await render(<div style={{ width: 240, height: 200, overflow: "auto" }}><SwatchesPanel /></div>);
+  const scroll = screen.container.firstElementChild;
+  if (!(scroll instanceof HTMLElement)) throw new Error("Swatches grid scroll container missing");
+  await expect.poll(() => builds.mock.calls.length).toBeGreaterThan(0);
+  await settleThumbnails();
+  const initial = builds.mock.calls.length;
+  expect(initial).toBeLessThan(screen.container.querySelectorAll(".swatch-button").length);
+  scroll.scrollTop = scroll.scrollHeight;
+  await expect.poll(() => builds.mock.calls.length).toBeGreaterThan(initial);
+  await settleThumbnails();
+  scroll.scrollTop = 0;
+  await settleThumbnails();
+  await act(async () => { useSwatchesView.setState({ query: "Dirt Block" }); await Promise.resolve(); });
+  await settleThumbnails();
+  await act(async () => { useSwatchesView.setState({ query: "" }); await Promise.resolve(); });
+  await settleThumbnails();
+  const ids = builds.mock.calls.map(([input]) => input.type);
+  expect(new Set(ids).size).toBe(ids.length);
+});
+
+test("framing pending preserves the exact map colour until ready", async () => {
+  const framing = await blockFraming.getBlockFraming();
+  let finish: ((value: typeof framing) => void) | undefined;
+  const pending = new Promise<typeof framing>((resolve) => { finish = resolve; });
+  vi.mocked(blockFraming.getBlockFraming).mockReturnValueOnce(pending);
+  connect();
+  const screen = await render(<MaterialSwatch color={0x976b4b} layer="block" content={{ kind: "vanilla", id: 0 }} />);
+  await settleThumbnails();
+  expect(screen.container.querySelector<HTMLElement>(".material-swatch")?.style.backgroundColor).toBe("rgb(151, 107, 75)");
+  expect(screen.container.querySelector("canvas")).toBeNull();
+  finish?.(framing);
+  await expect.poll(() => screen.container.querySelector("canvas")).not.toBeNull();
 });
 
 test("Swatches, Brush chips and Inspector switch together without changing their names", async () => {
@@ -87,10 +139,41 @@ test("Swatches, Brush chips and Inspector switch together without changing their
 });
 
 test("missing sheets and an unconnected atlas keep the checkerboard and wall shape", async () => {
+  const attempted = vi.spyOn(ThumbnailSource.prototype, "material");
   connect();
-  const screen = await render(<MaterialSwatch color={null} layer="wall" content={{ kind: "vanilla", id: 2 }} />);
+  const screen = await render(<><MaterialSwatch color={null} layer="wall" content={{ kind: "vanilla", id: 2 }} /><MaterialSwatch color={0x808080} layer="block" content={{ kind: "vanilla", id: 1 }} /></>);
   const swatch = screen.container.querySelector<HTMLElement>(".material-swatch");
   await expect.poll(() => getComputedStyle(swatch ?? screen.container).borderRadius).toBe("50%");
   expect(swatch?.dataset["empty"]).toBe("true");
+  await expect.poll(() => attempted.mock.calls.length).toBe(2);
   expect(swatch?.querySelector("canvas")).toBeNull();
+  expect(screen.container.querySelectorAll<HTMLElement>(".material-swatch")[1]?.style.backgroundColor).toBe("rgb(128, 128, 128)");
+  expect(screen.container.querySelector("canvas")).toBeNull();
+});
+
+test("wall grid circles, integer sprite sizes and theme borders survive assets", async () => {
+  setBrushWorld(readWorldTiles(brushSource()));
+  useSwatchesView.setState({ category: "wall", source: "all", query: "Stone Wall", mode: "grid" });
+  connect();
+  const screen = await render(<SwatchesPanel />);
+  await expect.poll(() => screen.container.querySelector("canvas")).not.toBeNull();
+  const swatch = screen.container.querySelector<HTMLElement>(".material-swatch");
+  if (swatch === null) throw new Error("Stone Wall swatch missing");
+  expect(getComputedStyle(swatch).borderRadius).toBe("50%");
+  const canvas = screen.container.querySelector("canvas");
+  expect(canvas?.getBoundingClientRect().width).toBe(16);
+  for (const theme of ["light", "dark"]) {
+    document.documentElement.dataset["theme"] = theme;
+    expect(getComputedStyle(swatch, "::after").boxShadow).not.toBe("none");
+  }
+  delete document.documentElement.dataset["theme"];
+});
+
+test("PropertyGrid decorative swatch preserves copy text and the accessible name", async () => {
+  const copied = vi.fn().mockResolvedValue(undefined);
+  vi.spyOn(navigator.clipboard, "writeText").mockImplementation(copied);
+  await render(<PropertyGrid label="Tile" properties={[{ kind: "text", label: "Block", value: "Dirt Block", icon: <MaterialSwatch color={0x976b4b} /> }]} />);
+  const value = page.getByRole("button", { name: "Dirt Block", exact: true });
+  await value.click();
+  expect(copied).toHaveBeenCalledWith("Dirt Block");
 });

@@ -1,7 +1,7 @@
 import { beforeAll, expect, test, vi } from "vitest";
 import { packSheets } from "@studio/assets";
 import { createBlockFraming, loadFramingDatabase, terrariaFramingData, wallSourceRect, WALL_OVERHANG, type BlockFraming } from "@studio/renderer";
-import { ThumbnailSource } from "../src/assets/thumbnails.js";
+import { ThumbnailSource, thumbnailPixels } from "../src/assets/thumbnails.js";
 import { createWorld } from "@studio/world-model";
 
 let framing: BlockFraming;
@@ -73,7 +73,13 @@ test("Inspector uses stored chest frames, real block neighbours and real wall ne
 });
 
 test("missing, unknown and out of sheet content has no thumbnail", () => {
-  const source = new ThumbnailSource(atlas(), framing);
+  const packed = atlas();
+  const source = new ThumbnailSource(packed, framing);
   expect(source.material("block", { kind: "vanilla", id: 1 })).toBeNull();
+  expect(source.material("wall", { kind: "vanilla", id: 2 })).toBeNull();
   expect(source.material("block", { kind: "unknown", runtimeId: 900 })).toBeNull();
+  expect(thumbnailPixels(packed, "block", 0, 280, 0)).toBeNull();
+  expect(thumbnailPixels(packed, "block", 0, 0, 260)).toBeNull();
+  expect(thumbnailPixels(packed, "wall", 1, -1, 0)).toBeNull();
+  expect(new ThumbnailSource(packed, { ...framing, frameBlock: () => null }).material("block", { kind: "vanilla", id: 0 })).toBeNull();
 });
