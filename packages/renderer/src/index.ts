@@ -18,10 +18,12 @@ export { SPRITE_DEFERRED_TILES, WebGl2UnavailableError, createMapRenderer } from
 export type {
   MapRenderer, MapRendererOptions, MapRendererStats, RenderableWorld, SpriteAtlasSource, SpriteSheetEntry,
 } from "./gpu/map-renderer.js";
+export { SPRITE_FRAME_WRAPS, wrappedFrame } from "./gpu/frame-wrap.js";
+export type { FrameWrap } from "./gpu/frame-wrap.js";
 export { MISSING_SPRITE_COLORS, SPRITE_FULL_ZOOM, SPRITE_MIN_ZOOM, spriteSampling } from "./gpu/shaders.js";
 export { NEIGHBOUR_ORDER, UNSTABLE_CELL, loadFramingDatabase, neighbourhoodCode } from "./framing/framing-database.js";
 export type {
-  BlockFramingData, BlockRelation, Cell, FramingDatabase, FramingDatabaseData, WallFramingData,
+  BlockFramingData, BlockRelation, Cell, FramingDatabase, FramingDatabaseData, WallFramingData, WallTables,
 } from "./framing/framing-database.js";
 export { terrariaFramingData } from "./framing/terraria-framing.generated.js";
 export { NOT_VANILLA, NO_CELL, createBlockFraming } from "./framing/frame-block.js";
@@ -30,3 +32,9 @@ export type {
 } from "./framing/frame-block.js";
 export { BLOCK_CELL_STRIDE, blockSourceRect, createChunkCellCache, shapedColumns } from "./framing/chunk-cells.js";
 export type { ChunkCellCache, ShapedColumn, SourceRect } from "./framing/chunk-cells.js";
+export {
+  WALL_CELL_PIXELS, WALL_CELL_STRIDE, WALL_OVERHANG, WALL_SIDE, createWallFraming, wallSourceRect,
+} from "./framing/frame-wall.js";
+export type { WallFraming, WallFramingWorld } from "./framing/frame-wall.js";
+export { createChunkWallCellCache } from "./framing/chunk-wall-cells.js";
+export type { ChunkWallCellCache } from "./framing/chunk-wall-cells.js";

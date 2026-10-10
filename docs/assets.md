@@ -233,16 +233,64 @@ The `.wld` stores no wall frame; the game computes it from the neighbours (R, [A
 3. **Variant.** Ordinary walls (344 of 366) take a random variant whenever they are framed, as blocks do; the cells of
    every variant are in rows 0–4. The viewer uses `(7x + 11y) mod 3` (chosen, as for blocks).
 4. **Large-frame walls** (22) ignore the variant and take their cells by position, using row 5 as well: 146, 147,
-   167, 179 and 354 repeat every **3 × 12** tiles; 17, 185, 224, 274, 323–330, 355, 358, 359, 362, 363 and 366 every
+   167, 179 and 354 repeat every **3 × 12** tiles; 185, 224, 274, 323–330, 355, 358, 359, 362, 363 and 366 every
    **6 × 6**.
 
 The framing database holds every wall's cell for all 6 561 neighbourhoods, its interior cells at 12 × 12 positions
 and its variant map, so these rules can be checked against it.
 
+How the viewer applies them (#147; `packages/renderer/src/framing/frame-wall.ts`):
+
+- A neighbour outside the world counts as absent (not observed: the observer frames walls inside a world only).
+- The interior cell comes from the database's interior table at `(x mod 12, y mod 12)`, which covers both
+  large-frame periods; ordinary walls then take their variant through the variant map. The map records the variants
+  of the cells the 6 561-neighbourhood table uses, so of the interior cells only (6, 2) varies; the others keep their
+  variant-0 cell, as an unobserved block variant does (chosen; observing every interior cell's variants is a
+  follow-up).
+- Large-frame walls take their non-interior cells from their 6 561-neighbourhood table, observed at the reference
+  position (30, 30) only (chosen: the edges at other positions are not observed).
+- Overlapping overhangs are drawn row by row from the top, left to right within a row, each over the ones before
+  (chosen); blocks are drawn over walls.
+
 ```text
 source = (x = 36 × column, y = 36 × row, w = 32, h = 32)
 dest   = top-left at (16 × tileX − 8, 16 × tileY − 8)        // a 32×32 sprite centred on the 16×16 tile (A8)
 ```
+
+### Frames past the sheet's edge
+
+Some frame-important tiles store frames past their sheet's edge: they have more styles than fit one row of the sheet,
+and the styles that do not fit continue at the sheet's start in a second block, further along the other axis. Measured
+(S) in the art of L: the first block's styles end where its art ends (the period, rounded up to the next style), and
+the second block starts where the art resumes along the other axis. Six local worlds store such frames for 87–89, 93,
+101, 185 and 187, and every wrapped object assembled from its tiles looks whole (#147); the other rows rest on the art
+alone. The sheets are a few pixels short of the period where the last gap is trimmed, or padded past it:
+
+| Tile id | Content | Sheet | Wraps past | Second block |
+|---|---|---|---|---|
+| 14 | tables (3 × 2) | 1928 × 74 | x = 1890 | y + 38 |
+| 15, 497 | chairs, toilets (1 × 2, 40-pixel rows) | 72 × 2038 | y = 2040 | x + 36 |
+| 18 | work benches (2 × 1) | 2048 × 40 | x = 2016 | y + 20 |
+| 34 | chandeliers (3 × 3, on and off) | 214 × 2000 | y = 1998 | x + 108 |
+| 42 | lanterns (1 × 2, on and off) | 70 × 2016 | y = 2016 | x + 36 |
+| 79, 90 | beds, bathtubs (4 × 2, both directions) | 286–288 × 2016–2048 | y = 2016 | x + 144 |
+| 87, 88, 89 | pianos, dressers, sofas (3 × 2) | 1996–1998 × 72 | x = 1998 | y + 36 |
+| 91 | banners (1 × 3, three blocks) | 1998 × 162 | x = 1998 | y + 54 |
+| 93 | lamps (1 × 3, on and off) | 70 × 2048 | y = 1998 | x + 36 |
+| 100, 139 | candelabras, music boxes (2 × 2) | 142–144 × 2016 | y = 2016 | x + 72 |
+| 101 | bookcases (3 × 4) | 1996 × 142 | x = 1998 | y + 72 |
+| 104 | clocks (2 × 5) | 2016 × 180 | x = 2016 | y + 90 |
+| 105 | statues (2 × 3, both directions in bands below each other) | 1980 × 272 | x = 1980 | y + 54 |
+| 172 | sinks (2 × 2, 38-pixel rows) | 72 × 2014 | y = 2014 | x + 36 |
+| 185, 649 | small piles, the 2 × 1 row (y = 18; 649 holds it alone) | 1908 × 54, 1908 × 36 | x = 1908 | y + 18 |
+| 187, 648 | large piles 2 (3 × 2) | 1890 × 72 | x = 1890 | y + 36 |
+
+So a stored frame `f` past the period `p` reads the cell at `f − k·p`, shifted by `k` times the second block's offset,
+`k = ⌊f / p⌋` (`wrappedFrame` in `packages/renderer/src/gpu/frame-wrap.ts`). Lamps wrap at style 37 (y = 1998): the
+first block's art ends there, although 2048 rows would hold one more partial style. Small piles' 1 × 1 row ends at
+x = 1474, far short of the period. Any other sheet with a side of 1800 pixels or more either holds its styles within
+the sheet or uses its other blocks for something else (doors, chests, paintings 240 and 242, piles 186 and 647); a
+frame past the edge of a sheet not in the table keeps its map colour.
 
 ### Worked examples
 
@@ -262,10 +310,10 @@ Expected sheet sizes (consistent with the size arithmetic, confirmed only by the
 
 | Case | M4 | Deferred |
 |---|---|---|
-| Frame-important tiles with a 16×16 grid (most furniture, multi-tile objects) | draw each tile's own cell at `(frameX, frameY)`; multi-tile objects need nothing extra because every tile carries its own frame | — |
+| Frame-important tiles with a 16×16 grid (most furniture, multi-tile objects) | draw each tile's own cell at `(frameX, frameY)`; multi-tile objects need nothing extra because every tile carries its own frame; frames past the sheet's edge wrap ("Frames past the sheet's edge") | — |
 | Frame-important tiles with other grids (torches, plants, …) | draw with the tile's `textureGrid` size | exact per-id draw offsets |
 | Non-frame-important blocks | the cell framed by "Tile framing" and its database (#141, #146), grass and moss included; half blocks and slopes cut per "Slopes and half blocks"; falling blocks with nothing below them in map colours | paint, lighting |
-| Walls | map colours | framing by "Walls" and the framing database (#147) |
+| Walls | the cell framed by "Walls" and the framing database (#147), a 32 × 32 cell centred on the tile, below the blocks | paint, lighting |
 | Animated tiles (173 ids flagged `isAnimated` in A12, all frame-important) | draw the stored frame (static) | animation |
 | Trees (5, 323, …), tree tops/branches, variant sheets (`Tiles_5_N`, `Tiles_2_Beach`, `Tiles_59_2`, …) | placeholder | yes |
 | Paint, actuated/inactive tint, illumination, liquids, wires | — | yes |
@@ -1001,8 +1049,10 @@ and packs them into square RGBA pages, 4096 × 4096 by default. It runs in a Wor
 touches the network; the Worker reports the number of `fetch` calls it saw (always 0).
 
 - **Packing:** shelf packing, tallest sheet first, with 2 transparent pixels of padding around every sheet so
-  sampling never bleeds into a neighbour. A sheet that does not fit an empty page (including padding) is rejected with
-  `AtlasSheetTooLargeError`.
+  sampling never bleeds into a neighbour, and every sheet at an even pixel (format 4): the renderer's half-resolution
+  atlas averages 2 × 2 pixels from even positions, and every cell, gutter and shape column of a sheet starts at an even
+  pixel of it, so no half-resolution texel mixes a cell with its gutter. A sheet that does not fit an empty page
+  (including padding) is rejected with `AtlasSheetTooLargeError`.
 - **Index:** `(kind, id) → { page, x, y, width, height, frameWidth, frameHeight, gapX, gapY }`: the per-sheet frame and gutter
   of "Sprite layout" (default tiles 16×16 / 2, walls 32×32 / 4; the 56 tile ids whose grid or gutter differs from the default — e.g. tile 4
   20×20, tile 3 and 24 16×20, tile 15 gutter 2×4, tiles 751/752 18×18 with no gutter — carry their own values, restated from A12's

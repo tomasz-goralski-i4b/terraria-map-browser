@@ -7,15 +7,19 @@ import { CHUNK_SIZE, visibleChunks } from "../camera/camera.js";
 import type { Camera, ChunkCoord, Size } from "../camera/camera.js";
 import { filterTilesPerPixel } from "../chunk/box-filter.js";
 import { WIRE_ALPHA, WIRE_COLORS, WIRE_LAYER, type ChunkLayers } from "../chunk/render.js";
+import { NO_CELL } from "../framing/cells.js";
 import { createChunkCellCache } from "../framing/chunk-cells.js";
+import { SPRITE_FRAME_WRAPS } from "./frame-wrap.js";
 import type { ChunkCellCache } from "../framing/chunk-cells.js";
+import { createChunkWallCellCache } from "../framing/chunk-wall-cells.js";
+import type { ChunkWallCellCache } from "../framing/chunk-wall-cells.js";
 import type { BlockFraming } from "../framing/frame-block.js";
 import { backgroundColor, contentColor, liquidColors } from "../palette/map-palette.js";
 import type { MapPalette } from "../palette/map-palette.js";
 import {
-  CELLS_INSTANCE_BIT, LAYER_ATTRIBUTE, PAGE_APRON, PLANES_16, PLANES_8, PLANE_COUNT_16, PLANE_COUNT_8, PRESENT, RECT_ATTRIBUTE,
-  RULE_HEADER_ROWS, RULE_ROW, SPRITE_MIN_ZOOM, SPRITE_SHEET_ROW, spriteSampling, SPRITE_STATE, chunkFragmentSource, chunkVertexSource, overviewBuildFragmentSource,
-  overviewBuildVertexSource, overviewFragmentSource, overviewVertexSource,
+  CELLS_INSTANCE_BIT, WALLS_INSTANCE_BIT, LAYER_ATTRIBUTE, PAGE_APRON, PLANES_16, PLANES_8, PLANE_COUNT_16, PLANE_COUNT_8, PRESENT, RECT_ATTRIBUTE,
+  RULE_HEADER_ROWS, RULE_ROW, SPRITE_MIN_ZOOM, SPRITE_SHEET_ROW, SPRITE_SHEET_TEXELS, spriteSampling, SPRITE_STATE, chunkFragmentSource, chunkSpriteFragmentSource, chunkVertexSource, overviewBuildFragmentSource,
+  halfAtlasFragmentSource, halfAtlasVertexSource, overviewBuildVertexSource, overviewFragmentSource, overviewVertexSource,
 } from "./shaders.js";
 
 /** The slice of a world the renderer reads. Planes are column-major (`x * height + y`); never copied by the caller. */
@@ -85,7 +89,7 @@ export interface MapRendererOptions {
    */
   readonly maxUploadMillisecondsPerFrame?: number;
   /**
-   * Baseline chunk texture cache capacity (LRU). Default 512 (about 150 MiB of chunk pages).
+   * Baseline chunk texture cache capacity (LRU). Default 512 (about 160 MiB of chunk pages).
    * Grows to fit the largest set drawn chunk by chunk (at half a pixel per tile and above, so bounded by the
    * viewport) for the current world; resets when the world changes. Zoomed-out views come from the overview and do
    * not grow it.
@@ -93,6 +97,14 @@ export interface MapRendererOptions {
   readonly maxCachedChunks?: number;
   /** Map colours (content, paint, background by depth), as in `renderChunk`; without one, placeholders are drawn. */
   readonly mapPalette?: MapPalette;
+  /**
+   * Called with true when the renderer starts preparing its sprite program in the background (KHR_parallel_shader_compile:
+   * seconds on some drivers with a cold shader cache; sprites show map colours meanwhile) and with false when it is
+   * ready, or the preparation ends otherwise: the link failed (sprites keep map colours and `render` throws the
+   * driver's log), the context was lost, or the renderer was disposed. Without the extension the program is linked at
+   * once and this is never called.
+   */
+  readonly onSpritesPreparing?: (preparing: boolean) => void;
 }
 
 export interface MapRendererStats {
@@ -116,6 +128,13 @@ export interface MapRendererStats {
    * sprite zoom, and the cached tiles of the areas `invalidateTiles` recomputes.
    */
   readonly framedTiles: number;
+  /**
+   * Wall cells framed since creation: every tile of a chunk and its apron inside the world once on its first upload at
+   * a sprite zoom, and the cached cells of the 3 × 3 areas `invalidateTiles` recomputes.
+   */
+  readonly framedWalls: number;
+  /** Whether the sprite program is being prepared in the background (MapRendererOptions.onSpritesPreparing). */
+  readonly spritesPreparing: boolean;
 }
 
 export interface MapRenderer {
@@ -130,20 +149,23 @@ export interface MapRenderer {
   readonly setAtlas: (atlas: SpriteAtlasSource | null) => void;
   /**
    * Sprite mode: from `SPRITE_MIN_ZOOM` pixels per tile, frame-important blocks show their sprite (and, with a framing,
-   * self-framed blocks their framed cell). A uniform switch: turning it on or off, or crossing the zoom threshold,
+   * self-framed blocks and walls their framed cells). A uniform switch: turning it on or off, or crossing the zoom threshold,
    * uploads no chunk planes and no atlas. The one exception is a resident chunk's first draw at a sprite zoom with a
    * framing, which frames it and uploads its cells once (`setFraming`).
    */
   readonly setSpriteMode: (enabled: boolean) => void;
   /**
    * The block framing (`createBlockFraming`): with it, sprite mode also draws self-framed blocks (dirt, stone, ores,
-   * grass, …) with the cell their neighbours give them, half blocks and slopes cut by their shape. A chunk is framed
-   * on its first upload at a sprite zoom and keeps its cells while it stays resident; null draws them in map colours.
+   * grass, …) with the cell their neighbours give them, half blocks and slopes cut by their shape, and (through its
+   * `walls`) walls with theirs: a 32 × 32 cell centred on the tile, overhanging 8 pixels, below the blocks. A chunk is
+   * framed on its first upload at a sprite zoom and keeps its cells while it stays resident; null draws them in map
+   * colours.
    */
   readonly setFraming: (framing: BlockFraming | null) => void;
   /**
    * After the world's planes changed at `tiles`: recomputes the framed cells around them (docs/assets.md, "Inputs
-   * beyond 3 × 3": up to d + 1 tiles away, d the deepest framing depth there) and uploads the touched chunks again.
+   * beyond 3 × 3": up to d + 1 tiles away, d the deepest framing depth there; walls within 3 × 3) and uploads the
+   * touched chunks again.
    */
   readonly invalidateTiles: (tiles: readonly { readonly x: number; readonly y: number }[]) => void;
   /** Integer tile under a canvas pixel, or null outside the world. */
@@ -170,20 +192,22 @@ const DEFAULT_MAX_CACHED_CHUNKS = 512;
 const DEFAULT_MAX_CHUNK_UPLOADS_PER_FRAME = 256;
 const DEFAULT_MAX_UPLOAD_MILLISECONDS_PER_FRAME = 8;
 /**
- * Chunks per page. A page holds one layer per plane and chunk: 32 × 6 = 192 layers of the 16-bit texture and
- * 32 × 5 = 160 of the 8-bit one, within the 256 array layers WebGL2 guarantees, with room for two more 16-bit
- * planes (32 × 8 = 256). A page of both textures is about 9.2 MiB.
+ * Chunks per page. A page holds one layer per plane and chunk: 32 × 7 = 224 layers of the 16-bit texture and
+ * 32 × 5 = 160 of the 8-bit one, within the 256 array layers WebGL2 guarantees, with room for one more 16-bit
+ * plane (32 × 8 = 256). A page of both textures is about 9.8 MiB.
  */
 const CHUNKS_PER_PAGE = 32;
 /** Texels per side of a page layer: the chunk and its apron of neighbouring tiles on every side. */
 const PAGE_SIZE = CHUNK_SIZE + 2 * PAGE_APRON;
 /** Ints per instance: the chunk rectangle (origin x, origin y, columns, rows) and its page layer. */
 const INSTANCE_INTS = 5;
+/** How often a sprite program linked in the background is asked whether it is done. */
+const LINK_POLL_MILLISECONDS = 50;
 /** The smallest overview factor: one overview texel per 2 × 2 tiles, used below half a pixel per tile. */
 const MIN_OVERVIEW_FACTOR = 2;
 
 // Texture units: 0–1 the chunk page; 2 palette; 3 background and paint colours; 4 map option rules; 5 overview;
-// 6 sprite atlas pages; 7 sprite sheet lookup. WebGL2 guarantees 16.
+// 6 sprite atlas pages; 7 sprite sheet lookup; 8 the atlas pages at half resolution. WebGL2 guarantees 16.
 const UNIT_PLANES_16 = 0;
 const UNIT_PLANES_8 = 1;
 const UNIT_PALETTE = 2;
@@ -192,7 +216,8 @@ const UNIT_RULES = 4;
 const UNIT_OVERVIEW = 5;
 const UNIT_ATLAS = 6;
 const UNIT_SPRITE_SHEETS = 7;
-const TEXTURE_UNITS = 8;
+const UNIT_ATLAS_HALF = 8;
+const TEXTURE_UNITS = 9;
 /**
  * Tile IDs sprite mode leaves in map colours although they store frames: trees and the giant mushroom (5 Tree,
  * 72 Giant Mushroom, 323 Palm Tree, 583–589 gem trees, 596, 616 and 634 vanity and ash trees, by the shipped content
@@ -200,15 +225,20 @@ const TEXTURE_UNITS = 8;
  * palm tree's frame is not a sheet offset (docs/assets.md, "Special handling": trees are deferred).
  */
 export const SPRITE_DEFERRED_TILES: ReadonlySet<number> = new Set([5, 72, 323, 583, 584, 585, 586, 587, 588, 589, 596, 616, 634]);
-/** Texels per row of the sprite sheet lookup: two per palette index (SPRITE_SHEET_ROW in shaders.ts). */
-const SPRITE_SHEET_WIDTH = SPRITE_SHEET_ROW * 2;
+/** Texels per row of the sprite sheet lookup: five per palette index (SPRITE_SHEET_ROW in shaders.ts). */
+const SPRITE_SHEET_WIDTH = SPRITE_SHEET_ROW * SPRITE_SHEET_TEXELS;
 
 const TILE_UNIFORMS = [
   "uPlanes16", "uPlanes8", "uPresent", "uPalette", "uBackground", "uRules", "uPaintRow", "uPaintCount", "uPaletteLength",
-  "uLayers", "uLiquids", "uWireColors", "uWireBits", "uWireAlpha", "uAtlas", "uSpriteSheets", "uSprites",
-  "uSpriteSamples", "uSpriteStep", "uSpriteWeight",
+  "uLayers", "uLiquids", "uWireColors", "uWireBits", "uWireAlpha",
 ] as const;
 const CHUNK_UNIFORMS = [...TILE_UNIFORMS, "uCamera", "uZoom", "uViewport", "uFilter", "uStep", "uWorldSize"] as const;
+/** The sprite program's own uniforms (chunkSpriteFragmentSource), besides CHUNK_UNIFORMS. */
+const SPRITE_UNIFORMS = [
+  "uAtlas", "uAtlasHalf", "uSpriteSheets", "uSpriteSamples", "uSpriteStep", "uSpriteLevel", "uSpriteWeight",
+] as const;
+const HALF_ATLAS_UNIFORMS = ["uAtlas", "uPage"] as const;
+const SPRITE_CHUNK_UNIFORMS = [...CHUNK_UNIFORMS, ...SPRITE_UNIFORMS] as const;
 const BUILD_UNIFORMS = [...TILE_UNIFORMS, "uFactor", "uTarget"] as const;
 const OVERVIEW_UNIFORMS = ["uCamera", "uZoom", "uViewport", "uWorld", "uExtent", "uOverview"] as const;
 
@@ -217,9 +247,26 @@ interface Program<Name extends string> {
   readonly uniforms: Readonly<Record<Name, WebGLUniformLocation>>;
 }
 
+/** A rectangle of world tiles; right and bottom exclusive. */
+interface Area {
+  readonly left: number;
+  readonly top: number;
+  readonly right: number;
+  readonly bottom: number;
+}
+
+/** The smallest area holding `first` (if any) and `second`. */
+function union(first: Area | undefined, second: Area): Area {
+  if (first === undefined) return second;
+  return {
+    left: Math.min(first.left, second.left), top: Math.min(first.top, second.top),
+    right: Math.max(first.right, second.right), bottom: Math.max(first.bottom, second.bottom),
+  };
+}
+
 /** One array texture per plane format, holding up to CHUNKS_PER_PAGE chunks with their aprons, a layer per plane. */
 interface Page {
-  /** R16UI, PLANES_16 per chunk: block, wall, flags, frameX, frameY, framed cell. */
+  /** R16UI, PLANES_16 per chunk: block, wall, flags, frameX, frameY, framed block cell, framed wall cell. */
   readonly planes16: WebGLTexture;
   /** R8UI, PLANES_8 per chunk: liquid kind, liquid amount, block paint, wall paint, block shape. */
   readonly planes8: WebGLTexture;
@@ -253,6 +300,7 @@ interface RuleTable {
 
 /** Everything owned by one GL context; rebuilt after a context loss. */
 interface GpuResources {
+  /** The chunk pass in map colours. Sprite frames use the sprite program, linked on first use (spriteProgramOf). */
   readonly chunk: Program<(typeof CHUNK_UNIFORMS)[number]>;
   readonly build: Program<(typeof BUILD_UNIFORMS)[number]>;
   readonly overview: Program<(typeof OVERVIEW_UNIFORMS)[number]>;
@@ -265,7 +313,7 @@ interface GpuResources {
   readonly palette: WebGLTexture;
   /** Map option rules: headers by palette index, then the ranges (see RULE_ROW in shaders.ts). */
   readonly rules: WebGLTexture;
-  /** The sheet of each palette index (SPRITE_SHEET_ROW in shaders.ts); all zero (no sheet) without an atlas. */
+  /** The tile and wall sheets of each palette index (SPRITE_SHEET_ROW in shaders.ts); all zero without an atlas. */
   readonly spriteSheets: WebGLTexture;
 }
 
@@ -289,30 +337,72 @@ function requireValue<T>(value: T | null, what: string): T {
   return value;
 }
 
-function compile(gl: WebGL2RenderingContext, type: number, source: string): WebGLShader {
-  const shader = requireValue(gl.createShader(type), "a shader");
-  gl.shaderSource(shader, source);
-  gl.compileShader(shader);
-  if (!(gl.getShaderParameter(shader, gl.COMPILE_STATUS) as boolean)) {
-    throw new Error(`Shader compilation failed: ${gl.getShaderInfoLog(shader) ?? "unknown error"}`);
-  }
-  return shader;
+/** A program whose compiling and linking was started (startLink) and is checked by finishLink. */
+interface Linking {
+  readonly program: WebGLProgram;
+  readonly shaders: readonly WebGLShader[];
 }
 
-function link<Name extends string>(
-  gl: WebGL2RenderingContext, vertex: string, fragment: string, names: readonly Name[],
-): Program<Name> {
+/**
+ * Starts compiling and linking a program without asking for the result: with KHR_parallel_shader_compile the driver
+ * works on it in the background until finishLink (or a COMPLETION_STATUS_KHR query says it is done).
+ */
+function startLink(gl: WebGL2RenderingContext, vertex: string, fragment: string): Linking {
   const program = requireValue(gl.createProgram(), "a program");
-  gl.attachShader(program, compile(gl, gl.VERTEX_SHADER, vertex));
-  gl.attachShader(program, compile(gl, gl.FRAGMENT_SHADER, fragment));
+  const shaders = [[gl.VERTEX_SHADER, vertex], [gl.FRAGMENT_SHADER, fragment]] as const;
+  const compiled = shaders.map(([type, source]) => {
+    const shader = requireValue(gl.createShader(type), "a shader");
+    gl.shaderSource(shader, source);
+    gl.compileShader(shader);
+    gl.attachShader(program, shader);
+    return shader;
+  });
   gl.linkProgram(program);
-  if (!(gl.getProgramParameter(program, gl.LINK_STATUS) as boolean)) {
-    throw new Error(`Shader link failed: ${gl.getProgramInfoLog(program) ?? "unknown error"}`);
+  return { program, shaders: compiled };
+}
+
+/**
+ * Waits for a started link and looks up the program's uniforms; throws with the driver's log if it failed (the program
+ * is deleted then). The shaders are deleted either way: a linked program keeps what it needs.
+ */
+function finishLink<Name extends string>(gl: WebGL2RenderingContext, linking: Linking, names: readonly Name[]): Program<Name> {
+  const { program } = linking;
+  const linked = gl.getProgramParameter(program, gl.LINK_STATUS) as boolean;
+  let failure: string | null = null;
+  if (!linked) {
+    const broken = linking.shaders.find((shader) => !(gl.getShaderParameter(shader, gl.COMPILE_STATUS) as boolean));
+    failure = broken === undefined
+      ? `Shader link failed: ${gl.getProgramInfoLog(program) ?? "unknown error"}`
+      : `Shader compilation failed: ${gl.getShaderInfoLog(broken) ?? "unknown error"}`;
+  }
+  for (const shader of linking.shaders) {
+    gl.detachShader(program, shader);
+    gl.deleteShader(shader);
+  }
+  if (failure !== null) {
+    gl.deleteProgram(program);
+    throw new Error(failure);
   }
   const uniforms = Object.fromEntries(
     names.map((name) => [name, requireValue(gl.getUniformLocation(program, name), `uniform ${name}`)]),
   ) as Record<Name, WebGLUniformLocation>;
   return { program, uniforms };
+}
+
+function link<Name extends string>(
+  gl: WebGL2RenderingContext, vertex: string, fragment: string, names: readonly Name[],
+): Program<Name> {
+  return finishLink(gl, startLink(gl, vertex, fragment), names);
+}
+
+/** KHR_parallel_shader_compile, when the browser offers it. */
+interface ParallelShaderCompile {
+  readonly COMPLETION_STATUS_KHR: number;
+}
+
+function parallelShaderCompile(gl: WebGL2RenderingContext): ParallelShaderCompile | null {
+  const extension: ParallelShaderCompile | null = gl.getExtension("KHR_parallel_shader_compile");
+  return extension;
 }
 
 function integerTexture(gl: WebGL2RenderingContext, format: number, width: number, height: number): WebGLTexture {
@@ -448,6 +538,14 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   // Looked up once: getExtension returns null while the context is lost. Used only to restore a forced loss.
   const loseContext = gl.getExtension("WEBGL_lose_context");
   let resources = createResources(gl, rules);
+  let spriteProgram: Program<(typeof SPRITE_CHUNK_UNIFORMS)[number]> | null = null;
+  // The sprite program while the driver links it in the background (KHR_parallel_shader_compile, where offered).
+  let spriteLinking: Linking | null = null;
+  let parallelCompile = parallelShaderCompile(gl);
+  // The timer that asks whether the background link is done; 0 when none is pending.
+  let linkPoll = 0;
+  // Why the sprite program failed to link, for this context.
+  let spriteLinkError: Error | null = null;
   let world: RenderableWorld | null = null;
   let cacheCapacity = maxCachedChunks;
   let camera: Camera = { x: 0, y: 0, zoom: 1 };
@@ -467,18 +565,28 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   // Sprite mode: the atlas as given, its pages on the GPU, and the sheet lookup by palette index.
   let atlas: SpriteAtlasSource | null = null;
   let atlasTexture: WebGLTexture | null = null;
+  // The atlas pages at half resolution (halfAtlasFragmentSource), read by sprite samples from 8 pixels per tile down.
+  let atlasHalfTexture: WebGLTexture | null = null;
+  let halfAtlasProgram: Program<(typeof HALF_ATLAS_UNIFORMS)[number]> | null = null;
   let tileSheets = new Map<number, SpriteSheetEntry>();
+  let wallSheets = new Map<number, SpriteSheetEntry>();
   const sheetMirror = new Int32Array(SPRITE_SHEET_WIDTH * PALETTE_HEIGHT * 4);
   let spriteMode = false;
   let atlasUploads = 0;
-  // Self-framed blocks: the framing, the framed cells of the current world's resident chunks, and the slots whose cell
-  // layer holds their chunk's current cells. Tiles framed by caches already let go are kept in framedBefore.
+  // Self-framed blocks and walls: the framing, the framed cells of the current world's resident chunks, and the slots
+  // whose cell layers hold their chunk's current cells. Tiles framed by caches already let go are kept in the
+  // framed…Before counts.
   let framing: BlockFraming | null = null;
   let cellCache: ChunkCellCache | null = null;
+  let wallCache: ChunkWallCellCache | null = null;
   let framedBefore = 0;
+  let framedWallsBefore = 0;
   const framedSlots = new Set<number>();
-  // Resident chunks whose planes changed (invalidateTiles): uploaded again on their next draw.
-  const dirtyChunks = new Set<number>();
+  // The framed slots whose wall cell layer holds any wall cell (WALLS_INSTANCE_BIT).
+  const wallSlots = new Set<number>();
+  // Resident chunks whose planes changed (invalidateTiles), with the world tiles that changed in their layers (right and
+  // bottom exclusive): uploaded again on their next draw, that rectangle only.
+  const dirtyChunks = new Map<number, Area>();
   // The world the plane unpack state (alignment, row length, image height) is set for; null for GL's defaults. Chunk
   // uploads set it once and then only move the skip parameters; other uploads restore the defaults first.
   let unpackWorld: RenderableWorld | null = null;
@@ -501,8 +609,11 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   /** Lets go of the framed cells (the next sprite-mode upload frames chunks again); the slots' cell layers are stale. */
   const releaseCells = (): void => {
     framedBefore += cellCache?.framedTiles ?? 0;
+    framedWallsBefore += wallCache?.framedTiles ?? 0;
     cellCache = null;
+    wallCache = null;
     framedSlots.clear();
+    wallSlots.clear();
   };
 
   const clearChunks = (): void => {
@@ -592,10 +703,11 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   };
 
   /**
-   * Writes the sheet of palette indices `from` … `to` - 1 into the lookup (whole rows). With an atlas, an index whose
+   * Writes the sheets of palette indices `from` … `to` - 1 into the lookup (whole rows). With an atlas, an index whose
    * content has a tile sheet gets its place and frame size, deferred content (trees) the map colour, and any other
    * (newer than the install, mod, unknown) the missing-texture state; the shader only uses it for blocks with a
-   * stored frame. Without an atlas every index has the map colour.
+   * stored frame or a framed cell. Its wall sheet likewise, for walls with a framed cell. Without an atlas every index
+   * has the map colour.
    */
   const uploadSheets = (palette: readonly ContentRef[], from: number, to: number): void => {
     if (to <= from) return;
@@ -603,13 +715,27 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       const ref = palette[index];
       const vanilla = ref?.kind === "vanilla" ? ref.id : undefined;
       const sheet = vanilla === undefined ? undefined : tileSheets.get(vanilla);
-      const at = ((Math.floor(index / SPRITE_SHEET_ROW) * SPRITE_SHEET_WIDTH) + (index % SPRITE_SHEET_ROW) * 2) * 4;
+      const at = (Math.floor(index / SPRITE_SHEET_ROW) * SPRITE_SHEET_WIDTH + (index % SPRITE_SHEET_ROW) * SPRITE_SHEET_TEXELS) * 4;
       if (sheet !== undefined) {
         sheetMirror.set([sheet.page, sheet.x, sheet.y, SPRITE_STATE.sheet, sheet.width, sheet.height, sheet.frameWidth, sheet.frameHeight], at);
       } else {
         const deferred = atlasTexture === null || (vanilla !== undefined && SPRITE_DEFERRED_TILES.has(vanilla));
         sheetMirror.set([0, 0, 0, deferred ? SPRITE_STATE.mapColor : SPRITE_STATE.missing, 0, 0, 0, 0], at);
       }
+      const wallSheet = vanilla === undefined ? undefined : wallSheets.get(vanilla);
+      if (wallSheet !== undefined) {
+        sheetMirror.set([
+          wallSheet.page, wallSheet.x, wallSheet.y, SPRITE_STATE.sheet, wallSheet.width, wallSheet.height,
+          wallSheet.frameWidth, wallSheet.frameHeight,
+        ], at + 8);
+      } else {
+        const state = atlasTexture === null ? SPRITE_STATE.mapColor : SPRITE_STATE.missing;
+        sheetMirror.set([0, 0, 0, state, 0, 0, 0, 0], at + 8);
+      }
+      const wrap = vanilla === undefined ? undefined : SPRITE_FRAME_WRAPS.get(vanilla);
+      sheetMirror.set(wrap === undefined ? [0, 0, 0, 0] : wrap.axis === "x"
+        ? [wrap.period, wrap.shift, 0, 0]
+        : [0, 0, wrap.period, wrap.shift], at + 16);
     }
     const firstRow = Math.floor(from / SPRITE_SHEET_ROW);
     const lastRow = Math.floor((to - 1) / SPRITE_SHEET_ROW);
@@ -640,12 +766,46 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       gl.texSubImage3D(gl.TEXTURE_2D_ARRAY, 0, 0, 0, layer, pageSize, pageSize, 1, gl.RGBA, gl.UNSIGNED_BYTE, page);
     });
     atlasTexture = texture;
+    atlasHalfTexture = halfAtlas(texture, pageSize, pageCount);
     atlasUploads++;
   };
 
+  /** Draws the half-resolution copy of the atlas pages in `atlasPages` (one pass per page) into a new texture. */
+  const halfAtlas = (atlasPages: WebGLTexture, pageSize: number, pageCount: number): WebGLTexture => {
+    const size = Math.ceil(pageSize / 2);
+    const texture = requireValue(gl.createTexture(), "a texture");
+    gl.activeTexture(gl.TEXTURE0 + UNIT_ATLAS_HALF);
+    gl.bindTexture(gl.TEXTURE_2D_ARRAY, texture);
+    gl.texStorage3D(gl.TEXTURE_2D_ARRAY, 1, gl.RGBA8UI, size, size, pageCount);
+    gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    halfAtlasProgram ??= link(gl, halfAtlasVertexSource, halfAtlasFragmentSource, HALF_ATLAS_UNIFORMS);
+    gl.useProgram(halfAtlasProgram.program);
+    gl.activeTexture(gl.TEXTURE0 + UNIT_ATLAS);
+    gl.bindTexture(gl.TEXTURE_2D_ARRAY, atlasPages);
+    gl.uniform1i(halfAtlasProgram.uniforms.uAtlas, UNIT_ATLAS);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, resources.framebuffer);
+    gl.viewport(0, 0, size, size);
+    gl.bindVertexArray(resources.emptyArray);
+    for (let layer = 0; layer < pageCount; layer++) {
+      gl.framebufferTextureLayer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, texture, 0, layer);
+      gl.uniform1i(halfAtlasProgram.uniforms.uPage, layer);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+    }
+    gl.bindVertexArray(null);
+    // Detached, or the shared framebuffer would keep the texture alive after the atlas is replaced.
+    gl.framebufferTextureLayer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, null, 0, 0);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    return texture;
+  };
+
   const releaseAtlas = (): void => {
-    if (atlasTexture !== null && !gl.isContextLost()) gl.deleteTexture(atlasTexture);
+    if (!gl.isContextLost()) {
+      if (atlasTexture !== null) gl.deleteTexture(atlasTexture);
+      if (atlasHalfTexture !== null) gl.deleteTexture(atlasHalfTexture);
+    }
     atlasTexture = null;
+    atlasHalfTexture = null;
   };
 
   /** Puts `source` on the GPU and rewrites the sheet of every palette index uploaded so far. */
@@ -654,6 +814,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     tileSheets = new Map(source?.index.entries
       .filter((entry) => entry.kind === "tile" && !SPRITE_DEFERRED_TILES.has(entry.id))
       .map((entry) => [entry.id, entry]));
+    wallSheets = new Map(source?.index.entries.filter((entry) => entry.kind === "wall").map((entry) => [entry.id, entry]));
     if (source !== null) uploadAtlas(source);
     if (world !== null) uploadSheets(world.palette, 0, paletteUploaded);
   };
@@ -704,16 +865,24 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
    * read in place from the world's plane. A chunk is a rectangle of a column-major plane and a layer stores it
    * transposed, so the unpack parameters select it: an upload row is a world column (UNPACK_ROW_LENGTH is the world's
    * height, UNPACK_IMAGE_HEIGHT its width), starting at the chunk's first column (UNPACK_SKIP_ROWS) and first row
-   * (UNPACK_SKIP_PIXELS). No tile is touched in JavaScript.
+   * (UNPACK_SKIP_PIXELS). No tile is touched in JavaScript. With `area` (world tiles, after an edit) only the part of
+   * the layers inside it, and the slot's cell layers stay as they are (uploadCellArea updates them).
    */
-  const uploadChunk = (source: RenderableWorld, chunk: ChunkCoord, slot: number): void => {
+  const uploadChunk = (source: RenderableWorld, chunk: ChunkCoord, slot: number, area?: Area): void => {
     const originX = chunk.x * CHUNK_SIZE;
     const originY = chunk.y * CHUNK_SIZE;
     // The apron, clipped to the world: texels past the world's edges keep stale values the shaders never read.
-    const firstColumn = Math.max(-PAGE_APRON, -originX);
-    const endColumn = Math.min(CHUNK_SIZE + PAGE_APRON, source.width - originX);
-    const firstRow = Math.max(-PAGE_APRON, -originY);
-    const endRow = Math.min(CHUNK_SIZE + PAGE_APRON, source.height - originY);
+    let firstColumn = Math.max(-PAGE_APRON, -originX);
+    let endColumn = Math.min(CHUNK_SIZE + PAGE_APRON, source.width - originX);
+    let firstRow = Math.max(-PAGE_APRON, -originY);
+    let endRow = Math.min(CHUNK_SIZE + PAGE_APRON, source.height - originY);
+    if (area !== undefined) {
+      firstColumn = Math.max(firstColumn, area.left - originX);
+      endColumn = Math.min(endColumn, area.right - originX);
+      firstRow = Math.max(firstRow, area.top - originY);
+      endRow = Math.min(endRow, area.bottom - originY);
+      if (endColumn <= firstColumn || endRow <= firstRow) return;
+    }
     const page = pages[Math.floor(slot / CHUNKS_PER_PAGE)];
     if (page === undefined) throw new Error(`chunk slot ${String(slot)} has no page`);
     const inPage = slot % CHUNKS_PER_PAGE;
@@ -743,41 +912,104 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     upload(planes8, PLANE_COUNT_8, gl.UNSIGNED_BYTE);
     textureUploads++;
     // The slot's cell layer still holds the cells of whatever was there before.
-    framedSlots.delete(slot);
+    if (area === undefined) framedSlots.delete(slot);
   };
 
-  /** The framed cells of `source`'s chunks; null without a framing. */
-  const cellsOf = (source: RenderableWorld): ChunkCellCache | null => {
+  /** The framed cells of `source`'s chunks, blocks and walls; null without a framing. */
+  const cellsOf = (source: RenderableWorld): { blocks: ChunkCellCache; walls: ChunkWallCellCache } | null => {
     if (framing === null) return null;
-    if (cellCache?.world !== source) {
+    if (cellCache === null || wallCache === null || cellCache.world !== source) {
       releaseCells();
       cellCache = createChunkCellCache(source, framing);
+      wallCache = createChunkWallCellCache(source, framing.walls, CHUNK_SIZE, PAGE_APRON);
     }
-    return cellCache;
+    return { blocks: cellCache, walls: wallCache };
   };
 
   /**
-   * Uploads the framed cells of `chunk` (framing it on first use) into the cell layer of its slot: the chunk's cells
-   * without the apron, which the sprite pass never reads.
+   * Uploads the framed cells of `chunk` (framing it on first use) into the cell layers of its slot: the chunk's block
+   * cells without the apron, which the sprite pass never reads for blocks, and its wall cells with the apron, whose
+   * overhang reaches into the chunk (the whole layer: NO_CELL past the world's edges). One texture upload.
    */
   const uploadCells = (source: RenderableWorld, chunk: ChunkCoord, slot: number): void => {
-    const cells = cellsOf(source)?.cells(chunk);
+    const caches = cellsOf(source);
     const page = pages[Math.floor(slot / CHUNKS_PER_PAGE)];
-    if (cells === undefined || page === undefined) return;
+    if (caches === null || page === undefined) return;
+    const cells = caches.blocks.cells(chunk);
     const columns = Math.min(CHUNK_SIZE, source.width - chunk.x * CHUNK_SIZE);
     const rows = Math.min(CHUNK_SIZE, source.height - chunk.y * CHUNK_SIZE);
+    const layer = (slot % CHUNKS_PER_PAGE) * PLANE_COUNT_16;
     resetUnpack();
     // Column-major cells are the transposed layer's rows: `rows` cells each, 2-byte aligned.
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 2);
     gl.activeTexture(gl.TEXTURE0 + UNIT_PLANES_16);
     gl.bindTexture(gl.TEXTURE_2D_ARRAY, page.planes16);
     gl.texSubImage3D(
-      gl.TEXTURE_2D_ARRAY, 0, PAGE_APRON, PAGE_APRON, (slot % CHUNKS_PER_PAGE) * PLANE_COUNT_16 + PLANES_16.cell,
+      gl.TEXTURE_2D_ARRAY, 0, PAGE_APRON, PAGE_APRON, layer + PLANES_16.cell,
       rows, columns, 1, gl.RED_INTEGER, gl.UNSIGNED_SHORT, cells,
     );
+    const walls = caches.walls.cells(chunk);
+    gl.texSubImage3D(
+      gl.TEXTURE_2D_ARRAY, 0, 0, 0, layer + PLANES_16.wallCell, PAGE_SIZE, PAGE_SIZE, 1, gl.RED_INTEGER,
+      gl.UNSIGNED_SHORT, walls,
+    );
+    if (walls.some((cell) => cell !== NO_CELL)) wallSlots.add(slot);
+    else wallSlots.delete(slot);
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
     textureUploads++;
     framedSlots.add(slot);
+  };
+
+  /**
+   * Uploads the framed cells of `chunk` inside `area` (world tiles), recomputed after an edit, into its slot's cell
+   * layers, which hold the rest of its current cells (framedSlots): the block cells inside the chunk and the wall
+   * cells inside its layer, apron included. The unpack parameters select the rectangle of the column-major arrays.
+   */
+  const uploadCellArea = (source: RenderableWorld, chunk: ChunkCoord, slot: number, area: Area): void => {
+    const caches = cellsOf(source);
+    const page = pages[Math.floor(slot / CHUNKS_PER_PAGE)];
+    if (caches === null || page === undefined) return;
+    const originX = chunk.x * CHUNK_SIZE;
+    const originY = chunk.y * CHUNK_SIZE;
+    const layer = (slot % CHUNKS_PER_PAGE) * PLANE_COUNT_16;
+    resetUnpack();
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 2);
+    gl.activeTexture(gl.TEXTURE0 + UNIT_PLANES_16);
+    gl.bindTexture(gl.TEXTURE_2D_ARRAY, page.planes16);
+    /** Uploads columns [c0, c1) × rows [r0, r1) of a column-major array of `rows` rows, `offset` texels into the layer. */
+    const part = (
+      plane: number, cells: Uint16Array, rows: number, offset: number, c0: number, c1: number, r0: number, r1: number,
+    ): boolean => {
+      if (c1 <= c0 || r1 <= r0) return false;
+      gl.pixelStorei(gl.UNPACK_ROW_LENGTH, rows);
+      // A 3D upload must fit its skipped rows within the image height: the array's columns.
+      gl.pixelStorei(gl.UNPACK_IMAGE_HEIGHT, cells.length / rows);
+      gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, r0);
+      gl.pixelStorei(gl.UNPACK_SKIP_ROWS, c0);
+      gl.texSubImage3D(
+        gl.TEXTURE_2D_ARRAY, 0, offset + r0, offset + c0, layer + plane, r1 - r0, c1 - c0, 1, gl.RED_INTEGER,
+        gl.UNSIGNED_SHORT, cells,
+      );
+      return true;
+    };
+    const columns = Math.min(CHUNK_SIZE, source.width - originX);
+    const rows = Math.min(CHUNK_SIZE, source.height - originY);
+    const blocks = part(
+      PLANES_16.cell, caches.blocks.cells(chunk), rows, PAGE_APRON,
+      Math.max(0, area.left - originX), Math.min(columns, area.right - originX),
+      Math.max(0, area.top - originY), Math.min(rows, area.bottom - originY),
+    );
+    const walls = caches.walls.cells(chunk);
+    const wallsUploaded = part(
+      PLANES_16.wallCell, walls, PAGE_SIZE, 0,
+      Math.max(0, area.left - originX + PAGE_APRON), Math.min(PAGE_SIZE, area.right - originX + PAGE_APRON),
+      Math.max(0, area.top - originY + PAGE_APRON), Math.min(PAGE_SIZE, area.bottom - originY + PAGE_APRON),
+    );
+    defaultUnpack(gl);
+    if (blocks || wallsUploaded) textureUploads++;
+    // A wall cell may have appeared where the chunk had none.
+    if (walls.some((cell) => cell !== NO_CELL)) wallSlots.add(slot);
+    else wallSlots.delete(slot);
   };
 
   /** Drops the background of the previous world: its texture and the reference that would keep its planes alive. */
@@ -835,9 +1067,89 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     return overview;
   };
 
-  /** Uniforms of the tile colour function shared by both chunk passes. */
+  /**
+   * The chunk pass's sprite program, linked when an atlas is set or on the first sprite frame: map mode and the
+   * overview never compile the sprite code (blocks' and walls' sprites), which would make every map-only renderer
+   * compile about twice as long. Null while the driver still links it and `wait` is false: animation frames then draw
+   * map colours and ask for another frame; `render` waits for it.
+   */
+  const spriteProgramOf = (wait: boolean): Program<(typeof SPRITE_CHUNK_UNIFORMS)[number]> | null => {
+    if (spriteProgram !== null) return spriteProgram;
+    // A program that failed to link: animation frames keep map colours, `render` reports why.
+    if (spriteLinkError !== null) {
+      if (wait) throw spriteLinkError;
+      return null;
+    }
+    // Without KHR_parallel_shader_compile this links it at once (finishSpriteLink then returns it).
+    startSpriteLink();
+    return wait || spriteLinkDone() ? finishSpriteLink() : null;
+  };
+
+  /**
+   * Starts linking the sprite program: with KHR_parallel_shader_compile in the background (it takes seconds on some
+   * drivers, D3D11 with a cold shader cache), reported through onSpritesPreparing and polled until it is done; without
+   * it at once.
+   */
+  const startSpriteLink = (): void => {
+    if (spriteProgram !== null || spriteLinking !== null || spriteLinkError !== null) return;
+    spriteLinking = startLink(gl, chunkVertexSource, chunkSpriteFragmentSource);
+    if (parallelCompile === null) {
+      finishSpriteLink();
+      return;
+    }
+    options?.onSpritesPreparing?.(true);
+    const poll = (): void => {
+      linkPoll = 0;
+      if (spriteLinking === null || disposed || gl.isContextLost()) return;
+      if (!spriteLinkDone()) {
+        linkPoll = window.setTimeout(poll, LINK_POLL_MILLISECONDS);
+        return;
+      }
+      try {
+        finishSpriteLink();
+      } catch {
+        // Kept in spriteLinkError: frames stay in map colours and `render` throws it.
+      }
+      schedule();
+    };
+    linkPoll = window.setTimeout(poll, LINK_POLL_MILLISECONDS);
+  };
+
+  const spriteLinkDone = (): boolean => spriteLinking === null || parallelCompile === null
+    || (gl.getProgramParameter(spriteLinking.program, parallelCompile.COMPLETION_STATUS_KHR) as boolean);
+
+  /**
+   * Waits for the sprite program's link (if it is still running) and keeps the program; a failure is kept in
+   * spriteLinkError and thrown. Either way the link has ended.
+   */
+  const finishSpriteLink = (): Program<(typeof SPRITE_CHUNK_UNIFORMS)[number]> => {
+    if (spriteProgram !== null) return spriteProgram;
+    if (spriteLinking === null) throw new Error("the sprite program is not being linked");
+    const inBackground = parallelCompile !== null;
+    try {
+      spriteProgram = finishLink(gl, spriteLinking, SPRITE_CHUNK_UNIFORMS);
+      return spriteProgram;
+    } catch (error) {
+      spriteLinkError = error instanceof Error ? error : new Error(String(error));
+      throw spriteLinkError;
+    } finally {
+      endSpriteLink(inBackground);
+    }
+  };
+
+  /** Forgets the pending link and its poll; reports the end of a background one. */
+  const endSpriteLink = (background: boolean): void => {
+    const pending = spriteLinking !== null;
+    spriteLinking = null;
+    window.clearTimeout(linkPoll);
+    linkPoll = 0;
+    if (pending && background) options?.onSpritesPreparing?.(false);
+  };
+
+  /** Uniforms of the tile colour function shared by both chunk passes; `sprites` those of the sprite program. */
   const setTileUniforms = (
-    uniforms: Readonly<Record<(typeof TILE_UNIFORMS)[number], WebGLUniformLocation>>, sprites = false, cells = false,
+    uniforms: Readonly<Record<(typeof TILE_UNIFORMS)[number], WebGLUniformLocation>>, cells = false,
+    sprites: Readonly<Record<(typeof SPRITE_UNIFORMS)[number], WebGLUniformLocation>> | null = null,
   ): void => {
     gl.uniform1i(uniforms.uPlanes16, UNIT_PLANES_16);
     gl.uniform1i(uniforms.uPlanes8, UNIT_PLANES_8);
@@ -853,13 +1165,15 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     gl.uniform3iv(uniforms.uLiquids, liquidUniform);
     gl.uniform1i(uniforms.uPaintRow, background?.paintRow ?? 0);
     gl.uniform1i(uniforms.uPaintCount, paintCount);
-    gl.uniform1i(uniforms.uAtlas, UNIT_ATLAS);
-    gl.uniform1i(uniforms.uSpriteSheets, UNIT_SPRITE_SHEETS);
-    gl.uniform1i(uniforms.uSprites, sprites ? 1 : 0);
+    if (sprites === null) return;
+    gl.uniform1i(sprites.uAtlas, UNIT_ATLAS);
+    gl.uniform1i(sprites.uAtlasHalf, UNIT_ATLAS_HALF);
+    gl.uniform1i(sprites.uSpriteSheets, UNIT_SPRITE_SHEETS);
     const sampling = spriteSampling(camera.zoom);
-    gl.uniform1i(uniforms.uSpriteSamples, sampling.samples);
-    gl.uniform1f(uniforms.uSpriteStep, sampling.step);
-    gl.uniform1i(uniforms.uSpriteWeight, sampling.weight);
+    gl.uniform1i(sprites.uSpriteSamples, sampling.samples);
+    gl.uniform1f(sprites.uSpriteStep, sampling.step);
+    gl.uniform1i(sprites.uSpriteLevel, sampling.level);
+    gl.uniform1i(sprites.uSpriteWeight, sampling.weight);
   };
 
   /**
@@ -875,7 +1189,9 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       const originY = chunk.y * CHUNK_SIZE;
       instanceData.set([
         originX, originY, Math.min(CHUNK_SIZE, source.width - originX), Math.min(CHUNK_SIZE, source.height - originY),
-        (slot % CHUNKS_PER_PAGE) | (framedSlots.has(slot) ? CELLS_INSTANCE_BIT : 0),
+        (slot % CHUNKS_PER_PAGE) | (framedSlots.has(slot)
+          ? CELLS_INSTANCE_BIT | (wallSlots.has(slot) ? WALLS_INSTANCE_BIT : 0)
+          : 0),
       ], index * INSTANCE_INTS);
     });
     gl.bindVertexArray(resources.instanceArray);
@@ -977,7 +1293,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   };
 
   /** `uploadBudget` chunks at most, and none after `uploadMilliseconds` once one was uploaded. */
-  const drawFrame = (uploadBudget: number, uploadMilliseconds: number): void => {
+  const drawFrame = (uploadBudget: number, uploadMilliseconds: number, wait: boolean): void => {
     if (disposed || gl.isContextLost()) return;
     const viewport = { width: canvas.width, height: canvas.height };
     drawCalls = 0;
@@ -999,7 +1315,10 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     const chunksX = Math.ceil(source.width / CHUNK_SIZE);
     const keyOf = (chunk: ChunkCoord): number => chunk.y * chunksX + chunk.x;
     const visible = visibleChunks(camera, viewport, source);
-    const sprites = spriteMode && atlasTexture !== null && camera.zoom >= SPRITE_MIN_ZOOM;
+    const spriteZoom = spriteMode && atlasTexture !== null && camera.zoom >= SPRITE_MIN_ZOOM;
+    const spriteChunk = spriteZoom ? spriteProgramOf(wait) : null;
+    // Until the sprite program is linked, frames are drawn in map colours.
+    const sprites = spriteChunk !== null;
     // Self-framed blocks draw their cells: a chunk is framed on its first upload at a sprite zoom, never below one.
     const framed = sprites && target === null && framing !== null;
     // Set when a wanted chunk did not fit the upload budget.
@@ -1019,6 +1338,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
         evictedChunks++;
         dirtyChunks.delete(key);
         cellCache?.drop({ x: key % chunksX, y: Math.floor(key / chunksX) });
+        wallCache?.drop({ x: key % chunksX, y: Math.floor(key / chunksX) });
       }
     };
     /**
@@ -1035,18 +1355,20 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       return slot;
     };
     /**
-     * Uploads the planes of a resident chunk whose planes changed (invalidateTiles) again, into its own slot. False
-     * when the frame's budget is spent: the chunk keeps drawing what it held.
+     * Uploads the changed part of a resident chunk whose planes changed (invalidateTiles) again, into its own slot, and
+     * of its cells if the slot holds them. False when the frame's budget is spent: the chunk keeps drawing what it held.
      */
     const refresh = (chunk: ChunkCoord, slot: number): boolean => {
       const key = keyOf(chunk);
-      if (!dirtyChunks.has(key)) return true;
+      const area = dirtyChunks.get(key);
+      if (area === undefined) return true;
       if (!mayUpload()) {
         loading.pending = true;
         return false;
       }
       uploads++;
-      uploadChunk(source, chunk, slot);
+      uploadChunk(source, chunk, slot, area);
+      if (framedSlots.has(slot)) uploadCellArea(source, chunk, slot, area);
       dirtyChunks.delete(key);
       return true;
     };
@@ -1134,11 +1456,11 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       // Chunks still loading show the overview (built when the area was seen zoomed out, possibly with other layers)
       // instead of a hole; drawn chunks overwrite it completely, so a complete frame stays exact.
       if (loading.pending && candidate?.filled === true) drawCalls += drawOverview(source, candidate);
-      const { chunk: program } = resources;
-      gl.useProgram(program.program);
-      // Sprites are a uniform switch: crossing the threshold or toggling the mode uploads no planes and no atlas (only a
+      // Sprites switch programs: crossing the threshold or toggling the mode uploads no planes and no atlas (only a
       // resident chunk's cells, once, on its first draw at a sprite zoom with a framing).
-      setTileUniforms(program.uniforms, sprites, framed);
+      const program = spriteChunk ?? resources.chunk;
+      gl.useProgram(program.program);
+      setTileUniforms(program.uniforms, framed, spriteChunk?.uniforms ?? null);
       gl.uniform2f(program.uniforms.uCamera, camera.x, camera.y);
       gl.uniform1f(program.uniforms.uZoom, camera.zoom);
       gl.uniform2f(program.uniforms.uViewport, viewport.width, viewport.height);
@@ -1154,6 +1476,8 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       gl.bindTexture(gl.TEXTURE_2D, resources.rules);
       gl.activeTexture(gl.TEXTURE0 + UNIT_ATLAS);
       gl.bindTexture(gl.TEXTURE_2D_ARRAY, atlasTexture);
+      gl.activeTexture(gl.TEXTURE0 + UNIT_ATLAS_HALF);
+      gl.bindTexture(gl.TEXTURE_2D_ARRAY, atlasHalfTexture);
       gl.activeTexture(gl.TEXTURE0 + UNIT_SPRITE_SHEETS);
       gl.bindTexture(gl.TEXTURE_2D, resources.spriteSheets);
       drawCalls += drawInstances(source, ready);
@@ -1163,6 +1487,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       drawCalls = drawOverview(source, target);
       drawn = visible.filter((chunk) => target.built[keyOf(chunk)] === 1);
     }
+    // While the sprite program links, the poll asks for the next frame once it is done (startSpriteLink).
     if (loading.pending) schedule();
   };
 
@@ -1170,13 +1495,15 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     if (frame !== 0 || disposed) return;
     frame = requestAnimationFrame(() => {
       frame = 0;
-      drawFrame(maxChunkUploadsPerFrame, maxUploadMillisecondsPerFrame);
+      drawFrame(maxChunkUploadsPerFrame, maxUploadMillisecondsPerFrame, false);
     });
   };
 
   const onContextLost = (event: Event): void => {
     // Without this the browser never restores the context.
     event.preventDefault();
+    // A background link dies with the context (no GL call needed to forget it).
+    endSpriteLink(parallelCompile !== null);
     // A loss forced through WEBGL_lose_context is only restored by an explicit call made after this event: Chromium
     // ignores one made earlier. For a real GPU loss the call is a harmless INVALID_OPERATION, the browser restores it.
     setTimeout(() => {
@@ -1195,8 +1522,15 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     background = null;
     overview = null;
     resources = createResources(gl, rules);
+    spriteProgram = null;
+    // A background link died with the context; the next sprite frame (or atlas) starts another.
+    endSpriteLink(parallelCompile !== null);
+    spriteLinkError = null;
+    parallelCompile = parallelShaderCompile(gl);
+    halfAtlasProgram = null;
     // The atlas died with the context too: upload it again (its sheets follow the palette's next upload).
     atlasTexture = null;
+    atlasHalfTexture = null;
     if (atlas !== null) applyAtlas(atlas);
     // So did the cell layers: chunks are framed again as they are uploaded.
     dirtyChunks.clear();
@@ -1229,7 +1563,11 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     setAtlas: (next) => {
       if (next === atlas) return;
       atlas = next;
-      if (!gl.isContextLost()) applyAtlas(next);
+      if (!gl.isContextLost()) {
+        applyAtlas(next);
+        // Linking starts now, while the assets arrive, rather than on the first sprite frame.
+        if (next !== null) startSpriteLink();
+      }
       schedule();
     },
     setSpriteMode: (enabled) => {
@@ -1246,21 +1584,32 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       if (world === null || tiles.length === 0) return;
       const source = world;
       const regions = cellCache?.world === source ? cellCache.invalidate(tiles) : [];
+      const wallRegions = wallCache?.world === source ? wallCache.invalidate(tiles) : [];
       const chunksX = Math.ceil(source.width / CHUNK_SIZE);
-      const touched = new Set<number>();
+      // Per touched chunk, the union of the changed tiles (right and bottom exclusive).
+      const touched = new Map<number, Area>();
       const touch = (left: number, top: number, right: number, bottom: number): void => {
         const lastX = Math.floor(Math.min(source.width - 1, right) / CHUNK_SIZE);
         const lastY = Math.floor(Math.min(source.height - 1, bottom) / CHUNK_SIZE);
         for (let x = Math.floor(Math.max(0, left) / CHUNK_SIZE); x <= lastX; x++) {
-          for (let y = Math.floor(Math.max(0, top) / CHUNK_SIZE); y <= lastY; y++) touched.add(y * chunksX + x);
+          for (let y = Math.floor(Math.max(0, top) / CHUNK_SIZE); y <= lastY; y++) {
+            const key = y * chunksX + x;
+            touched.set(key, union(touched.get(key), { left, top, right: right + 1, bottom: bottom + 1 }));
+          }
         }
       };
       // A changed tile's planes lie in its chunk and, through the page apron, in its neighbours'; the cells of its
       // recomputed area in the chunks the area covers.
       for (const { x, y } of tiles) touch(x - PAGE_APRON, y - PAGE_APRON, x + PAGE_APRON, y + PAGE_APRON);
       for (const area of regions) touch(area.left, area.top, area.left + area.width - 1, area.top + area.height - 1);
-      for (const key of touched) {
-        if (chunks.has(key)) dirtyChunks.add(key);
+      // Wall cells are uploaded with the apron: a recomputed wall cell lies in the layers of the chunks around it too.
+      for (const area of wallRegions) {
+        const right = area.left + area.width - 1;
+        const bottom = area.top + area.height - 1;
+        touch(area.left - PAGE_APRON, area.top - PAGE_APRON, right + PAGE_APRON, bottom + PAGE_APRON);
+      }
+      for (const [key, area] of touched) {
+        if (chunks.has(key)) dirtyChunks.set(key, union(dirtyChunks.get(key), area));
         if (overview?.world === source && overview.built[key] === 1) {
           overview.built[key] = 0;
           overview.builtCount--;
@@ -1280,10 +1629,12 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       const y = Math.floor(camera.y + screenY / camera.zoom);
       return x < 0 || y < 0 || x >= world.width || y >= world.height ? null : { x, y };
     },
-    render: () => { drawFrame(Infinity, Infinity); },
+    render: () => { drawFrame(Infinity, Infinity, true); },
     stats: () => ({
       textureUploads, drawCalls, visibleChunks: drawn, residentChunks: chunks.size, evictedChunks, atlasUploads,
       framedTiles: framedBefore + (cellCache?.framedTiles ?? 0),
+      framedWalls: framedWallsBefore + (wallCache?.framedTiles ?? 0),
+      spritesPreparing: spriteLinking !== null,
     }),
     dispose: () => {
       if (disposed) return;
@@ -1297,6 +1648,9 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
         clearChunks();
         releaseOverview();
         for (const program of [resources.chunk, resources.build, resources.overview]) gl.deleteProgram(program.program);
+        if (spriteProgram !== null) gl.deleteProgram(spriteProgram.program);
+        if (spriteLinking !== null) gl.deleteProgram(spriteLinking.program);
+        if (halfAtlasProgram !== null) gl.deleteProgram(halfAtlasProgram.program);
         gl.deleteTexture(resources.palette);
         gl.deleteTexture(resources.rules);
         gl.deleteTexture(resources.spriteSheets);
@@ -1306,6 +1660,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
         gl.deleteVertexArray(resources.emptyArray);
         gl.deleteFramebuffer(resources.framebuffer);
       }
+      endSpriteLink(parallelCompile !== null);
       releaseBackground();
       unpackWorld = null;
     },

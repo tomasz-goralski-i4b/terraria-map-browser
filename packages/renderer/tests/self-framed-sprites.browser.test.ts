@@ -1,10 +1,13 @@
 import { afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import { createWorld, type BlockShape, type CanonicalWorld } from "@studio/world-model";
 import {
-  CHUNK_SIZE, NO_CELL, SPRITE_MIN_ZOOM, createBlockFraming, createChunkCellCache, createMapRenderer, loadFramingDatabase,
-  renderChunk, shapedColumns, terrariaFramingData,
+  CHUNK_SIZE, NO_CELL, SPRITE_MIN_ZOOM, createBlockFraming, createChunkCellCache, createChunkWallCellCache,
+  createMapRenderer, loadFramingDatabase, renderChunk, shapedColumns, terrariaFramingData,
 } from "../src/index.js";
-import type { BlockFraming, ChunkLayers, MapRenderer, RenderableWorld, SpriteAtlasSource } from "../src/index.js";
+import type {
+  BlockFraming, ChunkLayers, MapRenderer, RenderableWorld, SpriteAtlasSource, SpriteSheetEntry,
+} from "../src/index.js";
+import { expectClose, pixelAt, wallLayerPixel, type Rgba } from "./wall-sprites.fixture.js";
 
 let framing: BlockFraming;
 beforeAll(async () => {
@@ -73,13 +76,24 @@ function renderable(world: CanonicalWorld): RenderableWorld {
 
 const PAGE = 1024;
 const SHEET = 288;
-/** Synthetic sheets of the self-framed blocks: 16 × 16 cells of 18 pixels, opaque, distinct per pixel and sheet. */
-const SHEETS = [DIRT, STONE, SAND, IRON].map((id, index) => ({
-  kind: "tile" as const, id, page: 0, x: 2 + (index % 2) * 300, y: 2 + Math.floor(index / 2) * 300,
-  width: SHEET, height: SHEET, frameWidth: 16, frameHeight: 16,
-}));
+/**
+ * Synthetic sheets of the self-framed blocks (16 × 16 cells of 18 pixels, opaque, distinct per pixel and sheet) and of
+ * the wall behind them (13 × 6 cells of 36 pixels, its 8-pixel overhang partly transparent).
+ */
+const SHEETS: readonly SpriteSheetEntry[] = [
+  ...[DIRT, STONE, SAND, IRON].map((id, index) => ({
+    kind: "tile" as const, id, page: 0, x: 2 + (index % 2) * 300, y: 2 + Math.floor(index / 2) * 300,
+    width: SHEET, height: SHEET, frameWidth: 16, frameHeight: 16,
+  })),
+  { kind: "wall", id: WALL, page: 0, x: 2, y: 600, width: 468, height: 216, frameWidth: 32, frameHeight: 32 },
+];
+const WALL_SHEET = 4;
 
-function sheetPixel(sheet: number, x: number, y: number): readonly [number, number, number, number] {
+function sheetPixel(sheet: number, x: number, y: number): Rgba {
+  if (sheet === WALL_SHEET) {
+    const middle = x % 36 >= 8 && x % 36 < 24 && y % 36 >= 8 && y % 36 < 24;
+    return [(x * 3) % 256, (y * 5 + 40) % 256, (x + y) % 256, middle ? 255 : [0, 255, 128][(x + y) % 3] ?? 0];
+  }
   return [(x * 7 + sheet * 60) % 256, (y * 3 + x) % 256, (x * y + sheet * 31) % 256, 255];
 }
 
@@ -96,25 +110,39 @@ function syntheticAtlas(): SpriteAtlasSource {
 const ALL: ChunkLayers = { background: true, walls: true, blocks: true, liquids: true };
 const ZOOM = 16;
 
-type Rgba = readonly [number, number, number, number];
-
 function mapColors(world: CanonicalWorld, layers: ChunkLayers): Uint8Array {
-  const { pixels } = renderChunk(world, 0, 0, { surfaceY: 2, layers });
-  return new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength);
+  const out = new Uint8Array(world.width * world.height * 4);
+  for (let cx = 0; cx * CHUNK_SIZE < world.width; cx++) {
+    for (let cy = 0; cy * CHUNK_SIZE < world.height; cy++) {
+      const { pixels, width, height } = renderChunk(world, cx, cy, { surfaceY: 2, layers });
+      for (let y = 0; y < height; y++) {
+        out.set(pixels.subarray(y * width * 4, (y + 1) * width * 4), ((cy * CHUNK_SIZE + y) * world.width + cx * CHUNK_SIZE) * 4);
+      }
+    }
+  }
+  return out;
 }
 
-function pixelAt(pixels: Uint8Array, index: number): Rgba {
-  return [pixels[index] ?? 0, pixels[index + 1] ?? 0, pixels[index + 2] ?? 0, pixels[index + 3] ?? 0];
+/** The wall layer of `world` in sprite mode (wall-sprites.fixture.ts), at sprite pixel (sx, sy) of tile (tx, ty). */
+function wallLayer(world: CanonicalWorld): (tx: number, ty: number, sx: number, sy: number) => Rgba {
+  const { walls } = framing;
+  const input = {
+    world, cellAt: createChunkWallCellCache(world, walls).cellAt, sheets: SHEETS, sheetPixel,
+    mapWalls: mapColors(world, { ...ALL, blocks: false, liquids: false }),
+    background: mapColors(world, { background: true, walls: false, blocks: false, liquids: false }),
+  };
+  return (tx, ty, sx, sy) => wallLayerPixel(input, tx, ty, sx, sy);
 }
 
 /**
  * The expected canvas at ZOOM pixels per tile (one sprite pixel per canvas pixel): a block with a framed cell shows its
- * sheet's cell, cut by its shape's columns (docs/assets.md, "Slopes and half blocks"), with what lies behind it where
- * the shape cuts it away; every other tile its map colour. The cells come from the CPU chunk cell cache.
+ * sheet's cell, cut by its shape's columns (docs/assets.md, "Slopes and half blocks"), with the wall layer behind it
+ * where the shape cuts it away; a block without one its map colour; every other tile the wall layer. The cells come from
+ * the CPU chunk cell caches.
  */
 function expectedCanvas(world: CanonicalWorld): Uint8Array {
   const map = mapColors(world, ALL);
-  const behind = mapColors(world, { ...ALL, blocks: false, liquids: false });
+  const behind = wallLayer(world);
   const cache = createChunkCellCache(world, framing);
   const { width, height } = world;
   const out = new Uint8Array(width * ZOOM * height * ZOOM * 4);
@@ -123,18 +151,19 @@ function expectedCanvas(world: CanonicalWorld): Uint8Array {
       const tx = Math.floor(px / ZOOM);
       const ty = Math.floor(py / ZOOM);
       const tile = (ty * width + tx) * 4;
-      let color = pixelAt(map, tile);
+      const sx = px % ZOOM;
+      const sy = py % ZOOM;
+      const hasBlock = (world.planes.block[tx * height + ty] ?? 0xffff) !== 0xffff;
+      let color = hasBlock ? pixelAt(map, tile) : behind(tx, ty, sx, sy);
       const cell = cache.cellAt(tx, ty);
       if (cell !== NO_CELL) {
         const block = world.planes.block[tx * height + ty] ?? 0xffff;
         const ref = world.palette[block];
         const sheet = SHEETS.findIndex((entry) => ref?.kind === "vanilla" && entry.id === ref.id);
         const shape = world.planes.shape[tx * height + ty] ?? 0;
-        const sx = px % ZOOM;
-        const sy = py % ZOOM;
         const column = shapedColumns(shape)[Math.floor(sx / 2)];
         if (column === undefined) throw new Error("no column");
-        color = pixelAt(behind, tile);
+        color = behind(tx, ty, sx, sy);
         if (sy >= column.destY && sy < column.destY + column.height) {
           color = sheetPixel(sheet, (cell >> 6) * 18 + column.sourceX + sx - column.destX, (cell & 63) * 18 + column.sourceY + sy - column.destY);
         }
@@ -163,19 +192,19 @@ describe("self-framed blocks in sprite mode", () => {
     const world = createWorld(10, 6);
     stamp(world, 0, 0, ["..........", "..dHddTN..", ".dddddddd.", ".ssssssss.", ".RddddddL.", ".........."]);
     const { pixels } = draw(world);
-    expect(pixels).toEqual(expectedCanvas(world));
-    // Sanity: the half block's top half is the wall, its bottom half the sheet.
+    expectClose(pixels, expectedCanvas(world), world.width * ZOOM);
+    // Sanity: the half block's top half is the wall layer, its bottom half the sheet.
     const at = (x: number, y: number): Rgba => pixelAt(pixels, (y * world.width * ZOOM + x) * 4);
-    const wallColor = pixelAt(mapColors(world, { ...ALL, blocks: false }), (1 * world.width + 3) * 4);
-    expect(at(3 * ZOOM + 5, 1 * ZOOM + 2)).toEqual(wallColor);
-    expect(at(3 * ZOOM + 5, 1 * ZOOM + 12)).not.toEqual(wallColor);
+    const wall = wallLayer(world);
+    expect(at(3 * ZOOM + 5, 1 * ZOOM + 2)).toEqual(wall(3, 1, 5, 2));
+    expect(at(3 * ZOOM + 5, 1 * ZOOM + 12)).not.toEqual(wall(3, 1, 5, 12));
   });
 
   test("a sand block with air below it is drawn in its map colour (unstable), a supported one with its sprite", () => {
     const world = createWorld(8, 5);
     stamp(world, 0, 0, ["........", ".S...S..", ".....s..", "........", "........"]);
     const { pixels } = draw(world);
-    expect(pixels).toEqual(expectedCanvas(world));
+    expectClose(pixels, expectedCanvas(world), world.width * ZOOM);
     const map = mapColors(world, ALL);
     const at = (x: number, y: number): Rgba => pixelAt(pixels, (y * world.width * ZOOM + x) * 4);
     for (let sy = 0; sy < ZOOM; sy++) for (let sx = 0; sx < ZOOM; sx++) {
@@ -284,7 +313,75 @@ describe("cell caching per chunk", () => {
     renderer.invalidateTiles([{ x: 5, y: 3 }]);
     renderer.render();
     expect(renderer.stats().framedTiles - before).toBe(9);
-    expect(readCanvas(canvas)).toEqual(expectedCanvas(world));
+    expectClose(readCanvas(canvas), expectedCanvas(world), world.width * ZOOM);
+  });
+});
+
+describe("uploads after an edit", () => {
+  test("an edited tile uploads only the rectangle around it, of its planes and cells, and draws it", () => {
+    const world = createWorld(30, 20);
+    stamp(world, 0, 0, Array.from({ length: 20 }, (_, y) => (y === 0 || y === 19 ? ".".repeat(30) : `.${"s".repeat(28)}.`)));
+    const { canvas, renderer } = makeRenderer(world.width * ZOOM, world.height * ZOOM);
+    renderer.setWorld(renderable(world));
+    renderer.setLayers(ALL);
+    renderer.setAtlas(syntheticAtlas());
+    renderer.setFraming(framing);
+    renderer.setSpriteMode(true);
+    renderer.setCamera({ x: 0, y: 0, zoom: ZOOM });
+    renderer.render();
+    const sizes: number[] = [];
+    const realTexSubImage3D = Object.getOwnPropertyDescriptor(WebGL2RenderingContext.prototype, "texSubImage3D")?.value as
+      (this: WebGL2RenderingContext, ...args: unknown[]) => void;
+    const upload = vi.spyOn(WebGL2RenderingContext.prototype, "texSubImage3D").mockImplementation(
+      function (this: WebGL2RenderingContext, ...args: unknown[]): void {
+        sizes.push(Number(args[5]) * Number(args[6]));
+        realTexSubImage3D.apply(this, args);
+      },
+    );
+    const uploads = renderer.stats().textureUploads;
+    try {
+      world.setTile(14, 9, { block: { kind: "vanilla", id: IRON }, wall: { kind: "vanilla", id: WALL }, wires: 0, actuator: false });
+      renderer.invalidateTiles([{ x: 14, y: 9 }]);
+      renderer.render();
+    } finally {
+      upload.mockRestore();
+    }
+    // The tile's planes with the apron around it (3 × 3), the 3 × 3 block cells it changes and the 3 × 3 wall cells,
+    // within the apron (5 × 5): never the whole chunk (30 × 20 tiles and its apron).
+    expect(sizes.length).toBeGreaterThan(0);
+    expect(Math.max(...sizes)).toBeLessThanOrEqual(25);
+    // The palette's new entry (iron), the chunk's planes and its cells.
+    expect(renderer.stats().textureUploads - uploads).toBe(3);
+    expectClose(readCanvas(canvas), expectedCanvas(world), world.width * ZOOM);
+  });
+
+  test.each([
+    ["the world's corner", 0, 0],
+    ["a chunk border", CHUNK_SIZE - 1, 5],
+    ["the first column of the next chunk", CHUNK_SIZE, 9],
+  ])("an edit at %s is drawn in every chunk whose layers hold it", (_name, x, y) => {
+    const world = createWorld(CHUNK_SIZE + 12, 14);
+    stamp(world, 0, 0, Array.from({ length: 14 }, () => "s".repeat(CHUNK_SIZE + 12)));
+    const columns = 16;
+    const left = Math.max(0, Math.min(x - 8, world.width - columns));
+    const { canvas, renderer } = makeRenderer(columns * ZOOM, world.height * ZOOM);
+    renderer.setWorld(renderable(world));
+    renderer.setLayers(ALL);
+    renderer.setAtlas(syntheticAtlas());
+    renderer.setFraming(framing);
+    renderer.setSpriteMode(true);
+    renderer.setCamera({ x: left, y: 0, zoom: ZOOM });
+    renderer.render();
+    world.setTile(x, y, { block: { kind: "vanilla", id: IRON }, wall: { kind: "vanilla", id: WALL }, wires: 0, actuator: false });
+    renderer.invalidateTiles([{ x, y }]);
+    renderer.render();
+    const whole = expectedCanvas(world);
+    const expected = new Uint8Array(columns * ZOOM * world.height * ZOOM * 4);
+    for (let py = 0; py < world.height * ZOOM; py++) {
+      const from = (py * world.width * ZOOM + left * ZOOM) * 4;
+      expected.set(whole.subarray(from, from + columns * ZOOM * 4), py * columns * ZOOM * 4);
+    }
+    expectClose(readCanvas(canvas), expected, columns * ZOOM);
   });
 });
 

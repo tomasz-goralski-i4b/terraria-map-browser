@@ -126,6 +126,22 @@ export interface FramingDatabase {
   readonly variantMap: (centre: number) => number;
   /** Whether `centre` frames by position and ignores the variant (the large-frame types). */
   readonly ignoresVariant: (centre: number) => boolean;
+
+  // Index-based access for the wall framer (frame-wall.ts).
+  /** The tables of `wall`: its 6 561-neighbourhood table, its interior table by position and its variant map. */
+  readonly wallTables: (wall: number) => WallTables | null;
+  /** The cell index of variant `variant` in variant map `map` of variant-0 cell index `cell`; −1 when not observed. */
+  readonly mapVariantCell: (map: number, cell: number, variant: number) => number;
+  /** Block types that count as a wall's neighbour where there is no wall. */
+  readonly wallNeighbourBlocks: readonly number[];
+}
+
+/** The table indices of one wall type (WallFramingData). */
+export interface WallTables {
+  readonly table: number;
+  readonly interiorByPosition: number;
+  /** Index of its variant map. */
+  readonly variants: number;
 }
 
 async function inflate(base64: string): Promise<string> {
@@ -220,5 +236,17 @@ export async function loadFramingDatabase(data: FramingDatabaseData): Promise<Fr
     },
     variantMap: (centre) => blockOf.get(centre)?.variants ?? -1,
     ignoresVariant: (centre) => blockOf.get(centre)?.variantIgnoredByPosition === true,
+    wallTables: (wall) => {
+      const entry = data.walls[String(wall)];
+      return entry === undefined
+        ? null
+        : { table: entry.table, interiorByPosition: entry.interiorByPosition, variants: entry.variants };
+    },
+    mapVariantCell: (map, cell, variant) => {
+      if (variant === 0) return cell;
+      const entry = variantMaps[map]?.get(cell);
+      return entry === undefined ? -1 : variant === 1 ? entry[0] : entry[1];
+    },
+    wallNeighbourBlocks: data.wallNeighbourBlocks,
   };
 }

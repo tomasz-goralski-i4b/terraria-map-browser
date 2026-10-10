@@ -84,6 +84,32 @@ describe("packSheets", () => {
     }
   });
 
+  it("packSheets_OddSizesAndPadding_PlacesEverySheetAtEvenPixels", () => {
+    // The renderer's half-resolution atlas averages 2 × 2 pixels from even positions: a sheet at an odd position would
+    // mix its cells with their gutters (packages/renderer, "Atlas").
+    const odd = [sheet("tile", 1, 33, 17), sheet("tile", 2, 15, 15), sheet("wall", 1, 37, 9), sheet("tile", 3, 7, 31)];
+    for (const padding of [1, 2, 3]) {
+      const { index } = packSheets([...odd, ...MIXED], { pageSize: 512, padding });
+      for (const entry of index.entries) {
+        expect([entry.x % 2, entry.y % 2], `${entry.kind}${String(entry.id)}, padding ${String(padding)}`).toEqual([0, 0]);
+      }
+    }
+  });
+
+  it("packSheets_EveryLayout_HasEvenFrameStrides", () => {
+    // With sheets at even pixels, even strides start every cell at an even pixel: the renderer's half-resolution atlas
+    // never mixes a cell with its gutter.
+    const sheets = Array.from({ length: 1000 }, (_, id) => sheet("tile", id, 2, 2));
+    const { index } = packSheets([...sheets, sheet("wall", 1, 2, 2)], { pageSize: 2048, padding: 2 });
+    // Known odd ones: 172 (sinks) averages a 19-pixel row stride, but its art alternates 18 and 20, so its cells still
+    // start at even pixels; 529's 15-pixel frames at a 17-pixel stride start every other row at an odd pixel (one row
+    // of such a cell blends with its neighbour at half resolution).
+    const odd = index.entries
+      .filter((entry) => (entry.frameWidth + entry.gapX) % 2 !== 0 || (entry.frameHeight + entry.gapY) % 2 !== 0)
+      .map((entry) => `${entry.kind}${String(entry.id)}`);
+    expect(odd).toEqual(["tile172", "tile529"]);
+  });
+
   it("packSheets_Pages_AreFullSizeRgbaAndMatchPageCount", () => {
     const atlas = packSheets(MIXED, { pageSize: 512, padding: 2 });
     expect(atlas.pages).toHaveLength(atlas.index.pageCount);

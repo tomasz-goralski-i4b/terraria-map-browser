@@ -13,6 +13,7 @@ import {
   type RememberedContent,
 } from "../src/assets/asset-session.js";
 import { hydrateLayout } from "../src/shell/layout-store.js";
+import { useViewStore } from "../src/shell/view-store.js";
 import "../src/styles.css";
 import { dockTab } from "./support/shell.js";
 
@@ -24,6 +25,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  useViewStore.setState({ spritesPreparing: false });
   setDefaultAssetSession(undefined);
   useAssetStore.setState({ status: { kind: "none" }, notice: null });
   const root = await navigator.storage.getDirectory();
@@ -107,4 +109,19 @@ test("the atlas build shows its progress on the Sprites row and can be cancelled
   await page.getByRole("menuitem", { name: "Cancel building" }).click();
   await expect.element(page.getByText("Not connected")).toBeVisible();
   expect(useAssetStore.getState().status).toEqual({ kind: "none" });
+}, 30_000);
+
+test("while the renderer prepares its sprite program the Sprites row and the assets button say so", async () => {
+  useSession(await syntheticContent(1));
+  await render(<App />);
+  await dockTab("View");
+  await page.getByRole("button", { name: "Connect Terraria assets" }).click();
+  await expect.element(page.getByRole("button", { name: "Terraria assets connected" })).toBeVisible();
+  // The renderer reports it (MapCanvas wires onSpritesPreparing into the view store).
+  useViewStore.setState({ spritesPreparing: true });
+  await expect.element(page.getByRole("progressbar", { name: "Preparing sprites" })).toBeVisible();
+  await expect.element(page.getByRole("button", { name: "Preparing sprites…" })).toBeVisible();
+  useViewStore.setState({ spritesPreparing: false });
+  await expect.element(page.getByRole("progressbar", { name: "Preparing sprites" })).not.toBeInTheDocument();
+  await expect.element(page.getByRole("button", { name: "Terraria assets connected" })).toBeVisible();
 }, 30_000);

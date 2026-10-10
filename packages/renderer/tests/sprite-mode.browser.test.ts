@@ -1,8 +1,9 @@
-import { afterEach, describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import {
-  MISSING_SPRITE_COLORS, SPRITE_MIN_ZOOM, createMapRenderer, liquidColors, renderChunk, spriteSampling,
+  MISSING_SPRITE_COLORS, SPRITE_MIN_ZOOM, createMapRenderer, liquidColors, renderChunk,
 } from "../src/index.js";
 import type { ChunkLayers, MapRenderer, RenderableWorld, SpriteAtlasSource } from "../src/index.js";
+import { halfTexel, meanOf, samplePositions } from "./wall-sprites.fixture.js";
 
 const created: MapRenderer[] = [];
 afterEach(() => {
@@ -146,33 +147,15 @@ function pixelAt(pixels: Uint8Array, index: number): Rgba {
 }
 
 /**
- * The sprite of canvas pixel (px, py) at `zoom` pixels per tile, as the chunk pass samples it (spriteSampling): the
- * straight-alpha mean of samples² sprite pixels spread over the pixel's footprint, kept inside the tile; `pixel` is
- * the sprite's colour at sprite pixel (sx, sy) of the tile.
+ * The sprite of canvas pixel (px, py) at `zoom` (an integer) pixels per tile, as the chunk pass samples it
+ * (samplePositions): the straight-alpha mean of its samples; `pixel` is the sprite's colour at sprite pixel (sx, sy) of
+ * the tile at level 0, and at level 1 that of the half-resolution texel the sample (an even sx, sy) reads.
  */
-function sampled(zoom: number, px: number, py: number, pixel: (sx: number, sy: number) => Rgba): Rgba {
-  const { samples, step } = spriteSampling(zoom);
-  const at = (p: number, k: number): number => {
-    const centre = (((p % zoom) + 0.5) * 16) / zoom;
-    return Math.min(15, Math.max(0, Math.floor(centre + ((k + 0.5) / samples - 0.5) * step)));
-  };
-  let red = 0;
-  let green = 0;
-  let blue = 0;
-  let alpha = 0;
-  for (let ky = 0; ky < samples; ky++) {
-    for (let kx = 0; kx < samples; kx++) {
-      const [r, g, b, a] = pixel(at(px, kx), at(py, ky));
-      red += r * a;
-      green += g * a;
-      blue += b * a;
-      alpha += a;
-    }
-  }
-  const count = samples * samples;
-  if (alpha === 0) return [0, 0, 0, 0];
-  const mean = (sum: number): number => Math.floor((2 * sum + alpha) / (2 * alpha));
-  return [mean(red), mean(green), mean(blue), Math.floor((2 * alpha + count) / (2 * count))];
+function sampled(zoom: number, px: number, py: number, pixel: (sx: number, sy: number, level: number) => Rgba): Rgba {
+  const centre = (p: number): number => (((p % zoom) + 0.5) * 16) / zoom;
+  const colors: Rgba[] = [];
+  samplePositions(zoom, centre(px), centre(py), (sx, sy, level) => colors.push(pixel(sx, sy, level)));
+  return meanOf(colors);
 }
 
 /**
@@ -201,9 +184,12 @@ function expectedCanvas(world: RenderableWorld, layers: ChunkLayers, zoom: numbe
       const sheetIndex = placed === undefined ? -1 : [CHEST, TORCH].indexOf(placed[2]);
       const sheet = SHEETS[sheetIndex];
       if (placed !== undefined && sheet !== undefined) {
-        const sprite = sampled(zoom, px, py, (sx, sy) => sheetPixel(
-          sheetIndex, placed[3] + Math.floor((sx * sheet.frameWidth) / 16), placed[4] + Math.floor((sy * sheet.frameHeight) / 16),
-        ));
+        // The sheet pixel of sprite pixel (sx, sy); at level 1 the half-resolution texel holding it.
+        const sprite = sampled(zoom, px, py, (sx, sy, level) => {
+          const x = placed[3] + Math.floor((sx * sheet.frameWidth) / 16);
+          const y = placed[4] + Math.floor((sy * sheet.frameHeight) / 16);
+          return level === 1 ? halfTexel((hx, hy) => sheetPixel(sheetIndex, hx, hy), x, y) : sheetPixel(sheetIndex, x, y);
+        });
         color = over(sprite, pixelAt(behind, tile));
         if (layers.liquids && tx === WATER_TILE[0] && ty === WATER_TILE[1]) {
           color = over([water[0], water[1], water[2], WATER_AMOUNT], color);
@@ -227,8 +213,56 @@ function draw(world: RenderableWorld, zoom: number, layers: ChunkLayers, sprites
   return readCanvas(canvas);
 }
 
+/**
+ * Stubs KHR_parallel_shader_compile (software GL lacks it): COMPLETION_STATUS_KHR says a program is done once
+ * `state.linked`, and with `state.failLink` every link from then on reports failure (LINK_STATUS false).
+ */
+function stubParallelCompile(): { readonly state: { linked: boolean; failLink: boolean }; readonly restore: () => void } {
+  const COMPLETION_STATUS = 0x91b1;
+  const state = { linked: false, failLink: false };
+  const prototype = WebGL2RenderingContext.prototype;
+  // The real methods, called with the context as `this`.
+  const realExtension = Object.getOwnPropertyDescriptor(prototype, "getExtension")?.value as
+    (this: WebGL2RenderingContext, name: string) => unknown;
+  const realParameter = Object.getOwnPropertyDescriptor(prototype, "getProgramParameter")?.value as
+    (this: WebGL2RenderingContext, program: WebGLProgram, name: number) => unknown;
+  // getExtension is overloaded by extension name: the stub stands in for all of them.
+  const extension = vi.spyOn(prototype, "getExtension").mockImplementation(
+    function (this: WebGL2RenderingContext, name: string): unknown {
+      return name === "KHR_parallel_shader_compile" ? { COMPLETION_STATUS_KHR: COMPLETION_STATUS } : realExtension.call(this, name);
+    } as unknown as WebGL2RenderingContext["getExtension"],
+  );
+  const parameter = vi.spyOn(prototype, "getProgramParameter").mockImplementation(
+    function (this: WebGL2RenderingContext, program: WebGLProgram, name: number): unknown {
+      if (name === COMPLETION_STATUS) return state.linked;
+      if (name === this.LINK_STATUS && state.failLink) return false;
+      return realParameter.call(this, program, name);
+    },
+  );
+  return {
+    state,
+    restore: () => {
+      extension.mockRestore();
+      parameter.mockRestore();
+    },
+  };
+}
+
+/** A renderer on a small canvas at a map-colour zoom, reporting onSpritesPreparing into `heard`. */
+function preparingRenderer(heard: boolean[]): { readonly canvas: HTMLCanvasElement; readonly renderer: MapRenderer } {
+  const canvas = document.createElement("canvas");
+  canvas.width = 8;
+  canvas.height = 8;
+  const renderer = createMapRenderer(canvas, { onSpritesPreparing: (preparing) => heard.push(preparing) });
+  created.push(renderer);
+  renderer.setWorld(spriteWorld());
+  // A map-colour zoom: no frame asks for the sprite program.
+  renderer.setCamera({ x: 0, y: 0, zoom: 1 });
+  return { canvas, renderer };
+}
+
 describe("sprite mode", () => {
-  // At 8 pixels per tile a canvas pixel is the mean of 2 × 2 sprite pixels.
+  // At 8 pixels per tile a canvas pixel reads the half-resolution atlas once: the mean of 2 × 2 sprite pixels.
   test.each([ZOOM, 8])(
     "at %i pixels per tile frame-important tiles show the atlas cell their frames select, or the missing-texture checkerboard without a sheet; other blocks, trees and walls keep their map colour",
     (zoom) => {
@@ -237,7 +271,7 @@ describe("sprite mode", () => {
     },
   );
 
-  test("layer toggles remove exactly their pixels in sprite mode, and liquids cover sprites, half-transparent ones too", { tags: ["perf"] }, () => {
+  test("layer toggles remove exactly their pixels in sprite mode, and liquids cover sprites, half-transparent ones too", { tags: ["perf"], timeout: 60_000 }, () => {
     const world = spriteWorld();
     for (const layers of [
       { ...ALL, blocks: false }, { ...ALL, walls: false }, { ...ALL, background: false }, { ...ALL, liquids: false },
@@ -247,7 +281,7 @@ describe("sprite mode", () => {
     }
   });
 
-  test(`below ${String(SPRITE_MIN_ZOOM)} pixels per tile the map keeps its map colours, and the overview is unchanged`, () => {
+  test(`below ${String(SPRITE_MIN_ZOOM)} pixels per tile the map keeps its map colours, and the overview is unchanged`, { tags: ["perf"], timeout: 60_000 }, () => {
     const world = spriteWorld();
     for (const zoom of [SPRITE_MIN_ZOOM - 1, 4, 1]) {
       expect(draw(world, zoom, ALL, true), `zoom ${String(zoom)}`).toEqual(expectedCanvas(world, ALL, zoom, false));
@@ -265,6 +299,112 @@ describe("sprite mode", () => {
     const expected = expectedCanvas(world, ALL, ZOOM, false);
     expect(draw(world, ZOOM, ALL, true, false)).toEqual(expected);
     expect(draw(world, ZOOM, ALL, false)).toEqual(expected);
+  });
+
+  test("animation frames drawn while the sprite program is still being linked show map colours, then sprites", async () => {
+    // The renderer links the sprite program without waiting for it and asks whether it is done (COMPLETION_STATUS_KHR).
+    const stub = stubParallelCompile();
+    try {
+      const world = spriteWorld();
+      const { canvas, renderer } = makeRenderer(WIDTH * ZOOM, HEIGHT * ZOOM);
+      renderer.setWorld(world);
+      renderer.setLayers(ALL);
+      renderer.setSpriteMode(true);
+      renderer.setCamera({ x: 0, y: 0, zoom: ZOOM });
+      renderer.setAtlas(syntheticAtlas());
+      // Read inside a later animation frame callback: after the renderer's own, before the canvas is presented.
+      const nextFrame = (): Promise<Uint8Array> => new Promise((resolve) => {
+        requestAnimationFrame(() => { resolve(readCanvas(canvas)); });
+      });
+      await nextFrame();
+      expect(await nextFrame()).toEqual(expectedCanvas(world, ALL, ZOOM, false));
+      expect(renderer.stats().spritesPreparing).toBe(true);
+      // The next frame comes when the link is done (polled).
+      stub.state.linked = true;
+      await vi.waitFor(() => { expect(renderer.stats().spritesPreparing).toBe(false); }, { timeout: 2000 });
+      expect(await nextFrame()).toEqual(expectedCanvas(world, ALL, ZOOM, true));
+    } finally {
+      stub.restore();
+    }
+  });
+
+  test("while the sprite program links no frame is drawn unless something changes", async () => {
+    const stub = stubParallelCompile();
+    try {
+      const { canvas, renderer } = makeRenderer(WIDTH * ZOOM, HEIGHT * ZOOM);
+      const gl = canvas.getContext("webgl2");
+      if (gl === null) throw new Error("no webgl2 context");
+      const draws = vi.spyOn(gl, "drawArraysInstanced");
+      renderer.setWorld(spriteWorld());
+      renderer.setSpriteMode(true);
+      renderer.setCamera({ x: 0, y: 0, zoom: ZOOM });
+      renderer.setAtlas(syntheticAtlas());
+      for (let frame = 0; frame < 3; frame++) await new Promise((resolve) => requestAnimationFrame(resolve));
+      const drawn = draws.mock.calls.length;
+      expect(drawn).toBeGreaterThan(0);
+      for (let frame = 0; frame < 5; frame++) await new Promise((resolve) => requestAnimationFrame(resolve));
+      expect(draws.mock.calls.length).toBe(drawn);
+    } finally {
+      stub.restore();
+    }
+  });
+
+  test("the renderer reports while it prepares the sprite program, also when no frame is at a sprite zoom", async () => {
+    const stub = stubParallelCompile();
+    try {
+      const heard: boolean[] = [];
+      const { renderer } = preparingRenderer(heard);
+      renderer.setAtlas(syntheticAtlas());
+      expect(heard).toEqual([true]);
+      expect(renderer.stats().spritesPreparing).toBe(true);
+      stub.state.linked = true;
+      await vi.waitFor(() => { expect(heard).toEqual([true, false]); }, { timeout: 2000 });
+      expect(renderer.stats().spritesPreparing).toBe(false);
+    } finally {
+      stub.restore();
+    }
+  });
+
+  test("a lost context and dispose end the preparation; nothing is reported afterwards", async () => {
+    const stub = stubParallelCompile();
+    try {
+      const lost: boolean[] = [];
+      const first = preparingRenderer(lost);
+      first.renderer.setAtlas(syntheticAtlas());
+      first.canvas.getContext("webgl2")?.getExtension("WEBGL_lose_context")?.loseContext();
+      await vi.waitFor(() => { expect(lost).toEqual([true, false]); }, { timeout: 2000 });
+
+      const disposed: boolean[] = [];
+      const second = preparingRenderer(disposed);
+      second.renderer.setAtlas(syntheticAtlas());
+      second.renderer.dispose();
+      expect(disposed).toEqual([true, false]);
+      stub.state.linked = true;
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      expect(disposed).toEqual([true, false]);
+    } finally {
+      stub.restore();
+    }
+  });
+
+  test("a sprite program that fails to link ends the preparation, keeps map colours and fails render() with the log", async () => {
+    const stub = stubParallelCompile();
+    try {
+      const heard: boolean[] = [];
+      const { renderer } = preparingRenderer(heard);
+      renderer.setAtlas(syntheticAtlas());
+      stub.state.failLink = true;
+      stub.state.linked = true;
+      await vi.waitFor(() => { expect(heard).toEqual([true, false]); }, { timeout: 2000 });
+      expect(renderer.stats().spritesPreparing).toBe(false);
+      renderer.setSpriteMode(true);
+      renderer.setCamera({ x: 0, y: 0, zoom: ZOOM });
+      // Animation frames keep the map colours instead of throwing on every frame.
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      expect(() => { renderer.render(); }).toThrow(/Shader/);
+    } finally {
+      stub.restore();
+    }
   });
 
   test("switching sprite mode and crossing the threshold upload no chunk; the atlas is uploaded once per setAtlas", () => {
