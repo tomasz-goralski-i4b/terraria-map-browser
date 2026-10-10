@@ -10,6 +10,8 @@ if runs_part web; then
   # Skipped without TERRARIA_ASSEMBLY (never set in CI), so it needs no .NET in the web half.
   echo "== tile framing observer (opt-in: TERRARIA_ASSEMBLY)"
   run_logged framing-tests node --test scripts/framing/observe.test.mjs || rc=1
+  echo "== sprite object exporter (observer opt-in: TERRARIA_ASSEMBLY)"
+  run_logged sprite-object-tests node --test scripts/sprite-objects/export.test.mjs || rc=1
 fi
 if runs_part dotnet; then
   # Microsoft.Testing.Platform mode (opted in via global.json "test.runner").
