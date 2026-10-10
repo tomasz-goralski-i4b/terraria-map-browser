@@ -37,7 +37,9 @@ Checked on one Windows install of Terraria **1.4.5.8** (L). `Content/Images/` ho
 |---|---|---|
 | `Tiles_<id>.xnb` | **754**, ids **0–753**, no gaps | equals the frame-important count `k = 754` written by 1.4.5 worlds ([header.md](file-format/header.md), "Hex examples") |
 | `Wall_<id>.xnb` | **366**, ids **1–366**, no gaps | there is no `Wall_0` — wall id 0 means "no wall" |
-| Tile variant sheets | `Tiles_5_0` … `Tiles_5_6`, `Tiles_2_Beach`, `Tiles_59_2`, `Tiles_199-gross`, `Tiles_59.bak` | not addressed by a tile id; deferred (see "Special handling") |
+| Tile variant sheets | `Tiles_5_0` … `Tiles_5_6`, `Tiles_2_Beach`, `Tiles_59_2`, `Tiles_199-gross`, `Tiles_59.bak` | not addressed by a tile id. `Tiles_5_N` is a pixel copy of block N + 1 of `Tiles_5` (`Tiles_5_6` differs from block 7 in 2 372 pixels), so trees need only `Tiles_5` ("Trees"); the others are deferred |
+| Tree and wire sheets | `Tree_Tops_0` … `Tree_Tops_31`, `Tree_Branches_0` … `Tree_Branches_31`, `Shroom_Tops`, `WiresNew`, `Actuator` | not addressed by a tile id; in the atlas ("Trees", "Wires"). `Wires`, `Wires2`–`Wires4` (an older layout) are not used |
+| Item and liquid sheets | `Item_<id>` (6 134 on L), `Liquid_0` … `Liquid_14`, `LiquidSlope_0` … `LiquidSlope_14` | in the atlas for later use (chest contents, liquids); not drawn yet |
 | Look-alikes that are **not** wall sheets | `Wall_Outline.xnb`, `WallOfFlesh.xnb` | a loader must match `Wall_<digits>.xnb` exactly |
 
 **File-name case is not reliable:** tile 650 ships as `TIles_650.xnb` (capital `I`). Windows does not care; a
@@ -292,6 +294,157 @@ x = 1474, far short of the period. Any other sheet with a side of 1800 pixels or
 the sheet or uses its other blocks for something else (doors, chests, paintings 240 and 242, piles 186 and 647); a
 frame past the edge of a sheet not in the table keeps its map colour.
 
+### Minecart tracks
+
+A minecart track (tile 314) stores **piece indices**, not sheet offsets (R: `scripts/sprite-objects`, ADR 0003): the
+game's own accessors read the front piece from `frameX` and the back piece from `frameY`, and its placement writes
+`frameY = -1` for an ordinary track. A track with a back piece is a junction: both pieces are drawn, the back one first
+and the front one over it (chosen: the order is not observable without the game's renderer). `Tiles_314` is
+144 × 144 pixels, 8 × 8 cells of 16 pixels at a stride of 18; the game's source-rectangle function gives every piece a
+whole cell (R). Pieces 0–35 exist; any other value draws the track in its map colour (chosen). Placing tracks shows
+what the pieces are (R): a horizontal run is 2, 1, …, 1, 3 (left end, middles, right end); a diagonal down to the
+right is 11, 8, …, 8, 12; pressure-plate tracks (style 1) use 20 and 21, boosters (styles 2, 3) 30 to 35.
+
+Each piece may draw **extras** on a neighbouring tile (R: the game's `DrawLeftDecoration`, `DrawRightDecoration`,
+`DrawBumper` and `DrawBouncyBumper` per piece): a decoration under a slope, on the tile **below** the track, and a
+bumper at an end, on the tile **above** it. Where they go was measured in the art (S): a decoration's art continues the
+bottom edge of the slopes that draw it (piece 4's bottom row runs into the top row of the left-down decoration), and the
+bumper's posts continue into the top rows of the ends that draw it. The viewer draws an extra on a tile without a block
+or with a half block or slope (a decoration fills the open part of the sloped block under a sloped track), over
+whatever lies there, but not on a full block (chosen: full blocks keep their pixels), and the extras of both pieces of a
+junction. The
+track's own pieces are drawn by the chunk pass; its extras, which reach the neighbouring tiles, by the object pass
+("Trees"), over the chunk pass.
+
+| Piece | Cell (column, row) | Extras | Piece | Cell | Extras | Piece | Cell | Extras |
+|---|---|---|---|---|---|---|---|---|
+| 0 | (0, 0) | — | 12 | (6, 1) | bumper | 24 | (2, 2) | bouncy bumper |
+| 1 | (1, 0) | — | 13 | (7, 1) | bumper | 25 | (3, 2) | bouncy bumper |
+| 2 | (2, 1) | bumper | 14 | (2, 0) | — | 26 | (4, 2) | left-down, bouncy bumper |
+| 3 | (3, 1) | bumper | 15 | (3, 0) | — | 27 | (5, 2) | right-down, bouncy bumper |
+| 4 | (0, 2) | left-down | 16 | (4, 0) | left-down | 28 | (6, 2) | bouncy bumper |
+| 5 | (1, 2) | right-down | 17 | (5, 0) | right-down | 29 | (7, 2) | bouncy bumper |
+| 6 | (0, 1) | — | 18 | (6, 0) | — | 30 | (2, 3) | — |
+| 7 | (1, 1) | — | 19 | (7, 0) | — | 31 | (3, 3) | — |
+| 8 | (0, 3) | right-down | 20 | (0, 4) | — | 32 | (4, 3) | right-down |
+| 9 | (1, 3) | left-down | 21 | (1, 4) | — | 33 | (5, 3) | left-down |
+| 10 | (4, 1) | left-down, bumper | 22 | (0, 5) | — | 34 | (6, 3) | right-down |
+| 11 | (5, 1) | right-down, bumper | 23 | (1, 5) | — | 35 | (7, 3) | left-down |
+
+The extras' cells (R: the game names them as pieces 36–39): left-down decoration **(0, 6)**, right-down decoration
+**(1, 6)**, bumper **(0, 7)**, bouncy bumper **(1, 7)**. The table is generated
+(`packages/renderer/src/objects/terraria-sprite-objects.generated.ts`, `scripts/sprite-objects/export.mjs`). Pieces
+30–35 have a second animation frame (row 4 instead of row 3: a pressed plate); the viewer draws frame 0 (animation is
+out of scope).
+
+```text
+source = (x = 18 × column, y = 18 × row, w = 16, h = 16)   // per piece; back piece first, then the front piece
+dest   = the track's tile; a decoration the tile below it, a bumper the tile above it
+```
+
+### Trees
+
+Trees (common 5, gem trees 583–589, vanity trees 596 and 616, ash trees 634), palms (323) and the giant mushroom (72)
+store frames, but their sprites reach past their tiles and their tops and branches come from other sheets, chosen by
+the ground under the tree and the world header. Everything marked R was observed with
+`scripts/sprite-objects/observe.ps1` (ADR 0003): trees grown by the game's own `WorldGen.GrowTree`, `GrowPalmTree`
+and `GrowShroom`, and synthetic trees over every block type, asked for their draw data (`TileDrawing.GetTileDrawData`),
+biome (`GetTreeBiome`, `GetPalmTreeBiome`) and foliage (`WorldGen.GetCommonTreeFoliageData`, `GetGemTreeFoliageData`,
+`GetVanityTreeFoliageData`, `GetAshTreeFoliageData`) under every tree top variation 0–63 at 30 consecutive columns.
+The tables the viewer needs are generated (`terraria-sprite-objects.generated.ts`, see "Minecart tracks").
+
+**Which tiles carry foliage (R).** A tree tile with `frameY` 198, 220 or 242 is leafy, its variant `(frameY − 198) / 22`;
+with `frameX` 22 it is the **top** (`IsTileALeafyTreeTop`), with 44 a **left branch** (its trunk one tile to the
+right) and with 66 a **right branch** (trunk to the left; `IsTileATreeBranch` reports the offset). Their own trunk cells
+are empty art; every other frame is an ordinary trunk cell (bare branch stubs and roots included).
+
+**Trunk cells.** The draw data gives every trunk tile a 20 × 20 cell at its stored frame (R). The common tree's cell is
+shifted right by **176 · (biome + 1)** pixels: `Tiles_5` holds eight 176-pixel blocks, and the game's biome of the tree
+(by the ground under its trunk: forest −1 → block 0, corruption 0 → 1, hallow 2 → 3, snow 3 → 4, crimson 4 → 5, jungle
+5 → 6, mushroom 6 → 7; block 2 was not seen) picks one (R). `Tiles_5_0` … `Tiles_5_6` are pixel copies of blocks 1–7 and
+are not needed. Gem, vanity and ash trees use their own sheet unshifted (R). The art of every trunk cell fills columns
+2–17 of its 20 (roots and branch stubs reach to 0 and 19) and rows 0–15, with roots reaching 19 (S), so the cell is
+drawn **2 pixels left of its tile, at its top**, overhanging 2 pixels to each side and 4 below (chosen from the art).
+Cells are drawn column by column, each from the top, so a lower cell covers the overhang of the one above (chosen).
+
+**Top and branch style.** The foliage data names a style (`Tree_Tops_<style>` and `Tree_Branches_<style>`), a frame
+offset and the top's frame size (R; the frame sizes match the sheets' layouts, S). Which style depends on the **ground**
+under the trunk and, for some grounds, on one of the world's **13 tree top variations** (`treeTopVariations` in the
+header, F):
+
+- forest grounds (grass 2, golf grass 477): the variation of the tree's **forest zone**, the zone by the header's three
+  `treeX` boundaries (x < treeX[0] → zone 0, < treeX[1] → 1, < treeX[2] → 2, else 3; the variation index is the zone).
+  Variation 0 gives style 0, any other v style **v + 5** (so the forest values 0–5 give styles 0, 6–10), 80 × 80;
+- snow (147): variation 6; the styles by value are irregular (value 0: style 12, but 18 in every tenth column;
+  1: 4; 2: 16; 3: 17; …), so the table lists each value 0–63;
+- corruption (23, 661) style 1, crimson (199, 662) 5, jungle (60) 13 at 116 × 96, mushroom grass (70) 14, hallow
+  (109, 492) 3 at 80 × 140 with the frame offset **3 · (x mod 3)** (nine frames), whatever the variations;
+- gem trees on any of 15 stone-like blocks styles 22–28 (116 × 96), vanity trees 29 and 30 (118 × 96), the ash tree
+  31 (116 × 96).
+
+The frame is the tile's variant plus the offset; the offset is taken at the top's or branch's own column (R: a branch
+reports the frame of its own column). A ground the table does not list draws no foliage (the trunk cells still draw).
+The header's `treeStyles` do not change the foliage (R: only the variations do). A variation outside 0–63 takes the
+variation-0 style (chosen; real worlds store small values).
+
+**Placement (chosen from the art, S).** A top frame `w × h` sits on its tile: its bottom on the tile's bottom, centred
+(left edge `16x + 8 − ⌊w/2⌋`); the trunk stub at the bottom of every 80-pixel-wide top spans columns 32–47, exactly
+the tile (two 114- and 118-wide styles are off by one pixel). A branch frame (40 × 40; left branches in column 0, right
+ones at x = 42; rows by frame) is centred vertically on its tile (12 pixels above it) and touches the trunk: a left
+branch's right edge on its tile's right edge, a right branch's left edge on its tile's left edge (their art stubs run
+into the trunk there).
+
+**Palms (R).** A palm stores its column's cell in `frameX` (66 the base, 0/22/44 trunk, 88/110/132 the leafy top in
+three variants) and its lean in `frameY`: an offset in pixels (even, −16 to 16 in grown palms, changing by 2 a tile up
+the trunk). The draw data replaces `frameY` with **22 · row**, the row by the sand under the palm: sand (53) 0,
+crimsand (234) 1, pearlsand (116) 2, ebonsand (112) 3; on any other ground the game names row −1 (outside the sheet)
+and the viewer draws nothing (chosen). The cell is drawn shifted right by the lean (chosen: the sign is not
+observable). The top comes from `Tree_Tops_15` (80 × 80, three columns by variant, four rows by the palm row; chosen
+from the sheet's layout), placed like a tree top and shifted by the top tile's lean. The oasis rows 4–7 of `Tiles_323`
+were not observed.
+
+**The giant mushroom (R, S).** Its stem cells are 16 × 18 at the stored frame (R: draw data), drawn at the tile, 2
+pixels overhanging below. The tile with `frameX` 36 is the top: its own cell is empty art and its cap is
+`Shroom_Tops` (three 60 × 42 caps at a stride of 62, the column `frameY / 18`), centred on the tile, its bottom on the
+tile's bottom (chosen: the cap's stem stub spans columns 22–37).
+
+**How the viewer draws them (#238).** The chunk pass shows what lies behind a tree tile (walls, background), faded in
+over its map colour like any sprite. An **object pass**, drawn after the chunk pass in sprite mode, draws the sprites of
+every visible chunk and the chunks around it as quads at their pixel positions: first the trunk cells (and the track
+extras), then the branches, then the tops and caps, so the foliage covers neighbouring trunks and blocks (chosen; the
+game's layering is not observable). Its sprites are collected on the CPU per chunk from the planes and the header's
+`treeX` and `treeTopVariations` (`toRenderableWorld` passes them as `RenderableWorld.trees`), and collected again for
+the chunks around an edited tile. Liquids and the colour overlay of the chunk pass lie under the object pass; wires are
+drawn over it ("Wires").
+
+### Wires
+
+`WiresNew` (288 × 288) holds 16 × 16 wire pieces at a stride of 18: **16 columns**, one per combination of the four
+sides a wire continues to, and **16 rows**. Measured in the art (S): a piece's art reaches the top edge of its cell
+exactly when its column has bit 1, the right edge with bit 2, the bottom edge with bit 4 and the left edge with bit 8
+(column 0 is a lone dot, column 15 a cross), so
+
+```text
+column = (up ? 1 : 0) + (right ? 2 : 0) + (down ? 4 : 0) + (left ? 8 : 0)   // the same colour on that side neighbour
+row    = 0 red, 1 blue, 2 green, 3 yellow                                   // rows 0–3 by their colour (S)
+source = (x = 18 × column, y = 18 × row, w = 16, h = 16)
+```
+
+Rows 4–15 repeat the four colours with other looks (thinner, broken, diagonal); which one the game shows when is not
+observable without its renderer, so the viewer uses rows 0–3 (chosen; open question). `Actuator` is one 16 × 16 image.
+The older `Wires`, `Wires2`–`Wires4` sheets (90 × 72, one colour each) are not used.
+
+How the viewer draws them (#241): only a side neighbour with a wire of the **same colour** counts; a neighbour outside
+the world counts as none. In sprite mode a **wire pass** draws every chunk once more after the chunk pass and the
+object pass ("Trees"): per tile the shown colours in the order **red, blue, green, yellow** (each over the ones
+before, so yellow ends on top as in the colour overlay), then the **actuator** over them. The layer toggles (red, blue,
+green, yellow, actuators) select what is drawn, and a neighbour's hidden colour still connects (the piece does not
+change when another colour is hidden). Below `SPRITE_MIN_ZOOM` the colour overlay of the chunk pass stays; from there
+to `SPRITE_FULL_ZOOM` the pieces fade in over the overlay. Without `WiresNew` in the atlas the wire pass draws the
+overlay; an actuator without its sheet its overlay colour. The pass blends over what is drawn (premultiplied), so over
+a fully transparent pixel (background hidden and nothing behind the wire) a half-transparent wire pixel darkens
+slightly, unlike the chunk pass's overlay rule (chosen).
+
 ### Worked examples
 
 | # | Case | Input | Source rectangle (x, y, w, h) | Basis |
@@ -315,8 +468,11 @@ Expected sheet sizes (consistent with the size arithmetic, confirmed only by the
 | Non-frame-important blocks | the cell framed by "Tile framing" and its database (#141, #146), grass and moss included; half blocks and slopes cut per "Slopes and half blocks"; falling blocks with nothing below them in map colours | paint, lighting |
 | Walls | the cell framed by "Walls" and the framing database (#147), a 32 × 32 cell centred on the tile, below the blocks | paint, lighting |
 | Animated tiles (173 ids flagged `isAnimated` in A12, all frame-important) | draw the stored frame (static) | animation |
-| Trees (5, 323, …), tree tops/branches, variant sheets (`Tiles_5_N`, `Tiles_2_Beach`, `Tiles_59_2`, …) | placeholder | yes |
-| Paint, actuated/inactive tint, illumination, liquids, wires | — | yes |
+| Minecart tracks (314) | the stored pieces' cells, a junction's back piece under its front piece, decorations below and bumpers above (#239, "Minecart tracks") | pressure-plate and booster animation, minecarts, paint |
+| Trees (5, 583–589, 596, 616, 634), palms (323), the giant mushroom (72) | trunk cells by ground, tops and branches by ground, zone and tree top variation, palm rows and lean, mushroom caps, in an object pass over the chunk pass (#238, "Trees") | wind sway, paint, lighting, the oasis palm rows |
+| Other variant sheets (`Tiles_2_Beach`, `Tiles_59_2`, …) | — | yes |
+| Wires and actuators | the `WiresNew` piece the four same-colour side neighbours give, red to yellow, the actuator on top, over everything in a wire pass; the colour overlay below `SPRITE_MIN_ZOOM` (#241, "Wires") | animation, the wiring tools' translucency modes, the other `WiresNew` rows |
+| Paint, actuated/inactive tint, illumination, liquids | — | yes |
 
 ## Tile framing
 
@@ -340,7 +496,7 @@ comes from another editor's code or data.
 | F | [header.md](file-format/header.md) (frame-important bitset), [tiles.md](file-format/tiles.md) ("Record layout", byte-2 bits 4–6 = block shape) | this repo | which ids store their frames; the shape values 0–5 |
 | S | **Sheet art**: local install L (1.4.5.8), sheets decoded with `packages/assets` and measured with [`packages/assets/tools/measure-tile-sheets.ts`](../packages/assets/tools/measure-tile-sheets.ts) (prints to the terminal; no pixels are saved) | measured 2026-10-07 and (layout agreement, grass and moss, large-frame sheets) 2026-10-08 | the cell catalogue ("Measuring the sheet", "Grass and moss sheets") |
 | G | **In-game check** of v2 and v3 Frozen observation worlds, generated from `SJCO1` | user screenshots, 2026-10-08 20:27–20:29 and 20:59–21:01; disposable game saves | [Observation results](#observation-results-2026-10-08) and [Frozen-world results](#frozen-world-results) |
-| R | **Runtime observation** ([ADR 0003](adr/0003-observe-framing-in-the-game.md)): the installed game's `WorldGen.TileFrame` and `Framing.WallFrame` called on synthetic tiles by [`scripts/framing/observe.ps1`](../scripts/framing/observe.ps1); only the frames they write are recorded | L (1.4.5.8), 2026-10-09 | every rule below; the [framing database](#the-framing-database); [Runtime observation results](#runtime-observation-results-2026-10-09) |
+| R | **Runtime observation** ([ADR 0003](adr/0003-observe-framing-in-the-game.md)): the installed game's `WorldGen.TileFrame` and `Framing.WallFrame` called on synthetic tiles by [`scripts/framing/observe.ps1`](../scripts/framing/observe.ps1); only the frames they write are recorded. Also the game's track, tree and draw-data functions (`Minecart.GetSourceRect`, `WorldGen.Get…TreeFoliageData`, `TileDrawing.GetTileDrawData`, …) called on synthetic tiles by [`scripts/sprite-objects/observe.ps1`](../scripts/sprite-objects/observe.ps1); only what they return is recorded | L (1.4.5.8), 2026-10-09 and 2026-10-10 | every rule below; the [framing database](#the-framing-database); [Runtime observation results](#runtime-observation-results-2026-10-09) |
 
 Evidence marks: **S** (measured in the art), **G** (seen in a screenshot; only the cases visible there), **R**
 (observed at runtime: exact, because it reads the frame the game writes, so pixel-identical cells are told apart),
@@ -1043,9 +1199,13 @@ report the same errors, and every candidate library either drags in a framework 
 
 ## Atlas
 
-`buildSpriteAtlas(contentDir)` (`packages/assets`) decodes every `Images/Tiles_<id>.xnb` and `Images/Wall_<id>.xnb`
-once (names matched case-insensitively; `Wall_Outline`, `Tiles_<id>_<n>` variants and everything else are ignored)
-and packs them into square RGBA pages, 4096 × 4096 by default. It runs in a Worker (`atlas-worker.ts`) and never
+`buildSpriteAtlas(contentDir)` (`packages/assets`) decodes every `Images/Tiles_<id>.xnb`, `Images/Wall_<id>.xnb`,
+`Images/Tree_Tops_<n>.xnb` and `Images/Tree_Branches_<n>.xnb` (kinds `tile`, `wall`, `treeTop`, `treeBranch`), and
+`Shroom_Tops`, `WiresNew` and `Actuator` (kinds `shroomTop`, `wire`, `actuator`, each id 0), and `Item_<n>`,
+`Liquid_<n>` and `LiquidSlope_<n>` (kinds `item`, `liquid`, `liquidSlope`: kept for chest contents and liquids, not drawn
+yet; their frame layout is not described, so their frame size is 0, the whole sheet) once (names matched
+case-insensitively; `Wall_Outline`, `Tiles_<id>_<n>` variants and everything else are ignored) and packs them into
+square RGBA pages, 4096 × 4096 by default. Format 5 added the tree, cap, wire and actuator sheets; format 6 the item and liquid sheets. It runs in a Worker (`atlas-worker.ts`) and never
 touches the network; the Worker reports the number of `fetch` calls it saw (always 0).
 
 - **Packing:** shelf packing, tallest sheet first, with 2 transparent pixels of padding around every sheet so
@@ -1054,7 +1214,8 @@ touches the network; the Worker reports the number of `fetch` calls it saw (alwa
   pixel of it, so no half-resolution texel mixes a cell with its gutter. A sheet that does not fit an empty page
   (including padding) is rejected with `AtlasSheetTooLargeError`.
 - **Index:** `(kind, id) → { page, x, y, width, height, frameWidth, frameHeight, gapX, gapY }`: the per-sheet frame and gutter
-  of "Sprite layout" (default tiles 16×16 / 2, walls 32×32 / 4; the 56 tile ids whose grid or gutter differs from the default — e.g. tile 4
+  of "Sprite layout" (default tiles 16×16 / 2, walls 32×32 / 4, tree tops 80×80 / 2 (other sizes come from the foliage
+  table, "Trees"), branches 40×40 / 2, mushroom caps 60×42 / 2, wires 16×16 / 2, the actuator 16×16 / 0; the 56 tile ids whose grid or gutter differs from the default — e.g. tile 4
   20×20, tile 3 and 24 16×20, tile 15 gutter 2×4, tiles 751/752 18×18 with no gutter — carry their own values, restated from A12's
   per-id `textureGrid`/`frameGap`; all others the default), the family defaults, the page size, padding and `ATLAS_FORMAT_VERSION`.
 - **Cache:** the origin private file system, one directory per fingerprint holding `page-<n>.rgba` (raw RGBA) and
@@ -1159,5 +1320,9 @@ shorter cells retain their native height. Paint remains a corner mark.
 4. Which walls use variant rows 5–6 of the wall table, given that `Wall_1` (468 × 180) has only rows 0–4.
 5. Whether any file in a full install has the E8 flag set or uses a non-`0xFF` last chunk (L checked seven files;
    the opt-in test checks all).
+6. Sprite objects (#238, #239, #241), not observable without the game's renderer: the direction of a palm's lean;
+   which `WiresNew` rows 4–15 the game shows when; the layering of tree foliage against neighbouring blocks, liquids
+   and wires; the draw order of a junction's two track pieces; `Tiles_5` block 2 (no ground produced it); the oasis
+   palm rows. Each has a documented choice ("Minecart tracks", "Trees", "Wires").
 
 Proposed follow-up issues: [planning/assets-follow-ups.md](planning/assets-follow-ups.md).

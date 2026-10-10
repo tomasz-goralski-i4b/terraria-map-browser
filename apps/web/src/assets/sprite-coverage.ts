@@ -1,4 +1,3 @@
-import { SPRITE_DEFERRED_TILES } from "@studio/renderer";
 import type { ContentRef } from "@studio/world-model";
 
 /** The planes needed to find framed content: column-major block palette indices and the stored `frameX`. */
@@ -10,8 +9,8 @@ export interface FramedPlanes {
 
 /**
  * The content sprite mode draws as the missing-texture checkerboard: blocks placed with a stored frame whose content
- * has no tile sheet in the atlas (newer than the install, mod, unknown), once each, in palette order. Content sprite
- * mode leaves in its map colour on purpose (trees) is not missing. One pass over the planes, no allocation per tile.
+ * has no tile sheet in the atlas (newer than the install, mod, unknown), once each, in palette order. One pass over the
+ * planes, no allocation per tile.
  */
 export function contentWithoutSprite(planes: FramedPlanes, palette: readonly ContentRef[], tileSheets: ReadonlySet<number>): ContentRef[] {
   const { block, frameX } = planes;
@@ -22,7 +21,7 @@ export function contentWithoutSprite(planes: FramedPlanes, palette: readonly Con
     if (content < framed.length && (frameX[index] ?? -1) >= 0) framed[content] = 1;
   }
   return palette.filter((ref, index) =>
-    framed[index] === 1 && !(ref.kind === "vanilla" && (tileSheets.has(ref.id) || SPRITE_DEFERRED_TILES.has(ref.id))));
+    framed[index] === 1 && !(ref.kind === "vanilla" && tileSheets.has(ref.id)));
 }
 
 /**

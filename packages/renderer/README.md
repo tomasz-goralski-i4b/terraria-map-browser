@@ -96,13 +96,24 @@ exactly the pixels `filterTiles` (below) makes of them. The browser tests assert
   baseline cache (512 chunks, about 160 MiB) however large the world is. At half a pixel per tile and above the
   cache grows to the visible set, which the viewport bounds. While chunks are still loading there, the overview is
   drawn under them instead of a hole; a complete frame is exact.
+- **Prefetch.** After a frame that loaded everything it shows, an idle callback (`requestIdleCallback`) uploads the
+  chunks of the ring `prefetchChunks` (default 1) chunks wide around the view, nearest first and framed at a sprite
+  zoom, while the idle period lasts, so a pan finds them resident. It never evicts a chunk of the view or the ring and
+  never touches the view's own chunks (those are the frames' to load).
+- **Frame reuse.** Scheduled frames from one pixel per tile up draw into one of two offscreen `RGBA8` targets, copied
+  to the canvas (`blitFramebuffer`), with the camera snapped to whole screen pixels. When only the camera moved since
+  the last complete frame (same zoom and program, no other setter called, no upload in the frame), the frame copies
+  the last one shifted by whole pixels and draws only the strips the pan revealed (scissored), so a pan costs about two
+  full-canvas copies instead of the whole chunk pass: measured on an Intel Arc iGPU (D3D11) at 3440 × 1440 in sprite
+  mode, about 1 ms per frame instead of 2.5–4.7 ms. `stats().reusedFrames` counts them. `render()` draws the camera as
+  given straight to the canvas and never reuses a frame.
 - **Sprite mode (#91).** `setAtlas(atlas)` uploads a sprite atlas (`@studio/assets`' `SpriteAtlas`, square RGBA8 pages)
   once, as one `RGBA8` array texture with a layer per page; `stats().atlasUploads` counts it. A lookup texture
   (`RGBA32I`, `SPRITE_SHEET_ROW` in `src/gpu/shaders.ts`) holds per palette index the tile sheet of its content ID
   (page, place, size, frame size), the wall sheet of its wall ID and how its stored frames wrap past the sheet's edge
   (`SPRITE_FRAME_WRAPS`, docs/assets.md; five texels per index), written with the palette,
-  so it grows when the palette is appended; mod and unknown content and IDs without a sheet are *missing*, trees (`SPRITE_DEFERRED_TILES`: tree trunks, tops and
-  branches are deferred, docs/assets.md) keep their map colour. A missing block with a stored frame is drawn as a
+  so it grows when the palette is appended; mod and unknown content and IDs without a sheet are *missing*; minecart
+  tracks (their frames are piece indices) and trees (drawn by the object pass) have states of their own. A missing block with a stored frame is drawn as a
   generated missing-texture checkerboard (`MISSING_SPRITE_COLORS`, magenta and black, 2 × 2 squares per tile; not a
   game asset), so content without a sprite stands out; the web app lists it under the Sprites row. `setSpriteMode(true)` makes the chunk pass, from
   `SPRITE_MIN_ZOOM` (5) pixels per tile, draw a block that has a stored frame (`frameX`, `frameY` ≥ 0: frame-important
@@ -127,12 +138,24 @@ exactly the pixels `filterTiles` (below) makes of them. The browser tests assert
     asks every 50 ms whether it is done; meanwhile animation frames draw map colours, `stats().spritesPreparing` is
     true and `onSpritesPreparing` reports the start and the end (the web app shows an indeterminate bar on the Sprites
     row and the assets button). `render()` waits for it. Without the extension it is linked at once.
+  - **Tracks, trees and wires (#238, #239, #241; docs/assets.md "Minecart tracks", "Trees", "Wires").** The chunk
+    pass draws a minecart track's pieces from the generated piece table and shows what lies behind a tree tile. An
+    **object pass** (`objectVertexSource`, `objectFragmentSource`) then draws one instanced quad per object sprite
+    (`objectSprites` in `src/objects/object-sprites.ts`: tree trunk cells, branches and tops, palm and mushroom parts,
+    track decorations and bumpers) at its rectangle in world sprite pixels, so it may reach past its tile; the sprites
+    are collected on the CPU per chunk, for the visible chunks and the ring around them, cached until an edit nearby
+    (`invalidateTiles`), the world or the atlas changes; the instance buffer is uploaded again only when the shown chunks
+    or their lists change. A **wire pass** (`wireVertexSource`, `wireFragmentSource`) then draws the wires and actuators
+    from `WiresNew` and `Actuator`, faded in over the colour overlay, which the chunk pass's sprite program no longer
+    draws: one quad per vertical run of tiles with a wire or actuator (`collectWireRuns`, cached per chunk like the
+    object lists), so a chunk with one wire shades one tile, not all of its 128 × 128. Both passes blend over what is
+    drawn and are linked on their first use.
   - **Chunk borders.** Each chunk is its own quad; a pixel on the border can compute the tile just across it (the
     quad's edge and the pixel's position round apart). The pass then keeps the chunk's own tile and moves the sprite
     position to that tile's near edge, so the border never shows the far edge of a tile.
 
   Transparent sprite pixels show the wall, else the background, behind
-  them; paint is not applied to sprites; liquids and wires still draw over them. A half-transparent sprite pixel with
+  them; paint is not applied to sprites; liquids still draw over them, and the wire pass over everything. A half-transparent sprite pixel with
   nothing behind it is the one partly transparent pixel liquids can land on outside map mode: there they use the
   general straight-alpha rule (`over` in `src/gpu/shaders.ts`, rounded to nearest); map mode stays bit-exact. Everything else, the box filter and
   the overview keep map colours. The mode is a uniform: switching it or crossing the threshold uploads no chunk planes and no atlas (the

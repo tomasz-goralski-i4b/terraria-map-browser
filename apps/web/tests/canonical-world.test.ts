@@ -19,6 +19,7 @@ function loadedWorld(): WorldTilesResult {
   const palette = [{ kind: "vanilla", id: 1 }, { kind: "vanilla", id: 2 }];
   return {
     metadata: { width: 2, height: 3, surfaceLevel: 1, rockLevel: 2 },
+    details: { generation: { treeX: [1, 1, 1], treeTopVariations: [] } },
     planes,
     palette,
   } as unknown as WorldTilesResult;

@@ -14,7 +14,7 @@ export {
 export type { Camera, ChunkCoord, Size } from "./camera/camera.js";
 export { CameraAnimator, wheelPixels } from "./camera/animator.js";
 export type { CameraStep } from "./camera/animator.js";
-export { SPRITE_DEFERRED_TILES, WebGl2UnavailableError, createMapRenderer } from "./gpu/map-renderer.js";
+export { WebGl2UnavailableError, createMapRenderer } from "./gpu/map-renderer.js";
 export type {
   MapRenderer, MapRendererOptions, MapRendererStats, RenderableWorld, SpriteAtlasSource, SpriteSheetEntry,
 } from "./gpu/map-renderer.js";
@@ -38,3 +38,13 @@ export {
 export type { WallFraming, WallFramingWorld } from "./framing/frame-wall.js";
 export { createChunkWallCellCache } from "./framing/chunk-wall-cells.js";
 export type { ChunkWallCellCache } from "./framing/chunk-wall-cells.js";
+export {
+  TRACK_CELL_STRIDE, TRACK_EXTRA_OFFSET, TRACK_FLAGS, TRACK_PIECE_COUNT, TRACK_TILE, trackExtraCell, trackPiece,
+} from "./objects/tracks.js";
+export type { TrackCell, TrackExtra, TrackPiece } from "./objects/tracks.js";
+export type { SpriteObjectData } from "./objects/sprite-object-data.js";
+export { terrariaSpriteObjects } from "./objects/terraria-sprite-objects.generated.js";
+export { WIRE_CELL_STRIDE, WIRE_DRAW_ORDER, wireCell, wirePiece } from "./objects/wires.js";
+export type { WireColor, WireNeighbours } from "./objects/wires.js";
+export { OBJECT_TILES, SPRITE_PIXELS_PER_TILE, objectSprites } from "./objects/object-sprites.js";
+export type { ObjectSheetKind, ObjectSprite, ObjectWorld, TileArea, TreeSettings } from "./objects/object-sprites.js";

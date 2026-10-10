@@ -28,6 +28,7 @@ export {
 } from "./atlas-cache.js";
 export {
   buildSpriteAtlas,
+  isAtlasSheetName,
   type BuildOptions,
   type BuildPhase,
   type BuildProgress,

@@ -10,6 +10,8 @@ import { WIRE_ALPHA, WIRE_COLORS, WIRE_LAYER, type ChunkLayers } from "../chunk/
 import { NO_CELL } from "../framing/cells.js";
 import { createChunkCellCache } from "../framing/chunk-cells.js";
 import { SPRITE_FRAME_WRAPS } from "./frame-wrap.js";
+import { TRACK_TILE } from "../objects/tracks.js";
+import { collectWireRuns, type WireRuns } from "../objects/wires.js";
 import type { ChunkCellCache } from "../framing/chunk-cells.js";
 import { createChunkWallCellCache } from "../framing/chunk-wall-cells.js";
 import type { ChunkWallCellCache } from "../framing/chunk-wall-cells.js";
@@ -20,7 +22,10 @@ import {
   CELLS_INSTANCE_BIT, WALLS_INSTANCE_BIT, LAYER_ATTRIBUTE, PAGE_APRON, PLANES_16, PLANES_8, PLANE_COUNT_16, PLANE_COUNT_8, PRESENT, RECT_ATTRIBUTE,
   RULE_HEADER_ROWS, RULE_ROW, SPRITE_MIN_ZOOM, SPRITE_SHEET_ROW, SPRITE_SHEET_TEXELS, spriteSampling, SPRITE_STATE, chunkFragmentSource, chunkSpriteFragmentSource, chunkVertexSource, overviewBuildFragmentSource,
   halfAtlasFragmentSource, halfAtlasVertexSource, overviewBuildVertexSource, overviewFragmentSource, overviewVertexSource,
+  OBJECT_DEST_ATTRIBUTE, OBJECT_SOURCE_ATTRIBUTE, objectFragmentSource, objectVertexSource, wireFragmentSource,
+  WIRE_RUN_ATTRIBUTE, wireVertexSource,
 } from "./shaders.js";
+import { OBJECT_TILES, objectSprites, type ObjectSprite, type TreeSettings } from "../objects/object-sprites.js";
 
 /** The slice of a world the renderer reads. Planes are column-major (`x * height + y`); never copied by the caller. */
 export interface RenderableWorld {
@@ -50,11 +55,13 @@ export interface RenderableWorld {
   };
   /** Append-only palette. */
   readonly palette: readonly ContentRef[];
+  /** The world header's tree-style zones and tree top variations (docs/assets.md, "Trees"); without them all are 0. */
+  readonly trees?: TreeSettings;
 }
 
 /** One sheet of a sprite atlas: where it lies on its page and the size of its frame cells (docs/assets.md, "Atlas"). */
 export interface SpriteSheetEntry {
-  readonly kind: "tile" | "wall";
+  readonly kind: "tile" | "wall" | "treeTop" | "treeBranch" | "shroomTop" | "wire" | "actuator" | "item" | "liquid" | "liquidSlope";
   readonly id: number;
   readonly page: number;
   readonly x: number;
@@ -95,6 +102,11 @@ export interface MapRendererOptions {
    * not grow it.
    */
   readonly maxCachedChunks?: number;
+  /**
+   * Chunks around the viewport, per side, uploaded ahead while the browser is idle (and framed at a sprite zoom), so a
+   * pan finds them resident. Default 1; 0 turns it off. They never evict a chunk the last frame drew.
+   */
+  readonly prefetchChunks?: number;
   /** Map colours (content, paint, background by depth), as in `renderChunk`; without one, placeholders are drawn. */
   readonly mapPalette?: MapPalette;
   /**
@@ -135,6 +147,19 @@ export interface MapRendererStats {
   readonly framedWalls: number;
   /** Whether the sprite program is being prepared in the background (MapRendererOptions.onSpritesPreparing). */
   readonly spritesPreparing: boolean;
+  /**
+   * Scheduled frames since creation that reused the previous frame shifted by whole pixels, drawing only the strips
+   * a pan revealed (only the camera changed since, by whole screen pixels at the same zoom).
+   */
+  readonly reusedFrames: number;
+}
+
+/** An offscreen colour target the size of the canvas: scheduled frames are drawn into one and copied to the canvas. */
+interface FrameTarget {
+  readonly texture: WebGLTexture;
+  readonly framebuffer: WebGLFramebuffer;
+  readonly width: number;
+  readonly height: number;
 }
 
 export interface MapRenderer {
@@ -189,6 +214,9 @@ const PALETTE_WIDTH = PALETTE_ROW * 2;
 const PALETTE_CAPACITY = 0xffff;
 const PALETTE_HEIGHT = PALETTE_ROW;
 const DEFAULT_MAX_CACHED_CHUNKS = 512;
+const DEFAULT_PREFETCH_CHUNKS = 1;
+/** An idle prefetch step stops uploading once less than this much of its idle period is left (milliseconds). */
+const PREFETCH_IDLE_RESERVE = 3;
 const DEFAULT_MAX_CHUNK_UPLOADS_PER_FRAME = 256;
 const DEFAULT_MAX_UPLOAD_MILLISECONDS_PER_FRAME = 8;
 /**
@@ -218,28 +246,39 @@ const UNIT_ATLAS = 6;
 const UNIT_SPRITE_SHEETS = 7;
 const UNIT_ATLAS_HALF = 8;
 const TEXTURE_UNITS = 9;
-/**
- * Tile IDs sprite mode leaves in map colours although they store frames: trees and the giant mushroom (5 Tree,
- * 72 Giant Mushroom, 323 Palm Tree, 583–589 gem trees, 596, 616 and 634 vanity and ash trees, by the shipped content
- * names). Their trunk cells are wider than a tile and overlap, their tops and branches come from other sheets, and the
- * palm tree's frame is not a sheet offset (docs/assets.md, "Special handling": trees are deferred).
- */
-export const SPRITE_DEFERRED_TILES: ReadonlySet<number> = new Set([5, 72, 323, 583, 584, 585, 586, 587, 588, 589, 596, 616, 634]);
 /** Texels per row of the sprite sheet lookup: five per palette index (SPRITE_SHEET_ROW in shaders.ts). */
 const SPRITE_SHEET_WIDTH = SPRITE_SHEET_ROW * SPRITE_SHEET_TEXELS;
 
 const TILE_UNIFORMS = [
   "uPlanes16", "uPlanes8", "uPresent", "uPalette", "uBackground", "uRules", "uPaintRow", "uPaintCount", "uPaletteLength",
-  "uLayers", "uLiquids", "uWireColors", "uWireBits", "uWireAlpha",
+  "uLayers", "uLiquids",
 ] as const;
-const CHUNK_UNIFORMS = [...TILE_UNIFORMS, "uCamera", "uZoom", "uViewport", "uFilter", "uStep", "uWorldSize"] as const;
+/** The wire overlay's uniforms: the map program and the overview build pass draw it, in sprite mode the wire pass does. */
+const OVERLAY_UNIFORMS = ["uWireColors", "uWireBits", "uWireAlpha"] as const;
+const CHUNK_PASS_UNIFORMS = [...TILE_UNIFORMS, "uCamera", "uZoom", "uViewport", "uFilter", "uStep", "uWorldSize"] as const;
+const CHUNK_UNIFORMS = [...CHUNK_PASS_UNIFORMS, ...OVERLAY_UNIFORMS] as const;
 /** The sprite program's own uniforms (chunkSpriteFragmentSource), besides CHUNK_UNIFORMS. */
 const SPRITE_UNIFORMS = [
   "uAtlas", "uAtlasHalf", "uSpriteSheets", "uSpriteSamples", "uSpriteStep", "uSpriteLevel", "uSpriteWeight",
 ] as const;
 const HALF_ATLAS_UNIFORMS = ["uAtlas", "uPage"] as const;
-const SPRITE_CHUNK_UNIFORMS = [...CHUNK_UNIFORMS, ...SPRITE_UNIFORMS] as const;
-const BUILD_UNIFORMS = [...TILE_UNIFORMS, "uFactor", "uTarget"] as const;
+const SPRITE_CHUNK_UNIFORMS = [...CHUNK_PASS_UNIFORMS, ...SPRITE_UNIFORMS] as const;
+/** The object pass's uniforms (objectFragmentSource): the camera and the sprite sampling. */
+const OBJECT_UNIFORMS = [
+  "uCamera", "uZoom", "uViewport", "uAtlas", "uAtlasHalf", "uSpriteSamples", "uSpriteStep", "uSpriteLevel", "uSpriteWeight",
+] as const;
+/** The wire pass's uniforms (wireFragmentSource). */
+const WIRE_UNIFORMS = [
+  ...OBJECT_UNIFORMS, "uPlanes16", "uPresent", "uLayers", "uWireColors", "uWireBits", "uWireAlpha", "uWorldSize", "uWireSheet",
+  "uActuatorSheet",
+] as const;
+/** Ints per object pass instance: its rectangle in world sprite pixels, then (atlas page, x, y, 0) of its source. */
+const OBJECT_INTS = 8;
+/** Ints per wire pass instance: its chunk's rectangle and page layer (as the chunk pass), then its run (x, y, w, h). */
+const WIRE_INTS = 9;
+
+
+const BUILD_UNIFORMS = [...TILE_UNIFORMS, ...OVERLAY_UNIFORMS, "uFactor", "uTarget"] as const;
 const OVERVIEW_UNIFORMS = ["uCamera", "uZoom", "uViewport", "uWorld", "uExtent", "uOverview"] as const;
 
 interface Program<Name extends string> {
@@ -307,6 +346,12 @@ interface GpuResources {
   /** Instance attributes of the chunk passes. */
   readonly instances: WebGLBuffer;
   readonly instanceArray: WebGLVertexArrayObject;
+  /** Instance attributes of the wire pass (WIRE_INTS per run of wire tiles). */
+  readonly wireInstances: WebGLBuffer;
+  readonly wireArray: WebGLVertexArrayObject;
+  /** Instance attributes of the object pass (OBJECT_INTS per object sprite). */
+  readonly objectInstances: WebGLBuffer;
+  readonly objectArray: WebGLVertexArrayObject;
   /** No attributes: the overview quad comes from gl_VertexID. */
   readonly emptyArray: WebGLVertexArrayObject;
   readonly framebuffer: WebGLFramebuffer;
@@ -436,6 +481,33 @@ function instanceArray(gl: WebGL2RenderingContext, buffer: WebGLBuffer): WebGLVe
   return array;
 }
 
+/** The wire pass's vertex array: the chunk pass's attributes and the run (WIRE_INTS per instance); pointers set per draw. */
+function wireArray(gl: WebGL2RenderingContext, buffer: WebGLBuffer): WebGLVertexArrayObject {
+  const array = requireValue(gl.createVertexArray(), "a vertex array");
+  gl.bindVertexArray(array);
+  gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+  for (const location of [RECT_ATTRIBUTE, LAYER_ATTRIBUTE, WIRE_RUN_ATTRIBUTE]) {
+    gl.enableVertexAttribArray(location);
+    gl.vertexAttribDivisor(location, 1);
+  }
+  gl.bindVertexArray(null);
+  return array;
+}
+
+/** The object pass's vertex array: two ivec4 per instance (OBJECT_INTS), read from `buffer`. */
+function objectArray(gl: WebGL2RenderingContext, buffer: WebGLBuffer): WebGLVertexArrayObject {
+  const array = requireValue(gl.createVertexArray(), "a vertex array");
+  gl.bindVertexArray(array);
+  gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+  for (const [location, offset] of [[OBJECT_DEST_ATTRIBUTE, 0], [OBJECT_SOURCE_ATTRIBUTE, 16]] as const) {
+    gl.enableVertexAttribArray(location);
+    gl.vertexAttribIPointer(location, 4, gl.INT, OBJECT_INTS * 4, offset);
+    gl.vertexAttribDivisor(location, 1);
+  }
+  gl.bindVertexArray(null);
+  return array;
+}
+
 /**
  * The rules of every tile ID with a frame → option rule and map colours, in ID order: each range carries the colour
  * of its option (`optionColor`: an option the ID lacks falls back to option 0), each header the colour of option 0,
@@ -487,6 +559,8 @@ function defaultUnpack(gl: WebGL2RenderingContext): void {
 function createResources(gl: WebGL2RenderingContext, rules: RuleTable): GpuResources {
   defaultUnpack(gl);
   const instances = requireValue(gl.createBuffer(), "a buffer");
+  const objectInstances = requireValue(gl.createBuffer(), "a buffer");
+  const wireInstances = requireValue(gl.createBuffer(), "a buffer");
   const rulesTexture = integerTexture(gl, gl.RGBA32I, RULE_ROW, RULE_HEADER_ROWS + rules.rows);
   if (rules.rows > 0) {
     gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, RULE_HEADER_ROWS, RULE_ROW, rules.rows, gl.RGBA_INTEGER, gl.INT, rules.ranges);
@@ -497,6 +571,10 @@ function createResources(gl: WebGL2RenderingContext, rules: RuleTable): GpuResou
     overview: link(gl, overviewVertexSource, overviewFragmentSource, OVERVIEW_UNIFORMS),
     instances,
     instanceArray: instanceArray(gl, instances),
+    objectInstances,
+    objectArray: objectArray(gl, objectInstances),
+    wireInstances,
+    wireArray: wireArray(gl, wireInstances),
     emptyArray: requireValue(gl.createVertexArray(), "a vertex array"),
     framebuffer: requireValue(gl.createFramebuffer(), "a framebuffer"),
     palette: integerTexture(gl, gl.RGBA8UI, PALETTE_WIDTH, PALETTE_HEIGHT),
@@ -520,6 +598,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   if (context === null) throw new WebGl2UnavailableError();
   const gl: WebGL2RenderingContext = context;
   const maxCachedChunks = Math.max(1, options?.maxCachedChunks ?? DEFAULT_MAX_CACHED_CHUNKS);
+  const prefetchChunks = Math.max(0, Math.floor(options?.prefetchChunks ?? DEFAULT_PREFETCH_CHUNKS));
   const requestedUploadBudget = options?.maxChunkUploadsPerFrame ?? DEFAULT_MAX_CHUNK_UPLOADS_PER_FRAME;
   const maxChunkUploadsPerFrame = Number.isFinite(requestedUploadBudget)
     ? Math.max(1, Math.floor(requestedUploadBudget))
@@ -541,6 +620,10 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   let spriteProgram: Program<(typeof SPRITE_CHUNK_UNIFORMS)[number]> | null = null;
   // The sprite program while the driver links it in the background (KHR_parallel_shader_compile, where offered).
   let spriteLinking: Linking | null = null;
+  // The object and wire passes of sprite mode: small programs, linked at once on their first use (a frame with an
+  // object sprite, or with wires shown), so a renderer that never draws one never compiles it.
+  let objectProgram: Program<(typeof OBJECT_UNIFORMS)[number]> | null = null;
+  let wireProgram: Program<(typeof WIRE_UNIFORMS)[number]> | null = null;
   let parallelCompile = parallelShaderCompile(gl);
   // The timer that asks whether the background link is done; 0 when none is pending.
   let linkPoll = 0;
@@ -549,6 +632,21 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   let world: RenderableWorld | null = null;
   let cacheCapacity = maxCachedChunks;
   let camera: Camera = { x: 0, y: 0, zoom: 1 };
+  // The camera the current frame draws with. Scheduled frames from one pixel per tile up snap it to whole screen
+  // pixels, so the frames of a pan differ by whole pixels and the previous frame can be reused shifted.
+  let view: Camera = camera;
+  // The two offscreen targets scheduled frames alternate between; frameTargets[frameCurrent] holds the last one.
+  let frameTargets: (FrameTarget | undefined)[] = [];
+  let frameCurrent = 0;
+  // The last scheduled frame, if it is complete and can be reused: its snapped camera in screen pixels and what else
+  // it depends on. Any other change (frameVersion), an upload in the frame, or another zoom or size draws it in full.
+  let lastFrame: {
+    readonly pixelX: number; readonly pixelY: number; readonly zoom: number; readonly sprites: boolean;
+    readonly version: number; readonly width: number; readonly height: number;
+  } | null = null;
+  // Bumped by every change but the camera's.
+  let frameVersion = 0;
+  let reusedFrames = 0;
   let layers = 15;
   // LRU of chunk key → page slot (page * CHUNKS_PER_PAGE + slot in page): Map iteration order is insertion order, and
   // a hit re-inserts its key at the end.
@@ -570,6 +668,22 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   let halfAtlasProgram: Program<(typeof HALF_ATLAS_UNIFORMS)[number]> | null = null;
   let tileSheets = new Map<number, SpriteSheetEntry>();
   let wallSheets = new Map<number, SpriteSheetEntry>();
+  // Every sheet of the atlas by kind and id (`${kind}:${id}`), for the object pass and the wire pass.
+  let sheetsByKey = new Map<string, SpriteSheetEntry>();
+  // The wire pieces and the actuator (docs/assets.md, "Wires"): (page, x, y, 1), or zeros without the sheet.
+  let wireSheet: Int32Array = new Int32Array(4);
+  let actuatorSheet: Int32Array = new Int32Array(4);
+  // The object pass's instances by chunk key, for the current world and atlas: computed on the CPU from the world's
+  // planes on first draw, dropped by invalidateTiles around changed tiles.
+  const objectCache = new Map<number, Int32Array>();
+  let objectData = new Int32Array(OBJECT_INTS * 256);
+  // The chunk keys whose instances the object buffer holds, in order, and their instance count: a frame showing the
+  // same chunks with none of their lists collected again draws the buffer as it is, without uploading it again.
+  let objectUploaded: { readonly keys: readonly number[]; readonly instances: number } | null = null;
+  // Per chunk key, the wire and actuator bits (0–4) set anywhere in the chunk and its runs of tiles with any (WireRuns):
+  // the wire pass draws only those runs, so a view without wires costs no pass at all. Dropped around changed tiles.
+  const wireChunks = new Map<number, WireRuns>();
+  let wireData = new Int32Array(WIRE_INTS * 256);
   const sheetMirror = new Int32Array(SPRITE_SHEET_WIDTH * PALETTE_HEIGHT * 4);
   let spriteMode = false;
   let atlasUploads = 0;
@@ -717,10 +831,14 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       const sheet = vanilla === undefined ? undefined : tileSheets.get(vanilla);
       const at = (Math.floor(index / SPRITE_SHEET_ROW) * SPRITE_SHEET_WIDTH + (index % SPRITE_SHEET_ROW) * SPRITE_SHEET_TEXELS) * 4;
       if (sheet !== undefined) {
-        sheetMirror.set([sheet.page, sheet.x, sheet.y, SPRITE_STATE.sheet, sheet.width, sheet.height, sheet.frameWidth, sheet.frameHeight], at);
+        // Tracks store piece indices, not sheet offsets (docs/assets.md, "Minecart tracks"); trees and the giant
+        // mushroom are drawn by the object pass ("Trees").
+        const state = vanilla === TRACK_TILE
+          ? SPRITE_STATE.track
+          : vanilla !== undefined && OBJECT_TILES.has(vanilla) ? SPRITE_STATE.object : SPRITE_STATE.sheet;
+        sheetMirror.set([sheet.page, sheet.x, sheet.y, state, sheet.width, sheet.height, sheet.frameWidth, sheet.frameHeight], at);
       } else {
-        const deferred = atlasTexture === null || (vanilla !== undefined && SPRITE_DEFERRED_TILES.has(vanilla));
-        sheetMirror.set([0, 0, 0, deferred ? SPRITE_STATE.mapColor : SPRITE_STATE.missing, 0, 0, 0, 0], at);
+        sheetMirror.set([0, 0, 0, atlasTexture === null ? SPRITE_STATE.mapColor : SPRITE_STATE.missing, 0, 0, 0, 0], at);
       }
       const wallSheet = vanilla === undefined ? undefined : wallSheets.get(vanilla);
       if (wallSheet !== undefined) {
@@ -811,10 +929,17 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   /** Puts `source` on the GPU and rewrites the sheet of every palette index uploaded so far. */
   const applyAtlas = (source: SpriteAtlasSource | null): void => {
     releaseAtlas();
-    tileSheets = new Map(source?.index.entries
-      .filter((entry) => entry.kind === "tile" && !SPRITE_DEFERRED_TILES.has(entry.id))
-      .map((entry) => [entry.id, entry]));
+    tileSheets = new Map(source?.index.entries.filter((entry) => entry.kind === "tile").map((entry) => [entry.id, entry]));
     wallSheets = new Map(source?.index.entries.filter((entry) => entry.kind === "wall").map((entry) => [entry.id, entry]));
+    sheetsByKey = new Map(source?.index.entries.map((entry) => [`${entry.kind}:${String(entry.id)}`, entry]));
+    const placeOf = (kind: SpriteSheetEntry["kind"]): Int32Array => {
+      const entry = sheetsByKey.get(`${kind}:0`);
+      return new Int32Array(entry === undefined ? [0, 0, 0, 0] : [entry.page, entry.x, entry.y, 1]);
+    };
+    wireSheet = placeOf("wire");
+    actuatorSheet = placeOf("actuator");
+    objectCache.clear();
+    objectUploaded = null;
     if (source !== null) uploadAtlas(source);
     if (world !== null) uploadSheets(world.palette, 0, paletteUploaded);
   };
@@ -1148,7 +1273,8 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
 
   /** Uniforms of the tile colour function shared by both chunk passes; `sprites` those of the sprite program. */
   const setTileUniforms = (
-    uniforms: Readonly<Record<(typeof TILE_UNIFORMS)[number], WebGLUniformLocation>>, cells = false,
+    uniforms: Readonly<Record<(typeof TILE_UNIFORMS)[number], WebGLUniformLocation>
+      & Partial<Record<(typeof OVERLAY_UNIFORMS)[number], WebGLUniformLocation>>>, cells = false,
     sprites: Readonly<Record<(typeof SPRITE_UNIFORMS)[number], WebGLUniformLocation>> | null = null,
   ): void => {
     gl.uniform1i(uniforms.uPlanes16, UNIT_PLANES_16);
@@ -1159,9 +1285,10 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     gl.uniform1i(uniforms.uRules, UNIT_RULES);
     gl.uniform1i(uniforms.uPaletteLength, paletteUploaded);
     gl.uniform1i(uniforms.uLayers, layers);
-    gl.uniform3iv(uniforms.uWireColors, wireColorUniform);
-    gl.uniform1iv(uniforms.uWireBits, wireBitUniform);
-    gl.uniform1i(uniforms.uWireAlpha, WIRE_ALPHA);
+    // The sprite program has no wire overlay: the wire pass draws wires in sprite mode.
+    if (uniforms.uWireColors !== undefined) gl.uniform3iv(uniforms.uWireColors, wireColorUniform);
+    if (uniforms.uWireBits !== undefined) gl.uniform1iv(uniforms.uWireBits, wireBitUniform);
+    if (uniforms.uWireAlpha !== undefined) gl.uniform1i(uniforms.uWireAlpha, WIRE_ALPHA);
     gl.uniform3iv(uniforms.uLiquids, liquidUniform);
     gl.uniform1i(uniforms.uPaintRow, background?.paintRow ?? 0);
     gl.uniform1i(uniforms.uPaintCount, paintCount);
@@ -1222,6 +1349,178 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     return calls;
   };
 
+  /**
+   * The object pass's instances of `chunk` (cached): its object sprites whose sheet is in the atlas, each as its
+   * rectangle in world sprite pixels and the atlas place of its source rectangle. A rectangle past its sheet is dropped.
+   */
+  const objectsOf = (source: RenderableWorld, chunk: ChunkCoord, key: number): Int32Array => {
+    const cached = objectCache.get(key);
+    if (cached !== undefined) return cached;
+    const area = {
+      left: chunk.x * CHUNK_SIZE, top: chunk.y * CHUNK_SIZE, right: (chunk.x + 1) * CHUNK_SIZE, bottom: (chunk.y + 1) * CHUNK_SIZE,
+    };
+    const sprites: readonly ObjectSprite[] = objectSprites(source, area);
+    const placed = new Int32Array(sprites.length * OBJECT_INTS);
+    let at = 0;
+    for (const sprite of sprites) {
+      const sheet = sheetsByKey.get(`${sprite.kind}:${String(sprite.id)}`);
+      if (sheet === undefined || sprite.sx < 0 || sprite.sy < 0) continue;
+      if (sprite.sx + sprite.width > sheet.width || sprite.sy + sprite.height > sheet.height) continue;
+      placed.set([sprite.dx, sprite.dy, sprite.width, sprite.height, sheet.page, sheet.x + sprite.sx, sheet.y + sprite.sy, 0], at);
+      at += OBJECT_INTS;
+    }
+    const instances = placed.subarray(0, at);
+    objectCache.set(key, instances);
+    return instances;
+  };
+
+  /**
+   * Draws the object sprites of the visible chunks and the chunks around them (an object may reach a few tiles past
+   * its own chunk) over the chunk pass, blended by straight alpha. Returns the number of draw calls.
+   */
+  const drawObjects = (source: RenderableWorld, visible: readonly ChunkCoord[]): number => {
+    const chunksX = Math.ceil(source.width / CHUNK_SIZE);
+    const chunksY = Math.ceil(source.height / CHUNK_SIZE);
+    const keys = new Set<number>();
+    for (const chunk of visible) {
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const x = chunk.x + dx;
+          const y = chunk.y + dy;
+          if (x >= 0 && y >= 0 && x < chunksX && y < chunksY) keys.add(y * chunksX + x);
+        }
+      }
+    }
+    const sorted = [...keys].sort((a, b) => a - b);
+    const previous = objectUploaded;
+    // Unchanged when the same chunks are shown and none of their lists was dropped since the upload.
+    const unchanged = previous !== null && previous.keys.length === sorted.length
+      && sorted.every((key, index) => previous.keys[index] === key && objectCache.has(key));
+    if (!unchanged) {
+      const lists = sorted.map((key) => objectsOf(source, { x: key % chunksX, y: Math.floor(key / chunksX) }, key));
+      const total = lists.reduce((sum, list) => sum + list.length, 0);
+      if (objectData.length < total) objectData = new Int32Array(total * 2);
+      let at = 0;
+      for (const list of lists) {
+        objectData.set(list, at);
+        at += list.length;
+      }
+      if (total > 0) {
+        gl.bindBuffer(gl.ARRAY_BUFFER, resources.objectInstances);
+        gl.bufferData(gl.ARRAY_BUFFER, objectData.subarray(0, total), gl.DYNAMIC_DRAW);
+      }
+      objectUploaded = { keys: sorted, instances: total / OBJECT_INTS };
+    }
+    const instances = objectUploaded?.instances ?? 0;
+    if (instances === 0) return 0;
+    objectProgram ??= link(gl, objectVertexSource, objectFragmentSource, OBJECT_UNIFORMS);
+    gl.useProgram(objectProgram.program);
+    setSpritePassUniforms(objectProgram.uniforms);
+    gl.bindVertexArray(resources.objectArray);
+    gl.enable(gl.BLEND);
+    gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, instances);
+    gl.disable(gl.BLEND);
+    gl.bindVertexArray(null);
+    return 1;
+  };
+
+  /** The wire and actuator bits and runs of `chunk` (cached); none without a flags plane. */
+  const wireRunsOf = (source: RenderableWorld, chunk: ChunkCoord, key: number): WireRuns => {
+    const cached = wireChunks.get(key);
+    if (cached !== undefined) return cached;
+    const runs = source.planes.flags === undefined ? { bits: 0, runs: new Int32Array(0) } : collectWireRuns(source, chunk);
+    wireChunks.set(key, runs);
+    return runs;
+  };
+
+  /**
+   * Draws the wires and actuators of the chunks of `ready` with any shown over everything else, premultiplied: one quad
+   * per run of tiles with a wire or actuator (wireVertexSource), so the pass shades only those tiles.
+   */
+  const drawWires = (source: RenderableWorld, ready: readonly (readonly [ChunkCoord, number])[]): number => {
+    const shown = (layers >> 4) & WIRE_LAYER.all;
+    const chunksX = Math.ceil(source.width / CHUNK_SIZE);
+    const items = ready
+      .map(([chunk, slot]) => [chunk, slot, wireRunsOf(source, chunk, chunk.y * chunksX + chunk.x)] as const)
+      .filter(([, , runs]) => (runs.bits & shown) !== 0)
+      .sort((first, second) => first[1] - second[1]);
+    if (items.length === 0) return 0;
+    const total = items.reduce((sum, [, , runs]) => sum + runs.runs.length / 4, 0);
+    if (wireData.length < total * WIRE_INTS) wireData = new Int32Array(total * WIRE_INTS * 2);
+    // Per page (its instances contiguous), where its instances start.
+    const pageStarts: (readonly [page: number, start: number])[] = [];
+    let at = 0;
+    for (const [chunk, slot, { runs }] of items) {
+      const page = Math.floor(slot / CHUNKS_PER_PAGE);
+      if (pageStarts.at(-1)?.[0] !== page) pageStarts.push([page, at / WIRE_INTS]);
+      const originX = chunk.x * CHUNK_SIZE;
+      const originY = chunk.y * CHUNK_SIZE;
+      const width = Math.min(CHUNK_SIZE, source.width - originX);
+      const height = Math.min(CHUNK_SIZE, source.height - originY);
+      for (let k = 0; k < runs.length; k += 4) {
+        wireData[at] = originX;
+        wireData[at + 1] = originY;
+        wireData[at + 2] = width;
+        wireData[at + 3] = height;
+        wireData[at + 4] = slot % CHUNKS_PER_PAGE;
+        wireData.set(runs.subarray(k, k + 4), at + 5);
+        at += WIRE_INTS;
+      }
+    }
+    wireProgram ??= link(gl, wireVertexSource, wireFragmentSource, WIRE_UNIFORMS);
+    const program = wireProgram;
+    gl.useProgram(program.program);
+    setSpritePassUniforms(program.uniforms);
+    const { uniforms } = program;
+    gl.uniform1i(uniforms.uPlanes16, UNIT_PLANES_16);
+    gl.uniform1i(uniforms.uPresent, planeSources?.present ?? 0);
+    gl.uniform1i(uniforms.uLayers, layers);
+    gl.uniform3iv(uniforms.uWireColors, wireColorUniform);
+    gl.uniform1iv(uniforms.uWireBits, wireBitUniform);
+    gl.uniform1i(uniforms.uWireAlpha, WIRE_ALPHA);
+    gl.uniform2i(uniforms.uWorldSize, source.width, source.height);
+    gl.uniform4iv(uniforms.uWireSheet, wireSheet);
+    gl.uniform4iv(uniforms.uActuatorSheet, actuatorSheet);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    gl.bindVertexArray(resources.wireArray);
+    gl.bindBuffer(gl.ARRAY_BUFFER, resources.wireInstances);
+    gl.bufferData(gl.ARRAY_BUFFER, wireData.subarray(0, at), gl.STREAM_DRAW);
+    const stride = WIRE_INTS * 4;
+    let calls = 0;
+    pageStarts.forEach(([pageIndex, start], index) => {
+      const end = pageStarts[index + 1]?.[1] ?? at / WIRE_INTS;
+      const page = pages[pageIndex];
+      if (page === undefined) return;
+      gl.activeTexture(gl.TEXTURE0 + UNIT_PLANES_16);
+      gl.bindTexture(gl.TEXTURE_2D_ARRAY, page.planes16);
+      // No base instance in WebGL2: each page's instances start at an attribute offset.
+      gl.vertexAttribIPointer(RECT_ATTRIBUTE, 4, gl.INT, stride, start * stride);
+      gl.vertexAttribIPointer(LAYER_ATTRIBUTE, 1, gl.INT, stride, start * stride + 16);
+      gl.vertexAttribIPointer(WIRE_RUN_ATTRIBUTE, 4, gl.INT, stride, start * stride + 20);
+      gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, end - start);
+      calls++;
+    });
+    gl.bindVertexArray(null);
+    gl.disable(gl.BLEND);
+    return calls;
+  };
+
+  /** The camera and sprite sampling uniforms the object and wire passes share. */
+  const setSpritePassUniforms = (uniforms: Readonly<Record<(typeof OBJECT_UNIFORMS)[number], WebGLUniformLocation>>): void => {
+    gl.uniform2f(uniforms.uCamera, view.x, view.y);
+    gl.uniform1f(uniforms.uZoom, view.zoom);
+    gl.uniform2f(uniforms.uViewport, canvas.width, canvas.height);
+    gl.uniform1i(uniforms.uAtlas, UNIT_ATLAS);
+    gl.uniform1i(uniforms.uAtlasHalf, UNIT_ATLAS_HALF);
+    const sampling = spriteSampling(camera.zoom);
+    gl.uniform1i(uniforms.uSpriteSamples, sampling.samples);
+    gl.uniform1f(uniforms.uSpriteStep, sampling.step);
+    gl.uniform1i(uniforms.uSpriteLevel, sampling.level);
+    gl.uniform1i(uniforms.uSpriteWeight, sampling.weight);
+  };
+
   /** Draws the chunks' overview texels with the build pass, then regenerates the overview mipmaps. */
   const buildOverview = (source: RenderableWorld, target: Overview, items: readonly (readonly [ChunkCoord, number])[]): void => {
     if (items.length === 0) return;
@@ -1251,8 +1550,8 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   const drawOverview = (source: RenderableWorld, target: Overview): number => {
     const { overview: program } = resources;
     gl.useProgram(program.program);
-    gl.uniform2f(program.uniforms.uCamera, camera.x, camera.y);
-    gl.uniform1f(program.uniforms.uZoom, camera.zoom);
+    gl.uniform2f(program.uniforms.uCamera, view.x, view.y);
+    gl.uniform1f(program.uniforms.uZoom, view.zoom);
     gl.uniform2f(program.uniforms.uViewport, canvas.width, canvas.height);
     gl.uniform2f(program.uniforms.uWorld, source.width, source.height);
     gl.uniform2f(program.uniforms.uExtent, target.width * target.factor, target.height * target.factor);
@@ -1292,6 +1591,39 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     return order;
   };
 
+  /** The offscreen target `index` at the canvas size, created or resized as needed. */
+  const frameTarget = (index: number, width: number, height: number): FrameTarget => {
+    const existing = frameTargets[index];
+    if (existing?.width === width && existing.height === height) return existing;
+    if (existing !== undefined) {
+      gl.deleteTexture(existing.texture);
+      gl.deleteFramebuffer(existing.framebuffer);
+    }
+    const texture = requireValue(gl.createTexture(), "a texture");
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA8, width, height);
+    const framebuffer = requireValue(gl.createFramebuffer(), "a framebuffer");
+    gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    const created = { texture, framebuffer, width, height };
+    frameTargets[index] = created;
+    lastFrame = null;
+    return created;
+  };
+
+  const releaseFrames = (): void => {
+    if (!gl.isContextLost()) {
+      // Sparse until both targets were used.
+      for (const target of frameTargets.filter((entry): entry is FrameTarget => entry !== undefined)) {
+        gl.deleteTexture(target.texture);
+        gl.deleteFramebuffer(target.framebuffer);
+      }
+    }
+    frameTargets = [];
+    lastFrame = null;
+  };
+
   /** `uploadBudget` chunks at most, and none after `uploadMilliseconds` once one was uploaded. */
   const drawFrame = (uploadBudget: number, uploadMilliseconds: number, wait: boolean): void => {
     if (disposed || gl.isContextLost()) return;
@@ -1305,6 +1637,13 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       return;
     }
     const source = world;
+    // Synchronous frames (render()) draw the camera as given, straight to the canvas.
+    const scheduled = !wait && camera.zoom >= 1;
+    view = scheduled
+      ? { x: Math.round(camera.x * camera.zoom) / camera.zoom, y: Math.round(camera.y * camera.zoom) / camera.zoom, zoom: camera.zoom }
+      : camera;
+    // Uploads within this frame change what resident chunks show (prefetched chunks lie outside the view).
+    const uploadsAtStart = textureUploads + atlasUploads;
 
     uploadPalette(source.palette);
     uploadBackground(source);
@@ -1314,7 +1653,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
 
     const chunksX = Math.ceil(source.width / CHUNK_SIZE);
     const keyOf = (chunk: ChunkCoord): number => chunk.y * chunksX + chunk.x;
-    const visible = visibleChunks(camera, viewport, source);
+    const visible = visibleChunks(view, viewport, source);
     const spriteZoom = spriteMode && atlasTexture !== null && camera.zoom >= SPRITE_MIN_ZOOM;
     const spriteChunk = spriteZoom ? spriteProgramOf(wait) : null;
     // Until the sprite program is linked, frames are drawn in map colours.
@@ -1449,10 +1788,8 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       buildOverview(source, target, batch);
     }
 
-    gl.viewport(0, 0, viewport.width, viewport.height);
-    gl.clearColor(0, 0, 0, 0);
-    gl.clear(gl.COLOR_BUFFER_BIT);
-    if (target === null) {
+    /** The chunk pass, then in sprite mode the object and wire passes, into the bound target. */
+    const drawChunks = (): void => {
       // Chunks still loading show the overview (built when the area was seen zoomed out, possibly with other layers)
       // instead of a hole; drawn chunks overwrite it completely, so a complete frame stays exact.
       if (loading.pending && candidate?.filled === true) drawCalls += drawOverview(source, candidate);
@@ -1461,12 +1798,12 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       const program = spriteChunk ?? resources.chunk;
       gl.useProgram(program.program);
       setTileUniforms(program.uniforms, framed, spriteChunk?.uniforms ?? null);
-      gl.uniform2f(program.uniforms.uCamera, camera.x, camera.y);
-      gl.uniform1f(program.uniforms.uZoom, camera.zoom);
+      gl.uniform2f(program.uniforms.uCamera, view.x, view.y);
+      gl.uniform1f(program.uniforms.uZoom, view.zoom);
       gl.uniform2f(program.uniforms.uViewport, viewport.width, viewport.height);
       // Below one pixel per tile a pixel averages the tiles under it (filterTiles) instead of point-sampling one.
-      gl.uniform1i(program.uniforms.uFilter, camera.zoom < 1 ? 1 : 0);
-      gl.uniform1f(program.uniforms.uStep, filterTilesPerPixel(camera.zoom));
+      gl.uniform1i(program.uniforms.uFilter, view.zoom < 1 ? 1 : 0);
+      gl.uniform1f(program.uniforms.uStep, filterTilesPerPixel(view.zoom));
       gl.uniform2i(program.uniforms.uWorldSize, source.width, source.height);
       gl.activeTexture(gl.TEXTURE0 + UNIT_PALETTE);
       gl.bindTexture(gl.TEXTURE_2D, resources.palette);
@@ -1481,14 +1818,173 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       gl.activeTexture(gl.TEXTURE0 + UNIT_SPRITE_SHEETS);
       gl.bindTexture(gl.TEXTURE_2D, resources.spriteSheets);
       drawCalls += drawInstances(source, ready);
+      // Sprite mode draws the objects (trees, track extras) over the chunks, and the wires over everything.
+      if (spriteChunk !== null) {
+        if ((layers & 4) !== 0) drawCalls += drawObjects(source, visible);
+        if (((layers >> 4) & WIRE_LAYER.all) !== 0 && ((planeSources?.present ?? 0) & PRESENT.flags) !== 0) {
+          drawCalls += drawWires(source, ready);
+        }
+      }
+    };
+
+    const { width, height } = viewport;
+    if (target === null && scheduled) {
+      // The previous frame shifted by whole pixels, when only the camera moved since (by less than the canvas).
+      const pixelX = Math.round(view.x * view.zoom);
+      const pixelY = Math.round(view.y * view.zoom);
+      const previous = lastFrame;
+      const shift = previous !== null && !loading.pending && previous.version === frameVersion
+        && textureUploads + atlasUploads === uploadsAtStart && previous.zoom === view.zoom && previous.sprites === (spriteChunk !== null)
+        && previous.width === width && previous.height === height
+        && Math.abs(pixelX - previous.pixelX) < width && Math.abs(pixelY - previous.pixelY) < height
+        ? { x: pixelX - previous.pixelX, y: pixelY - previous.pixelY }
+        : null;
+      const last = frameTargets[frameCurrent];
+      const output = frameTarget(1 - frameCurrent, width, height);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, output.framebuffer);
+      gl.viewport(0, 0, width, height);
+      gl.clearColor(0, 0, 0, 0);
+      if (shift !== null && last !== undefined) {
+        // Screen content moves left by shift.x and up by shift.y; framebuffer rows count from the bottom.
+        gl.bindFramebuffer(gl.READ_FRAMEBUFFER, last.framebuffer);
+        const fromX = Math.max(0, shift.x);
+        const toX = Math.min(width, width + shift.x);
+        const fromY = Math.max(0, -shift.y);
+        const toY = Math.min(height, height - shift.y);
+        gl.blitFramebuffer(fromX, fromY, toX, toY, fromX - shift.x, fromY + shift.y, toX - shift.x, toY + shift.y,
+          gl.COLOR_BUFFER_BIT, gl.NEAREST);
+        // The revealed strips (x, y, width, height in framebuffer pixels), drawn again.
+        const strips: (readonly [number, number, number, number])[] = [];
+        if (shift.x > 0) strips.push([width - shift.x, 0, shift.x, height]);
+        else if (shift.x < 0) strips.push([0, 0, -shift.x, height]);
+        if (shift.y > 0) strips.push([0, 0, width, shift.y]);
+        else if (shift.y < 0) strips.push([0, height + shift.y, width, -shift.y]);
+        gl.enable(gl.SCISSOR_TEST);
+        for (const [x, y, w, h] of strips) {
+          gl.scissor(x, y, w, h);
+          gl.clear(gl.COLOR_BUFFER_BIT);
+          drawChunks();
+        }
+        gl.disable(gl.SCISSOR_TEST);
+        reusedFrames++;
+      } else {
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        drawChunks();
+      }
+      gl.bindFramebuffer(gl.READ_FRAMEBUFFER, output.framebuffer);
+      gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
+      gl.blitFramebuffer(0, 0, width, height, 0, 0, width, height, gl.COLOR_BUFFER_BIT, gl.NEAREST);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      frameCurrent = 1 - frameCurrent;
+      lastFrame = loading.pending ? null : {
+        pixelX, pixelY, zoom: view.zoom, sprites: spriteChunk !== null, version: frameVersion, width, height,
+      };
+    } else {
+      lastFrame = null;
+      gl.viewport(0, 0, width, height);
+      gl.clearColor(0, 0, 0, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      if (target === null) drawChunks();
+      else drawCalls = drawOverview(source, target);
+    }
+    if (target === null) {
       const drawnKeys = new Set(ready.map(([chunk]) => keyOf(chunk)));
       drawn = visible.filter((chunk) => drawnKeys.has(keyOf(chunk)));
     } else {
-      drawCalls = drawOverview(source, target);
       drawn = visible.filter((chunk) => target.built[keyOf(chunk)] === 1);
     }
     // While the sprite program links, the poll asks for the next frame once it is done (startSpriteLink).
     if (loading.pending) schedule();
+    else if (target === null) schedulePrefetch();
+  };
+
+  // The pending idle prefetch step (requestIdleCallback, or a timeout where there is none); 0 when none is pending.
+  let prefetchHandle = 0;
+  const idle = typeof requestIdleCallback === "function";
+
+  /** Asks for an idle prefetch step, unless one is pending or prefetching is off. */
+  const schedulePrefetch = (): void => {
+    if (prefetchChunks === 0 || prefetchHandle !== 0 || disposed) return;
+    prefetchHandle = idle
+      ? requestIdleCallback((deadline) => { prefetchHandle = 0; prefetchStep(deadline); }, { timeout: 500 })
+      : globalThis.setTimeout(() => { prefetchHandle = 0; prefetchStep(null); }, 16);
+  };
+
+  const cancelPrefetch = (): void => {
+    if (prefetchHandle === 0) return;
+    if (idle) cancelIdleCallback(prefetchHandle);
+    else clearTimeout(prefetchHandle);
+    prefetchHandle = 0;
+  };
+
+  /**
+   * Uploads (and frames, at a sprite zoom) the nearest chunks of the ring of `prefetchChunks` chunks around the
+   * viewport that are not resident yet, while the idle period lasts; at least one per step. Evicts only chunks outside
+   * the view and the ring. A scheduled frame goes first: the step then waits for the next idle period.
+   */
+  const prefetchStep = (deadline: IdleDeadline | null): void => {
+    if (disposed || gl.isContextLost() || world === null) return;
+    if (frame !== 0) {
+      schedulePrefetch();
+      return;
+    }
+    const source = world;
+    const viewport = { width: canvas.width, height: canvas.height };
+    const overview = overviewOf(source);
+    if (overview !== null && camera.zoom < 1 / overview.factor) return;
+    const framed = spriteMode && atlasTexture !== null && camera.zoom >= SPRITE_MIN_ZOOM && spriteProgram !== null
+      && framing !== null;
+    const chunksX = Math.ceil(source.width / CHUNK_SIZE);
+    const keyOf = (chunk: ChunkCoord): number => chunk.y * chunksX + chunk.x;
+    const margin = prefetchChunks * CHUNK_SIZE;
+    const around = visibleChunks(
+      { x: camera.x - margin, y: camera.y - margin, zoom: camera.zoom },
+      { width: viewport.width + 2 * margin * camera.zoom, height: viewport.height + 2 * margin * camera.zoom },
+      source,
+    );
+    const keep = new Set(around.map(keyOf));
+    // The view's chunks are the frames' to load: a prefetch never changes what the last frame shows.
+    const inView = new Set(visibleChunks(camera, viewport, source).map(keyOf));
+    const centreX = camera.x + viewport.width / (2 * camera.zoom);
+    const centreY = camera.y + viewport.height / (2 * camera.zoom);
+    const distance = (chunk: ChunkCoord): number =>
+      Math.hypot((chunk.x + 0.5) * CHUNK_SIZE - centreX, (chunk.y + 0.5) * CHUNK_SIZE - centreY);
+    const wanted = around.filter((chunk) => {
+      if (inView.has(keyOf(chunk))) return false;
+      const slot = chunks.get(keyOf(chunk));
+      if (slot === undefined) return true;
+      return framed && !framedSlots.has(slot) && !dirtyChunks.has(keyOf(chunk));
+    }).sort((first, second) => distance(first) - distance(second));
+    let done = 0;
+    for (const chunk of wanted) {
+      if (done > 0 && (deadline === null || deadline.timeRemaining() < PREFETCH_IDLE_RESERVE)) break;
+      const key = keyOf(chunk);
+      let slot = chunks.get(key);
+      if (slot === undefined) {
+        if (chunks.size >= cacheCapacity) {
+          // The least recently used chunk outside the view and the ring; none: the cache holds only those.
+          let evicted = false;
+          for (const [other, otherSlot] of chunks) {
+            if (keep.has(other)) continue;
+            chunks.delete(other);
+            freeSlots.push(otherSlot);
+            evictedChunks++;
+            dirtyChunks.delete(other);
+            cellCache?.drop({ x: other % chunksX, y: Math.floor(other / chunksX) });
+            wallCache?.drop({ x: other % chunksX, y: Math.floor(other / chunksX) });
+            evicted = true;
+            break;
+          }
+          if (!evicted) return;
+        }
+        slot = allocateSlot();
+        uploadChunk(source, chunk, slot);
+        chunks.set(key, slot);
+      }
+      if (framed) uploadCells(source, chunk, slot);
+      done++;
+    }
+    if (done > 0 && done < wanted.length) schedulePrefetch();
   };
 
   const schedule = (): void => {
@@ -1522,7 +2018,13 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     background = null;
     overview = null;
     resources = createResources(gl, rules);
+    // The offscreen frames died with the context.
+    frameTargets = [];
+    lastFrame = null;
     spriteProgram = null;
+    objectProgram = null;
+    wireProgram = null;
+    objectUploaded = null;
     // A background link died with the context; the next sprite frame (or atlas) starts another.
     endSpriteLink(parallelCompile !== null);
     spriteLinkError = null;
@@ -1542,6 +2044,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
 
   return {
     setWorld: (next) => {
+      frameVersion++;
       if (next !== world) {
         clearChunks();
         cacheCapacity = maxCachedChunks;
@@ -1549,6 +2052,9 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
         releaseOverview();
         paletteUploaded = 0;
         planeSources = null;
+        objectCache.clear();
+        objectUploaded = null;
+        wireChunks.clear();
         // Also drops the reference that would keep the previous world's planes alive.
         if (gl.isContextLost()) unpackWorld = null;
         else resetUnpack();
@@ -1563,6 +2069,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     setAtlas: (next) => {
       if (next === atlas) return;
       atlas = next;
+      frameVersion++;
       if (!gl.isContextLost()) {
         applyAtlas(next);
         // Linking starts now, while the assets arrive, rather than on the first sprite frame.
@@ -1572,16 +2079,19 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     },
     setSpriteMode: (enabled) => {
       spriteMode = enabled;
+      frameVersion++;
       schedule();
     },
     setFraming: (next) => {
       if (next === framing) return;
       releaseCells();
       framing = next;
+      frameVersion++;
       schedule();
     },
     invalidateTiles: (tiles) => {
       if (world === null || tiles.length === 0) return;
+      frameVersion++;
       const source = world;
       const regions = cellCache?.world === source ? cellCache.invalidate(tiles) : [];
       const wallRegions = wallCache?.world === source ? wallCache.invalidate(tiles) : [];
@@ -1608,6 +2118,14 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
         const bottom = area.top + area.height - 1;
         touch(area.left - PAGE_APRON, area.top - PAGE_APRON, right + PAGE_APRON, bottom + PAGE_APRON);
       }
+      // An object's look can depend on tiles far from it (a tree's on the ground under its trunk): the object lists of
+      // every chunk within one chunk of a changed tile are collected again.
+      for (const { x, y } of tiles) {
+        const chunkX = Math.floor(x / CHUNK_SIZE);
+        const chunkY = Math.floor(y / CHUNK_SIZE);
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) objectCache.delete((chunkY + dy) * chunksX + chunkX + dx);
+        wireChunks.delete(chunkY * chunksX + chunkX);
+      }
       for (const [key, area] of touched) {
         if (chunks.has(key)) dirtyChunks.set(key, union(dirtyChunks.get(key), area));
         if (overview?.world === source && overview.built[key] === 1) {
@@ -1621,6 +2139,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       const bits = layerBits(next);
       if (bits !== layers && !gl.isContextLost()) invalidateOverview();
       layers = bits;
+      frameVersion++;
       schedule();
     },
     tileAt: (screenX, screenY) => {
@@ -1635,11 +2154,14 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       framedTiles: framedBefore + (cellCache?.framedTiles ?? 0),
       framedWalls: framedWallsBefore + (wallCache?.framedTiles ?? 0),
       spritesPreparing: spriteLinking !== null,
+      reusedFrames,
     }),
     dispose: () => {
       if (disposed) return;
       disposed = true;
       cancelAnimationFrame(frame);
+      cancelPrefetch();
+      releaseFrames();
       canvas.removeEventListener("webglcontextlost", onContextLost);
       canvas.removeEventListener("webglcontextrestored", onContextRestored);
       if (!gl.isContextLost()) {
@@ -1650,6 +2172,8 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
         for (const program of [resources.chunk, resources.build, resources.overview]) gl.deleteProgram(program.program);
         if (spriteProgram !== null) gl.deleteProgram(spriteProgram.program);
         if (spriteLinking !== null) gl.deleteProgram(spriteLinking.program);
+        if (objectProgram !== null) gl.deleteProgram(objectProgram.program);
+        if (wireProgram !== null) gl.deleteProgram(wireProgram.program);
         if (halfAtlasProgram !== null) gl.deleteProgram(halfAtlasProgram.program);
         gl.deleteTexture(resources.palette);
         gl.deleteTexture(resources.rules);
@@ -1657,6 +2181,10 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
         releaseAtlas();
         gl.deleteBuffer(resources.instances);
         gl.deleteVertexArray(resources.instanceArray);
+        gl.deleteBuffer(resources.wireInstances);
+        gl.deleteVertexArray(resources.wireArray);
+        gl.deleteBuffer(resources.objectInstances);
+        gl.deleteVertexArray(resources.objectArray);
         gl.deleteVertexArray(resources.emptyArray);
         gl.deleteFramebuffer(resources.framebuffer);
       }

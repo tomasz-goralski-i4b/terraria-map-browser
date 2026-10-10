@@ -21,7 +21,11 @@ function atlas(tiles: number, walls: number, pages = 1): SpriteAtlas {
   return {
     pages: Array.from({ length: pages }, () => new Uint8Array(4)),
     index: {
-      formatVersion: 1, pageSize: 1, padding: 2, pageCount: pages, metrics: { tile: { cell: 16, gap: 2 }, wall: { cell: 32, gap: 4 } },
+      formatVersion: 1, pageSize: 1, padding: 2, pageCount: pages, metrics: {
+        tile: { cell: 16, gap: 2 }, wall: { cell: 32, gap: 4 }, treeTop: { cell: 80, gap: 2 }, treeBranch: { cell: 40, gap: 2 },
+        shroomTop: { cell: 60, gap: 2 }, wire: { cell: 16, gap: 2 }, actuator: { cell: 16, gap: 0 }, item: { cell: 0, gap: 0 },
+        liquid: { cell: 0, gap: 0 }, liquidSlope: { cell: 0, gap: 0 },
+      },
       entries: [...Array.from({ length: tiles }, (_, id) => entry("tile", id)), ...Array.from({ length: walls }, (_, id) => entry("wall", id + 1))],
     },
   };
@@ -152,6 +156,25 @@ describe("connecting a Content folder", () => {
     await connecting;
     expect(status()).toMatchObject({ kind: "ready", folderName: "Content" });
     expect(remembered.source).toEqual({ kind: "files", folderName: "Content", fingerprint: "f" });
+  });
+
+  test("the folder input sends every sheet the atlas holds: tree tops and branches, mushroom caps, wires and the actuator", async () => {
+    const builder = new ManualBuilder();
+    const session = createAssetSession({ builder, remembered: new MemoryRemembered(), pickDirectory: null, openFolderInput: vi.fn() });
+    const names = [
+      "Tiles_5.xnb", "Wall_1.xnb", "Tree_Tops_0.xnb", "Tree_Branches_31.xnb", "Shroom_Tops.xnb", "WiresNew.xnb", "Actuator.xnb",
+      "Item_1.xnb", "Liquid_0.xnb", "LiquidSlope_14.xnb", "Wires.xnb", "Wall_Outline.xnb", "Tiles_5_0.xnb",
+    ];
+    const files = names.map((name) => {
+      const file = new File([], name);
+      Object.defineProperty(file, "webkitRelativePath", { value: `Content/Images/${name}` });
+      return file;
+    });
+    const connecting = session.connectFiles(files);
+    await settle();
+    expect((builder.last().source as readonly File[]).map((file) => file.name)).toEqual(names.slice(0, 10));
+    builder.last().resolve(result());
+    await connecting;
   });
 
   test("Select folder opens the folder input even where there is a directory picker (Chrome refuses Program Files)", () => {

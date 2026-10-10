@@ -32,13 +32,13 @@ function readCanvas(canvas: HTMLCanvasElement): Uint8Array {
 
 const ABSENT = 0xffff;
 // Palette indices: 0 chest-like (16 × 16 cells), 1 torch-like (20 × 20 cells), 2 a block without frames, 3 a wall,
-// 4 frame-important content with no sheet in the atlas, 5 a tree (frame-important, has a sheet, but trees are deferred).
+// 4 frame-important content with no sheet in the atlas, 5 a tree (unused here: trees are drawn by the object pass, see
+// tree-sprites.browser.test.ts).
 const CHEST = 0;
 const TORCH = 1;
 const STONE = 2;
 const WALL = 3;
 const NO_SHEET = 4;
-const TREE = 5;
 const palette = [
   { kind: "vanilla", id: 21 }, { kind: "vanilla", id: 4 }, { kind: "vanilla", id: 1 }, { kind: "vanilla", id: 2 },
   { kind: "vanilla", id: 600 }, { kind: "vanilla", id: 5 },
@@ -55,7 +55,6 @@ const TILES: readonly (readonly [number, number, number, number, number])[] = [
   [3, 0, TORCH, 22, 44],
   [0, 1, STONE, -1, -1],
   [2, 1, NO_SHEET, 0, 0],
-  [3, 1, TREE, 22, 0],
 ];
 const WIDTH = 4;
 const HEIGHT = 3;
@@ -264,7 +263,7 @@ function preparingRenderer(heard: boolean[]): { readonly canvas: HTMLCanvasEleme
 describe("sprite mode", () => {
   // At 8 pixels per tile a canvas pixel reads the half-resolution atlas once: the mean of 2 × 2 sprite pixels.
   test.each([ZOOM, 8])(
-    "at %i pixels per tile frame-important tiles show the atlas cell their frames select, or the missing-texture checkerboard without a sheet; other blocks, trees and walls keep their map colour",
+    "at %i pixels per tile frame-important tiles show the atlas cell their frames select, or the missing-texture checkerboard without a sheet; other blocks and walls keep their map colour",
     (zoom) => {
       const world = spriteWorld();
       expect(draw(world, zoom, ALL, true)).toEqual(expectedCanvas(world, ALL, zoom, true));
