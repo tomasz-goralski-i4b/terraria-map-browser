@@ -1,138 +1,180 @@
 import { describe, expect, it } from "vitest";
 import { createWorld } from "./index.js";
-import { BRUSH_LAYER, createBrushHistory } from "./brush.js";
+import { BRUSH_SIZE, createBrushHistory, type BrushOptions } from "./brush.js";
 
-describe("simple vanilla brush", () => {
-  it("rasterizes a three-tile round brush as a plus, shared by paint and erase", () => {
+const place = (id: number, paint = 0) => ({ kind: "place", id, paint }) as const;
+const ERASE = { kind: "erase" } as const;
+const planeBytes = (world: ReturnType<typeof createWorld>): Uint8Array[] =>
+  Object.values(world.planes).map((plane) => new Uint8Array(plane.buffer).slice());
+
+function stroke(history: ReturnType<typeof createBrushHistory>, options: BrushOptions, ...points: (readonly [number, number])[]) {
+  history.begin(options);
+  for (const [x, y] of points) history.move(x, y);
+  return history.commit();
+}
+
+describe("brush", () => {
+  it("rasterizes a three-tile round brush as a plus, shared by place and erase", () => {
     const world = createWorld(9, 9);
     const history = createBrushHistory(world);
-    history.begin({ layer: BRUSH_LAYER.block, id: 1, size: 3, shape: "circle" });
-    history.move(4, 4);
-    expect(history.commit().map(({ x, y }) => [x, y])).toEqual([[3, 4], [4, 3], [4, 4], [4, 5], [5, 4]]);
-    history.begin({ layer: BRUSH_LAYER.block, id: null, size: 3, shape: "circle" });
-    history.move(4, 4);
-    expect(history.commit()).toHaveLength(5);
+    expect(stroke(history, { block: place(1), size: 3, shape: "circle" }, [4, 4]).map(({ x, y }) => [x, y]))
+      .toEqual([[3, 4], [4, 3], [4, 4], [4, 5], [5, 4]]);
+    expect(stroke(history, { block: ERASE, size: 3, shape: "circle" }, [4, 4])).toHaveLength(5);
     expect(world.tileAt(4, 4).block).toBeUndefined();
     history.undo();
     expect(world.tileAt(4, 4).block).toEqual({ kind: "vanilla", id: 1 });
   });
-  it("uses a circular tile mask for both paint and erase, with exact history and edge clipping", () => {
+
+  it("uses a circular tile mask with exact history and edge clipping", () => {
     const world = createWorld(9, 9);
     const history = createBrushHistory(world);
-    history.begin({ layer: BRUSH_LAYER.both, blockId: 1, wallId: 4, size: 5, shape: "circle" });
-    history.move(4, 4);
-    expect(history.commit()).toHaveLength(21);
+    expect(stroke(history, { block: place(1), wall: place(4), size: 5, shape: "circle" }, [4, 4])).toHaveLength(21);
     expect(world.tileAt(2, 2).block).toBeUndefined();
     expect(world.tileAt(2, 4).block).toEqual({ kind: "vanilla", id: 1 });
-    history.begin({ layer: BRUSH_LAYER.both, blockId: null, wallId: null, size: 5, shape: "circle" });
-    history.move(4, 4);
-    expect(history.commit()).toHaveLength(21);
+    expect(stroke(history, { block: ERASE, wall: ERASE, size: 5, shape: "circle" }, [4, 4])).toHaveLength(21);
     history.undo();
     expect(world.tileAt(4, 4).wall).toEqual({ kind: "vanilla", id: 4 });
     history.undo();
-    history.begin({ layer: BRUSH_LAYER.block, id: 38, size: 5, shape: "circle" });
-    history.move(0, 0);
-    expect(history.commit()).toHaveLength(8);
-  });
-  it("paints and erases both layers as one atomic stroke and one byte-exact undo entry", () => {
-    const world = createWorld(5, 5);
-    world.setTile(2, 2, { block: { kind: "vanilla", id: 0 }, wall: { kind: "vanilla", id: 2 }, wires: 9, actuator: true });
-    const original = Object.values(world.planes).map((plane) => new Uint8Array(plane.buffer).slice());
-    const history = createBrushHistory(world);
-    history.begin({ layer: BRUSH_LAYER.both, blockId: 1, wallId: 4, size: 1 });
-    history.move(2, 2);
-    expect(history.commit()).toHaveLength(1);
-    expect(world.tileAt(2, 2)).toEqual({ block: { kind: "vanilla", id: 1 }, wall: { kind: "vanilla", id: 4 }, wires: 9, actuator: true });
-    history.undo();
-    expect(Object.values(world.planes).map((plane) => new Uint8Array(plane.buffer))).toEqual(original);
-    history.redo();
-    history.begin({ layer: BRUSH_LAYER.both, blockId: null, wallId: null, size: 1 });
-    history.move(2, 2);
-    history.commit();
-    expect(world.tileAt(2, 2)).toEqual({ wires: 9, actuator: true });
-    history.undo();
-    expect(world.tileAt(2, 2).block).toEqual({ kind: "vanilla", id: 1 });
-    expect(world.tileAt(2, 2).wall).toEqual({ kind: "vanilla", id: 4 });
+    expect(stroke(history, { block: place(38), size: 5, shape: "circle" }, [0, 0])).toHaveLength(8);
   });
 
-  it("Both skips a protected wall atomically and validates both material selections before mutation", () => {
+  it("edits both layers as one atomic stroke and one byte-exact undo entry, keeping wires and actuators", () => {
     const world = createWorld(5, 5);
-    world.setTile(2, 2, { block: { kind: "vanilla", id: 0 }, wall: { kind: "vanilla", id: 87 }, wires: 0, actuator: false });
+    world.setTile(2, 2, { block: { kind: "vanilla", id: 0 }, wall: { kind: "vanilla", id: 2 }, wires: 9, actuator: true });
+    const original = planeBytes(world);
     const history = createBrushHistory(world);
-    history.begin({ layer: BRUSH_LAYER.both, blockId: 1, wallId: 4, size: 1 });
-    history.move(2, 2);
-    expect(history.commit()).toEqual([]);
-    expect(world.tileAt(2, 2).block).toEqual({ kind: "vanilla", id: 0 });
-    expect(() => { history.begin({ layer: BRUSH_LAYER.both, blockId: 21, wallId: 4, size: 1 }); }).toThrow(RangeError);
-    expect(() => { history.begin({ layer: BRUSH_LAYER.both, blockId: 1, wallId: 87, size: 1 }); }).toThrow(RangeError);
+    expect(stroke(history, { block: place(1), wall: place(4), size: 1 }, [2, 2])).toHaveLength(1);
+    expect(world.tileAt(2, 2)).toEqual({ block: { kind: "vanilla", id: 1 }, wall: { kind: "vanilla", id: 4 }, wires: 9, actuator: true });
+    history.undo();
+    expect(planeBytes(world)).toEqual(original);
+    history.redo();
+    stroke(history, { block: ERASE, wall: ERASE, size: 1 }, [2, 2]);
+    expect(world.tileAt(2, 2)).toEqual({ wires: 9, actuator: true });
   });
-  it("clips the square footprint and preserves protected objects and non-target planes", () => {
-    const world = createWorld(8, 8);
-    world.setTile(1, 1, { block: { kind: "vanilla", id: 21 }, frameX: 18, frameY: 0, wires: 0, actuator: false });
-    world.setTile(0, 0, { wall: { kind: "vanilla", id: 4 }, liquid: { kind: "water", amount: 180 }, wires: 3, actuator: true });
-    const before = world.tileAt(0, 0);
-    const history = createBrushHistory(world, (x, y) => x === 0 && y === 1);
-    history.begin({ layer: "wall", id: 1, size: 3 });
-    history.move(0, 0);
-    const diff = history.commit();
-    expect(diff.map(({ x, y }) => [x, y])).toEqual([[0, 0], [1, 0]]);
-    expect(world.tileAt(0, 0)).toEqual({ ...before, wall: { kind: "vanilla", id: 1 } });
-    expect(world.tileAt(1, 1).block).toEqual({ kind: "vanilla", id: 21 });
-    expect(world.tileAt(0, 1).wall).toBeUndefined();
+
+  it("places a block as newly placed content: full, unframed, unpainted unless chosen, active, uncoated and dry", () => {
+    const world = createWorld(3, 3);
+    world.setTile(1, 1, {
+      block: { kind: "vanilla", id: 0 }, frameX: 18, frameY: 36, paint: 7, shape: "slopeTopLeft", inactive: true,
+      invisibleBlock: true, fullBrightBlock: true, liquid: { kind: "water", amount: 255 },
+      wall: { kind: "vanilla", id: 2 }, wallPaint: 3, wires: 5, actuator: true,
+    });
+    const history = createBrushHistory(world);
+    stroke(history, { block: place(1, 12), size: 1 }, [1, 1]);
+    expect(world.tileAt(1, 1)).toEqual({
+      block: { kind: "vanilla", id: 1 }, paint: 12, wall: { kind: "vanilla", id: 2 }, wallPaint: 3, wires: 5, actuator: true,
+    });
+  });
+
+  it("over the same content only changes its paint, keeping its shape and coatings", () => {
+    const world = createWorld(3, 3);
+    world.setTile(1, 1, { block: { kind: "vanilla", id: 1 }, shape: "half", fullBrightBlock: true, wall: { kind: "vanilla", id: 4 }, invisibleWall: true, wires: 0, actuator: false });
+    const history = createBrushHistory(world);
+    expect(stroke(history, { block: place(1), wall: place(4), size: 1 }, [1, 1])).toEqual([]);
+    stroke(history, { block: place(1, 25), wall: place(4, 26), size: 1 }, [1, 1]);
+    expect(world.tileAt(1, 1)).toEqual({
+      block: { kind: "vanilla", id: 1 }, paint: 25, shape: "half", fullBrightBlock: true,
+      wall: { kind: "vanilla", id: 4 }, wallPaint: 26, invisibleWall: true, wires: 0, actuator: false,
+    });
+  });
+
+  it("places a wall with its own paint and no coating from the wall it replaces", () => {
+    const world = createWorld(3, 3);
+    world.setTile(1, 1, { wall: { kind: "vanilla", id: 2 }, wallPaint: 9, invisibleWall: true, fullBrightWall: true, wires: 0, actuator: false });
+    const history = createBrushHistory(world);
+    stroke(history, { wall: place(16, 4), size: 1 }, [1, 1]);
+    expect(world.tileAt(1, 1)).toEqual({ wall: { kind: "vanilla", id: 16 }, wallPaint: 4, wires: 0, actuator: false });
+  });
+
+  it("paints only existing content in paint mode, and paint 0 removes the paint", () => {
+    const world = createWorld(4, 1);
+    world.setTile(0, 0, { block: { kind: "vanilla", id: 1 }, wires: 0, actuator: false });
+    world.setTile(1, 0, { wall: { kind: "vanilla", id: 4 }, wires: 0, actuator: false });
+    world.setTile(2, 0, { block: { kind: "vanilla", id: 1 }, paint: 3, wires: 0, actuator: false });
+    const history = createBrushHistory(world);
+    expect(stroke(history, { block: { kind: "paint", paint: 8 }, size: 1 }, [0, 0], [3, 0]).map(({ x }) => x)).toEqual([0, 2]);
+    expect(world.tileAt(0, 0).paint).toBe(8);
+    expect(world.tileAt(1, 0).block).toBeUndefined();
+    expect(world.tileAt(1, 0).wallPaint).toBeUndefined();
+    stroke(history, { block: { kind: "paint", paint: 0 }, wall: { kind: "paint", paint: 5 }, size: 1 }, [0, 0], [3, 0]);
+    expect(world.tileAt(0, 0).paint).toBeUndefined();
+    expect(world.tileAt(1, 0).wallPaint).toBe(5);
+  });
+
+  it("erasing a block takes its paint, shape and coatings but keeps the wall, liquid and wiring", () => {
+    const world = createWorld(3, 3);
+    world.setTile(1, 1, {
+      block: { kind: "vanilla", id: 30 }, paint: 2, shape: "half", invisibleBlock: true, fullBrightBlock: true,
+      wall: { kind: "vanilla", id: 4 }, wires: 2, actuator: true,
+    });
+    const history = createBrushHistory(world);
+    stroke(history, { block: ERASE, size: 1 }, [1, 1]);
+    expect(world.tileAt(1, 1)).toEqual({ wall: { kind: "vanilla", id: 4 }, wires: 2, actuator: true });
+  });
+
+  it("asks the rules per layer: Both skips a tile atomically when either layer is protected", () => {
+    const world = createWorld(5, 1);
+    for (let x = 0; x < 5; x++) world.setTile(x, 0, { block: { kind: "vanilla", id: 0 }, wall: { kind: "vanilla", id: 2 }, wires: 0, actuator: false });
+    const history = createBrushHistory(world, { protectedTile: (x, _y, layer) => (x === 1 && layer === "wall") || (x === 3 && layer === "block") });
+    expect(stroke(history, { block: place(1), wall: place(4), size: 1 }, [0, 0], [4, 0]).map(({ x }) => x)).toEqual([0, 2, 4]);
+    expect(stroke(history, { wall: place(5), size: 1 }, [0, 0], [4, 0]).map(({ x }) => x)).toEqual([0, 2, 3, 4]);
+    expect(stroke(history, { block: ERASE, size: 1 }, [0, 0], [4, 0]).map(({ x }) => x)).toEqual([0, 1, 2, 4]);
   });
 
   it("interpolates fast drags, deduplicates overlap, and restores every plane byte on undo", () => {
     const world = createWorld(12, 6);
     world.setTile(2, 2, { block: { kind: "vanilla", id: 0 }, paint: 7, shape: "half", wires: 9, actuator: false });
-    const original = Object.values(world.planes).map((plane) => new Uint8Array(plane.buffer).slice());
+    const original = planeBytes(world);
     const history = createBrushHistory(world);
-    history.begin({ layer: "block", id: 1, size: 1 });
-    history.move(1, 2);
-    history.move(10, 2);
-    history.move(1, 2);
-    const diff = history.commit();
-    expect(diff).toHaveLength(10);
-    expect(history.canUndo()).toBe(true);
-    const painted = Object.values(world.planes).map((plane) => new Uint8Array(plane.buffer).slice());
+    expect(stroke(history, { block: place(1), size: 1 }, [1, 2], [10, 2], [1, 2])).toHaveLength(10);
+    const painted = planeBytes(world);
     expect(history.undo()).toHaveLength(10);
-    expect(Object.values(world.planes).map((plane) => new Uint8Array(plane.buffer))).toEqual(original);
+    expect(planeBytes(world)).toEqual(original);
     expect(history.redo()).toHaveLength(10);
-    expect(Object.values(world.planes).map((plane) => new Uint8Array(plane.buffer))).toEqual(painted);
+    expect(planeBytes(world)).toEqual(painted);
   });
 
-  it("erases only its layer, cancels strokes, and drops redo only after an effective new stroke", () => {
+  it("cancels strokes, and drops redo only after an effective new stroke", () => {
     const world = createWorld(6, 6);
     world.setTile(3, 3, { block: { kind: "vanilla", id: 30 }, wall: { kind: "vanilla", id: 4 }, wires: 2, actuator: false });
     const history = createBrushHistory(world);
-    history.begin({ layer: "block", id: null, size: 1 });
-    history.move(3, 3);
-    history.commit();
-    expect(world.tileAt(3, 3)).toEqual({ wall: { kind: "vanilla", id: 4 }, wires: 2, actuator: false });
+    stroke(history, { block: ERASE, size: 1 }, [3, 3]);
     history.undo();
-    history.begin({ layer: "wall", id: 1, size: 1 });
+    history.begin({ wall: place(1), size: 1 });
     history.move(3, 3);
     history.cancel();
     expect(world.tileAt(3, 3).wall).toEqual({ kind: "vanilla", id: 4 });
     expect(history.canRedo()).toBe(true);
-    history.begin({ layer: "block", id: 30, size: 1 });
-    history.move(3, 3);
-    expect(history.commit()).toEqual([]);
+    expect(stroke(history, { block: place(30), size: 1 }, [3, 3])).toEqual([]);
     expect(history.canRedo()).toBe(true);
-    history.begin({ layer: "wall", id: 5, size: 1 });
-    history.move(3, 3);
-    history.commit();
+    stroke(history, { wall: place(5), size: 1 }, [3, 3]);
     expect(history.canRedo()).toBe(false);
   });
 
-  it("rejects invalid sizes/content and leaves unknown content untouched", () => {
+  it("accepts sizes up to the maximum and validates sizes, layers, content and paint before any change", () => {
+    const world = createWorld(70, 70);
+    const history = createBrushHistory(world, { placeable: (layer, id) => layer === "block" ? id !== 21 : id !== 87 });
+    expect(stroke(history, { block: place(1), size: BRUSH_SIZE.maximum }, [35, 35])).toHaveLength(BRUSH_SIZE.maximum ** 2);
+    for (const size of [0, BRUSH_SIZE.maximum + 1, 1.5, NaN]) expect(() => { history.begin({ wall: place(1), size }); }).toThrow(RangeError);
+    expect(() => { history.begin({ size: 1 }); }).toThrow(RangeError);
+    expect(() => { history.begin({ block: place(21), size: 1 }); }).toThrow(RangeError);
+    expect(() => { history.begin({ block: place(1), wall: place(87), size: 1 }); }).toThrow(RangeError);
+    expect(() => { history.begin({ wall: place(0), size: 1 }); }).toThrow(RangeError);
+    expect(() => { history.begin({ block: place(1, 256), size: 1 }); }).toThrow(RangeError);
+    expect(() => { history.begin({ block: { kind: "paint", paint: -1 }, size: 1 }); }).toThrow(RangeError);
+    expect(history.canUndo()).toBe(true);
+  });
+
+  it("leaves unknown and mod content in the edited layer untouched", () => {
     const world = createWorld(4, 4);
     world.setTile(1, 1, { block: { kind: "unknown", runtimeId: 900 }, wires: 0, actuator: false });
+    world.setTile(2, 2, { wall: { kind: "mod", mod: "Example", internalName: "Wall" }, wires: 0, actuator: false });
     const history = createBrushHistory(world);
-    expect(() => { history.begin({ layer: "block", id: 21, size: 1 }); }).toThrow(RangeError);
-    for (const size of [0, 10, 1.5, NaN]) expect(() => { history.begin({ layer: "wall", id: 1, size }); }).toThrow(RangeError);
-    history.begin({ layer: "block", id: 38, size: 9 });
-    history.move(1, 1);
-    history.commit();
+    stroke(history, { block: place(38), wall: place(4), size: 4 }, [2, 2]);
     expect(world.tileAt(1, 1).block).toEqual({ kind: "unknown", runtimeId: 900 });
+    expect(world.tileAt(2, 2).wall).toEqual({ kind: "mod", mod: "Example", internalName: "Wall" });
+    stroke(history, { block: ERASE, size: 4 }, [2, 2]);
+    expect(world.tileAt(1, 1).block).toEqual({ kind: "unknown", runtimeId: 900 });
+    expect(world.tileAt(2, 2).wall).toEqual({ kind: "mod", mod: "Example", internalName: "Wall" });
   });
 });
