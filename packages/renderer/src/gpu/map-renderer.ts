@@ -147,6 +147,19 @@ export interface MapRendererStats {
   readonly framedWalls: number;
   /** Whether the sprite program is being prepared in the background (MapRendererOptions.onSpritesPreparing). */
   readonly spritesPreparing: boolean;
+  /**
+   * Scheduled frames since creation that reused the previous frame shifted by whole pixels, drawing only the strips
+   * a pan revealed (only the camera changed since, by whole screen pixels at the same zoom).
+   */
+  readonly reusedFrames: number;
+}
+
+/** An offscreen colour target the size of the canvas: scheduled frames are drawn into one and copied to the canvas. */
+interface FrameTarget {
+  readonly texture: WebGLTexture;
+  readonly framebuffer: WebGLFramebuffer;
+  readonly width: number;
+  readonly height: number;
 }
 
 export interface MapRenderer {
@@ -619,6 +632,21 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   let world: RenderableWorld | null = null;
   let cacheCapacity = maxCachedChunks;
   let camera: Camera = { x: 0, y: 0, zoom: 1 };
+  // The camera the current frame draws with. Scheduled frames from one pixel per tile up snap it to whole screen
+  // pixels, so the frames of a pan differ by whole pixels and the previous frame can be reused shifted.
+  let view: Camera = camera;
+  // The two offscreen targets scheduled frames alternate between; frameTargets[frameCurrent] holds the last one.
+  let frameTargets: (FrameTarget | undefined)[] = [];
+  let frameCurrent = 0;
+  // The last scheduled frame, if it is complete and can be reused: its snapped camera in screen pixels and what else
+  // it depends on. Any other change (frameVersion), an upload in the frame, or another zoom or size draws it in full.
+  let lastFrame: {
+    readonly pixelX: number; readonly pixelY: number; readonly zoom: number; readonly sprites: boolean;
+    readonly version: number; readonly width: number; readonly height: number;
+  } | null = null;
+  // Bumped by every change but the camera's.
+  let frameVersion = 0;
+  let reusedFrames = 0;
   let layers = 15;
   // LRU of chunk key → page slot (page * CHUNKS_PER_PAGE + slot in page): Map iteration order is insertion order, and
   // a hit re-inserts its key at the end.
@@ -1481,8 +1509,8 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
 
   /** The camera and sprite sampling uniforms the object and wire passes share. */
   const setSpritePassUniforms = (uniforms: Readonly<Record<(typeof OBJECT_UNIFORMS)[number], WebGLUniformLocation>>): void => {
-    gl.uniform2f(uniforms.uCamera, camera.x, camera.y);
-    gl.uniform1f(uniforms.uZoom, camera.zoom);
+    gl.uniform2f(uniforms.uCamera, view.x, view.y);
+    gl.uniform1f(uniforms.uZoom, view.zoom);
     gl.uniform2f(uniforms.uViewport, canvas.width, canvas.height);
     gl.uniform1i(uniforms.uAtlas, UNIT_ATLAS);
     gl.uniform1i(uniforms.uAtlasHalf, UNIT_ATLAS_HALF);
@@ -1522,8 +1550,8 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   const drawOverview = (source: RenderableWorld, target: Overview): number => {
     const { overview: program } = resources;
     gl.useProgram(program.program);
-    gl.uniform2f(program.uniforms.uCamera, camera.x, camera.y);
-    gl.uniform1f(program.uniforms.uZoom, camera.zoom);
+    gl.uniform2f(program.uniforms.uCamera, view.x, view.y);
+    gl.uniform1f(program.uniforms.uZoom, view.zoom);
     gl.uniform2f(program.uniforms.uViewport, canvas.width, canvas.height);
     gl.uniform2f(program.uniforms.uWorld, source.width, source.height);
     gl.uniform2f(program.uniforms.uExtent, target.width * target.factor, target.height * target.factor);
@@ -1563,6 +1591,39 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     return order;
   };
 
+  /** The offscreen target `index` at the canvas size, created or resized as needed. */
+  const frameTarget = (index: number, width: number, height: number): FrameTarget => {
+    const existing = frameTargets[index];
+    if (existing?.width === width && existing.height === height) return existing;
+    if (existing !== undefined) {
+      gl.deleteTexture(existing.texture);
+      gl.deleteFramebuffer(existing.framebuffer);
+    }
+    const texture = requireValue(gl.createTexture(), "a texture");
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA8, width, height);
+    const framebuffer = requireValue(gl.createFramebuffer(), "a framebuffer");
+    gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    const created = { texture, framebuffer, width, height };
+    frameTargets[index] = created;
+    lastFrame = null;
+    return created;
+  };
+
+  const releaseFrames = (): void => {
+    if (!gl.isContextLost()) {
+      // Sparse until both targets were used.
+      for (const target of frameTargets.filter((entry): entry is FrameTarget => entry !== undefined)) {
+        gl.deleteTexture(target.texture);
+        gl.deleteFramebuffer(target.framebuffer);
+      }
+    }
+    frameTargets = [];
+    lastFrame = null;
+  };
+
   /** `uploadBudget` chunks at most, and none after `uploadMilliseconds` once one was uploaded. */
   const drawFrame = (uploadBudget: number, uploadMilliseconds: number, wait: boolean): void => {
     if (disposed || gl.isContextLost()) return;
@@ -1576,6 +1637,13 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       return;
     }
     const source = world;
+    // Synchronous frames (render()) draw the camera as given, straight to the canvas.
+    const scheduled = !wait && camera.zoom >= 1;
+    view = scheduled
+      ? { x: Math.round(camera.x * camera.zoom) / camera.zoom, y: Math.round(camera.y * camera.zoom) / camera.zoom, zoom: camera.zoom }
+      : camera;
+    // Uploads within this frame change what resident chunks show (prefetched chunks lie outside the view).
+    const uploadsAtStart = textureUploads + atlasUploads;
 
     uploadPalette(source.palette);
     uploadBackground(source);
@@ -1585,7 +1653,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
 
     const chunksX = Math.ceil(source.width / CHUNK_SIZE);
     const keyOf = (chunk: ChunkCoord): number => chunk.y * chunksX + chunk.x;
-    const visible = visibleChunks(camera, viewport, source);
+    const visible = visibleChunks(view, viewport, source);
     const spriteZoom = spriteMode && atlasTexture !== null && camera.zoom >= SPRITE_MIN_ZOOM;
     const spriteChunk = spriteZoom ? spriteProgramOf(wait) : null;
     // Until the sprite program is linked, frames are drawn in map colours.
@@ -1720,10 +1788,8 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       buildOverview(source, target, batch);
     }
 
-    gl.viewport(0, 0, viewport.width, viewport.height);
-    gl.clearColor(0, 0, 0, 0);
-    gl.clear(gl.COLOR_BUFFER_BIT);
-    if (target === null) {
+    /** The chunk pass, then in sprite mode the object and wire passes, into the bound target. */
+    const drawChunks = (): void => {
       // Chunks still loading show the overview (built when the area was seen zoomed out, possibly with other layers)
       // instead of a hole; drawn chunks overwrite it completely, so a complete frame stays exact.
       if (loading.pending && candidate?.filled === true) drawCalls += drawOverview(source, candidate);
@@ -1732,12 +1798,12 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       const program = spriteChunk ?? resources.chunk;
       gl.useProgram(program.program);
       setTileUniforms(program.uniforms, framed, spriteChunk?.uniforms ?? null);
-      gl.uniform2f(program.uniforms.uCamera, camera.x, camera.y);
-      gl.uniform1f(program.uniforms.uZoom, camera.zoom);
+      gl.uniform2f(program.uniforms.uCamera, view.x, view.y);
+      gl.uniform1f(program.uniforms.uZoom, view.zoom);
       gl.uniform2f(program.uniforms.uViewport, viewport.width, viewport.height);
       // Below one pixel per tile a pixel averages the tiles under it (filterTiles) instead of point-sampling one.
-      gl.uniform1i(program.uniforms.uFilter, camera.zoom < 1 ? 1 : 0);
-      gl.uniform1f(program.uniforms.uStep, filterTilesPerPixel(camera.zoom));
+      gl.uniform1i(program.uniforms.uFilter, view.zoom < 1 ? 1 : 0);
+      gl.uniform1f(program.uniforms.uStep, filterTilesPerPixel(view.zoom));
       gl.uniform2i(program.uniforms.uWorldSize, source.width, source.height);
       gl.activeTexture(gl.TEXTURE0 + UNIT_PALETTE);
       gl.bindTexture(gl.TEXTURE_2D, resources.palette);
@@ -1759,10 +1825,72 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
           drawCalls += drawWires(source, ready);
         }
       }
+    };
+
+    const { width, height } = viewport;
+    if (target === null && scheduled) {
+      // The previous frame shifted by whole pixels, when only the camera moved since (by less than the canvas).
+      const pixelX = Math.round(view.x * view.zoom);
+      const pixelY = Math.round(view.y * view.zoom);
+      const previous = lastFrame;
+      const shift = previous !== null && !loading.pending && previous.version === frameVersion
+        && textureUploads + atlasUploads === uploadsAtStart && previous.zoom === view.zoom && previous.sprites === (spriteChunk !== null)
+        && previous.width === width && previous.height === height
+        && Math.abs(pixelX - previous.pixelX) < width && Math.abs(pixelY - previous.pixelY) < height
+        ? { x: pixelX - previous.pixelX, y: pixelY - previous.pixelY }
+        : null;
+      const last = frameTargets[frameCurrent];
+      const output = frameTarget(1 - frameCurrent, width, height);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, output.framebuffer);
+      gl.viewport(0, 0, width, height);
+      gl.clearColor(0, 0, 0, 0);
+      if (shift !== null && last !== undefined) {
+        // Screen content moves left by shift.x and up by shift.y; framebuffer rows count from the bottom.
+        gl.bindFramebuffer(gl.READ_FRAMEBUFFER, last.framebuffer);
+        const fromX = Math.max(0, shift.x);
+        const toX = Math.min(width, width + shift.x);
+        const fromY = Math.max(0, -shift.y);
+        const toY = Math.min(height, height - shift.y);
+        gl.blitFramebuffer(fromX, fromY, toX, toY, fromX - shift.x, fromY + shift.y, toX - shift.x, toY + shift.y,
+          gl.COLOR_BUFFER_BIT, gl.NEAREST);
+        // The revealed strips (x, y, width, height in framebuffer pixels), drawn again.
+        const strips: (readonly [number, number, number, number])[] = [];
+        if (shift.x > 0) strips.push([width - shift.x, 0, shift.x, height]);
+        else if (shift.x < 0) strips.push([0, 0, -shift.x, height]);
+        if (shift.y > 0) strips.push([0, 0, width, shift.y]);
+        else if (shift.y < 0) strips.push([0, height + shift.y, width, -shift.y]);
+        gl.enable(gl.SCISSOR_TEST);
+        for (const [x, y, w, h] of strips) {
+          gl.scissor(x, y, w, h);
+          gl.clear(gl.COLOR_BUFFER_BIT);
+          drawChunks();
+        }
+        gl.disable(gl.SCISSOR_TEST);
+        reusedFrames++;
+      } else {
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        drawChunks();
+      }
+      gl.bindFramebuffer(gl.READ_FRAMEBUFFER, output.framebuffer);
+      gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
+      gl.blitFramebuffer(0, 0, width, height, 0, 0, width, height, gl.COLOR_BUFFER_BIT, gl.NEAREST);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      frameCurrent = 1 - frameCurrent;
+      lastFrame = loading.pending ? null : {
+        pixelX, pixelY, zoom: view.zoom, sprites: spriteChunk !== null, version: frameVersion, width, height,
+      };
+    } else {
+      lastFrame = null;
+      gl.viewport(0, 0, width, height);
+      gl.clearColor(0, 0, 0, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      if (target === null) drawChunks();
+      else drawCalls = drawOverview(source, target);
+    }
+    if (target === null) {
       const drawnKeys = new Set(ready.map(([chunk]) => keyOf(chunk)));
       drawn = visible.filter((chunk) => drawnKeys.has(keyOf(chunk)));
     } else {
-      drawCalls = drawOverview(source, target);
       drawn = visible.filter((chunk) => target.built[keyOf(chunk)] === 1);
     }
     // While the sprite program links, the poll asks for the next frame once it is done (startSpriteLink).
@@ -1815,11 +1943,14 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       source,
     );
     const keep = new Set(around.map(keyOf));
+    // The view's chunks are the frames' to load: a prefetch never changes what the last frame shows.
+    const inView = new Set(visibleChunks(camera, viewport, source).map(keyOf));
     const centreX = camera.x + viewport.width / (2 * camera.zoom);
     const centreY = camera.y + viewport.height / (2 * camera.zoom);
     const distance = (chunk: ChunkCoord): number =>
       Math.hypot((chunk.x + 0.5) * CHUNK_SIZE - centreX, (chunk.y + 0.5) * CHUNK_SIZE - centreY);
     const wanted = around.filter((chunk) => {
+      if (inView.has(keyOf(chunk))) return false;
       const slot = chunks.get(keyOf(chunk));
       if (slot === undefined) return true;
       return framed && !framedSlots.has(slot) && !dirtyChunks.has(keyOf(chunk));
@@ -1887,6 +2018,9 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     background = null;
     overview = null;
     resources = createResources(gl, rules);
+    // The offscreen frames died with the context.
+    frameTargets = [];
+    lastFrame = null;
     spriteProgram = null;
     objectProgram = null;
     wireProgram = null;
@@ -1910,6 +2044,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
 
   return {
     setWorld: (next) => {
+      frameVersion++;
       if (next !== world) {
         clearChunks();
         cacheCapacity = maxCachedChunks;
@@ -1934,6 +2069,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     setAtlas: (next) => {
       if (next === atlas) return;
       atlas = next;
+      frameVersion++;
       if (!gl.isContextLost()) {
         applyAtlas(next);
         // Linking starts now, while the assets arrive, rather than on the first sprite frame.
@@ -1943,16 +2079,19 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     },
     setSpriteMode: (enabled) => {
       spriteMode = enabled;
+      frameVersion++;
       schedule();
     },
     setFraming: (next) => {
       if (next === framing) return;
       releaseCells();
       framing = next;
+      frameVersion++;
       schedule();
     },
     invalidateTiles: (tiles) => {
       if (world === null || tiles.length === 0) return;
+      frameVersion++;
       const source = world;
       const regions = cellCache?.world === source ? cellCache.invalidate(tiles) : [];
       const wallRegions = wallCache?.world === source ? wallCache.invalidate(tiles) : [];
@@ -2000,6 +2139,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       const bits = layerBits(next);
       if (bits !== layers && !gl.isContextLost()) invalidateOverview();
       layers = bits;
+      frameVersion++;
       schedule();
     },
     tileAt: (screenX, screenY) => {
@@ -2014,12 +2154,14 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       framedTiles: framedBefore + (cellCache?.framedTiles ?? 0),
       framedWalls: framedWallsBefore + (wallCache?.framedTiles ?? 0),
       spritesPreparing: spriteLinking !== null,
+      reusedFrames,
     }),
     dispose: () => {
       if (disposed) return;
       disposed = true;
       cancelAnimationFrame(frame);
       cancelPrefetch();
+      releaseFrames();
       canvas.removeEventListener("webglcontextlost", onContextLost);
       canvas.removeEventListener("webglcontextrestored", onContextRestored);
       if (!gl.isContextLost()) {
