@@ -16,7 +16,7 @@ const palette: readonly ContentRef[] = [
   { kind: "vanilla", id: 21 }, // 0 chest: has a sheet
   { kind: "vanilla", id: 900 }, // 1 newer than the install: no sheet
   { kind: "mod", mod: "Calamity", internalName: "Relic" }, // 2 mod content
-  { kind: "vanilla", id: 5 }, // 3 tree: deferred, keeps its map colour
+  { kind: "vanilla", id: 5 }, // 3 tree: drawn from its sheet like any other framed content
   { kind: "vanilla", id: 1 }, // 4 stone: no stored frame
   { kind: "vanilla", id: 901 }, // 5 no sheet, but never placed with a frame
 ];
@@ -25,6 +25,10 @@ describe("contentWithoutSprite", () => {
   test("lists the content placed with a stored frame that has no sheet, once each, in palette order", () => {
     const world = planes([[0, 0], [1, 18], [2, 0], [1, 0], [3, 22], [4, -1], [5, -1], [ABSENT, -1]]);
     expect(contentWithoutSprite(world, palette, new Set([21, 5, 1]))).toEqual([palette[1], palette[2]]);
+  });
+
+  test("lists a tree placed without its sheet: sprite mode draws trees (docs/assets.md, \"Trees\")", () => {
+    expect(contentWithoutSprite(planes([[0, 0], [3, 22]]), palette, new Set([21]))).toEqual([palette[3]]);
   });
 
   test("is empty when every framed content has a sheet, or the world stores no frames", () => {
