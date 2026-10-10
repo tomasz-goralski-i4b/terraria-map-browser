@@ -51,6 +51,21 @@ afterEach(() => {
   vi.mocked(thumbnailSession.getThumbnailSource).mockReset();
 });
 
+test("Swatches tooltips anchor to the hovered material instead of the panel", async () => {
+  setBrushWorld(readWorldTiles(brushSource()));
+  useSwatchesView.setState({ category: "block", source: "all", mode: "grid", query: "" });
+  const screen = await render(<div style={{ width: 320 }}><SwatchesPanel /></div>);
+  const dirt = page.getByRole("button", { name: "Dirt Block", exact: true });
+  await dirt.hover();
+  const button = screen.container.querySelector<HTMLElement>('.swatch-button[aria-label="Dirt Block"]');
+  if (button === null) throw new Error("Dirt Block swatch missing");
+  expect(getComputedStyle(button).position).toBe("relative");
+  const tooltip = getComputedStyle(button, "::after");
+  expect(tooltip.content).toContain("Dirt Block");
+  expect(tooltip.position).toBe("absolute");
+  expect(parseFloat(tooltip.bottom)).toBeCloseTo(button.getBoundingClientRect().height + 6, 0);
+});
+
 test("fallback, paint and accessible names survive connecting and disconnecting assets", async () => {
   const screen = await render(<button aria-label="Dirt Block"><MaterialSwatch color={0x976b4b} layer="block" content={{ kind: "vanilla", id: 0 }} paint={0xff0000} /></button>);
   const swatch = screen.container.querySelector<HTMLElement>(".material-swatch");
