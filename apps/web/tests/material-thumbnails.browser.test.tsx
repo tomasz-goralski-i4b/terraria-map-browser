@@ -236,3 +236,10 @@ test("reconnecting owns a new cache and disconnecting releases the source", asyn
   expect(second === first).toBe(false);
   expect(second?.material("block", ref)).not.toBe(firstPixels);
 });
+
+test("a ready connection with an atlas delayed by one idle callback retries without scrolling", async () => {
+  connect();
+  vi.mocked(getDefaultAssetSession().getAtlas).mockReturnValueOnce(null);
+  const screen = await render(<MaterialSwatch color={0x976b4b} layer="block" content={{ kind: "vanilla", id: 0 }} />);
+  await expect.poll(() => screen.container.querySelector("canvas")).not.toBeNull();
+});
