@@ -197,6 +197,12 @@ export interface MapRenderer {
   readonly tileAt: (screenX: number, screenY: number) => { readonly x: number; readonly y: number } | null;
   /** Uploads and draws all visible chunks synchronously. Setters schedule frames with bounded chunk uploads. */
   readonly render: () => void;
+  /**
+   * Draws the frame the setters scheduled now, with the same bounded uploads, instead of in the next animation frame.
+   * Called from the caller's own animation frame callback after it moved the camera, the map shows the move in that
+   * frame rather than one frame later. Does nothing when no frame is scheduled.
+   */
+  readonly flushFrame: () => void;
   readonly stats: () => MapRendererStats;
   readonly dispose: () => void;
 }
@@ -2149,6 +2155,12 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       return x < 0 || y < 0 || x >= world.width || y >= world.height ? null : { x, y };
     },
     render: () => { drawFrame(Infinity, Infinity, true); },
+    flushFrame: () => {
+      if (frame === 0) return;
+      cancelAnimationFrame(frame);
+      frame = 0;
+      drawFrame(maxChunkUploadsPerFrame, maxUploadMillisecondsPerFrame, false);
+    },
     stats: () => ({
       textureUploads, drawCalls, visibleChunks: drawn, residentChunks: chunks.size, evictedChunks, atlasUploads,
       framedTiles: framedBefore + (cellCache?.framedTiles ?? 0),

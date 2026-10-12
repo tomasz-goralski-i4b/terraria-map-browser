@@ -56,7 +56,7 @@ beforeEach(() => {
       return tile.x < 0 || tile.y < 0 || tile.x >= world.width || tile.y >= world.height
         ? null : { x: Math.floor(tile.x), y: Math.floor(tile.y) };
     },
-    render: vi.fn(), dispose: vi.fn(),
+    render: vi.fn(), flushFrame: vi.fn(), dispose: vi.fn(),
     stats: () => ({ textureUploads: 0, drawCalls: 0, visibleChunks: [], residentChunks: 0, evictedChunks: 0, atlasUploads: 0, framedTiles: 0, framedWalls: 0, spritesPreparing: false, reusedFrames: 0 }),
   };
   vi.mocked(createMapRenderer).mockReturnValue(renderer);
@@ -106,10 +106,13 @@ function wheel(deltaY: number, deltaMode = 0, ctrlKey = false): void {
 
 function pointer(type: string, x: number, y: number): void {
   const rect = canvas().getBoundingClientRect();
-  canvas().dispatchEvent(new PointerEvent(type, {
+  const event = new PointerEvent(type, {
     pointerId: 1, pointerType: "mouse", bubbles: true, cancelable: true,
     clientX: rect.left + x, clientY: rect.top + y, buttons: type === "pointerup" ? 0 : 1,
-  }));
+  });
+  // Event timestamps share the frames' clock in a browser; here that clock is the mocked one.
+  Object.defineProperty(event, "timeStamp", { value: time });
+  canvas().dispatchEvent(event);
 }
 
 function key(type: string, name: string, repeat = false): void {
@@ -167,6 +170,7 @@ test("sixty drag events write camera hooks once per frame and only commit for ch
     expect(renderer.setCamera).toHaveBeenCalledOnce();
     expect(mutations).toHaveLength(1);
     expect(commits).toBe(before); // The cave tile follows the captured pointer during a drag.
+    time += 100; // Released after a pause: no flick glide moves the map under the pointer.
     pointer("pointerup", 140, 150);
     pointer("pointermove", 160, 150);
     await frame();
@@ -175,6 +179,18 @@ test("sixty drag events write camera hooks once per frame and only commit for ch
     await frame();
     expect(commits).toBe(before + 1);
   } finally { observer.disconnect(); }
+});
+
+test("the map is drawn in the animation frame that moved the camera, not in the next one", async () => {
+  await mount();
+  await frame();
+  const order: string[] = [];
+  vi.mocked(renderer.setCamera).mockImplementation((camera: Camera) => { drawn = camera; order.push("camera"); });
+  vi.mocked(renderer.flushFrame).mockImplementation(() => { order.push("draw"); });
+  pointer("pointerdown", 200, 150);
+  pointer("pointermove", 180, 150);
+  await frame();
+  expect(order).toEqual(["camera", "draw"]);
 });
 
 test("reduced motion applies wheel zoom in its first frame and suppresses flick inertia", async () => {
