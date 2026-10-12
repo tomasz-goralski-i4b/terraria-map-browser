@@ -97,7 +97,7 @@ Code: `apps/web/src/ui/` (primitives), `apps/web/src/shell/` (layout, commands, 
   background actions (a saved world, a listed folder) in the map's bottom-right corner, never over its middle.
   Successes close themselves after 6 s; errors stay until closed.
 - **Dock** (`shell/Dock.tsx`) has three tabs, as in image editors (#225): **World**, what the world *is* (World
-  properties, Content, Entities), **View**, what is *shown* (Layers), and **Swatches**, what the brush *paints with*
+  properties, Content, Entities), **View**, what is *shown* (Layers and Grid), and **Swatches**, what the brush *paints with*
   (`panels/SwatchesPanel.tsx`: materials, paints, recent swatches and custom palettes). The **Inspector** sits under
   the tabs and is visible with any; open, it takes up to half the dock. World is the default tab: after opening a world it shows
   what was opened. Inside a tab, sections are an accordion; several may be open at once. A splitter resizes the dock
@@ -106,6 +106,16 @@ Code: `apps/web/src/ui/` (primitives), `apps/web/src/shell/` (layout, commands, 
   with the layout. `P` hides or shows the whole dock.
 
   `Tab` is **not** used for this, unlike some editors: Tab must keep moving focus for keyboard users.
+
+  Grid is also available in **View > Grid**: Off (default), 3, 5, 10, or Custom (2–1000 blocks). Custom opens
+  the Grid section and focuses its interval field; Enter or leaving the field commits a valid integer.
+  Boundaries are counted from world (0, 0): dashed every block, solid at the selected interval, with a shared
+  opacity slider (0–100%, initially 30%). Muted grey lines are 1 CSS pixel wide and appear at the same zoom
+  threshold as sprites (5 backing-store pixels per tile), independently of whether assets are connected.
+  Spacing and opacity are remembered with the browser layout. The overlay does not intercept map input.
+  The GPU grid shader replaces the final terrain framebuffer blit when enabled, preserving straight alpha.
+  Terrain still uses cached-pan scissor strips; grid changes require no SVG, DOM geometry, tile/texture uploads
+  or invalidation of the cached terrain.
 
   Inspector Block and Wall rows show vanilla map-colour swatches. With connected assets and Sprites enabled they
   show the pinned tile's actual framed cell: stored frames for objects, neighbours for self-framed blocks and walls.

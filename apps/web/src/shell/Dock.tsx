@@ -3,6 +3,7 @@ import { ContentPanel } from "../panels/ContentPanel.js";
 import { EntitiesPanel } from "../panels/placeholders.js";
 import { InspectorPanel } from "../panels/InspectorPanel.js";
 import { LayersPanel } from "../panels/LayersPanel.js";
+import { GridPanel } from "../panels/GridPanel.js";
 import { SwatchesPanel } from "../panels/SwatchesPanel.js";
 import type { Command } from "./commands.js";
 import { WorldPanel, WorldPanelActions } from "../panels/WorldPanel.js";
@@ -20,6 +21,7 @@ interface SectionDefinition {
 const SECTIONS: Readonly<Record<SectionId, SectionDefinition>> = {
   world: { title: "World", body: () => <WorldPanel />, actions: (commands) => <WorldPanelActions commands={commands} /> },
   layers: { title: "Layers", body: (commands) => <LayersPanel commands={commands} /> },
+  grid: { title: "Grid", body: () => <GridPanel /> },
   inspector: { title: "Inspector", body: () => <InspectorPanel /> },
   content: { title: "Content", body: () => <ContentPanel /> },
   entities: { title: "Entities", body: () => <EntitiesPanel /> },

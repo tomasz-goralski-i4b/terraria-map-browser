@@ -10,6 +10,7 @@ import { getBlockFraming } from "../world/block-framing.js";
 import { beginBrush, finishBrush, moveBrush, pickBrushMaterial, subscribeBrushChanges, useBrushStore } from "../world/brush-session.js";
 import { createBrushStabilizer } from "../world/brush-stabilizer.js";
 import { cancelArea, movePaste, pastePreviewWorld, pasteVisibleBounds, placePaste, selectArea, useAreaStore } from "../world/area-session.js";
+import { useLayoutStore } from "../shell/layout-store.js";
 
 const KEY_PAN_PIXELS_PER_MS = 0.384;
 const KEY_ZOOM_FACTOR = 1.25;
@@ -229,6 +230,17 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
     moveBrush(tile?.x ?? -1, tile?.y ?? -1);
   };
 
+  const updateGrid = useCallback((session: MapSession): void => {
+    const canvas = canvasRef.current;
+    if (canvas === null || canvas.clientWidth === 0 || canvas.width === 0) return;
+    const grid = useLayoutStore.getState().grid;
+    session.renderer.setGrid(grid.mode === "off" ? null : {
+      spacing: grid.mode === "custom" ? grid.customSpacing : grid.mode,
+      opacity: grid.opacity / 100,
+      density: canvas.width / canvas.clientWidth,
+    });
+  }, []);
+
   const applyCamera = useCallback((session: MapSession, camera: Camera): void => {
     session.camera = camera;
     session.renderer.setCamera(camera);
@@ -315,6 +327,7 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
       if (!settled || !brushSettled) session.requestFrame();
       // The renderer scheduled its frame for the next animation frame; drawn now, the map moves in the frame the camera
       // moved in, one frame closer to the pointer.
+      updateGrid(session);
       renderer.flushFrame();
     }
     sessionRef.current = session;
@@ -324,6 +337,9 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
     });
     const unsubscribeTool = useViewStore.subscribe((state, previous) => {
       if (state.tool !== previous.tool) session.requestFrame();
+    });
+    const unsubscribeGrid = useLayoutStore.subscribe((state, previous) => {
+      if (state.grid !== previous.grid) session.requestFrame();
     });
     const unsubscribeArea = useAreaStore.subscribe((state) => {
       if (state.selection === null) selectionPointer.current = null;
@@ -424,6 +440,7 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
         applyCamera(session, session.animator.current);
       },
       renderNow: () => {
+        updateGrid(session);
         renderer.render();
       },
       stats: () => renderer.stats(),
@@ -434,6 +451,7 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
       unsubscribeEdits();
       unsubscribeBrushOptions();
       unsubscribeTool();
+      unsubscribeGrid();
       unsubscribeArea();
       registerMapController(null);
       useViewStore.getState().setHoverTile(null);

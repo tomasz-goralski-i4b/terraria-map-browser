@@ -94,6 +94,85 @@ const layerCombos: ChunkLayers[] = Array.from({ length: 16 }, (_, bits) => ({
 }));
 const allLayers: ChunkLayers = { background: true, walls: true, blocks: true, liquids: true };
 
+test("GPU grid replaces dashed boundaries with solid intervals, clips to the world and obeys sprite zoom", () => {
+  const canvas = makeCanvas(100, 80);
+  const renderer = makeRenderer(canvas, { prefetchChunks: 0 });
+  renderer.setWorld(syntheticWorld(12, 10));
+  renderer.setLayers({ background: false, blocks: false, walls: false, liquids: false });
+  renderer.setCamera({ x: 0, y: 0, zoom: 10 });
+  renderer.setGrid({ spacing: 5, opacity: 1, density: 1 });
+  renderer.render();
+  const pixels = readCanvas(canvas);
+  const pixel = (x: number, y: number): number[] => [...pixels.subarray((y * 100 + x) * 4, (y * 100 + x) * 4 + 4)];
+  expect(pixel(10, 1)).toEqual([200, 205, 210, 255]);
+  expect(pixel(10, 3)).toEqual([0, 0, 0, 0]);
+  expect(pixel(50, 3)).toEqual([200, 205, 210, 255]);
+  expect(pixel(3, 50)).toEqual([200, 205, 210, 255]);
+  expect(pixel(12, 3)).toEqual([0, 0, 0, 0]);
+  renderer.setCamera({ x: -2, y: -1, zoom: 10 });
+  renderer.render();
+  expect(readCanvas(canvas).subarray(0, 4)).toEqual(new Uint8Array(4));
+  renderer.setCamera({ x: 0, y: 0, zoom: 4.99 });
+  renderer.render();
+  expect(readCanvas(canvas).some((value) => value !== 0)).toBe(false);
+  renderer.setCamera({ x: 0, y: 0, zoom: 10 });
+  renderer.setGrid(null);
+  renderer.render();
+  expect(readCanvas(canvas).some((value) => value !== 0)).toBe(false);
+});
+
+test("grid pan reuses cached frame pixels without uploading textures and matches a fresh frame", () => {
+  const canvas = makeCanvas(100, 80);
+  const renderer = makeRenderer(canvas, { prefetchChunks: 0 });
+  renderer.setWorld(syntheticWorld(128, 128));
+  renderer.setCamera({ x: 10, y: 10, zoom: 10 });
+  renderer.setGrid({ spacing: 3, opacity: 0.3, density: 2 });
+  renderer.flushFrame();
+  const before = renderer.stats();
+  renderer.setCamera({ x: 10.3, y: 10.2, zoom: 10 });
+  renderer.flushFrame();
+  const shifted = readCanvas(canvas);
+  expect(renderer.stats().reusedFrames).toBe(before.reusedFrames + 1);
+  expect(renderer.stats().textureUploads).toBe(before.textureUploads);
+  renderer.render();
+  expect(readCanvas(canvas)).toEqual(shifted);
+  renderer.setGrid({ spacing: 10, opacity: 0.3, density: 2 });
+  renderer.flushFrame();
+  const changed = readCanvas(canvas);
+  expect(changed).not.toEqual(shifted);
+  renderer.render();
+  expect(readCanvas(canvas)).toEqual(changed);
+});
+
+test("grid opacity preserves straight alpha over transparent terrain and is shared at intersections", () => {
+  const canvas = makeCanvas(100, 80);
+  const renderer = makeRenderer(canvas, { prefetchChunks: 0 });
+  renderer.setWorld(syntheticWorld(128, 128));
+  renderer.setLayers({ background: false, blocks: false, walls: false, liquids: false });
+  renderer.setCamera({ x: 0, y: 0, zoom: 10 });
+  renderer.setGrid({ spacing: 5, opacity: 0.3, density: 2 });
+  renderer.render();
+  const transparent = readCanvas(canvas);
+  const pixel = (data: Uint8Array, x: number, y: number): number[] => [...data.subarray((y * 100 + x) * 4, (y * 100 + x) * 4 + 4)];
+  for (const [x, y] of [[50, 6], [51, 6], [50, 50]] as const) {
+    const actual = pixel(transparent, x, y);
+    for (const [channel, expected] of [200, 205, 210, 77].entries()) expect(Math.abs((actual[channel] ?? 0) - expected)).toBeLessThanOrEqual(1);
+  }
+  expect(pixel(transparent, 52, 6)).toEqual([0, 0, 0, 0]);
+  renderer.setGrid(null);
+  renderer.setLayers(allLayers);
+  renderer.render();
+  const opaque = readCanvas(canvas);
+  renderer.setGrid({ spacing: 5, opacity: 0.3, density: 2 });
+  renderer.render();
+  const overlaid = pixel(readCanvas(canvas), 50, 50);
+  const base = pixel(opaque, 50, 50);
+  for (const [channel, color] of [200, 205, 210].entries()) {
+    expect(Math.abs((overlaid[channel] ?? 0) - Math.round(color * 0.3 + (base[channel] ?? 0) * 0.7))).toBeLessThanOrEqual(1);
+  }
+  expect(overlaid[3]).toBe(255);
+});
+
 /** The synthetic world plus a flags plane carrying every combination of the four wires and the actuator. */
 function wiredWorld(width: number, height: number): RenderableWorld {
   const base = syntheticWorld(width, height);
@@ -497,11 +576,15 @@ describe("uploads, cache and draw calls", () => {
     expect(renderer.stats().evictedChunks).toBeGreaterThan(0);
   });
 
-  test("a lost and restored WebGL context re-creates textures and renders the same pixels", async () => {
+  test.each([
+    { label: "terrain", zoom: 1, grid: null },
+    { label: "terrain with grid", zoom: 10, grid: { spacing: 5, opacity: 0.3, density: 2 } },
+  ])("a lost and restored WebGL context renders the same $label pixels", async ({ zoom, grid }) => {
     const canvas = makeCanvas(256, 128);
     const renderer = makeRenderer(canvas);
     renderer.setWorld(world);
-    renderer.setCamera({ x: 0, y: 0, zoom: 1 });
+    renderer.setCamera({ x: 0, y: 0, zoom });
+    renderer.setGrid(grid);
     renderer.render();
     const before = readCanvas(canvas);
     const lose = canvas.getContext("webgl2")?.getExtension("WEBGL_lose_context");

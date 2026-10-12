@@ -3,6 +3,7 @@
 /// <reference lib="dom" />
 
 import type { ContentRef } from "@studio/world-model";
+import { gridFragmentSource, gridVertexSource } from "./grid-shaders.js";
 import { CHUNK_SIZE, visibleChunks } from "../camera/camera.js";
 import type { Camera, ChunkCoord, Size } from "../camera/camera.js";
 import { filterTilesPerPixel } from "../chunk/box-filter.js";
@@ -79,6 +80,15 @@ export interface SpriteSheetEntry {
 export interface SpriteAtlasSource {
   readonly pages: readonly Uint8Array[];
   readonly index: { readonly pageSize: number; readonly entries: readonly SpriteSheetEntry[] };
+}
+
+export interface MapGrid {
+  /** Solid boundaries every this many tiles; dashed boundaries every tile. */
+  readonly spacing: number;
+  /** Shared opacity, from 0 to 1. */
+  readonly opacity: number;
+  /** Backing pixels per CSS pixel, for one CSS pixel strokes and 2 / 3 CSS pixel dashes. */
+  readonly density: number;
 }
 
 export interface MapRendererOptions {
@@ -167,6 +177,8 @@ export interface MapRenderer {
   /** The viewport is the canvas backing store (`canvas.width` × `canvas.height`). */
   readonly setCamera: (camera: Camera) => void;
   readonly setLayers: (layers: ChunkLayers) => void;
+  /** GPU overlay at sprite zoom, composed while presenting the existing frame cache; null disables it. */
+  readonly setGrid: (grid: MapGrid | null) => void;
   /**
    * The sprite atlas, uploaded at once and kept until replaced; null removes it. Frame-important blocks (a stored
    * frame) whose content ID has a tile sheet are drawn from it in sprite mode. Throws when the GPU cannot hold it.
@@ -630,6 +642,9 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   // object sprite, or with wires shown), so a renderer that never draws one never compiles it.
   let objectProgram: Program<(typeof OBJECT_UNIFORMS)[number]> | null = null;
   let wireProgram: Program<(typeof WIRE_UNIFORMS)[number]> | null = null;
+  const gridUniforms = ["uCamera", "uViewport", "uWorld", "uZoom", "uSpacing", "uOpacity", "uDensity", "uScene"] as const;
+  let gridProgram: Program<(typeof gridUniforms)[number]> | null = null;
+  let grid: MapGrid | null = null;
   let parallelCompile = parallelShaderCompile(gl);
   // The timer that asks whether the background link is done; 0 when none is pending.
   let linkPoll = 0;
@@ -1630,6 +1645,29 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     lastFrame = null;
   };
 
+  /** Replaces the final framebuffer blit when enabled; cached terrain still redraws only its exposed strips. */
+  const presentGrid = (source: RenderableWorld, scene: WebGLTexture): void => {
+    if (grid === null) return;
+    gridProgram ??= link(gl, gridVertexSource, gridFragmentSource, gridUniforms);
+    gl.useProgram(gridProgram.program);
+    const uniforms = gridProgram.uniforms;
+    gl.uniform2f(uniforms.uCamera, view.x, view.y);
+    gl.uniform2f(uniforms.uViewport, canvas.width, canvas.height);
+    gl.uniform2f(uniforms.uWorld, source.width, source.height);
+    gl.uniform1f(uniforms.uZoom, view.zoom);
+    gl.uniform1f(uniforms.uSpacing, grid.spacing);
+    gl.uniform1f(uniforms.uOpacity, grid.opacity);
+    gl.uniform1f(uniforms.uDensity, grid.density);
+    gl.activeTexture(gl.TEXTURE0 + UNIT_OVERVIEW);
+    gl.bindTexture(gl.TEXTURE_2D, scene);
+    gl.uniform1i(uniforms.uScene, UNIT_OVERVIEW);
+    gl.bindVertexArray(resources.emptyArray);
+    gl.disable(gl.BLEND);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    gl.bindVertexArray(null);
+    drawCalls++;
+  };
+
   /** `uploadBudget` chunks at most, and none after `uploadMilliseconds` once one was uploaded. */
   const drawFrame = (uploadBudget: number, uploadMilliseconds: number, wait: boolean): void => {
     if (disposed || gl.isContextLost()) return;
@@ -1834,12 +1872,13 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     };
 
     const { width, height } = viewport;
-    if (target === null && scheduled) {
+    const gridVisible = grid !== null && grid.opacity > 0 && view.zoom >= SPRITE_MIN_ZOOM;
+    if (target === null && (scheduled || gridVisible)) {
       // The previous frame shifted by whole pixels, when only the camera moved since (by less than the canvas).
       const pixelX = Math.round(view.x * view.zoom);
       const pixelY = Math.round(view.y * view.zoom);
       const previous = lastFrame;
-      const shift = previous !== null && !loading.pending && previous.version === frameVersion
+      const shift = scheduled && previous !== null && !loading.pending && previous.version === frameVersion
         && textureUploads + atlasUploads === uploadsAtStart && previous.zoom === view.zoom && previous.sprites === (spriteChunk !== null)
         && previous.width === width && previous.height === height
         && Math.abs(pixelX - previous.pixelX) < width && Math.abs(pixelY - previous.pixelY) < height
@@ -1877,12 +1916,17 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
         gl.clear(gl.COLOR_BUFFER_BIT);
         drawChunks();
       }
-      gl.bindFramebuffer(gl.READ_FRAMEBUFFER, output.framebuffer);
-      gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
-      gl.blitFramebuffer(0, 0, width, height, 0, 0, width, height, gl.COLOR_BUFFER_BIT, gl.NEAREST);
-      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      if (gridVisible) {
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        presentGrid(source, output.texture);
+      } else {
+        gl.bindFramebuffer(gl.READ_FRAMEBUFFER, output.framebuffer);
+        gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
+        gl.blitFramebuffer(0, 0, width, height, 0, 0, width, height, gl.COLOR_BUFFER_BIT, gl.NEAREST);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      }
       frameCurrent = 1 - frameCurrent;
-      lastFrame = loading.pending ? null : {
+      lastFrame = loading.pending || !scheduled ? null : {
         pixelX, pixelY, zoom: view.zoom, sprites: spriteChunk !== null, version: frameVersion, width, height,
       };
     } else {
@@ -2030,6 +2074,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     spriteProgram = null;
     objectProgram = null;
     wireProgram = null;
+    gridProgram = null;
     objectUploaded = null;
     // A background link died with the context; the next sprite frame (or atlas) starts another.
     endSpriteLink(parallelCompile !== null);
@@ -2141,6 +2186,14 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       }
       schedule();
     },
+    setGrid: (next) => {
+      if (next !== null && (!Number.isInteger(next.spacing) || next.spacing < 2
+        || !Number.isFinite(next.opacity) || next.opacity < 0 || next.opacity > 1
+        || !Number.isFinite(next.density) || next.density <= 0)) throw new RangeError("Invalid map grid settings");
+      if (grid?.spacing === next?.spacing && grid?.opacity === next?.opacity && grid?.density === next?.density) return;
+      grid = next === null ? null : { ...next };
+      schedule();
+    },
     setLayers: (next) => {
       const bits = layerBits(next);
       if (bits !== layers && !gl.isContextLost()) invalidateOverview();
@@ -2186,6 +2239,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
         if (spriteLinking !== null) gl.deleteProgram(spriteLinking.program);
         if (objectProgram !== null) gl.deleteProgram(objectProgram.program);
         if (wireProgram !== null) gl.deleteProgram(wireProgram.program);
+        if (gridProgram !== null) gl.deleteProgram(gridProgram.program);
         if (halfAtlasProgram !== null) gl.deleteProgram(halfAtlasProgram.program);
         gl.deleteTexture(resources.palette);
         gl.deleteTexture(resources.rules);

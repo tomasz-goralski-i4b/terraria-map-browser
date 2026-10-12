@@ -10,7 +10,8 @@ import { finishBrush, redoBrush, setBrushSize, undoBrush, useBrushStore } from "
 import { WORLD_GROUP_IDS } from "../panels/world-fields.js";
 import { cancelArea, copySelection, placePaste, startPaste, useAreaStore } from "../world/area-session.js";
 import { MAX_AREA_TILES } from "../world/area-clipboard.js";
-import { resetLayout, useLayoutStore, type ThemeChoice } from "./layout-store.js";
+import { GRID_MODES, resetLayout, useLayoutStore, type ThemeChoice } from "./layout-store.js";
+import { CUSTOM_GRID_INPUT_ID } from "../panels/GridPanel.js";
 import { getMapController, useViewStore, type MapLayers, type ToolId } from "./view-store.js";
 
 export type CommandGroup = "File" | "Edit" | "View" | "Layers" | "Tools" | "Assets" | "Help";
@@ -162,6 +163,8 @@ export function useCommands(): Command[] {
   const setDockHidden = useLayoutStore((state) => state.setDockHidden);
   const theme = useLayoutStore((state) => state.theme);
   const setTheme = useLayoutStore((state) => state.setTheme);
+  const grid = useLayoutStore((state) => state.grid);
+  const setGrid = useLayoutStore((state) => state.setGrid);
   const tool = useViewStore((state) => state.tool);
   const setTool = useViewStore((state) => state.setTool);
   const statsVisible = useViewStore((state) => state.statsVisible);
@@ -272,6 +275,20 @@ export function useCommands(): Command[] {
       },
     })),
     { id: "view.reset", group: "View", label: "Reset layout", icon: "reset", enabled: true, run: resetLayout },
+    ...GRID_MODES.map((mode): Command => ({
+      id: `view.grid.${String(mode)}`, group: "View", label: mode === "off" ? "Off" : mode === "custom" ? "Custom…" : String(mode),
+      enabled: true, checked: grid.mode === mode,
+      run: () => {
+        setGrid({ mode });
+        if (mode === "custom") {
+          const layout = useLayoutStore.getState();
+          layout.setDockHidden(false);
+          layout.setDockTab("view");
+          layout.setSectionOpen("grid", true);
+          window.requestAnimationFrame(() => { document.getElementById(CUSTOM_GRID_INPUT_ID)?.focus(); });
+        }
+      },
+    })),
     {
       id: "view.worldExpand", group: "View", label: "Expand all World groups", icon: "expandAll", enabled: true,
       run: () => {

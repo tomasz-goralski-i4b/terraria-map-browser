@@ -45,6 +45,24 @@ test("a fresh browser starts with the default layout", () => {
   expect(state.chestView).toBe("grid");
 });
 
+test("grid spacing, custom spacing and opacity survive a reload", () => {
+  const actions = useLayoutStore.getState();
+  actions.setGrid({ mode: "custom", customSpacing: 12, opacity: 45 });
+  hydrateLayout(storage);
+  expect(useLayoutStore.getState().grid).toEqual({ mode: "custom", customSpacing: 12, opacity: 45 });
+  useLayoutStore.getState().setGrid({ mode: "off" });
+  hydrateLayout(storage);
+  expect(useLayoutStore.getState().grid).toEqual({ mode: "off", customSpacing: 12, opacity: 45 });
+});
+
+test("corrupt grid settings fall back independently and reset restores an off grid", () => {
+  storage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify({ grid: { mode: 5, customSpacing: 1.5, opacity: 120 } }));
+  hydrateLayout(storage);
+  expect(useLayoutStore.getState().grid).toEqual({ mode: 5, customSpacing: 10, opacity: 30 });
+  resetLayout();
+  expect(useLayoutStore.getState().grid.mode).toBe("off");
+});
+
 test("section, dock and column changes survive a reload", () => {
   const actions = useLayoutStore.getState();
   actions.setSectionOpen("world", false);

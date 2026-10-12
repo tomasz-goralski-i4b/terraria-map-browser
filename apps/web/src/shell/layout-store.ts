@@ -1,7 +1,7 @@
 import { create } from "zustand";
 
 /** The dock sections, in display order. */
-export const SECTION_IDS = ["world", "layers", "inspector", "content", "entities", "swatches"] as const;
+export const SECTION_IDS = ["world", "layers", "grid", "inspector", "content", "entities", "swatches"] as const;
 export type SectionId = (typeof SECTION_IDS)[number];
 
 /** The dock's tabs: what the world is (properties, content, entities), what is shown (layers) and what is painted. */
@@ -9,11 +9,29 @@ export const DOCK_TABS = ["world", "view", "swatches"] as const;
 export type DockTab = (typeof DOCK_TABS)[number];
 /** Which tab each section lives in; the Inspector is under the tabs, visible with either. */
 export const SECTION_TAB: Readonly<Record<Exclude<SectionId, "inspector">, DockTab>> = {
-  layers: "view", world: "world", content: "world", entities: "world", swatches: "swatches",
+  layers: "view", grid: "view", world: "world", content: "world", entities: "world", swatches: "swatches",
 };
 
 export type ThemeChoice = "system" | "dark" | "light";
 export type ChestView = "grid" | "list";
+
+export const GRID_MODES = ["off", 3, 5, 10, "custom"] as const;
+export type GridMode = (typeof GRID_MODES)[number];
+export interface GridSettings {
+  readonly mode: GridMode;
+  readonly customSpacing: number;
+  readonly opacity: number;
+}
+
+function parseGrid(value: unknown): GridSettings {
+  const stored = isRecord(value) ? value : {};
+  const { mode, customSpacing, opacity } = stored;
+  return {
+    mode: GRID_MODES.find((choice) => choice === mode) ?? "off",
+    customSpacing: typeof customSpacing === "number" && Number.isInteger(customSpacing) && customSpacing >= 2 && customSpacing <= 1000 ? customSpacing : 10,
+    opacity: typeof opacity === "number" && Number.isFinite(opacity) && opacity >= 0 && opacity <= 100 ? opacity : 30,
+  };
+}
 
 export interface ColumnLayout {
   readonly hidden?: boolean;
@@ -22,6 +40,7 @@ export interface ColumnLayout {
 
 /** Per-browser layout: what the user arranged, never world data. */
 export interface Layout {
+  readonly grid: GridSettings;
   readonly sections: Readonly<Record<SectionId, boolean>>;
   /** Collapsible groups inside sections, keyed `<section>/<group>`; absent means open. */
   readonly groups: Readonly<Record<string, boolean>>;
@@ -40,7 +59,8 @@ export interface Layout {
 }
 
 export const DEFAULT_LAYOUT = {
-  sections: { world: true, layers: true, inspector: true, content: false, entities: false, swatches: true },
+  sections: { world: true, layers: true, grid: true, inspector: true, content: false, entities: false, swatches: true },
+  grid: { mode: "off", customSpacing: 10, opacity: 30 },
   groups: {},
   dockWidth: 320,
   dockHidden: false,
@@ -64,6 +84,7 @@ export interface LayoutStorage {
 }
 
 export interface LayoutState extends Layout {
+  readonly setGrid: (settings: Partial<GridSettings>) => void;
   readonly setSectionOpen: (id: SectionId, open: boolean) => void;
   readonly setGroupOpen: (key: string, open: boolean) => void;
   /** Opens or closes several groups at once (Expand all / Collapse all). */
@@ -126,6 +147,7 @@ function parseLayout(text: string | null): Layout {
   const { dockWidth, dockHidden, dockTab, inspectorHeight, theme, inspectorShowAll, chestView } = value;
   return {
     sections,
+    grid: parseGrid(value["grid"]),
     groups: booleans(value["groups"]),
     dockWidth: typeof dockWidth === "number" && Number.isFinite(dockWidth) ? clampDockWidth(dockWidth) : DEFAULT_LAYOUT.dockWidth,
     dockHidden: typeof dockHidden === "boolean" ? dockHidden : DEFAULT_LAYOUT.dockHidden,
@@ -153,9 +175,9 @@ function browserStorage(): LayoutStorage | null {
 let storage: LayoutStorage | null = null;
 
 function save(layout: Layout): void {
-  const { sections, groups, dockWidth, dockHidden, dockTab, inspectorHeight, columns, theme, inspectorShowAll, chestView } = layout;
+  const { sections, groups, dockWidth, dockHidden, dockTab, inspectorHeight, columns, theme, inspectorShowAll, chestView, grid } = layout;
   try {
-    storage?.setItem(LAYOUT_STORAGE_KEY, JSON.stringify({ sections, groups, dockWidth, dockHidden, dockTab, inspectorHeight, columns, theme, inspectorShowAll, chestView }));
+    storage?.setItem(LAYOUT_STORAGE_KEY, JSON.stringify({ sections, groups, dockWidth, dockHidden, dockTab, inspectorHeight, columns, theme, inspectorShowAll, chestView, grid }));
   } catch {
     // Private mode, quota or blocked storage: the layout still works for this visit.
   }
@@ -168,6 +190,9 @@ export const useLayoutStore = create<LayoutState>()((set, get) => {
   };
   return {
     ...defaultLayout(),
+    setGrid: (settings) => {
+      update({ grid: parseGrid({ ...get().grid, ...settings }) });
+    },
     setSectionOpen: (id, open) => {
       update({ sections: { ...get().sections, [id]: open } });
     },
