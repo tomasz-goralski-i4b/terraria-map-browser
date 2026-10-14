@@ -26,11 +26,15 @@ test("startup loads a synthetic world and HTTP Images directory without pickers,
   await expect.poll(() => useAppStore.getState().summary?.fileName, { timeout: 30000 }).toBe("ForestWorkshop.wld");
   await expect.poll(() => useAssetStore.getState().status.kind, { timeout: 30000 }).toBe("ready");
   await expect.element(page.getByLabelText("World map")).toBeVisible();
+  await expect.poll(() => getMapController()).not.toBeNull();
   getMapController()?.zoomTo(16);
-  await expect.poll(() => useViewStore.getState().zoom).toBeCloseTo(16);
+  await expect.poll(() => useViewStore.getState().zoom, { timeout: 30000 }).toBeCloseTo(16);
   await expect.poll(() => getMapController()?.stats().spritesPreparing, { timeout: 30000 }).toBe(false);
   getMapController()?.renderNow();
-  await expect.element(page.getByLabelText("Viewer performance")).toHaveTextContent("sprites");
+  await expect.poll(() => getMapController()?.stats().framedTiles, { timeout: 30000 }).toBeGreaterThan(0);
+  expect(getMapController()?.stats().atlasUploads).toBeGreaterThan(0);
+  await expect.element(page.getByLabelText("Viewer performance")).toBeVisible();
+  await expect.poll(() => document.querySelector('[aria-label="Viewer performance"]')?.textContent).toContain("sprites");
   const benchmark = window.__studioBench;
   expect(benchmark).toBeDefined();
   if (benchmark === undefined) throw new Error("Dev benchmark unavailable");
