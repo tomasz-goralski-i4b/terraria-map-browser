@@ -57,20 +57,26 @@ describe("liquid sprites", () => {
     expect(liquidBleed(7, 7, water, water, water)).toBeNull();
   });
 
-  test("shimmer shows its measured surface rows, body and sparkles (G: in-game screenshot)", () => {
-    expect(shimmerPixel(0, 3, 5)).toEqual([163, 118, 246]);
-    expect(shimmerPixel(1, 3, 5)).toEqual([234, 108, 255]);
-    expect(shimmerPixel(3, 3, 5)).toEqual([199, 108, 255]);
-    // The body, except at its sparkles: about one pixel in 61, the same at every frame.
+  test("shimmer's surface is a rainbow along x; its body has sparse fixed sparkles (G: in-game screenshot)", () => {
+    // The top row cycles every 64 pixels through 8 measured keyframes: cyan at 0, magenta at 24, peach at 48.
+    expect(shimmerPixel(0, 0, 5)).toEqual([159, 242, 255]);
+    expect(shimmerPixel(0, 24, 5)).toEqual([254, 111, 255]);
+    expect(shimmerPixel(0, 48, 5)).toEqual([255, 212, 240]);
+    expect(shimmerPixel(0, 64, 5)).toEqual(shimmerPixel(0, 0, 5));
+    // Halfway between two keyframes: their mean.
+    expect(shimmerPixel(0, 4, 5)).toEqual([158, 206, 255]);
+    // The second row is the saturated cycle; rows 2–3 halfway to the body.
+    expect(shimmerPixel(1, 24, 5)).toEqual([252, 114, 255]);
+    expect(shimmerPixel(2, 24, 5)).toEqual([204, 113, 244]);
     let sparkles = 0;
     for (let y = 0; y < 61; y++) for (let x = 0; x < 61; x++) {
       const pixel = shimmerPixel(8, x, y);
-      if (pixel.join() === "154,109,233") continue;
+      if (pixel.join() === "155,111,233") continue;
       expect(pixel).toEqual([222, 178, 255]);
       sparkles++;
     }
-    expect(sparkles).toBeGreaterThan(30);
-    expect(sparkles).toBeLessThan(100);
+    expect(sparkles).toBeGreaterThan(15);
+    expect(sparkles).toBeLessThan(70);
   });
 
   test("a liquid has its surface unless the tile above holds liquid, its own or flowing into its shape", () => {

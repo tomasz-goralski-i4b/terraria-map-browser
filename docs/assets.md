@@ -473,10 +473,11 @@ not observable:
 
 - **Sheet:** water `Liquid_0` (the forest style: the biome style depends on where the player stands, which a world does
   not record), lava `Liquid_1`, honey `Liquid_11`, always frame 0 (no animation). Shimmer's sheet is a grey mask the game colours
-  while drawing; the viewer draws shimmer in colours measured in an in-game screenshot (G, 2026-10-14): surface rows
-  (163, 118, 246), (234, 108, 255), (199, 108, 255) × 2, the body (154, 109, 233) with light sparkles (222, 178, 255)
-  at about one pixel in 61, fixed per world pixel by a hash (`shimmerPixel`; the game's sparkles move), cut to its fill
-  and through shapes like the others. Water, lava or honey whose sheet is not
+  while drawing; the viewer draws shimmer in colours measured in in-game screenshots (G, 2026-10-14): its surface is a
+  rainbow along x, the top row cycling every 64 world pixels through cyan, lilac, purple, magenta, pink, peach and pale
+  teal (`SHIMMER_TOP`), the second row through a more saturated cycle (`SHIMMER_SECOND`), rows 2–3 halfway from that to
+  the body (155, 111, 233), which has light sparkles (222, 178, 255) at about one pixel in 113, fixed per world pixel by
+  a hash (`shimmerPixel`; in the game both move); cut to its fill and through shapes like the others. Water, lava or honey whose sheet is not
   in the atlas keeps its map colour.
 - **Fill:** a tile with amount `a` (1–255) is filled `⌈16 · a / 255⌉` sprite pixels from its bottom (127 → 8, 255 →
   16); above that the liquid draws nothing.

@@ -2,7 +2,8 @@
 // the chunk pass is bit-exact: no tie-breaking can differ because (l*a + c*(255-a)) / 255 never has a .5 fraction.
 import { FILTER_SUBTILE } from "../chunk/box-filter.js";
 import {
-  LIQUID_BLEED, LIQUID_BODY_ROW, LIQUID_SPRITE_ALPHA, SHIMMER_BODY, SHIMMER_SPARKLE, SHIMMER_SPARKLE_PERIOD, SHIMMER_SURFACE,
+  LIQUID_BLEED, LIQUID_BODY_ROW, LIQUID_SPRITE_ALPHA, SHIMMER_BODY, SHIMMER_CYCLE, SHIMMER_SECOND, SHIMMER_SPARKLE, SHIMMER_SPARKLE_PERIOD,
+  SHIMMER_TOP,
 } from "../chunk/liquids.js";
 import { BLOCK_CELL_STRIDE } from "../framing/chunk-cells.js";
 import { NO_CELL } from "../framing/frame-block.js";
@@ -414,11 +415,26 @@ bool spriteSample(uint index, ivec2 texel, vec2 centre, out ivec4 color) {
 // The tile (world x, y) whose liquid is being sampled, for shimmer's sparkles; set by localColorAt.
 ivec2 liquidTile = ivec2(0);
 
+// Shimmer's surface keyframes (SHIMMER_TOP, SHIMMER_SECOND in ../chunk/liquids.ts).
+const ivec3 SHIMMER_TOP[${String(SHIMMER_TOP.length)}] = ivec3[${String(SHIMMER_TOP.length)}](${SHIMMER_TOP.map(glslColor).join(", ")});
+const ivec3 SHIMMER_SECOND[${String(SHIMMER_SECOND.length)}] = ivec3[${String(SHIMMER_SECOND.length)}](${SHIMMER_SECOND.map(glslColor).join(", ")});
+
+// A keyframe cycle at world x (cycleAt in ../chunk/liquids.ts); second picks SHIMMER_SECOND.
+ivec3 shimmerCycle(bool second, int x) {
+  int step = ${String(SHIMMER_CYCLE / SHIMMER_TOP.length)};
+  int at = ((x % ${String(SHIMMER_CYCLE)}) + ${String(SHIMMER_CYCLE)}) % ${String(SHIMMER_CYCLE)};
+  int index = at / step, f = at % step, next = (index + 1) % ${String(SHIMMER_TOP.length)};
+  ivec3 a = second ? SHIMMER_SECOND[index] : SHIMMER_TOP[index];
+  ivec3 b = second ? SHIMMER_SECOND[next] : SHIMMER_TOP[next];
+  return (a * (step - f) + b * f + step / 2) / step;
+}
+
 // Shimmer's colour at frame row row of world sprite pixel p (shimmerPixel in ../chunk/liquids.ts).
 ivec3 shimmerColor(int row, ivec2 p) {
-  if (row == 0) return ${glslColor(SHIMMER_SURFACE[0])};
-  if (row == 1) return ${glslColor(SHIMMER_SURFACE[1])};
-  if (row < 4) return ${glslColor(SHIMMER_SURFACE[2])};
+  if (row < 4) {
+    ivec3 cycle = shimmerCycle(row != 0, p.x);
+    return row < 2 ? cycle : (cycle + ${glslColor(SHIMMER_BODY)} + 1) >> 1;
+  }
   uint hash = uint(p.x) * 0x9e3779b1u ^ uint(p.y) * 0x85ebca77u;
   hash ^= hash >> 15u;
   return hash % ${String(SHIMMER_SPARKLE_PERIOD)}u == 0u ? ${glslColor(SHIMMER_SPARKLE)} : ${glslColor(SHIMMER_BODY)};

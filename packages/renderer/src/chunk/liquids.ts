@@ -96,14 +96,22 @@ export function liquidBleed(
 }
 
 /**
- * Shimmer's colours in sprite mode (G: measured in an in-game screenshot of a shimmer pool, 2026-10-14; its sheet is a
- * grey mask the game colours while drawing, which the viewer does not reproduce): the surface rows 0–3 and the body,
- * with light sparkles at about one pixel in SHIMMER_SPARKLE_PERIOD, fixed per world sprite pixel (no animation).
+ * Shimmer's colours in sprite mode (G: measured in in-game screenshots of a shimmer pool, 2026-10-14; its sheet is a grey
+ * mask the game colours while drawing, which the viewer does not reproduce). The surface is a rainbow along x: its top
+ * row cycles every SHIMMER_CYCLE world pixels through SHIMMER_TOP (cyan, lilac, purple, magenta, pink, peach, pale teal),
+ * the second row through the more saturated SHIMMER_SECOND, rows 2–3 halfway from that to the body. The body has light
+ * sparkles at about one pixel in SHIMMER_SPARKLE_PERIOD, fixed per world pixel (the game's move).
  */
-export const SHIMMER_SURFACE: readonly (readonly [number, number, number])[] = [[163, 118, 246], [234, 108, 255], [199, 108, 255], [199, 108, 255]];
-export const SHIMMER_BODY: readonly [number, number, number] = [154, 109, 233];
+export const SHIMMER_CYCLE = 64;
+export const SHIMMER_TOP: readonly (readonly [number, number, number])[] = [
+  [159, 242, 255], [156, 169, 255], [196, 129, 255], [254, 111, 255], [255, 116, 255], [255, 177, 254], [255, 212, 240], [194, 208, 240],
+];
+export const SHIMMER_SECOND: readonly (readonly [number, number, number])[] = [
+  [159, 185, 255], [155, 143, 255], [194, 128, 255], [252, 114, 255], [234, 137, 254], [252, 173, 253], [224, 212, 239], [172, 209, 241],
+];
+export const SHIMMER_BODY: readonly [number, number, number] = [155, 111, 233];
 export const SHIMMER_SPARKLE: readonly [number, number, number] = [222, 178, 255];
-export const SHIMMER_SPARKLE_PERIOD = 61;
+export const SHIMMER_SPARKLE_PERIOD = 113;
 
 /** Whether world sprite pixel (x, y) (16 per tile) of a shimmer body sparkles: a fixed hash of the position. */
 export function shimmerSparkles(x: number, y: number): boolean {
@@ -112,10 +120,24 @@ export function shimmerSparkles(x: number, y: number): boolean {
   return hash % SHIMMER_SPARKLE_PERIOD === 0;
 }
 
+/** A keyframe cycle at world x: linear between its keyframes, SHIMMER_CYCLE / keyframes pixels apart, rounded. */
+function cycleAt(keys: readonly (readonly [number, number, number])[], x: number): [number, number, number] {
+  const step = SHIMMER_CYCLE / keys.length;
+  const at = ((x % SHIMMER_CYCLE) + SHIMMER_CYCLE) % SHIMMER_CYCLE;
+  const index = Math.floor(at / step), f = at % step;
+  const a = keys[index] ?? [0, 0, 0], b = keys[(index + 1) % keys.length] ?? [0, 0, 0];
+  const mix = (k: 0 | 1 | 2): number => Math.floor((a[k] * (step - f) + b[k] * f + step / 2) / step);
+  return [mix(0), mix(1), mix(2)];
+}
+
 /** Shimmer's colour at frame row `row` (liquidSheetRow) of world sprite pixel (x, y). */
 export function shimmerPixel(row: number, x: number, y: number): readonly [number, number, number] {
-  const surface = SHIMMER_SURFACE[row];
-  if (surface !== undefined) return surface;
+  if (row === 0) return cycleAt(SHIMMER_TOP, x);
+  if (row === 1) return cycleAt(SHIMMER_SECOND, x);
+  if (row < 4) {
+    const second = cycleAt(SHIMMER_SECOND, x);
+    return [0, 1, 2].map((k) => (second[k as 0] + SHIMMER_BODY[k as 0] + 1) >> 1) as unknown as [number, number, number];
+  }
   return shimmerSparkles(x, y) ? SHIMMER_SPARKLE : SHIMMER_BODY;
 }
 
