@@ -559,7 +559,8 @@ stream:
   corner is cut to 16 pixels, reaching the next step's film, and no falling column is drawn (G: the game shows a cap
   of water on each step of a staircase with a short tail to the next);
 - on a **slope** slides along its surface and takes its downhill direction, so on a slope going down towards it the
-  stream turns back;
+  stream turns back: falling past the slope's low tip it goes on straight down, its column keeping its mirroring and
+  its edge (G: setup 4), with no film along the slope;
 - ends on entering **liquid** (it stops at the tile holding it), against a **solid block** ahead, at the world's edge,
   or after **100 steps**, fading out over the last 8 (the long drop fades about 98 tiles below its source).
 

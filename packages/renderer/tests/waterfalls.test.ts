@@ -178,6 +178,15 @@ describe("waterfall sprites", () => {
     expect(columns.map((s) => s.dy / 16)).toEqual([1]);
   });
 
+  test("past a slope going down towards it the column falls straight on: no slide film, no sideways jump (G)", () => {
+    const w = world(["~h....", "#.....", "......", "../...", "......", "######"]);
+    const sprites = waterfallSprites(w, { left: 0, top: 0, right: w.width, bottom: w.height });
+    // Steps: lip (1, 0), fall (2, 1), fall (2, 2), slide (2, 3), fall (1, 4), run…: one column, x 28–38, rows 1–4.
+    const columns = sprites.filter((s) => s.sy === 24);
+    expect(columns.map((s) => [s.dx, s.dy / 16, s.flip])).toEqual([[28, 1, true], [28, 2, true], [28, 3, true], [28, 4, true]]);
+    expect(sprites.filter((s) => s.width === 2)).toEqual([]);
+  });
+
   test("lava, honey and shimmer draw from Waterfall_1, Waterfall_14 and Waterfall_25; a left-flowing one is not mirrored", () => {
     expect(WATERFALL_SHEETS).toEqual([0, 1, 14, 25]);
     const w = world(["..hl#", "..###", ".....", "#####"]);
