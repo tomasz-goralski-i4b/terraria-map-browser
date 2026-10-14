@@ -66,6 +66,9 @@ export const SPRITE_STATE = {
 /** The missing-texture checkerboard: magenta and black squares, 2 × 2 per tile. Generated, not a game asset. */
 export const MISSING_SPRITE_COLORS: readonly (readonly [number, number, number])[] = [[255, 0, 255], [0, 0, 0]];
 
+/** uLiquidSheets state of a liquid drawn flat in its map colour, cut to its fill (shimmer: LIQUID_SHEETS). */
+export const LIQUID_FLAT = 2;
+
 /** Sprite pixels across one tile: a frame's cell is scaled into these. */
 const SPRITE_TILE_PIXELS = 16;
 
@@ -202,7 +205,8 @@ uniform float uSpriteStep;
 uniform int uSpriteLevel;
 uniform int uSpriteWeight;
 // Per CWM liquid kind 1–4 (docs/assets.md, "Liquids"): the atlas page, x and y of frame 0 of its Liquid_<n> sheet, and
-// 1 when it is drawn from it (0: no sheet in the atlas, or shimmer, which keeps its map colour). LIQUID_SHEETS.
+// 1 when it is drawn from it (0: no sheet in the atlas, the map colour; LIQUID_FLAT: its map colour, flat, cut to its
+// fill: shimmer). LIQUID_SHEETS.
 uniform ivec4 uLiquidSheets[4];
 const int LIQUID_ALPHA[4] = int[4](${LIQUID_SPRITE_ALPHA.map(String).join(", ")});
 #endif
@@ -402,9 +406,10 @@ bool spriteSample(uint index, ivec2 texel, vec2 centre, out ivec4 color) {
 // The liquid sprite pixel at sprite pixel sub of a tile filled fill pixels high (liquidSheetRow in ../chunk/liquids.ts):
 // frame 0 of the sheet at place from its top row at the liquid's top on a surface tile, its body rows under liquid;
 // its alpha scaled by the liquid's opacity. Transparent above the liquid.
-ivec4 liquidPixel(ivec4 place, int alpha, int fill, bool surface, ivec2 sub) {
+ivec4 liquidPixel(ivec4 place, int alpha, int fill, bool surface, ivec2 sub, ivec3 plain) {
   int top = ${String(SPRITE_TILE_PIXELS)} - fill;
   if (sub.y < top) return ivec4(0);
+  if (place.w == ${String(LIQUID_FLAT)}) return ivec4(plain, (255 * alpha + 127) / 255);
   int depth = sub.y - top;
   int row = surface ? depth : ${String(LIQUID_BODY_ROW)} + depth % ${String(SPRITE_TILE_PIXELS - LIQUID_BODY_ROW)};
   ivec4 color = ivec4(round(atlasTexel(place.yz, place.yz + ivec2(sub.x, row), place.x) * 255.0));
@@ -414,13 +419,13 @@ ivec4 liquidPixel(ivec4 place, int alpha, int fill, bool surface, ivec2 sub) {
 
 // A liquid's sprite over the footprint of a screen pixel centred on sprite pixel position centre, as spriteSample
 // averages a block's: one sample is liquidPixel at the centre.
-ivec4 liquidSample(ivec4 place, int alpha, int fill, bool surface, vec2 centre) {
+ivec4 liquidSample(ivec4 place, int alpha, int fill, bool surface, vec2 centre, ivec3 plain) {
   int count = uSpriteSamples;
-  if (count == 1) return liquidPixel(place, alpha, fill, surface, samplePixel(centre, 0, 0));
+  if (count == 1) return liquidPixel(place, alpha, fill, surface, samplePixel(centre, 0, 0), plain);
   ivec4 sum = ivec4(0);
   for (int y = 0; y < count; y++) {
     for (int x = 0; x < count; x++) {
-      ivec4 sampled = liquidPixel(place, alpha, fill, surface, samplePixel(centre, x, y));
+      ivec4 sampled = liquidPixel(place, alpha, fill, surface, samplePixel(centre, x, y), plain);
       sum += ivec4(sampled.rgb * sampled.a, sampled.a);
     }
   }
@@ -434,7 +439,22 @@ ivec4 drawLiquid(uint kind, int amount, bool surface, vec2 centre, ivec4 below, 
   ivec4 sheet = uLiquidSheets[kind - 1u];
   if (sheet.w == 0) return below;
   int fill = (amount * ${String(SPRITE_TILE_PIXELS)} + 254) / 255;
-  return over(liquidSample(sheet, alpha, fill, surface, centre), below);
+  return over(liquidSample(sheet, alpha, fill, surface, centre, uLiquids[kind - 1u]), below);
+}
+
+// Whether the liquid at texel is valid (kind 1–4 with an amount).
+bool hasLiquid(ivec2 texel) {
+  uint kind = plane8(texel, ${String(PLANES_8.liquid)});
+  return kind >= 1u && kind <= 4u && plane8(texel, ${String(PLANES_8.liquidAmount)}) != 0u;
+}
+
+// Whether a liquid tile at texel shows its surface (liquidHasSurface in ../chunk/liquids.ts): not under liquid, nor under
+// a half block or slope that holds liquid flowing in from its upper or side neighbours.
+bool liquidSurfaceAt(ivec2 texel) {
+  ivec2 above = texel - ivec2(1, 0);
+  if (hasLiquid(above)) return false;
+  if ((uPresent & ${String(PRESENT.shape)}) == 0 || plane8(above, ${String(PLANES_8.shape)}) == 0u) return true;
+  return !hasLiquid(above - ivec2(1, 0)) && !hasLiquid(above - ivec2(0, 1)) && !hasLiquid(above + ivec2(0, 1));
 }
 
 // The liquid a tile shows in sprite mode, false for none: its own (kind 1–4, amount, surface where the tile above
@@ -461,7 +481,7 @@ bool tileLiquid(ivec2 texel, out uint kind, out int amount, out bool surface, ou
   if (kinds[3] != 0u) {
     kind = kinds[3];
     amount = amounts[3];
-    surface = kinds[0] == 0u;
+    surface = liquidSurfaceAt(texel);
     return true;
   }
   if ((uPresent & ${String(PRESENT.shape)}) == 0 || plane8(texel, ${String(PLANES_8.shape)}) == 0u) return false;
@@ -474,7 +494,7 @@ bool tileLiquid(ivec2 texel, out uint kind, out int amount, out bool surface, ou
   int side = amounts[2] > amounts[1] ? 2 : 1;
   kind = kinds[side];
   amount = amounts[side];
-  surface = true;
+  surface = liquidSurfaceAt(texel);
   return kind != 0u;
 }
 

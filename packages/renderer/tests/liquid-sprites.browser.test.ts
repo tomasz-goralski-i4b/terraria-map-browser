@@ -2,7 +2,7 @@
 // liquid against synthetic Liquid_0/1/11 sheets; what lies behind shows through; the liquids toggle removes exactly
 // the liquid pixels.
 import { afterEach, describe, expect, test } from "vitest";
-import { LIQUID_SHEETS, LIQUID_SPRITE_ALPHA, createMapRenderer, liquidFillPixels, liquidSheetRow, renderChunk } from "../src/index.js";
+import { LIQUID_SHEETS, LIQUID_SPRITE_ALPHA, createMapRenderer, liquidColors, liquidFillPixels, liquidSheetRow, renderChunk } from "../src/index.js";
 import type { SpriteSheetEntry, ChunkLayers, MapRenderer, RenderableWorld, SpriteAtlasSource } from "../src/index.js";
 
 const created: MapRenderer[] = [];
@@ -103,6 +103,8 @@ function over(top: Rgba, below: Rgba): Rgba {
 }
 
 const ZOOM = 16;
+/** Shimmer's map colour (placeholder palette: the renderer's liquid colours without a map palette). */
+const SHIMMER_COLOR: Rgba = [...(liquidColors()[SHIMMER] ?? [0, 0, 0]).slice(0, 3), 255] as unknown as Rgba;
 const ALL: ChunkLayers = { background: true, walls: true, blocks: true, liquids: true };
 
 function pixelAt(pixels: ArrayLike<number>, x: number, y: number): Rgba {
@@ -114,7 +116,8 @@ function pixelAt(pixels: ArrayLike<number>, x: number, y: number): Rgba {
  * The expected canvas: map colours without liquids, then per liquid tile the frame-0 pixel of its sheet at the row
  * liquidSheetRow gives (surface when the tile above holds no liquid): opaque over the background (the back layer: the
  * modded wall and block here are opaque and hide it), then with its alpha scaled by the liquid's sprite alpha on top;
- * a liquid without a sheet (shimmer, or every liquid when `sheets` is false) its map colour as the map mode draws it.
+ * shimmer its flat map colour likewise; without the sheets (`sheets` false) the others their map colour as the map
+ * mode draws it.
  */
 function expectedCanvas(world: RenderableWorld, layers: ChunkLayers, sheets = true): Uint8Array {
   const behind = renderChunk(world as never, 0, 0, { surfaceY: world.surfaceY, layers: { ...layers, liquids: false } }).pixels;
@@ -132,9 +135,18 @@ function expectedCanvas(world: RenderableWorld, layers: ChunkLayers, sheets = tr
       const kind = kindAt(tx, ty);
       const amount = liquidAmount[tx * HEIGHT + ty] ?? 0;
       if (layers.liquids && kind !== 0 && amount !== 0) {
-        const sheet = sheets ? LIQUID_SHEETS[kind - 1] : null;
-        if (sheet === null || sheet === undefined) {
+        // Shimmer is drawn flat with or without the sheets; the others keep their map colours without them.
+        const sheet = sheets || LIQUID_SHEETS[kind - 1] === null ? LIQUID_SHEETS[kind - 1] : undefined;
+        if (sheet === undefined) {
           color = pixelAt(mapped, tx, ty);
+        } else if (sheet === null) {
+          // Shimmer: its map colour, flat, cut to the fill, in both layers.
+          const row = liquidSheetRow(py % ZOOM, liquidFillPixels(amount), true);
+          if (row !== null) {
+            const flat = SHIMMER_COLOR;
+            if (open(tx, ty)) color = flat;
+            color = over([flat[0], flat[1], flat[2], Math.floor((255 * (LIQUID_SPRITE_ALPHA[kind - 1] ?? 0) + 127) / 255)], color);
+          }
         } else {
           const row = liquidSheetRow(py % ZOOM, liquidFillPixels(amount), kindAt(tx, ty - 1) === 0);
           if (row !== null) {
@@ -192,7 +204,7 @@ describe("liquids in sprite mode", () => {
     expect(gone.slice(0, 8), `${String(gone.length)} pixels differ`).toEqual([]);
   });
 
-  test("without the liquid sheets every liquid keeps its map colour", () => {
+  test("without the liquid sheets water, lava and honey keep their map colours", () => {
     const world = liquidWorld();
     const found = differing(drawer(world, syntheticAtlas(false))(ALL), expectedCanvas(world, ALL, false));
     expect(found.slice(0, 8), `${String(found.length)} pixels differ`).toEqual([]);

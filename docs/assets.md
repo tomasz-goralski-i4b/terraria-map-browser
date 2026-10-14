@@ -472,23 +472,27 @@ How the viewer draws them (#240, `packages/renderer/src/chunk/liquids.ts`), all 
 not observable:
 
 - **Sheet:** water `Liquid_0` (the forest style: the biome style depends on where the player stands, which a world does
-  not record), lava `Liquid_1`, honey `Liquid_11`, always frame 0 (no animation). Shimmer keeps its map colour (its
-  sheet is a mask). A liquid whose sheet is not in the atlas keeps its map colour.
+  not record), lava `Liquid_1`, honey `Liquid_11`, always frame 0 (no animation). Shimmer is drawn in its flat map colour
+  (its sheet is a mask), cut to its fill and through shapes like the others. Water, lava or honey whose sheet is not
+  in the atlas keeps its map colour.
 - **Fill:** a tile with amount `a` (1–255) is filled `⌈16 · a / 255⌉` sprite pixels from its bottom (127 → 8, 255 →
   16); above that the liquid draws nothing.
 - **Surface:** a tile whose upper neighbour holds no liquid (any kind; outside the world counts as none) shows the frame
-  from its row 0 at the liquid's top, so the highlight follows the fill level. A tile under liquid shows only body rows
+  from its row 0 at the liquid's top, so the highlight follows the fill level. An upper neighbour that is a half block
+  or slope holding liquid (below) counts as liquid, so a pool along a slope has one surface line, at its top
+  (`liquidHasSurface`; G: lava and water pools, 2026-10-14). That check reads two tiles up; at a chunk's top row the
+  second lies outside the page apron and counts as no liquid. A tile under liquid shows only body rows
   (`4 + depth mod 12`), so no surface line runs through a pool.
 - **Half blocks and slopes:** the file stores no liquid in a shaped block, but the game fills the part its shape cuts
   away from the pool around it (G: in-game screenshot of a sand-floored pool, 2026-10-14). A half block or slope without
   liquid of its own shows, under its block sprite, the liquid above it (full, under liquid), else that of its fuller
   side neighbour (the left on a tie) at that neighbour's level, with the surface (`shapedTileLiquid`). The game's
-  `LiquidSlope_<n>` edge pieces are not drawn.
+  `LiquidSlope_<n>` edge pieces are not drawn. Seen in-game for water, lava and shimmer.
 - **Two layers (G):** in-game screenshots of a pool in the Color, White and Retro lighting modes (2026-10-14) show the
   water against the sky as its art's colour (body 11, 63, 193 for the art's 9, 61, 191 over sky 112, 158, 246), while
   plants under it stay visible, darkened. The viewer therefore draws the liquid twice: a **back layer** of its art,
   opaque, over the background (which it hides), under the walls, blocks and objects; and a **front layer** over them,
-  its alpha scaled by `LIQUID_SPRITE_ALPHA` — water 128 (chosen to match), lava 230, honey 191 (chosen) — so what lies
+  its alpha scaled by `LIQUID_SPRITE_ALPHA` — water 128 (chosen to match), lava 230, honey and shimmer 191 (chosen) — so what lies
   in front of the background shows through, tinted. In map colours (map mode, and below `SPRITE_MIN_ZOOM` in sprite mode) a liquid keeps
   the map rule, opacity `amount / 255`; from `SPRITE_MIN_ZOOM` to `SPRITE_FULL_ZOOM` its sprite fades in over that
   colour like a block sprite. The liquids layer toggle removes the liquid and nothing else.
@@ -521,7 +525,7 @@ Expected sheet sizes (consistent with the size arithmetic, confirmed only by the
 | Trees (5, 583–589, 596, 616, 634), palms (323), the giant mushroom (72) | trunk cells by ground, tops and branches by ground, zone and tree top variation, palm rows and lean, mushroom caps, in an object pass over the chunk pass (#238, "Trees") | wind sway, paint, lighting, the oasis palm rows |
 | Other variant sheets (`Tiles_2_Beach`, `Tiles_59_2`, …) | — | yes |
 | Wires and actuators | the `WiresNew` piece the four same-colour side neighbours give, red to yellow, the actuator on top, over everything in a wire pass; the colour overlay below `SPRITE_MIN_ZOOM` (#241, "Wires") | animation, the wiring tools' translucency modes, the other `WiresNew` rows |
-| Liquids | water, lava and honey from frame 0 of their `Liquid_<n>` sheet, cut to the fill level, with the surface piece where the tile above holds no liquid, translucent over what lies behind (#240, "Liquids"); shimmer in its map colour | animation (waves, lava glow), biome water styles, the slope pieces (`LiquidSlope_<n>`), waterfalls, lighting |
+| Liquids | water, lava and honey from frame 0 of their `Liquid_<n>` sheet, cut to the fill level, with one surface line at the top of a pool, filling the cut-away part of half blocks and slopes, an opaque back layer over the background and a translucent front layer over what lies in front of it (#240, "Liquids"); shimmer flat in its map colour | animation (waves, lava glow), biome water styles, the slope pieces (`LiquidSlope_<n>`), waterfalls, lighting |
 | Paint, actuated/inactive tint, illumination | — | yes |
 
 ## Tile framing

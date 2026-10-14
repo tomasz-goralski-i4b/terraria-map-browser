@@ -1,7 +1,7 @@
 import { afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import { createWorld, type BlockShape, type CanonicalWorld } from "@studio/world-model";
 import {
-  CHUNK_SIZE, LIQUID_SPRITE_ALPHA, NO_CELL, SPRITE_MIN_ZOOM, createBlockFraming, liquidFillPixels, liquidSheetRow, shapedTileLiquid, createChunkCellCache, createChunkWallCellCache,
+  CHUNK_SIZE, LIQUID_SPRITE_ALPHA, NO_CELL, SPRITE_MIN_ZOOM, createBlockFraming, liquidFillPixels, liquidHasSurface, liquidSheetRow, shapedTileLiquid, createChunkCellCache, createChunkWallCellCache,
   createMapRenderer, loadFramingDatabase, renderChunk, shapedColumns, terrariaFramingData,
 } from "../src/index.js";
 import type {
@@ -224,12 +224,13 @@ function waterPixel(amount: number, surface: boolean, sx: number, sy: number, fr
 describe("self-framed blocks in sprite mode", () => {
   test("a half block or slope beside or below water holds the water in its cut-away part, under the block", () => {
     const world = createWorld(8, 4);
-    stamp(world, 0, 0, ["........", "..H.T.N.", "dHdddddd", "ssssssss"]);
+    stamp(world, 0, 0, ["........", "..H.T.N.", "dHdddd.d", "ssssssss"]);
     // No walls: the cut-away parts show the background, which the water's back layer hides.
     for (let x = 0; x < world.width; x++) {
       for (let y = 0; y < world.height; y++) {
-        const { wall: _wall, ...rest } = world.tileAt(x, y);
-        world.setTile(x, y, rest);
+        const tile = { ...world.tileAt(x, y) };
+        delete tile.wall;
+        world.setTile(x, y, tile);
       }
     }
     const pour = (x: number, y: number, amount: number): void => {
@@ -238,6 +239,9 @@ describe("self-framed blocks in sprite mode", () => {
     pour(0, 1, 255);
     pour(1, 1, 255);
     pour(3, 1, 127);
+    // Water under the slope at (6, 1), which holds the water to its right: no surface line under it.
+    pour(7, 1, 255);
+    pour(6, 2, 255);
     const { pixels } = draw(world);
     const base = expectedCanvas(world);
     const { width, height } = world;
@@ -254,7 +258,9 @@ describe("self-framed blocks in sprite mode", () => {
         let liquid: { amount: number; surface: boolean } | null = null;
         let open = false;
         if (own.amount !== 0) {
-          liquid = { amount: own.amount, surface: liquidAt(tx, ty - 1).kind === 0 };
+          const aboveShape = world.planes.shape[tx * height + ty - 1] ?? 0;
+          const surface = liquidHasSurface(liquidAt(tx, ty - 1), ty === 0 ? 0 : aboveShape, liquidAt(tx, ty - 2), liquidAt(tx - 1, ty - 1), liquidAt(tx + 1, ty - 1));
+          liquid = { amount: own.amount, surface };
           open = true;
         } else if (shape !== 0) {
           const column = shapedColumns(shape)[Math.floor(sx / 2)];
@@ -268,10 +274,11 @@ describe("self-framed blocks in sprite mode", () => {
       }
     }
     expectClose(pixels, expected, world.width * ZOOM);
-    // Sanity: the slope at (4, 1) holds the half-full water of its left neighbour; the lone one at (6, 1) holds none.
+    // Sanity: the slope at (4, 1) holds the half-full water of its left neighbour; the water under the slope at (6, 1)
+    // shows body rows at its top, not the surface highlight (the expected canvas checks the pixels).
     const read = (x: number, y: number): Rgba => pixelAt(pixels, (y * width * ZOOM + x) * 4);
     expect(read(4 * ZOOM + 14, ZOOM + 12)).not.toEqual(pixelAt(base, ((ZOOM + 12) * width * ZOOM + 4 * ZOOM + 14) * 4));
-    expect(read(6 * ZOOM + 1, ZOOM + 12)).toEqual(pixelAt(base, ((ZOOM + 12) * width * ZOOM + 6 * ZOOM + 1) * 4));
+    expect(liquidHasSurface(liquidAt(6, 1), world.planes.shape[6 * height + 1] ?? 0, liquidAt(6, 0), liquidAt(5, 1), liquidAt(7, 1))).toBe(false);
   });
 
   test("blocks show their framed cell; half blocks and slopes are cut by the shape table over the wall behind", () => {

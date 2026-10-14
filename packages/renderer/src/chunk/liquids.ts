@@ -5,7 +5,7 @@
 /**
  * The `Liquid_<n>` sheet of CWM liquid kinds 1–4 (water, lava, honey, shimmer), measured in the art (S): Liquid_0 is
  * the forest water, Liquid_1 lava, Liquid_11 honey. Shimmer's Liquid_14 is a grey mask the game colours while drawing,
- * so shimmer keeps its map colour (null). Water is always the forest style: the biome water styles 2–10, 12 and 13
+ * so shimmer is drawn in its flat map colour (null), cut to its fill and through shapes like the others. Water is always the forest style: the biome water styles 2–10, 12 and 13
  * depend on where the player stands, which a world file does not record.
  */
 export const LIQUID_SHEETS: readonly (number | null)[] = [0, 1, 11, null];
@@ -16,7 +16,7 @@ export const LIQUID_SHEETS: readonly (number | null)[] = [0, 1, 11, null];
  * Water's half is chosen to match in-game screenshots (plants stay visible under water, darkened); lava and honey are
  * chosen (open question).
  */
-export const LIQUID_SPRITE_ALPHA: readonly number[] = [128, 230, 191, 255];
+export const LIQUID_SPRITE_ALPHA: readonly number[] = [128, 230, 191, 191];
 
 /** Sprite pixels across one tile. */
 const TILE_PIXELS = 16;
@@ -57,4 +57,16 @@ export function shapedTileLiquid(above: TileLiquid, left: TileLiquid, right: Til
   if (above.kind !== 0 && above.amount !== 0) return { kind: above.kind, amount: 255, surface: false };
   const side = right.kind !== 0 && right.amount > (left.kind === 0 ? 0 : left.amount) ? right : left;
   return side.kind !== 0 && side.amount !== 0 ? { kind: side.kind, amount: side.amount, surface: true } : null;
+}
+
+/**
+ * Whether a liquid tile shows the surface piece: not when the tile above holds liquid, its own or, for a half block
+ * or slope (`aboveShape` not 0) without its own, the liquid flowing into its shape from its neighbours (`shapedTileLiquid`
+ * of the tile above: its upper, left and right neighbours). So a pool along a slope has one surface, at its top.
+ */
+export function liquidHasSurface(
+  above: TileLiquid, aboveShape: number, aboveAbove: TileLiquid, aboveLeft: TileLiquid, aboveRight: TileLiquid,
+): boolean {
+  if (above.kind !== 0 && above.amount !== 0) return false;
+  return aboveShape === 0 || shapedTileLiquid(aboveAbove, aboveLeft, aboveRight) === null;
 }

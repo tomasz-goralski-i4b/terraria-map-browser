@@ -1,10 +1,10 @@
 // Liquid sprite rules (docs/assets.md, "Liquids"): the sheet of each liquid kind, the fill height of a liquid amount
 // and the sheet row a sprite pixel of a liquid tile reads.
 import { describe, expect, test } from "vitest";
-import { LIQUID_BODY_ROW, LIQUID_SHEETS, LIQUID_SPRITE_ALPHA, liquidFillPixels, liquidSheetRow, shapedTileLiquid } from "../src/index.js";
+import { LIQUID_BODY_ROW, LIQUID_SHEETS, LIQUID_SPRITE_ALPHA, liquidFillPixels, liquidHasSurface, liquidSheetRow, shapedTileLiquid } from "../src/index.js";
 
 describe("liquid sprites", () => {
-  test("water, lava and honey draw from Liquid_0, Liquid_1 and Liquid_11; shimmer keeps its map colour", () => {
+  test("water, lava and honey draw from Liquid_0, Liquid_1 and Liquid_11; shimmer is drawn flat in its map colour", () => {
     expect(LIQUID_SHEETS).toEqual([0, 1, 11, null]);
     expect(LIQUID_SPRITE_ALPHA.length).toBe(4);
     for (const alpha of LIQUID_SPRITE_ALPHA) expect(alpha).toBeGreaterThan(0);
@@ -39,5 +39,17 @@ describe("liquid sprites", () => {
     expect(shapedTileLiquid(none, { kind: 1, amount: 127 }, { kind: 2, amount: 200 })).toEqual({ kind: 2, amount: 200, surface: true });
     expect(shapedTileLiquid(none, { kind: 3, amount: 90 }, { kind: 1, amount: 90 })).toEqual({ kind: 3, amount: 90, surface: true });
     expect(shapedTileLiquid(none, none, none)).toBeNull();
+  });
+
+  test("a liquid has its surface unless the tile above holds liquid, its own or flowing into its shape", () => {
+    const none = { kind: 0, amount: 0 };
+    const water = { kind: 1, amount: 255 };
+    // Liquid above: no surface.
+    expect(liquidHasSurface(water, 0, none, none, none)).toBe(false);
+    // Air above: surface.
+    expect(liquidHasSurface(none, 0, water, water, water)).toBe(true);
+    // A slope above holding the liquid beside it: no surface; a dry slope above: surface.
+    expect(liquidHasSurface(none, 2, none, water, none)).toBe(false);
+    expect(liquidHasSurface(none, 2, none, none, none)).toBe(true);
   });
 });
