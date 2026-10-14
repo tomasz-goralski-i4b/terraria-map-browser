@@ -3,7 +3,9 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { test } from "node:test";
-import { compareSingleTileEdit, compareWorldBytes, runWriterDifferential } from "./writer.mjs";
+import { fileURLToPath } from "node:url";
+import { compareSingleTileEdit, compareWorldBytes, runCorruptionProbe, runWriterDifferential } from "./writer.mjs";
+import { execute } from "./cwm.mjs";
 
 function cwm() {
   const header = Buffer.from(JSON.stringify({ schemaVersion: 1, formatVersion: 326,
@@ -100,4 +102,56 @@ test("corrupt tile bytes, unintended edits and exporter errors fail with fixture
 test("the corruption probe flips a real tile byte and must trigger the normal comparator", async (t) => {
   const paths = await corpus(t);
   await assert.rejects(runWriterDifferential({ ...paths, execute: runners([]), corrupt: true }), /SCCO1.wld.*byte offset 161/);
+});
+test("negative control must not mistake an existing writer defect or process failure for success", async (t) => {
+  const paths = await corpus(t);
+  await runCorruptionProbe({ ...paths, execute: runners([]) });
+  for (const options of [{ corrupt: true }, { failure: true }, { missing: "unchanged.wld" }]) {
+    const invalid = await corpus(t);
+    await assert.rejects(runCorruptionProbe({ ...invalid, execute: runners([], options) }));
+  }
+});
+test("invalid manifests and absent fixture files fail before invoking any codec", async (t) => {
+  for (const worlds of [[], [{ file: "../SCCR2.wld" }], [{ file: "SCCR2.wld" }, { file: "sccr2.wld" }]]) {
+    const paths = await corpus(t); const calls = [];
+    await writeFile(join(paths.fixtures, "manifest.json"), JSON.stringify({ schemaVersion: 1, worlds }));
+    await assert.rejects(runWriterDifferential({ ...paths, execute: runners(calls) }), /manifest/i);
+    assert.equal(calls.length, 0);
+  }
+  const paths = await corpus(t); const calls = [];
+  await rm(join(paths.fixtures, "SCCR2.wld"));
+  await assert.rejects(runWriterDifferential({ ...paths, execute: runners(calls) }), /missing fixture SCCR2.wld/);
+  assert.equal(calls.length, 0);
+});
+test("writer artifacts must use fresh temporary directories", async (t) => {
+  const paths = await corpus(t);
+  await assert.rejects(runWriterDifferential({ ...paths, artifacts: join(import.meta.dirname, "writer-artifacts"), execute: runners([]) }), /Artifacts must be/);
+  await mkdir(paths.artifacts);
+  await assert.rejects(runWriterDifferential({ ...paths, execute: runners([]) }), /EEXIST/);
+});
+test("CI requires the writer crosscheck and its negative control after building the TS API", async () => {
+  const workflow = await readFile(new URL("../../.github/workflows/ci.yml", import.meta.url), "utf8");
+  const job = workflow.split("  cwm-compatibility:")[1].split("  verify:")[0];
+  assert.match(job, /run: node scripts\/compatibility\/writer.mjs\n/);
+  assert.match(job, /run: node scripts\/compatibility\/writer.mjs --corruption-probe/);
+  assert.ok(job.indexOf("pnpm -s typecheck") < job.indexOf("node --test"));
+  assert.doesNotMatch(job, /continue-on-error|paths-ignore/);
+});
+test("real TS save CLI publishes both saves and pre-save CWM, and refuses existing artifacts", async (t) => {
+  const paths = await corpus(t); await mkdir(paths.artifacts);
+  const cli = new URL("./save-world.mjs", import.meta.url);
+  const source = new URL("../../packages/test-fixtures/worlds/SCCR2.wld", import.meta.url);
+  await execute(process.execPath, [fileURLToPath(cli), fileURLToPath(source), paths.artifacts]);
+  const original = await readFile(join(paths.artifacts, "original.cwm"));
+  const expected = await readFile(join(paths.artifacts, "edited.cwm"));
+  const operation = JSON.parse(await readFile(join(paths.artifacts, "edit.json"), "utf8"));
+  assert.deepEqual(operation, { x: 129, y: 128, plane: "flags", mask: 1 });
+  assert.equal(compareSingleTileEdit(original, expected, operation), null);
+  for (const variant of ["unchanged", "edited"]) {
+    const saved = await readFile(join(paths.artifacts, `${variant}.wld`));
+    assert.equal(saved.readInt32LE(0), 326);
+    assert.ok(saved.length > 2_000_000);
+  }
+  await assert.rejects(execute(process.execPath, [fileURLToPath(cli), fileURLToPath(source), paths.artifacts]), /EEXIST/);
+  assert.deepEqual(await readFile(join(paths.artifacts, "original.cwm")), original);
 });

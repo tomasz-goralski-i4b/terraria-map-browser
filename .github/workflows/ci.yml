@@ -28,14 +28,18 @@ jobs:
           node-version-file: .node-version
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: node --test scripts/compatibility/cwm.test.mjs
       - name: Build independent exporters
         run: |
           dotnet restore dotnet/Terraria.WorldInspector --locked-mode
           dotnet build dotnet/Terraria.WorldInspector --no-restore -warnaserror
           pnpm -s typecheck
+      - run: node --test scripts/compatibility/*.test.mjs
       - name: Compare every manifest fixture
         run: node scripts/compatibility/cwm.mjs
+      - name: Read every TS writer output independently with .NET
+        run: node scripts/compatibility/writer.mjs
+      - name: Prove a flipped tile byte fails the writer comparison
+        run: node scripts/compatibility/writer.mjs --corruption-probe
       - name: Upload mismatch reports
         if: failure()
         uses: actions/upload-artifact@v4
