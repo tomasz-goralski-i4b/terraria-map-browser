@@ -7,10 +7,13 @@ import type { WaterfallSource, WaterfallWorld } from "../src/index.js";
 const ABSENT = 0xffff;
 const STONE = 0;
 const PLATFORM = 1;
+const ROPE = 2;
+const COBWEB = 3;
 
 /**
  * A world from rows of characters: `#` stone, `h` half block, `\` slope going down to the right, `/` slope going down
- * to the left, `p` a platform (stored frame), `~` water 255, `,` water 100, `l` lava 255, `.` air.
+ * to the left, `p` a platform (stored frame), `r` a rope, `w` a cobweb, `~` water 255, `,` water 100, `l` lava 255,
+ * `.` air.
  */
 function world(rows: readonly string[]): WaterfallWorld {
   const height = rows.length;
@@ -29,11 +32,13 @@ function world(rows: readonly string[]): WaterfallWorld {
       if (char === "\\") shape[i] = 2;
       if (char === "/") shape[i] = 3;
       if (char === "p") { block[i] = PLATFORM; frameX[i] = 0; }
+      if (char === "r") block[i] = ROPE;
+      if (char === "w") block[i] = COBWEB;
       if (char === "~" || char === "l" || char === ",") { liquid[i] = char === "l" ? 2 : 1; liquidAmount[i] = char === "," ? 100 : 255; }
     });
   });
   return {
-    width, height, palette: [{ kind: "vanilla", id: 1 }, { kind: "vanilla", id: 19 }],
+    width, height, palette: [{ kind: "vanilla", id: 1 }, { kind: "vanilla", id: 19 }, { kind: "vanilla", id: 213 }, { kind: "vanilla", id: 51 }],
     planes: { block, frameX, shape, liquid, liquidAmount },
   };
 }
@@ -88,6 +93,16 @@ describe("waterfall paths (G)", () => {
     const [source] = all(w);
     if (source === undefined) throw new Error("no source");
     expect(steps(w, source)).toEqual(["lip:1,0", "fall:2,1", "run:2,1", "lip:3,1", "fall:4,2", "fall:4,3", "run:4,3", "run:5,3", "run:6,3"]);
+  });
+
+  test("ropes and cobwebs do not stop it: it pours past a rope and falls through it (G: a rope beside a hole)", () => {
+    const ledge = ["lip:1,0", "fall:2,1", "run:2,1", "lip:3,1", "fall:4,2", "fall:4,3", "run:4,3", "run:5,3", "run:6,3"];
+    for (const rows of [["~h.....", "#......", "..##r..", "....r..", "#######"], ["~h.....", "#......", "..##w..", ".......", "#######"]]) {
+      const w = world(rows);
+      const [source] = all(w);
+      if (source === undefined) throw new Error("no source");
+      expect(steps(w, source)).toEqual(ledge);
+    }
   });
 
   test("slides down a slope going away, then falls off its end", () => {

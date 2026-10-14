@@ -572,8 +572,8 @@ stream:
 - ends on entering **liquid** (it stops at the tile holding it), against a **solid block** ahead, at the world's edge,
   or after **100 steps**, fading out over the last 8 (the long drop fades about 98 tiles below its source).
 
-Chosen where the screenshots do not show it: "solid" is a block the world stores no frame for, except vines, cactus
-and trees (furniture, plants and platforms do not stop water; the game's own solidity table is not shipped); a run on
+Chosen where the screenshots do not show it: "solid" is a block the world stores no frame for, except vines, cactus,
+trees, ropes (rope, chain, vine, silk and web rope) and cobwebs (G for the rope: a stream pours past it into a hole; furniture, plants and platforms do not stop water; the game's own solidity table is not shipped); a run on
 dry flat ground continues until an edge or a wall (in the screenshots the runs on the walkway stopped in a film of
 real liquid that had leaked from the basins); water is the forest style; frame 0, no animation; shimmer's mask is
 drawn from its edge band (rows 42–81 of `Waterfall_25`, whose three bands 42 rows apart are the shape, its edge mask

@@ -59,10 +59,16 @@ export interface WaterfallStep {
 }
 
 /**
- * Tile ids that hold no solid block although the world stores no frame for them: vines and cactus (the framing
- * database's non-blocks) and the trees the object pass draws.
+ * Ropes and webs: no solid block although the world stores no frame for them (G: a stream pours past a rope beside a
+ * hole and falls through it; chosen for the others): rope, chain, vine rope, silk rope, web rope and cobweb.
  */
-const NOT_SOLID: ReadonlySet<number> = new Set([...terrariaFramingData.nonBlocks.types, ...OBJECT_TILES]);
+const ROPES_AND_WEBS: readonly number[] = [213, 214, 353, 365, 366, 51];
+
+/**
+ * Tile ids that hold no solid block although the world stores no frame for them: vines and cactus (the framing
+ * database's non-blocks), the trees the object pass draws, ropes and webs.
+ */
+const NOT_SOLID: ReadonlySet<number> = new Set([...terrariaFramingData.nonBlocks.types, ...OBJECT_TILES, ...ROPES_AND_WEBS]);
 
 /** Reads a world's tiles for waterfalls. */
 class Reader {
@@ -97,7 +103,7 @@ class Reader {
 
   /**
    * Whether (x, y) holds a solid block (chosen, docs/assets.md "Waterfalls"): a block the world stores no frame for,
-   * except vines, cactus and trees. Furniture, plants, platforms and other framed content do not stop water.
+   * except vines, cactus, trees, ropes and webs. Furniture, plants, platforms and other framed content do not stop water.
    */
   solid(x: number, y: number): boolean {
     if (!this.inWorld(x, y)) return false;
