@@ -501,6 +501,31 @@ not observable:
   the map rule, opacity `amount / 255`; from `SPRITE_MIN_ZOOM` to `SPRITE_FULL_ZOOM` its sprite fades in over that
   colour like a block sprite. The liquids layer toggle removes the liquid and nothing else.
 
+### Draw offsets
+
+**Observed (R, ADR 0003, sprite-object addendum).** `scripts/sprite-objects/observe.ps1` calls the game's own
+`TileDrawing.GetTileDrawData` for every frame-important type at every even frameY (frameX 0) and every even frameX
+(frameY 0) up to 2400, at an even and an odd x, and on an 8 × 40 grid of frames at a stride of 18, with the tile alone in
+a synthetic world. It records the **draw size** (`tileWidth`, `tileHeight`), the **top offset** (`tileTop`, pixels below
+the tile's top) and the **mirroring**; the frame shifts it also returns are animation and are left out.
+`export.mjs` folds them into the generated table (`drawVariants`, `drawTypes`): per type a base variant (frame (0, 0))
+and the frameY and frameX runs that differ from it; a frame takes its frameY run where that differs, else its frameX
+run, else the base. The grid sample must agree with that or the export is refused. 287 types differ from a plain
+16 × 16 cell at its tile; 12 (412, 463, 564, 568–570, 580, 634, 637, 656, 701, 711) cannot be drawn headlessly and are
+listed as unobserved (`drawUnobserved`).
+
+What it shows: plants (3, 24, 61, 110, …) are 16 × 20 frames drawn from their tile's top, so they reach 4 pixels into
+the ground below them, and are **mirrored at every even x** (checked at nine columns); tall plants (73, 74) are
+16 × 32 drawn 12 pixels up; torches 20 × 20; candles 16 × 20 drawn 4 pixels up; 183 types (piles, cages, …) are drawn
+2 pixels down; the bottom row of chests, tables and other furniture is 16 × 18, reaching 2 pixels into the floor.
+
+**How the viewer draws them.** Every tile of those types with a stored frame is an object-pass sprite ("Trees"): the
+frame's rectangle (`wrappedFrame` for styles past the sheet's edge) of the drawn size, its top at the tile's top plus
+the offset, centred on its tile horizontally (chosen: the draw data gives no horizontal offset), mirrored as observed;
+the chunk pass shows what lies behind such a tile. Drawn over the chunk pass, they lie over liquids too (the game draws
+liquid over them; open question). Stalactites (165) are plain when observed alone; their offset probably depends on the
+tile they hang from, which the observer does not place (open question).
+
 ### Waterfalls
 
 **Sheets (S).** `Waterfall_<n>` (28 sheets, `WaterfallID` names them: 0 water, 1 lava, 14 honey, 25 shimmer, the
@@ -555,7 +580,7 @@ Expected sheet sizes (consistent with the size arithmetic, confirmed only by the
 | Case | M4 | Deferred |
 |---|---|---|
 | Frame-important tiles with a 16×16 grid (most furniture, multi-tile objects) | draw each tile's own cell at `(frameX, frameY)`; multi-tile objects need nothing extra because every tile carries its own frame; frames past the sheet's edge wrap ("Frames past the sheet's edge") | — |
-| Frame-important tiles with other grids (torches, plants, …) | draw with the tile's `textureGrid` size | exact per-id draw offsets |
+| Frame-important tiles with other grids (torches, plants, …) and draw offsets | the draw size, top offset and mirroring the game's draw data gives each stored frame (R), in the object pass ("Draw offsets"); the 12 types the observer cannot draw keep their cell scaled into the tile | the horizontal offset, animation frames, tiles whose offset depends on their neighbours |
 | Non-frame-important blocks | the cell framed by "Tile framing" and its database (#141, #146), grass and moss included; half blocks and slopes cut per "Slopes and half blocks"; falling blocks with nothing below them in map colours | paint, lighting |
 | Walls | the cell framed by "Walls" and the framing database (#147), a 32 × 32 cell centred on the tile, below the blocks | paint, lighting |
 | Vines and cactus (no stored frame, not blocks) | the cell framed by "Vines and cactus" and the database's `nonBlocks` (#237) | the corrupt, crimson and hallowed cactus textures, paint, lighting |
@@ -1489,5 +1514,7 @@ shorter cells retain their native height. Paint remains a corner mark.
    observable without its renderer; the choices are in "Liquids".
 8. Waterfalls: how far a stream runs on dry flat ground, how the game draws the slide along a slope and the turn off
    its end, the thin streams from liquid films at ledge edges; the choices are in "Waterfalls".
+9. Draw offsets: the horizontal offset of frames wider than a tile, offsets that depend on neighbours (stalactites),
+   liquid over object-pass tiles; the choices are in "Draw offsets".
 
 Proposed follow-up issues: [planning/assets-follow-ups.md](planning/assets-follow-ups.md).

@@ -35,6 +35,7 @@ import {
 } from "./shaders.js";
 import { OBJECT_TILES, objectSprites, type ObjectSprite, type TreeSettings } from "../objects/object-sprites.js";
 import { waterfallSprites } from "../objects/waterfalls.js";
+import { DRAWN_TILES } from "../objects/draw-offsets.js";
 
 /** The slice of a world the renderer reads. Planes are column-major (`x * height + y`); never copied by the caller. */
 export interface RenderableWorld {
@@ -949,7 +950,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
         // mushroom are drawn by the object pass ("Trees").
         const state = vanilla === TRACK_TILE
           ? SPRITE_STATE.track
-          : vanilla !== undefined && OBJECT_TILES.has(vanilla) ? SPRITE_STATE.object : SPRITE_STATE.sheet;
+          : vanilla !== undefined && (OBJECT_TILES.has(vanilla) || DRAWN_TILES.has(vanilla)) ? SPRITE_STATE.object : SPRITE_STATE.sheet;
         sheetMirror.set([sheet.page, sheet.x, sheet.y, state, sheet.width, sheet.height, sheet.frameWidth, sheet.frameHeight], at);
       } else {
         sheetMirror.set([0, 0, 0, atlasTexture === null ? SPRITE_STATE.mapColor : SPRITE_STATE.missing, 0, 0, 0, 0], at);

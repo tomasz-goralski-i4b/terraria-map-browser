@@ -3,6 +3,8 @@
 // its top-left lands in world sprite pixels (16 per tile); it may reach past its tile into the tiles around it.
 import type { ContentRef } from "@studio/world-model";
 import { terrariaSpriteObjects } from "./terraria-sprite-objects.generated.js";
+import { wrappedFrame } from "../gpu/frame-wrap.js";
+import { DRAWN_TILES, drawVariant } from "./draw-offsets.js";
 import { TRACK_CELL_STRIDE, TRACK_EXTRA_OFFSET, TRACK_TILE, trackExtraCell, trackPiece, type TrackExtra } from "./tracks.js";
 
 /** Pixels per tile of the sprites (the game's art is drawn at twice its resolution). */
@@ -293,19 +295,41 @@ function mushroomTile(reader: ObjectReader, x: number, y: number, out: Collected
 }
 
 /** Sprites by drawing layer: trunk cells and track extras, then branches, then tops and caps. */
+/**
+ * A frame-important tile drawn with its observed draw size and top offset (docs/assets.md, "Draw offsets"), centred on
+ * its tile (chosen: the draw data gives no horizontal offset) and mirrored as observed for its column's parity. Styles
+ * past the sheet's edge continue in its next block (wrappedFrame), as in the chunk pass.
+ */
+function drawnTile(reader: ObjectReader, id: number, x: number, y: number, out: ObjectSprite[]): void {
+  const frameX = reader.frameX(x, y);
+  const frameY = reader.frameY(x, y);
+  if (frameX < 0 || frameY < 0) return;
+  const variant = drawVariant(id, frameX, frameY);
+  if (variant === undefined) return;
+  const [width, height, top, evenFlip, oddFlip] = variant;
+  const [sx, sy] = wrappedFrame(id, frameX, frameY);
+  out.push({
+    kind: "tile", id, sx, sy, width, height,
+    dx: x * SPRITE_PIXELS_PER_TILE - (width - SPRITE_PIXELS_PER_TILE) / 2, dy: y * SPRITE_PIXELS_PER_TILE + top,
+    flip: (x % 2 === 0 ? evenFlip : oddFlip) === 1,
+  });
+}
+
 interface Collected {
+  readonly drawn: ObjectSprite[];
   readonly trunks: ObjectSprite[];
   readonly branches: ObjectSprite[];
   readonly tops: ObjectSprite[];
 }
 
 /**
- * The object sprites of the tiles in `area` (clipped to the world), in drawing order: trunk cells (column by column,
- * each from the top) and track extras, then branches, then tops and caps.
+ * The object sprites of the tiles in `area` (clipped to the world), in drawing order: frame-important tiles the game
+ * draws other than as plain cells (docs/assets.md, "Draw offsets"), then trunk cells (column by column, each from the
+ * top) and track extras, then branches, then tops and caps.
  */
 export function objectSprites(world: ObjectWorld, area: TileArea): ObjectSprite[] {
   const reader = new ObjectReader(world);
-  const out: Collected = { trunks: [], branches: [], tops: [] };
+  const out: Collected = { drawn: [], trunks: [], branches: [], tops: [] };
   const right = Math.min(area.right, world.width);
   const bottom = Math.min(area.bottom, world.height);
   for (let x = Math.max(0, area.left); x < right; x++) {
@@ -315,7 +339,8 @@ export function objectSprites(world: ObjectWorld, area: TileArea): ObjectSprite[
       else if (FOLIAGE_TREES.has(id)) treeTile(reader, id, x, y, world.trees, out);
       else if (id === PALM_TREE) palmTile(reader, x, y, out);
       else if (id === GIANT_MUSHROOM) mushroomTile(reader, x, y, out);
+      else if (DRAWN_TILES.has(id)) drawnTile(reader, id, x, y, out.drawn);
     }
   }
-  return [...out.trunks, ...out.branches, ...out.tops];
+  return [...out.drawn, ...out.trunks, ...out.branches, ...out.tops];
 }

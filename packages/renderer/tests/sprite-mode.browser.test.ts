@@ -31,7 +31,8 @@ function readCanvas(canvas: HTMLCanvasElement): Uint8Array {
 }
 
 const ABSENT = 0xffff;
-// Palette indices: 0 chest-like (16 × 16 cells), 1 torch-like (20 × 20 cells), 2 a block without frames, 3 a wall,
+// Palette indices: 0 chest-like (16 × 16 cells: bottles, 13), 1 torch-like (cells larger than a tile: 656, 24 × 34, which
+// the draw-offset observer cannot draw, so the chunk pass scales it into its tile), 2 a block without frames, 3 a wall,
 // 4 frame-important content with no sheet in the atlas, 5 a tree (unused here: trees are drawn by the object pass, see
 // tree-sprites.browser.test.ts).
 const CHEST = 0;
@@ -40,7 +41,7 @@ const STONE = 2;
 const WALL = 3;
 const NO_SHEET = 4;
 const palette = [
-  { kind: "vanilla", id: 21 }, { kind: "vanilla", id: 4 }, { kind: "vanilla", id: 1 }, { kind: "vanilla", id: 2 },
+  { kind: "vanilla", id: 13 }, { kind: "vanilla", id: 656 }, { kind: "vanilla", id: 1 }, { kind: "vanilla", id: 2 },
   { kind: "vanilla", id: 600 }, { kind: "vanilla", id: 5 },
 ] as const;
 
@@ -89,8 +90,8 @@ function spriteWorld(): RenderableWorld {
 const PAGE = 128;
 /** Sheets of the synthetic atlas: the chest-like sheet at (2, 2), the torch-like one on page 1 at (2, 2). */
 const SHEETS = [
-  { kind: "tile", id: 21, page: 0, x: 2, y: 2, width: 72, height: 40, frameWidth: 16, frameHeight: 16, gapX: 2, gapY: 2 },
-  { kind: "tile", id: 4, page: 1, x: 2, y: 2, width: 66, height: 66, frameWidth: 20, frameHeight: 20, gapX: 2, gapY: 2 },
+  { kind: "tile", id: 13, page: 0, x: 2, y: 2, width: 72, height: 40, frameWidth: 16, frameHeight: 16, gapX: 2, gapY: 2 },
+  { kind: "tile", id: 656, page: 1, x: 2, y: 2, width: 66, height: 80, frameWidth: 24, frameHeight: 34, gapX: 2, gapY: 2 },
   { kind: "tile", id: 5, page: 0, x: 2, y: 60, width: 44, height: 44, frameWidth: 20, frameHeight: 20, gapX: 2, gapY: 2 },
 ] as const;
 

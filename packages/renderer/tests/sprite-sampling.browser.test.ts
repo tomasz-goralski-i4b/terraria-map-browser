@@ -32,10 +32,10 @@ function readCanvas(canvas: HTMLCanvasElement): Uint8Array {
 const ABSENT = 0xffff;
 const CHEST = 0;
 const WALL = 1;
-const palette = [{ kind: "vanilla", id: 21 }, { kind: "vanilla", id: 2 }] as const;
+const palette = [{ kind: "vanilla", id: 13 }, { kind: "vanilla", id: 2 }] as const;
 const PAGE = 128;
 /** A chest-like sheet: 16 × 16 cells, gutter 2; frame (0, 0) and (18, 0) are the cells drawn here. */
-const SHEET = { kind: "tile", id: 21, page: 0, x: 2, y: 2, width: 72, height: 40, frameWidth: 16, frameHeight: 16 } as const;
+const SHEET = { kind: "tile", id: 13, page: 0, x: 2, y: 2, width: 72, height: 40, frameWidth: 16, frameHeight: 16 } as const;
 
 /** Sheet pixel colours: red by column (distinct for every column of the first two cells), opaque. */
 function columnAtlas(): SpriteAtlasSource {
