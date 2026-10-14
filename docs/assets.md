@@ -567,7 +567,8 @@ stream:
   of water on each step of a staircase with a short tail to the next);
 - on a **slope** slides along its surface and takes its downhill direction, so on a slope going down towards it the
   stream turns back: falling past the slope's low tip it goes on straight down, its column keeping its mirroring and
-  its edge (G: setup 4), with no film along the slope;
+  its edge (G: setup 4), with no film along the slope; falling off a slope's tip going away, the column reaches 8 pixels
+  up to the slide's last film (its lower half above the tile), so the stream has no gap there (G: setup 3);
 - ends on entering **liquid** (it stops at the tile holding it), against a **solid block** ahead, at the world's edge,
   or after **100 steps**, fading out over the last 8 (the long drop fades about 98 tiles below its source).
 
@@ -579,7 +580,9 @@ drawn from its edge band (rows 42–81 of `Waterfall_25`, whose three bands 42 r
 and a fainter one), blended from the measured core (164, 161, 245) to the light edge (164, 203, 255) by the band's grey
 (G). The object pass draws waterfalls over the chunk pass, mirrored when they flow
 right, behind the blocks ("Draw offsets": the source's half block stays visible under the lip, the walls cover the
-column's edge); the liquids layer toggle shows and hides them.
+column's edge) and **under the liquids** (G: the corner pouring off the walkway into setup 5's pool ends at the pool's
+surface): the chunk pass writes depth 0 where a block covers a pixel and 0.5 where only a tile's own liquid does; waterfalls (`OBJECT_UNDER_LIQUID`) are drawn only where it left 1, the other sprites behind the blocks (which stay over the liquids) where it did not leave 0. The liquids layer
+toggle shows and hides them.
 
 ### Worked examples
 

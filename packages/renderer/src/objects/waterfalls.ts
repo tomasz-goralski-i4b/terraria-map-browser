@@ -192,8 +192,9 @@ export function waterfallSprites(world: WaterfallWorld, area: TileArea): ObjectS
       }
       const flip = straight?.flip ?? step.direction === 1;
       // Shimmer's sheet is a grey mask the game colours while drawing (S): tinted by its map colour (chosen). Behind the
-      // blocks (G: the source's half block stays visible under the lip, the walls cover the column's edge).
-      const base = { kind: "waterfall" as const, id, flip, alpha: step.alpha, behind: true, ...(source.kind === SHIMMER ? { tint: true } : {}) };
+      // blocks (G: the source's half block stays visible under the lip, the walls cover the column's edge) and under the
+      // liquids (G: a stream pouring into a pool ends at its surface).
+      const base = { kind: "waterfall" as const, id, flip, alpha: step.alpha, behind: true, underLiquid: true, ...(source.kind === SHIMMER ? { tint: true } : {}) };
       // Shimmer's sheet: three bands 42 rows apart, the shape (rows 0–39), its edge mask (42–81) and a fainter one; the
       // viewer draws the edge band, blended from lavender to its light edge by its grey (the object pass, OBJECT_TINT).
       const band = source.kind === SHIMMER ? SHIMMER_EDGE_BAND : 0;
@@ -209,7 +210,13 @@ export function waterfallSprites(world: WaterfallWorld, area: TileArea): ObjectS
       } else if (step.piece === "fall" || turnsBack) {
         // The column hugs the edge the stream falls along: 4 pixels over the side it came from (mirrored: right of it).
         const edge = straight?.edge ?? (step.direction === 1 ? left : left + TILE);
-        out.push({ ...base, ...COLUMN, sy: COLUMN.sy + band, dx: flip ? edge - COLUMN_BACK : edge - COLUMN.width + COLUMN_BACK, dy: step.y * TILE });
+        const dx = flip ? edge - COLUMN_BACK : edge - COLUMN.width + COLUMN_BACK;
+        // Off a slope's tip the column reaches up to the slide's last film (G: in-game screenshot of setup 3): its lower
+        // half above the tile, so the stream has no gap there.
+        if (step.piece === "fall" && previous?.piece === "slide" && !turnsBack && straight === null) {
+          out.push({ ...base, ...COLUMN, sy: COLUMN.sy + TILE / 2 + band, height: TILE / 2, dx, dy: step.y * TILE - TILE / 2 });
+        }
+        out.push({ ...base, ...COLUMN, sy: COLUMN.sy + band, dx, dy: step.y * TILE });
       } else if (step.piece === "run") {
         out.push({ ...base, ...FILM, sy: FILM.sy + band, dx: left, dy: ground - FILM.height });
       } else {

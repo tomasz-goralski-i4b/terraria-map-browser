@@ -32,6 +32,8 @@ export interface ObjectSprite {
   readonly tint?: boolean;
   /** Behind the blocks: drawn only where no block covers the pixel (frame-important tiles); absent means in front. */
   readonly behind?: boolean;
+  /** With `behind`, also under the liquids: drawn only where no liquid covers the pixel (waterfalls); absent means not. */
+  readonly underLiquid?: boolean;
 }
 
 /**

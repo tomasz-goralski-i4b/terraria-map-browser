@@ -735,7 +735,9 @@ bool paletteColor(uint index, int xOffset, out ivec3 color) {
 // the walls' map colours likewise.
 #ifdef SPRITES
 // The depth the sprite program writes for the sprites behind the blocks (OBJECT_BEHIND in the object pass): 0 where a
-// block covers the pixel (its map colour, or a sprite pixel that is not transparent), 1 elsewhere. Set by localColorAt.
+// block covers the pixel (its map colour, or a sprite pixel that is not transparent), 0.5 where only the tile's own
+// liquid does (for the waterfalls, OBJECT_UNDER_LIQUID: the game's end under the liquid they pour into), 1 elsewhere.
+// Set by localColorAt.
 float blockDepth = 1.0;
 #endif
 
@@ -831,8 +833,10 @@ ivec4 localColorAt(ivec2 local, vec2 sub) {
       if (uLiquidSheets[liquid - 1u].w != 0) {
         ivec4 drawn = over(liquidFront(liquidArt, liquid), color);
         color = uSpriteWeight < 256 ? (mappedLiquid * (256 - uSpriteWeight) + drawn * uSpriteWeight + 128) / 256 : drawn;
+        if (liquidShown && liquidArt.a > 0) blockDepth = min(blockDepth, 0.5);
       } else {
         color = mappedLiquid;
+        blockDepth = min(blockDepth, 0.5);
       }
 #else
       color = mappedLiquid;
@@ -1017,6 +1021,11 @@ export const OBJECT_TINT = 512;
  * block covers a pixel; such a sprite is drawn only elsewhere.
  */
 export const OBJECT_BEHIND = 1024;
+/**
+ * The object pass's source flag of a sprite behind the blocks that also lies under the liquids (bit 11, with
+ * OBJECT_BEHIND): the waterfalls. The chunk pass writes depth 0.5 where a tile's own liquid covers a pixel.
+ */
+export const OBJECT_UNDER_LIQUID = 2048;
 
 /**
  * Object pass (docs/assets.md, "Trees", "Minecart tracks"): in sprite mode, after the chunk pass, one instanced quad
@@ -1035,9 +1044,10 @@ void main() {
   vec2 corner = vec2(float(gl_VertexID & 1), float(gl_VertexID >> 1));
   vec2 tile = (vec2(aDest.xy) + corner * vec2(aDest.zw)) / ${String(SPRITE_TILE_PIXELS)}.0;
   vec2 screen = (tile - uCamera) * uZoom;
-  // Sprites behind the blocks (OBJECT_BEHIND) at depth 0.75: drawn only where the chunk pass left depth 1 (no block
-  // pixel); the others at depth 0, over everything.
-  float depth = (aSource.w & ${String(OBJECT_BEHIND)}) != 0 ? 0.5 : -1.0;
+  // Sprites under the liquids (OBJECT_UNDER_LIQUID) at depth 0.75: drawn only where the chunk pass left depth 1 (no
+  // block or liquid pixel); behind the blocks (OBJECT_BEHIND) at 0.25: not where it left 0 (a block pixel); the others
+  // at depth 0, over everything.
+  float depth = (aSource.w & ${String(OBJECT_UNDER_LIQUID)}) != 0 ? 0.5 : (aSource.w & ${String(OBJECT_BEHIND)}) != 0 ? -0.5 : -1.0;
   gl_Position = vec4(screen.x / uViewport.x * 2.0 - 1.0, 1.0 - screen.y / uViewport.y * 2.0, depth, 1.0);
   vDest = aDest;
   vSource = aSource;

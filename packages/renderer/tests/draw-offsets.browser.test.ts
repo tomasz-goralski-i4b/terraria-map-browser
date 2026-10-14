@@ -14,7 +14,7 @@ const ABSENT = 0xffff;
 const ZOOM = 16;
 
 /** 3 × 3: a plant (3, frame (0, 0): 16 × 20, drawn from its tile's top) at (1, 0) over a bottle (13) at (1, 1). */
-function world(): RenderableWorld {
+function world(water = false): RenderableWorld {
   const n = 3, count = n * n;
   const block = new Uint16Array(count).fill(ABSENT);
   const frameX = new Int16Array(count).fill(-1);
@@ -24,11 +24,13 @@ function world(): RenderableWorld {
     frameX[x * n + y] = 0;
     frameY[x * n + y] = 0;
   }
+  const liquid = new Uint8Array(count), liquidAmount = new Uint8Array(count);
+  if (water) { liquid[1 * n + 0] = 1; liquidAmount[1 * n + 0] = 255; }
   return {
     width: n, height: n, surfaceY: 3,
     planes: {
-      block, wall: new Uint16Array(count).fill(ABSENT), frameX, frameY, liquid: new Uint8Array(count),
-      liquidAmount: new Uint8Array(count), paint: new Uint8Array(count), wallPaint: new Uint8Array(count),
+      block, wall: new Uint16Array(count).fill(ABSENT), frameX, frameY, liquid,
+      liquidAmount, paint: new Uint8Array(count), wallPaint: new Uint8Array(count),
     },
     palette: [{ kind: "vanilla", id: 3 }, { kind: "vanilla", id: 13 }],
   };
@@ -54,13 +56,14 @@ function atlas(): SpriteAtlasSource {
   return { pages: [page], index: { pageSize: PAGE, entries: SHEETS } };
 }
 
-test("a plant reaching into the tile below lies behind that tile's opaque pixels and shows through its transparent ones", () => {
+/** The canvas's pixels of `w` drawn at ZOOM in sprite mode with the synthetic atlas. */
+function draw(w: RenderableWorld): (x: number, y: number) => Rgba {
   const canvas = document.createElement("canvas");
   canvas.width = 3 * ZOOM;
   canvas.height = 3 * ZOOM;
   const renderer = createMapRenderer(canvas);
   created.push(renderer);
-  renderer.setWorld(world());
+  renderer.setWorld(w);
   renderer.setLayers({ background: true, walls: true, blocks: true, liquids: true });
   renderer.setAtlas(atlas());
   renderer.setSpriteMode(true);
@@ -70,10 +73,14 @@ test("a plant reaching into the tile below lies behind that tile's opaque pixels
   if (gl === null) throw new Error("no webgl2 context");
   const pixels = new Uint8Array(canvas.width * canvas.height * 4);
   gl.readPixels(0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
-  const at = (x: number, y: number): Rgba => {
+  return (x, y) => {
     const i = ((canvas.height - 1 - y) * canvas.width + x) * 4;
     return [pixels[i] ?? 0, pixels[i + 1] ?? 0, pixels[i + 2] ?? 0, pixels[i + 3] ?? 0];
   };
+}
+
+test("a plant reaching into the tile below lies behind that tile's opaque pixels and shows through its transparent ones", () => {
+  const at = draw(world());
   const wrong: string[] = [];
   // The overlap: the bottle's top 4 rows, where the plant's rows 16–19 reach (x = 1 is odd: the plant is not mirrored).
   for (let sy = 0; sy < 4; sy++) {
@@ -86,5 +93,10 @@ test("a plant reaching into the tile below lies behind that tile's opaque pixels
   }
   expect(wrong.slice(0, 6), `${String(wrong.length)} pixels differ`).toEqual([]);
   // Above, the plant covers its own tile.
+  expect(at(ZOOM + 5, 5)).toEqual(sheetPixel(0, 5, 5));
+});
+
+test("a plant under water is drawn over the liquid; only waterfalls lie under it", () => {
+  const at = draw(world(true));
   expect(at(ZOOM + 5, 5)).toEqual(sheetPixel(0, 5, 5));
 });
