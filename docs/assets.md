@@ -951,7 +951,8 @@ or none, sampled) change no cell.
   dirt, stone, another vine type…) does not: the game removes the vine. Each vine has its own list; the database holds
   them, grouped by what they give. Under a grass of another family the game also turns the vine into that family's
   vine (a 52 under jungle grass becomes a 62); sprite mode draws the stored type with the cell the game gives, which
-  the vine sheets share.
+  the vine sheets share. Under mushroom grass or a mushroom vine (528) another vine is removed or turned into a
+  mushroom vine at random: the game does not keep it, so it has no cell (a game-saved world never holds one).
 - **Joined.** Below, west and east, a vine **joins** it when it is of its own type (for a vine the game turns into
   another family's, the database lists which types join).
 - **Cell.** Each of the 16 combinations (held by grass or by itself; joined below, west, east) has three cells, and the

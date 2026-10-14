@@ -468,15 +468,22 @@ public static class FramingObserver {
 
     const int VineTrials = 40;
 
+    /** Framings of a hanging tile before the first three distinct cells may end the search. */
+    const int VineMinTrials = 16;
+
     /**
      * The cells a hanging tile `vine` takes between `above` and `below` and beside `west` and `east` (−1: none), with
-     * `diagonals` (or null) on NW NE SW SE: the sorted distinct cell indices over up to VineTrials framings, stopping at
-     * three (the game picks among three at random; 40 framings miss one with probability 3 · (2/3)^40, about 3 · 10⁻⁷).
-     * Empty when the game removes the tile or leaves it unframed.
+     * `diagonals` (or null) on NW NE SW SE: the sorted distinct cell indices over up to VineTrials framings (the game
+     * picks among three at random; 40 framings miss one with probability 3 · (2/3)^40, about 3 · 10⁻⁷), at least
+     * VineMinTrials. Empty when the game removes the tile or leaves it unframed, and when it does so only sometimes or
+     * turns the tile into different types at random (a vine under a mushroom vine or mushroom grass): the game does not
+     * keep such a tile, so it has no frame of its own.
      */
     static string VineCells(int vine, int above, int below, int west, int east, int[] diagonals, ICollection<int> family) {
         var cells = new SortedSet<int>();
-        for (int trial = 0; trial < VineTrials && cells.Count < 3; trial++) {
+        var types = new HashSet<int>();
+        bool removed = false;
+        for (int trial = 0; trial < VineTrials && (trial < VineMinTrials || cells.Count < 3); trial++) {
             ClearRect(8, 8, 5, 5);
             Put(10, 9, above, 0);
             Put(10, 11, below, 0);
@@ -492,8 +499,11 @@ public static class FramingObserver {
             MarkUnframed(10, 10);
             tileFrame.Invoke(null, new object[] { 10, 10, true, true });
             int cell = NonBlockCellAt(10, 10, family);
-            if (cell != Unstable) cells.Add(cell);
+            if (cell == Unstable) { removed = true; continue; }
+            cells.Add(cell);
+            types.Add(TypeAt(10, 10));
         }
+        if (removed || types.Count > 1) return "";
         return string.Join(",", cells);
     }
 
@@ -536,6 +546,7 @@ public static class FramingObserver {
                 members.Add(above);
             }
             json.Append(v == 0 ? "" : ",").AppendFormat("{{\"id\":{0},\"groups\":[", vine);
+            bool firstGroup = true;
             for (int g = 0; g < order.Count; g++) {
                 List<int> members = groups[order[g]];
                 int first = members[0];
@@ -550,16 +561,27 @@ public static class FramingObserver {
                     cells[combo] = VineCells(vine, first, (combo & 1) != 0 ? join[0] : -1, (combo & 2) != 0 ? join[1] : -1,
                         (combo & 4) != 0 ? join[2] : -1, null, family);
                 }
+                // A group whose framings do not repeat is one the game turns into another type or removes at random (a
+                // vine under mushroom grass or a mushroom vine): the game does not keep its tiles, so they get no cell.
+                bool repeats = true;
+                for (int combo = 0; combo < 8 && repeats; combo++) {
+                    repeats = VineCells(vine, first, (combo & 1) != 0 ? join[0] : -1, (combo & 2) != 0 ? join[1] : -1,
+                        (combo & 4) != 0 ? join[2] : -1, null, family) == cells[combo];
+                }
+                int groupChecks = 0, groupFailures = 0;
+                var groupFailureList = new StringBuilder();
                 // Every joining tile gives the first one's cells, with the other sides joined or not at random.
                 for (int side = 0; side < 3; side++) {
                     foreach (int type in joining[side]) {
                         int combo = (random.Next(8) & ~(1 << side)) | (1 << side);
                         int[] at = new int[3];
                         for (int k = 0; k < 3; k++) at[k] = (combo & (1 << k)) != 0 ? (k == side ? type : join[k]) : -1;
-                        verified++;
-                        if (VineCells(vine, first, at[0], at[1], at[2], null, family) != cells[combo]) {
-                            failures++;
-                            failureList.Append("vine" + vine + "j" + side + "t" + type + " ");
+                        groupChecks++;
+                        string got = VineCells(vine, first, at[0], at[1], at[2], null, family);
+                        if (got != cells[combo]) {
+                            if (VineCells(vine, first, at[0], at[1], at[2], null, family) != got) repeats = false;
+                            groupFailures++;
+                            groupFailureList.Append("vine" + vine + "j" + side + "t" + type + " ");
                         }
                     }
                 }
@@ -572,18 +594,30 @@ public static class FramingObserver {
                             for (int k = 0; k < 4; k++) diagonals[k] = random.Next(3) == 0 ? -1 : random.Next(2) == 0 ? vines[random.Next(vines.Count)] : random.Next(typeCount);
                         }
                         if (above == first && diagonals == null) continue;
-                        verified++;
-                        if (VineCells(vine, above, (combo & 1) != 0 ? join[0] : -1, (combo & 2) != 0 ? join[1] : -1,
-                                (combo & 4) != 0 ? join[2] : -1, diagonals, family) != cells[combo]) {
-                            failures++;
-                            failureList.Append("vine" + vine + "a" + above + "c" + combo + " ");
+                        groupChecks++;
+                        int below = (combo & 1) != 0 ? join[0] : -1, west = (combo & 2) != 0 ? join[1] : -1, east = (combo & 4) != 0 ? join[2] : -1;
+                        string got = VineCells(vine, above, below, west, east, diagonals, family);
+                        if (got != cells[combo]) {
+                            if (VineCells(vine, above, below, west, east, diagonals, family) != got) repeats = false;
+                            groupFailures++;
+                            groupFailureList.Append("vine" + vine + "a" + above + "c" + combo + " ");
                         }
                     }
                 }
-                json.Append(g == 0 ? "" : ",").AppendFormat("{{\"above\":[{0}],\"below\":[{1}],\"west\":[{2}],\"east\":[{3}],\"cells\":[",
+                // A group whose framings do not repeat (here or in a failing check, framed again) is left out: a failure
+                // there shows only that the game picks at random. For the others every check counts.
+                if (!repeats) {
+                    Console.Error.WriteLine("vine " + vine + ": tiles above " + string.Join(",", members) + " give no reproducible cells; left out");
+                    continue;
+                }
+                verified += groupChecks;
+                failures += groupFailures;
+                failureList.Append(groupFailureList.ToString());
+                json.Append(firstGroup ? "" : ",").AppendFormat("{{\"above\":[{0}],\"below\":[{1}],\"west\":[{2}],\"east\":[{3}],\"cells\":[",
                     string.Join(",", members), string.Join(",", joining[0]), string.Join(",", joining[1]), string.Join(",", joining[2]));
                 for (int combo = 0; combo < 8; combo++) json.Append(combo == 0 ? "[" : ",[").Append(cells[combo]).Append("]");
                 json.Append("]}");
+                firstGroup = false;
             }
             json.Append("]}");
             Console.Error.WriteLine("vines " + (v + 1) + "/" + vines.Count);

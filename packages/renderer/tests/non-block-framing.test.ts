@@ -176,8 +176,9 @@ describe("invalidation of vines and cactus", () => {
     const cache = createChunkCellCache(world, framing, 8);
     expect(cache.cellAt(6, 8)).toBe(pack(0, 0));
     expect(cache.cellAt(5, 12)).toBe(pack(3, 0));
-    // 22 trunk tiles and 4 branch tiles lose their cells: far beyond the blocks' reach of 6 tiles.
-    expect(expectInvalidated(world, () => { setBlock(world, 6, 30, null); }, [[6, 30]])).toBe(26);
+    // 22 trunk tiles and 4 branch tiles lose their cells, far beyond the blocks' reach of 6 tiles; so do the sand
+    // itself and the stone below it (now open above).
+    expect(expectInvalidated(world, () => { setBlock(world, 6, 30, null); }, [[6, 30]])).toBe(28);
   });
 
   test("taking a tile from a vine reframes the vine above it", () => {

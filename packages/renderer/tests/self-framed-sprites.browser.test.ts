@@ -167,7 +167,7 @@ function expectedCanvas(world: CanonicalWorld): Uint8Array {
       if (cell !== NO_CELL) {
         const block = world.planes.block[tx * height + ty] ?? 0xffff;
         const ref = world.palette[block];
-        const sheet = SHEETS.findIndex((entry) => ref?.kind === "vanilla" && entry.id === ref.id);
+        const sheet = SHEETS.findIndex((entry) => entry.kind === "tile" && ref?.kind === "vanilla" && entry.id === ref.id);
         const shape = world.planes.shape[tx * height + ty] ?? 0;
         const column = shapedColumns(shape)[Math.floor(sx / 2)];
         if (column === undefined) throw new Error("no column");
