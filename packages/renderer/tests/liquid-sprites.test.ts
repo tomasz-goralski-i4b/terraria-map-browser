@@ -1,7 +1,7 @@
 // Liquid sprite rules (docs/assets.md, "Liquids"): the sheet of each liquid kind, the fill height of a liquid amount
 // and the sheet row a sprite pixel of a liquid tile reads.
 import { describe, expect, test } from "vitest";
-import { LIQUID_BODY_ROW, LIQUID_SHEETS, LIQUID_SPRITE_ALPHA, liquidFillPixels, liquidSheetRow } from "../src/index.js";
+import { LIQUID_BODY_ROW, LIQUID_SHEETS, LIQUID_SPRITE_ALPHA, liquidFillPixels, liquidSheetRow, shapedTileLiquid } from "../src/index.js";
 
 describe("liquid sprites", () => {
   test("water, lava and honey draw from Liquid_0, Liquid_1 and Liquid_11; shimmer keeps its map colour", () => {
@@ -29,5 +29,15 @@ describe("liquid sprites", () => {
     expect(liquidSheetRow(11, 16, false)).toBe(15);
     expect(liquidSheetRow(12, 16, false)).toBe(4);
     expect(liquidSheetRow(15, 16, false)).toBe(7);
+  });
+
+  test("a half block or slope without liquid of its own holds the liquid flowing in from above or its sides", () => {
+    const none = { kind: 0, amount: 0 };
+    // Liquid above fills the tile, under liquid (no surface).
+    expect(shapedTileLiquid({ kind: 1, amount: 40 }, none, none)).toEqual({ kind: 1, amount: 255, surface: false });
+    // Otherwise the fuller side neighbour, at its level, with the surface; the left one on a tie.
+    expect(shapedTileLiquid(none, { kind: 1, amount: 127 }, { kind: 2, amount: 200 })).toEqual({ kind: 2, amount: 200, surface: true });
+    expect(shapedTileLiquid(none, { kind: 3, amount: 90 }, { kind: 1, amount: 90 })).toEqual({ kind: 3, amount: 90, surface: true });
+    expect(shapedTileLiquid(none, none, none)).toBeNull();
   });
 });

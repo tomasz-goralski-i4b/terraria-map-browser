@@ -428,6 +428,38 @@ ivec4 liquidSample(ivec4 place, int alpha, int fill, bool surface, vec2 centre) 
   return sum.a == 0 ? ivec4(0) : ivec4((2 * sum.rgb + sum.a) / (2 * sum.a), (2 * sum.a + samples) / (2 * samples));
 }
 
+// The liquid sprite of liquid kind (1–4) filled amount high at the screen pixel centred on centre, over below; below
+// unchanged for a kind without a sheet.
+ivec4 drawLiquid(uint kind, int amount, bool surface, vec2 centre, ivec4 below) {
+  ivec4 sheet = uLiquidSheets[kind - 1u];
+  if (sheet.w == 0) return below;
+  int fill = (amount * ${String(SPRITE_TILE_PIXELS)} + 254) / 255;
+  return over(liquidSample(sheet, LIQUID_ALPHA[int(kind) - 1], fill, surface, centre), below);
+}
+
+// A half block or slope without liquid of its own holds the liquid around it in the part its shape cuts away, drawn
+// under the block (shapedTileLiquid in ../chunk/liquids.ts): liquid above fills it, else the fuller side neighbour at
+// its level, with the surface.
+ivec4 shapedLiquid(ivec2 texel, vec2 centre, ivec4 below) {
+  if ((uLayers & 8) == 0 || (uPresent & ${String(PRESENT.shape)}) == 0) return below;
+  if (plane8(texel, ${String(PLANES_8.shape)}) == 0u || plane8(texel, ${String(PLANES_8.liquidAmount)}) != 0u) return below;
+  // texel is transposed: (y, x).
+  ivec2 at[3] = ivec2[3](texel - ivec2(1, 0), texel - ivec2(0, 1), texel + ivec2(0, 1));
+  uint kinds[3];
+  int amounts[3];
+  for (int i = 0; i < 3; i++) {
+    uint kind = plane8(at[i], ${String(PLANES_8.liquid)});
+    int amount = int(plane8(at[i], ${String(PLANES_8.liquidAmount)}));
+    bool valid = kind >= 1u && kind <= 4u && amount != 0;
+    kinds[i] = valid ? kind : 0u;
+    amounts[i] = valid ? amount : 0;
+  }
+  if (kinds[0] != 0u) return drawLiquid(kinds[0], 255, false, centre, below);
+  int side = amounts[2] > amounts[1] ? 2 : 1;
+  if (kinds[side] == 0u) return below;
+  return drawLiquid(kinds[side], amounts[side], true, centre, below);
+}
+
 // The walls of the 3 × 3 tiles around the tile being drawn, looked up once per screen pixel by wallSample. Plain
 // variables rather than an array: an array indexed by a computed index is slow on some GPUs. Per wall, A = (atlas x,
 // atlas y of its cell's top-left, atlas page, kind) and B = the end of its sheet in the atlas. Kind: WALL_NONE (no
@@ -639,6 +671,7 @@ ivec4 localColorAt(ivec2 local, vec2 sub) {
     // A sprite over what lies behind it (paint is not applied to sprites).
 #ifdef SPRITES
     if (hasSprite) {
+      color = shapedLiquid(texel, sub, color);
       color = over(sprite, color);
       if (uSpriteWeight < 256) color = (mapped * (256 - uSpriteWeight) + color * uSpriteWeight + 128) / 256;
     }
@@ -653,11 +686,9 @@ ivec4 localColorAt(ivec2 local, vec2 sub) {
 #ifdef SPRITES
       // In sprite mode a liquid with a sheet shows it cut to its fill, with the surface where the tile above holds no
       // liquid (the page apron holds the row above the chunk), faded in over its map colour like a block sprite.
-      ivec4 sheet = uLiquidSheets[liquid - 1u];
-      if (sheet.w != 0) {
+      if (uLiquidSheets[liquid - 1u].w != 0) {
         bool surface = plane8(texel - ivec2(1, 0), ${String(PLANES_8.liquid)}) == 0u;
-        int fill = (amount * ${String(SPRITE_TILE_PIXELS)} + 254) / 255;
-        ivec4 drawn = over(liquidSample(sheet, LIQUID_ALPHA[int(liquid) - 1], fill, surface, sub), color);
+        ivec4 drawn = drawLiquid(liquid, amount, surface, sub, color);
         color = uSpriteWeight < 256 ? (mappedLiquid * (256 - uSpriteWeight) + drawn * uSpriteWeight + 128) / 256 : drawn;
       } else {
         color = mappedLiquid;

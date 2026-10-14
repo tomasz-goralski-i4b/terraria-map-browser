@@ -479,6 +479,11 @@ not observable:
 - **Surface:** a tile whose upper neighbour holds no liquid (any kind; outside the world counts as none) shows the frame
   from its row 0 at the liquid's top, so the highlight follows the fill level. A tile under liquid shows only body rows
   (`4 + depth mod 12`), so no surface line runs through a pool.
+- **Half blocks and slopes:** the file stores no liquid in a shaped block, but the game fills the part its shape cuts
+  away from the pool around it (G: in-game screenshot of a sand-floored pool, 2026-10-14). A half block or slope without
+  liquid of its own shows, under its block sprite, the liquid above it (full, under liquid), else that of its fuller
+  side neighbour (the left on a tie) at that neighbour's level, with the surface (`shapedTileLiquid`). The game's
+  `LiquidSlope_<n>` edge pieces are not drawn.
 - **Translucency:** the sprite pixel's alpha is scaled by the liquid's opacity `LIQUID_SPRITE_ALPHA` — water 128,
   lava 230, honey 191 (of 255) — and drawn over the blocks, walls and background behind the tile (`over`, straight
   alpha), so they show through. In map colours (map mode, and below `SPRITE_MIN_ZOOM` in sprite mode) a liquid keeps

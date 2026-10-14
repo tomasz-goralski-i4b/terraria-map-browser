@@ -39,3 +39,21 @@ export function liquidSheetRow(y: number, fill: number, surface: boolean): numbe
   const depth = y - top;
   return surface ? depth : LIQUID_BODY_ROW + (depth % (TILE_PIXELS - LIQUID_BODY_ROW));
 }
+
+/** A tile's liquid: CWM kind (0 none, 1–4) and amount (0–255). */
+export interface TileLiquid {
+  readonly kind: number;
+  readonly amount: number;
+}
+
+/**
+ * The liquid a half block or slope without liquid of its own shows in the part its shape cuts away, under the block
+ * (G: the game fills that part from the pool around it; the file stores no liquid there). Liquid above fills the tile,
+ * under liquid; otherwise the fuller side neighbour (the left one on a tie) at its own level, with the surface. Null
+ * without liquid around.
+ */
+export function shapedTileLiquid(above: TileLiquid, left: TileLiquid, right: TileLiquid): (TileLiquid & { readonly surface: boolean }) | null {
+  if (above.kind !== 0 && above.amount !== 0) return { kind: above.kind, amount: 255, surface: false };
+  const side = right.kind !== 0 && right.amount > (left.kind === 0 ? 0 : left.amount) ? right : left;
+  return side.kind !== 0 && side.amount !== 0 ? { kind: side.kind, amount: side.amount, surface: true } : null;
+}
