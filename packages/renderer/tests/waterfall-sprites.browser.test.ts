@@ -90,7 +90,7 @@ function at(pixels: Uint8Array, x: number, y: number): Rgba {
 }
 
 describe("waterfalls in sprite mode", () => {
-  test("the stream's sprites show their sheet pixels, mirrored, at their places; hiding liquids removes them", () => {
+  test("the stream's sprites show their sheet pixels, mirrored, at their places behind the blocks; hiding liquids removes them", () => {
     const world = basinWorld();
     const sprites = waterfallSprites(world, { left: 0, top: 0, right: WIDTH, bottom: HEIGHT });
     const draw = drawer(world);
@@ -100,7 +100,8 @@ describe("waterfalls in sprite mode", () => {
     for (let py = 0; py < HEIGHT * ZOOM; py++) {
       for (let px = 0; px < WIDTH * ZOOM; px++) {
         const covering = sprites.filter((s) => px >= s.dx && px < s.dx + s.width && py >= s.dy && py < s.dy + s.height).at(-1);
-        if (covering === undefined) continue;
+        // Waterfalls lie behind the blocks (G): the basin's map-coloured stone covers them.
+        if (covering === undefined || world.planes.block[Math.floor(px / ZOOM) * HEIGHT + Math.floor(py / ZOOM)] !== ABSENT) continue;
         const ox = px - covering.dx;
         const sx = covering.sx + (covering.flip === true ? covering.width - 1 - ox : ox);
         const sy = covering.sy + py - covering.dy;
@@ -112,6 +113,7 @@ describe("waterfalls in sprite mode", () => {
     const hidden = draw({ ...ALL, liquids: false });
     const column = sprites[1];
     if (column === undefined) throw new Error("no column sprite");
-    expect(at(hidden, column.dx + 2, column.dy + 4)).not.toEqual(at(shown, column.dx + 2, column.dy + 4));
+    // A pixel of the column in the air beside the wall (its first 4 pixels lie behind the wall).
+    expect(at(hidden, column.dx + 6, column.dy + 4)).not.toEqual(at(shown, column.dx + 6, column.dy + 4));
   });
 });

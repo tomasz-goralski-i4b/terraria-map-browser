@@ -143,7 +143,7 @@ describe("waterfall sprites", () => {
   test("a lip, its falling column and the run on the floor, mirrored for a waterfall flowing right", () => {
     const w = world(["#~h..", "###..", ".....", "#####"]);
     const sprites = waterfallSprites(w, { left: 0, top: 0, right: w.width, bottom: w.height });
-    const common = { kind: "waterfall", id: 0, flip: true, alpha: 255 };
+    const common = { kind: "waterfall", id: 0, flip: true, alpha: 255, behind: true };
     expect(sprites.slice(0, 4)).toEqual([
       // The lip: its flat part over the half block (2, 0), its column part hanging 6 pixels into the tile beside it.
       { ...common, sx: 10, sy: 0, width: 22, height: 24, dx: 2 * 16, dy: 0 },
@@ -158,7 +158,7 @@ describe("waterfall sprites", () => {
   test("at a ledge's end the film runs over the ledge and only the lip's corner hangs past it", () => {
     const w = world(["~h....", "#.....", "..#...", "......", "######"]);
     const sprites = waterfallSprites(w, { left: 0, top: 0, right: w.width, bottom: w.height });
-    const common = { kind: "waterfall", id: 0, flip: true, alpha: 255 };
+    const common = { kind: "waterfall", id: 0, flip: true, alpha: 255, behind: true };
     // Steps: lip (1, 0), fall (2, 1), lip (2, 1) at the one-tile ledge (2, 2), its top at y 32.
     expect(sprites.slice(2, 4)).toEqual([
       { ...common, sx: 16, sy: 0, width: 16, height: 8, dx: 2 * 16, dy: 2 * 16 - 8 },
@@ -191,7 +191,7 @@ describe("waterfall sprites", () => {
     expect(WATERFALL_SHEETS).toEqual([0, 1, 14, 25]);
     const w = world(["..hl#", "..###", ".....", "#####"]);
     const [lip] = waterfallSprites(w, { left: 0, top: 0, right: w.width, bottom: w.height });
-    expect(lip).toEqual({ kind: "waterfall", id: 1, flip: false, alpha: 255, sx: 10, sy: 0, width: 22, height: 24, dx: 2 * 16 - 6, dy: 0 });
+    expect(lip).toEqual({ kind: "waterfall", id: 1, flip: false, alpha: 255, behind: true, sx: 10, sy: 0, width: 22, height: 24, dx: 2 * 16 - 6, dy: 0 });
   });
 
   test("a shimmer waterfall's grey sheet is tinted by shimmer's colour; the others are not", () => {

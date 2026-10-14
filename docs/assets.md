@@ -527,7 +527,8 @@ the chunk pass shows what lies behind such a tile. They lie **behind the blocks*
 (G: a block's border covers a stalagmite's base; its transparent pixels show it): the chunk pass writes depth 0 where
 a block covers a pixel (its map colour, or a sprite pixel that is not transparent) and these sprites are drawn only
 elsewhere (`OBJECT_BEHIND`). Trees, palms and the giant mushroom (trunks, branches, tops, caps) lie behind the blocks
-too (G: a block's grass covers a trunk's foot); track extras and waterfalls stay in front. They still lie over liquids (the game
+too (G: a block's grass covers a trunk's foot), and so do waterfalls (G: the source's half block stays visible under
+the lip); track extras stay in front. They still lie over liquids (the game
 draws liquid over them; open question). Stalactites and stalagmites (165) are plain in the draw data, alone or with stone
 above or below: the game shifts them elsewhere. In-game screenshots (G) show hanging ones drawn up and standing ones
 drawn down so both touch the stone, as the observed moss plants (184: rows 0–36 down 2, rows 54–108 up 2); the
@@ -570,7 +571,8 @@ and trees (furniture, plants and platforms do not stop water; the game's own sol
 dry flat ground continues until an edge or a wall (in the screenshots the runs on the walkway stopped in a film of
 real liquid that had leaked from the basins); water is the forest style; frame 0, no animation; shimmer's mask is
 multiplied by shimmer's map colour. The object pass draws waterfalls over the chunk pass, mirrored when they flow
-right; the liquids layer toggle shows and hides them.
+right, behind the blocks ("Draw offsets": the source's half block stays visible under the lip, the walls cover the
+column's edge); the liquids layer toggle shows and hides them.
 
 ### Worked examples
 

@@ -189,8 +189,9 @@ export function waterfallSprites(world: WaterfallWorld, area: TileArea): ObjectS
         straight = null;
       }
       const flip = straight?.flip ?? step.direction === 1;
-      // Shimmer's sheet is a grey mask the game colours while drawing (S): tinted by its map colour (chosen).
-      const base = { kind: "waterfall" as const, id, flip, alpha: step.alpha, ...(source.kind === SHIMMER ? { tint: true } : {}) };
+      // Shimmer's sheet is a grey mask the game colours while drawing (S): tinted by its map colour (chosen). Behind the
+      // blocks (G: the source's half block stays visible under the lip, the walls cover the column's edge).
+      const base = { kind: "waterfall" as const, id, flip, alpha: step.alpha, behind: true, ...(source.kind === SHIMMER ? { tint: true } : {}) };
       const left = step.x * TILE;
       const ground = (step.y + 1) * TILE + (reader.solid(step.x, step.y + 1) && reader.shape(step.x, step.y + 1) === HALF ? TILE / 2 : 0);
       if (step.piece === "lip" && step.x === source.x && step.y === source.y) {
