@@ -42,7 +42,7 @@ Checked on one Windows install of Terraria **1.4.5.8** (L). `Content/Images/` ho
 | `Wall_<id>.xnb` | **366**, ids **1–366**, no gaps | there is no `Wall_0` — wall id 0 means "no wall" |
 | Tile variant sheets | `Tiles_5_0` … `Tiles_5_6`, `Tiles_2_Beach`, `Tiles_59_2`, `Tiles_199-gross`, `Tiles_59.bak` | not addressed by a tile id. `Tiles_5_N` is a pixel copy of block N + 1 of `Tiles_5` (`Tiles_5_6` differs from block 7 in 2 372 pixels), so trees need only `Tiles_5` ("Trees"); the others are deferred |
 | Tree and wire sheets | `Tree_Tops_0` … `Tree_Tops_31`, `Tree_Branches_0` … `Tree_Branches_31`, `Shroom_Tops`, `WiresNew`, `Actuator` | not addressed by a tile id; in the atlas ("Trees", "Wires"). `Wires`, `Wires2`–`Wires4` (an older layout) are not used |
-| Item and liquid sheets | `Item_<id>` (6 134 on L), `Liquid_0` … `Liquid_14`, `LiquidSlope_0` … `LiquidSlope_14` | in the atlas for later use (chest contents, liquids); not drawn yet |
+| Item and liquid sheets | `Item_<id>` (6 134 on L), `Liquid_0` … `Liquid_14`, `LiquidSlope_0` … `LiquidSlope_14` | in the atlas: items for chest contents; `Liquid_0`, `Liquid_1` and `Liquid_11` drawn as water, lava and honey ("Liquids"); the other sheets not drawn yet |
 | Look-alikes that are **not** wall sheets | `Wall_Outline.xnb`, `WallOfFlesh.xnb` | a loader must match `Wall_<digits>.xnb` exactly |
 
 **File-name case is not reliable:** tile 650 ships as `TIles_650.xnb` (capital `I`). Windows does not care; a
@@ -453,6 +453,38 @@ overlay; an actuator without its sheet its overlay colour. The pass blends over 
 a fully transparent pixel (background hidden and nothing behind the wire) a half-transparent wire pixel darkens
 slightly, unlike the chunk pass's overlay rule (chosen).
 
+### Liquids
+
+The liquid sheets, measured in the art (S, L 1.4.5.8):
+
+| Sheet | Size | Layout | Look |
+|---|---|---|---|
+| `Liquid_0`, `Liquid_2` … `Liquid_10`, `Liquid_12`, `Liquid_13` | 306 × 16 | 17 frames of 16 × 16 at a stride of 18 (animation) | water: forest (`Liquid_0`) and the biome styles |
+| `Liquid_1` | 16 × 16 | one frame | lava |
+| `Liquid_11` | 16 × 16 | one frame | honey |
+| `Liquid_14` | 306 × 72 | two rows of 16 × 34 frames at a stride of 36 (18 across) | a grey mask: shimmer, coloured by the game while drawing |
+| `LiquidSlope_0` … `LiquidSlope_14` | 72 × 16 | four 16 × 16 slope pieces at a stride of 18 | not drawn yet |
+
+Every frame is opaque: rows 0–1 are the surface highlight, rows 2–3 its edge and rows 4–15 one flat colour (the body;
+`LIQUID_BODY_ROW`). The body colours of water and lava equal their map colours.
+
+How the viewer draws them (#240, `packages/renderer/src/chunk/liquids.ts`), all chosen where the game's renderer is
+not observable:
+
+- **Sheet:** water `Liquid_0` (the forest style: the biome style depends on where the player stands, which a world does
+  not record), lava `Liquid_1`, honey `Liquid_11`, always frame 0 (no animation). Shimmer keeps its map colour (its
+  sheet is a mask). A liquid whose sheet is not in the atlas keeps its map colour.
+- **Fill:** a tile with amount `a` (1–255) is filled `⌈16 · a / 255⌉` sprite pixels from its bottom (127 → 8, 255 →
+  16); above that the liquid draws nothing.
+- **Surface:** a tile whose upper neighbour holds no liquid (any kind; outside the world counts as none) shows the frame
+  from its row 0 at the liquid's top, so the highlight follows the fill level. A tile under liquid shows only body rows
+  (`4 + depth mod 12`), so no surface line runs through a pool.
+- **Translucency:** the sprite pixel's alpha is scaled by the liquid's opacity `LIQUID_SPRITE_ALPHA` — water 128,
+  lava 230, honey 191 (of 255) — and drawn over the blocks, walls and background behind the tile (`over`, straight
+  alpha), so they show through. In map colours (map mode, and below `SPRITE_MIN_ZOOM` in sprite mode) a liquid keeps
+  the map rule, opacity `amount / 255`; from `SPRITE_MIN_ZOOM` to `SPRITE_FULL_ZOOM` its sprite fades in over that
+  colour like a block sprite. The liquids layer toggle removes the liquid and nothing else.
+
 ### Worked examples
 
 | # | Case | Input | Source rectangle (x, y, w, h) | Basis |
@@ -481,7 +513,8 @@ Expected sheet sizes (consistent with the size arithmetic, confirmed only by the
 | Trees (5, 583–589, 596, 616, 634), palms (323), the giant mushroom (72) | trunk cells by ground, tops and branches by ground, zone and tree top variation, palm rows and lean, mushroom caps, in an object pass over the chunk pass (#238, "Trees") | wind sway, paint, lighting, the oasis palm rows |
 | Other variant sheets (`Tiles_2_Beach`, `Tiles_59_2`, …) | — | yes |
 | Wires and actuators | the `WiresNew` piece the four same-colour side neighbours give, red to yellow, the actuator on top, over everything in a wire pass; the colour overlay below `SPRITE_MIN_ZOOM` (#241, "Wires") | animation, the wiring tools' translucency modes, the other `WiresNew` rows |
-| Paint, actuated/inactive tint, illumination, liquids | — | yes |
+| Liquids | water, lava and honey from frame 0 of their `Liquid_<n>` sheet, cut to the fill level, with the surface piece where the tile above holds no liquid, translucent over what lies behind (#240, "Liquids"); shimmer in its map colour | animation (waves, lava glow), biome water styles, the slope pieces (`LiquidSlope_<n>`), waterfalls, lighting |
+| Paint, actuated/inactive tint, illumination | — | yes |
 
 ## Tile framing
 
@@ -1277,10 +1310,11 @@ report the same errors, and every candidate library either drags in a framework 
 `buildSpriteAtlas(contentDir)` (`packages/assets`) decodes every `Images/Tiles_<id>.xnb`, `Images/Wall_<id>.xnb`,
 `Images/Tree_Tops_<n>.xnb` and `Images/Tree_Branches_<n>.xnb` (kinds `tile`, `wall`, `treeTop`, `treeBranch`), and
 `Shroom_Tops`, `WiresNew` and `Actuator` (kinds `shroomTop`, `wire`, `actuator`, each id 0), and `Item_<n>`,
-`Liquid_<n>` and `LiquidSlope_<n>` (kinds `item`, `liquid`, `liquidSlope`: kept for chest contents and liquids, not drawn
-yet; their frame layout is not described, so their frame size is 0, the whole sheet) once (names matched
+`Liquid_<n>` and `LiquidSlope_<n>` (kinds `item`, `liquid`, `liquidSlope`: items for chest contents, with no frame grid
+(frame size 0, the whole sheet: the item catalog carries each inventory frame); liquids drawn per "Liquids", 16 × 16
+frames at a stride of 18) once (names matched
 case-insensitively; `Wall_Outline`, `Tiles_<id>_<n>` variants and everything else are ignored) and packs them into
-square RGBA pages, 4096 × 4096 by default. Format 5 added the tree, cap, wire and actuator sheets; format 6 the item and liquid sheets. It runs in a Worker (`atlas-worker.ts`) and never
+square RGBA pages, 4096 × 4096 by default. Format 5 added the tree, cap, wire and actuator sheets; format 6 the item and liquid sheets; format 7 the liquid frame layout. It runs in a Worker (`atlas-worker.ts`) and never
 touches the network; the Worker reports the number of `fetch` calls it saw (always 0).
 
 - **Packing:** shelf packing, tallest sheet first, with 2 transparent pixels of padding around every sheet so
@@ -1399,5 +1433,7 @@ shorter cells retain their native height. Paint remains a corner mark.
    which `WiresNew` rows 4–15 the game shows when; the layering of tree foliage against neighbouring blocks, liquids
    and wires; the draw order of a junction's two track pieces; `Tiles_5` block 2 (no ground produced it); the oasis
    palm rows. Each has a documented choice ("Minecart tracks", "Trees", "Wires").
+7. Liquids (#240): the game's liquid opacity, how it draws a tile under liquid and the shimmer colours are not
+   observable without its renderer; the choices are in "Liquids".
 
 Proposed follow-up issues: [planning/assets-follow-ups.md](planning/assets-follow-ups.md).

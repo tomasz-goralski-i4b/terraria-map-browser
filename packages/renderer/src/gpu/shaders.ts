@@ -1,6 +1,7 @@
 // GLSL for the WebGL2 backend. The colour rules mirror `renderChunk` (../chunk/render.ts) and use integer arithmetic so
 // the chunk pass is bit-exact: no tie-breaking can differ because (l*a + c*(255-a)) / 255 never has a .5 fraction.
 import { FILTER_SUBTILE } from "../chunk/box-filter.js";
+import { LIQUID_BODY_ROW, LIQUID_SPRITE_ALPHA } from "../chunk/liquids.js";
 import { BLOCK_CELL_STRIDE } from "../framing/chunk-cells.js";
 import { NO_CELL } from "../framing/frame-block.js";
 import { WALL_CELL_STRIDE, WALL_OVERHANG } from "../framing/frame-wall.js";
@@ -200,6 +201,10 @@ uniform int uSpriteSamples;
 uniform float uSpriteStep;
 uniform int uSpriteLevel;
 uniform int uSpriteWeight;
+// Per CWM liquid kind 1–4 (docs/assets.md, "Liquids"): the atlas page, x and y of frame 0 of its Liquid_<n> sheet, and
+// 1 when it is drawn from it (0: no sheet in the atlas, or shimmer, which keeps its map colour). LIQUID_SHEETS.
+uniform ivec4 uLiquidSheets[4];
+const int LIQUID_ALPHA[4] = int[4](${LIQUID_SPRITE_ALPHA.map(String).join(", ")});
 #endif
 flat in ivec4 vRect;
 flat in int vLayer;
@@ -392,6 +397,35 @@ bool spriteSample(uint index, ivec2 texel, vec2 centre, out ivec4 color) {
     ? ivec4(0)
     : ivec4((2 * sum.rgb + sum.a) / (2 * sum.a), (2 * sum.a + samples) / (2 * samples));
   return true;
+}
+
+// The liquid sprite pixel at sprite pixel sub of a tile filled fill pixels high (liquidSheetRow in ../chunk/liquids.ts):
+// frame 0 of the sheet at place from its top row at the liquid's top on a surface tile, its body rows under liquid;
+// its alpha scaled by the liquid's opacity. Transparent above the liquid.
+ivec4 liquidPixel(ivec4 place, int alpha, int fill, bool surface, ivec2 sub) {
+  int top = ${String(SPRITE_TILE_PIXELS)} - fill;
+  if (sub.y < top) return ivec4(0);
+  int depth = sub.y - top;
+  int row = surface ? depth : ${String(LIQUID_BODY_ROW)} + depth % ${String(SPRITE_TILE_PIXELS - LIQUID_BODY_ROW)};
+  ivec4 color = ivec4(round(atlasTexel(place.yz, place.yz + ivec2(sub.x, row), place.x) * 255.0));
+  color.a = (color.a * alpha + 127) / 255;
+  return color.a == 0 ? ivec4(0) : color;
+}
+
+// A liquid's sprite over the footprint of a screen pixel centred on sprite pixel position centre, as spriteSample
+// averages a block's: one sample is liquidPixel at the centre.
+ivec4 liquidSample(ivec4 place, int alpha, int fill, bool surface, vec2 centre) {
+  int count = uSpriteSamples;
+  if (count == 1) return liquidPixel(place, alpha, fill, surface, samplePixel(centre, 0, 0));
+  ivec4 sum = ivec4(0);
+  for (int y = 0; y < count; y++) {
+    for (int x = 0; x < count; x++) {
+      ivec4 sampled = liquidPixel(place, alpha, fill, surface, samplePixel(centre, x, y));
+      sum += ivec4(sampled.rgb * sampled.a, sampled.a);
+    }
+  }
+  int samples = count * count;
+  return sum.a == 0 ? ivec4(0) : ivec4((2 * sum.rgb + sum.a) / (2 * sum.a), (2 * sum.a + samples) / (2 * samples));
 }
 
 // The walls of the 3 × 3 tiles around the tile being drawn, looked up once per screen pixel by wallSample. Plain
@@ -615,7 +649,22 @@ ivec4 localColorAt(ivec2 local, vec2 sub) {
     uint liquid = plane8(texel, ${String(PLANES_8.liquid)});
     int amount = int(plane8(texel, ${String(PLANES_8.liquidAmount)}));
     if (liquid >= 1u && liquid <= 4u && amount != 0) {
-      color = over(ivec4(uLiquids[liquid - 1u], amount), color);
+      ivec4 mappedLiquid = over(ivec4(uLiquids[liquid - 1u], amount), color);
+#ifdef SPRITES
+      // In sprite mode a liquid with a sheet shows it cut to its fill, with the surface where the tile above holds no
+      // liquid (the page apron holds the row above the chunk), faded in over its map colour like a block sprite.
+      ivec4 sheet = uLiquidSheets[liquid - 1u];
+      if (sheet.w != 0) {
+        bool surface = plane8(texel - ivec2(1, 0), ${String(PLANES_8.liquid)}) == 0u;
+        int fill = (amount * ${String(SPRITE_TILE_PIXELS)} + 254) / 255;
+        ivec4 drawn = over(liquidSample(sheet, LIQUID_ALPHA[int(liquid) - 1], fill, surface, sub), color);
+        color = uSpriteWeight < 256 ? (mappedLiquid * (256 - uSpriteWeight) + drawn * uSpriteWeight + 128) / 256 : drawn;
+      } else {
+        color = mappedLiquid;
+      }
+#else
+      color = mappedLiquid;
+#endif
     }
   }
 

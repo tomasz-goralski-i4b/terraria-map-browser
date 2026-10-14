@@ -23,6 +23,7 @@ import type { ChunkCellCache } from "../framing/chunk-cells.js";
 import { createChunkWallCellCache } from "../framing/chunk-wall-cells.js";
 import type { ChunkWallCellCache } from "../framing/chunk-wall-cells.js";
 import type { BlockFraming } from "../framing/frame-block.js";
+import { LIQUID_SHEETS } from "../chunk/liquids.js";
 import { backgroundColor, contentColor, liquidColors } from "../palette/map-palette.js";
 import type { MapPalette } from "../palette/map-palette.js";
 import {
@@ -344,7 +345,7 @@ const CHUNK_PASS_UNIFORMS = [...TILE_UNIFORMS, "uCamera", "uZoom", "uViewport", 
 const CHUNK_UNIFORMS = [...CHUNK_PASS_UNIFORMS, ...OVERLAY_UNIFORMS] as const;
 /** The sprite program's own uniforms (chunkSpriteFragmentSource), besides CHUNK_UNIFORMS. */
 const SPRITE_UNIFORMS = [
-  "uAtlas", "uAtlasHalf", "uSpriteSheets", "uSpriteSamples", "uSpriteStep", "uSpriteLevel", "uSpriteWeight",
+  "uAtlas", "uAtlasHalf", "uSpriteSheets", "uSpriteSamples", "uSpriteStep", "uSpriteLevel", "uSpriteWeight", "uLiquidSheets",
 ] as const;
 const HALF_ATLAS_UNIFORMS = ["uAtlas", "uPage"] as const;
 const SPRITE_CHUNK_UNIFORMS = [...CHUNK_PASS_UNIFORMS, ...SPRITE_UNIFORMS] as const;
@@ -780,6 +781,8 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   let sheetsByKey = new Map<string, SpriteSheetEntry>();
   // The wire pieces and the actuator (docs/assets.md, "Wires"): (page, x, y, 1), or zeros without the sheet.
   let wireSheet: Int32Array = new Int32Array(4);
+  /** uLiquidSheets: per liquid kind 1–4 the atlas page, x, y of its sheet and 1 when it is drawn from it. */
+  let liquidSheets: Int32Array = new Int32Array(16);
   let actuatorSheet: Int32Array = new Int32Array(4);
   // The object pass's instances by chunk key, for the current world and atlas: computed on the CPU from the world's
   // planes on first draw, dropped by invalidateTiles around changed tiles.
@@ -1045,6 +1048,10 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       return new Int32Array(entry === undefined ? [0, 0, 0, 0] : [entry.page, entry.x, entry.y, 1]);
     };
     wireSheet = placeOf("wire");
+    liquidSheets = new Int32Array(LIQUID_SHEETS.flatMap((id) => {
+      const entry = id === null ? undefined : sheetsByKey.get(`liquid:${String(id)}`);
+      return entry === undefined ? [0, 0, 0, 0] : [entry.page, entry.x, entry.y, 1];
+    }));
     actuatorSheet = placeOf("actuator");
     objectCache.clear();
     objectUploaded = null;
@@ -1417,6 +1424,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     gl.uniform1f(sprites.uSpriteStep, sampling.step);
     gl.uniform1i(sprites.uSpriteLevel, sampling.level);
     gl.uniform1i(sprites.uSpriteWeight, sampling.weight);
+    gl.uniform4iv(sprites.uLiquidSheets, liquidSheets);
   };
 
   /**

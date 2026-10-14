@@ -155,7 +155,9 @@ exactly the pixels `filterTiles` (below) makes of them. The browser tests assert
     position to that tile's near edge, so the border never shows the far edge of a tile.
 
   Transparent sprite pixels show the wall, else the background, behind
-  them; paint is not applied to sprites; liquids still draw over them, and the wire pass over everything. A half-transparent sprite pixel with
+  them; paint is not applied to sprites; liquids draw over them — water, lava and honey from their `Liquid_<n>` sheet cut to
+  the fill level, translucent, shimmer and sheetless liquids in their map colours (#240, `src/chunk/liquids.ts`,
+  docs/assets.md "Liquids") — and the wire pass over everything. A half-transparent sprite pixel with
   nothing behind it is the one partly transparent pixel liquids can land on outside map mode: there they use the
   general straight-alpha rule (`over` in `src/gpu/shaders.ts`, rounded to nearest); map mode stays bit-exact. Everything else, the box filter and
   the overview keep map colours. The mode is a uniform: switching it or crossing the threshold uploads no chunk planes and no atlas (the
