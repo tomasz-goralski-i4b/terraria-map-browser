@@ -199,7 +199,8 @@ describe("waterfall sprites", () => {
     shimmer.planes.liquid[0 * 3 + 1] = 4;
     shimmer.planes.liquidAmount[0 * 3 + 1] = 255;
     const area = { left: 0, top: 0, right: 3, bottom: 3 };
-    expect(waterfallSprites(shimmer, area)[0]).toMatchObject({ id: 25, tint: true });
+    // Its lip from the sheet's edge band (rows 42–81), which the object pass blends from lavender to its cyan edge.
+    expect(waterfallSprites(shimmer, area)[0]).toMatchObject({ id: 25, tint: true, sy: 42 });
     expect(waterfallSprites(world(["...", "~h.", "..."]), area)[0]?.tint).toBeUndefined();
   });
 });

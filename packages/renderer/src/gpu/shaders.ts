@@ -1,7 +1,9 @@
 // GLSL for the WebGL2 backend. The colour rules mirror `renderChunk` (../chunk/render.ts) and use integer arithmetic so
 // the chunk pass is bit-exact: no tie-breaking can differ because (l*a + c*(255-a)) / 255 never has a .5 fraction.
 import { FILTER_SUBTILE } from "../chunk/box-filter.js";
-import { LIQUID_BLEED, LIQUID_BODY_ROW, LIQUID_SPRITE_ALPHA } from "../chunk/liquids.js";
+import {
+  LIQUID_BLEED, LIQUID_BODY_ROW, LIQUID_SPRITE_ALPHA, SHIMMER_BODY, SHIMMER_SPARKLE, SHIMMER_SPARKLE_PERIOD, SHIMMER_SURFACE,
+} from "../chunk/liquids.js";
 import { BLOCK_CELL_STRIDE } from "../framing/chunk-cells.js";
 import { NO_CELL } from "../framing/frame-block.js";
 import { WALL_CELL_STRIDE, WALL_OVERHANG } from "../framing/frame-wall.js";
@@ -9,6 +11,12 @@ import { TRACK_CELL_STRIDE, trackShaderConstants } from "../objects/tracks.js";
 import { WIRE_CELL_STRIDE } from "../objects/wires.js";
 
 /** Tiles of neighbouring chunks stored around each chunk's page layer, so the box filter can cross chunk edges. */
+/** A colour as a GLSL ivec3 literal. */
+function glslColor(color: readonly number[] | undefined): string {
+  const [r = 0, g = 0, b = 0] = color ?? [];
+  return `ivec3(${String(r)}, ${String(g)}, ${String(b)})`;
+}
+
 export const PAGE_APRON = 1;
 
 /**
@@ -403,15 +411,28 @@ bool spriteSample(uint index, ivec2 texel, vec2 centre, out ivec4 color) {
   return true;
 }
 
+// The tile (world x, y) whose liquid is being sampled, for shimmer's sparkles; set by localColorAt.
+ivec2 liquidTile = ivec2(0);
+
+// Shimmer's colour at frame row row of world sprite pixel p (shimmerPixel in ../chunk/liquids.ts).
+ivec3 shimmerColor(int row, ivec2 p) {
+  if (row == 0) return ${glslColor(SHIMMER_SURFACE[0])};
+  if (row == 1) return ${glslColor(SHIMMER_SURFACE[1])};
+  if (row < 4) return ${glslColor(SHIMMER_SURFACE[2])};
+  uint hash = uint(p.x) * 0x9e3779b1u ^ uint(p.y) * 0x85ebca77u;
+  hash ^= hash >> 15u;
+  return hash % ${String(SHIMMER_SPARKLE_PERIOD)}u == 0u ? ${glslColor(SHIMMER_SPARKLE)} : ${glslColor(SHIMMER_BODY)};
+}
+
 // The liquid art pixel at sprite pixel sub of a tile filled fill pixels high (liquidSheetRow in ../chunk/liquids.ts):
 // frame 0 of the sheet at place from its top row at the liquid's top on a surface tile, its body rows under liquid; a
 // flat sheet (LIQUID_FLAT) its colour plain. Transparent above the liquid. Its opacity is applied by the layers.
 ivec4 liquidArtPixel(ivec4 place, int fill, bool surface, ivec2 sub, ivec3 plain) {
   int top = ${String(SPRITE_TILE_PIXELS)} - fill;
   if (sub.y < top) return ivec4(0);
-  if (place.w == ${String(LIQUID_FLAT)}) return ivec4(plain, 255);
   int depth = sub.y - top;
   int row = surface ? depth : ${String(LIQUID_BODY_ROW)} + depth % ${String(SPRITE_TILE_PIXELS - LIQUID_BODY_ROW)};
+  if (place.w == ${String(LIQUID_FLAT)}) return ivec4(shimmerColor(row, liquidTile * ${String(SPRITE_TILE_PIXELS)} + sub), 255);
   ivec4 color = ivec4(round(atlasTexel(place.yz, place.yz + ivec2(sub.x, row), place.x) * 255.0));
   return color.a == 0 ? ivec4(0) : color;
 }
@@ -725,6 +746,7 @@ ivec4 localColorAt(ivec2 local, vec2 sub) {
   bool liquidShown = liquidAny && !liquidBleeds;
   // The pixel's liquid art, sampled once for both layers; a bleed is one pixel wide: one sample.
   ivec4 liquidArt = ivec4(0);
+  liquidTile = vRect.xy + local;
   if (liquidAny) {
     ivec4 sheet = uLiquidSheets[liquidKind - 1u];
     if (sheet.w != 0) {
@@ -1015,6 +1037,7 @@ void main() {
  */
 export const objectFragmentSource: string = header + spritePassInputs + `
 uniform ivec3 uTint;
+uniform ivec3 uTintEdge;
 flat in ivec4 vDest;
 flat in ivec4 vSource;
 void main() {
@@ -1027,7 +1050,8 @@ void main() {
       if ((vSource.w & ${String(OBJECT_FLIP)}) != 0) sub.x = vDest.z - 1 - sub.x;
       ivec4 sampled = ivec4(round(atlasTexel(vSource.yz, vSource.yz + sub, vSource.x) * 255.0));
       sampled.a = sampled.a * (255 - ((vSource.w >> ${String(OBJECT_FADE_SHIFT)}) & 255)) / 255;
-      if ((vSource.w & ${String(OBJECT_TINT)}) != 0) sampled.rgb = sampled.rgb * uTint / 255;
+      // Tinted (shimmer's waterfall edge band): from uTint to uTintEdge by the band's grey (200 at its edge).
+      if ((vSource.w & ${String(OBJECT_TINT)}) != 0) sampled.rgb = uTint + (uTintEdge - uTint) * min(sampled.r, 200) / 200;
       sum += ivec4(sampled.rgb * sampled.a, sampled.a);
     }
   }

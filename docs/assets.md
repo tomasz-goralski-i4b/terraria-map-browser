@@ -472,8 +472,11 @@ How the viewer draws them (#240, `packages/renderer/src/chunk/liquids.ts`), all 
 not observable:
 
 - **Sheet:** water `Liquid_0` (the forest style: the biome style depends on where the player stands, which a world does
-  not record), lava `Liquid_1`, honey `Liquid_11`, always frame 0 (no animation). Shimmer is drawn in its flat map colour
-  (its sheet is a mask), cut to its fill and through shapes like the others. Water, lava or honey whose sheet is not
+  not record), lava `Liquid_1`, honey `Liquid_11`, always frame 0 (no animation). Shimmer's sheet is a grey mask the game colours
+  while drawing; the viewer draws shimmer in colours measured in an in-game screenshot (G, 2026-10-14): surface rows
+  (163, 118, 246), (234, 108, 255), (199, 108, 255) × 2, the body (154, 109, 233) with light sparkles (222, 178, 255)
+  at about one pixel in 61, fixed per world pixel by a hash (`shimmerPixel`; the game's sparkles move), cut to its fill
+  and through shapes like the others. Water, lava or honey whose sheet is not
   in the atlas keeps its map colour.
 - **Fill:** a tile with amount `a` (1–255) is filled `⌈16 · a / 255⌉` sprite pixels from its bottom (127 → 8, 255 →
   16); above that the liquid draws nothing.
@@ -570,7 +573,9 @@ Chosen where the screenshots do not show it: "solid" is a block the world stores
 and trees (furniture, plants and platforms do not stop water; the game's own solidity table is not shipped); a run on
 dry flat ground continues until an edge or a wall (in the screenshots the runs on the walkway stopped in a film of
 real liquid that had leaked from the basins); water is the forest style; frame 0, no animation; shimmer's mask is
-multiplied by shimmer's map colour. The object pass draws waterfalls over the chunk pass, mirrored when they flow
+drawn from its edge band (rows 42–81 of `Waterfall_25`, whose three bands 42 rows apart are the shape, its edge mask
+and a fainter one), blended from the measured core (164, 161, 245) to the light edge (164, 203, 255) by the band's grey
+(G). The object pass draws waterfalls over the chunk pass, mirrored when they flow
 right, behind the blocks ("Draw offsets": the source's half block stays visible under the lip, the walls cover the
 column's edge); the liquids layer toggle shows and hides them.
 

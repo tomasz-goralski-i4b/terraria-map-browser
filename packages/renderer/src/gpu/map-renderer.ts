@@ -23,7 +23,7 @@ import type { ChunkCellCache } from "../framing/chunk-cells.js";
 import { createChunkWallCellCache } from "../framing/chunk-wall-cells.js";
 import type { ChunkWallCellCache } from "../framing/chunk-wall-cells.js";
 import type { BlockFraming } from "../framing/frame-block.js";
-import { LIQUID_SHEETS } from "../chunk/liquids.js";
+import { LIQUID_SHEETS, SHIMMER_WATERFALL } from "../chunk/liquids.js";
 import { backgroundColor, contentColor, liquidColors } from "../palette/map-palette.js";
 import type { MapPalette } from "../palette/map-palette.js";
 import {
@@ -358,7 +358,7 @@ const OBJECT_UNIFORMS = [
   "uCamera", "uZoom", "uViewport", "uAtlas", "uAtlasHalf", "uSpriteSamples", "uSpriteStep", "uSpriteLevel", "uSpriteWeight",
 ] as const;
 /** The object program's uniforms: the shared sprite pass ones and the tint of shimmer's waterfalls. */
-const OBJECT_PROGRAM_UNIFORMS = [...OBJECT_UNIFORMS, "uTint"] as const;
+const OBJECT_PROGRAM_UNIFORMS = [...OBJECT_UNIFORMS, "uTint", "uTintEdge"] as const;
 /** The wire pass's uniforms (wireFragmentSource). */
 const WIRE_UNIFORMS = [
   ...OBJECT_UNIFORMS, "uPlanes16", "uPresent", "uLayers", "uWireColors", "uWireBits", "uWireAlpha", "uWorldSize", "uWireSheet",
@@ -1552,8 +1552,9 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     objectProgram ??= link(gl, objectVertexSource, objectFragmentSource, OBJECT_PROGRAM_UNIFORMS);
     gl.useProgram(objectProgram.program);
     setSpritePassUniforms(objectProgram.uniforms);
-    // Shimmer (CWM liquid kind 4) is the last of the liquid colours.
-    gl.uniform3iv(objectProgram.uniforms.uTint, liquidUniform.subarray(9, 12));
+    // Shimmer's waterfall: its core and edge colours (G: measured in an in-game screenshot).
+    gl.uniform3i(objectProgram.uniforms.uTint, ...SHIMMER_WATERFALL[0]);
+    gl.uniform3i(objectProgram.uniforms.uTintEdge, ...SHIMMER_WATERFALL[1]);
     gl.bindVertexArray(resources.objectArray);
     gl.enable(gl.BLEND);
     gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);

@@ -1,7 +1,7 @@
 // Liquid sprite rules (docs/assets.md, "Liquids"): the sheet of each liquid kind, the fill height of a liquid amount
 // and the sheet row a sprite pixel of a liquid tile reads.
 import { describe, expect, test } from "vitest";
-import { LIQUID_BODY_ROW, LIQUID_SHEETS, LIQUID_SPRITE_ALPHA, liquidFillPixels, LIQUID_BLEED, liquidBleed, liquidHasSurface, liquidSheetRow, shapedTileLiquid } from "../src/index.js";
+import { LIQUID_BODY_ROW, LIQUID_SHEETS, LIQUID_SPRITE_ALPHA, liquidFillPixels, LIQUID_BLEED, liquidBleed, shimmerPixel, liquidHasSurface, liquidSheetRow, shapedTileLiquid } from "../src/index.js";
 
 describe("liquid sprites", () => {
   test("water, lava and honey draw from Liquid_0, Liquid_1 and Liquid_11; shimmer is drawn flat in its map colour", () => {
@@ -55,6 +55,22 @@ describe("liquid sprites", () => {
     expect(liquidBleed(15, 9, none, none, water)).toEqual({ side: "right", kind: 1, amount: 255 });
     expect(liquidBleed(LIQUID_BLEED, 9, none, half, none)).toBeNull();
     expect(liquidBleed(7, 7, water, water, water)).toBeNull();
+  });
+
+  test("shimmer shows its measured surface rows, body and sparkles (G: in-game screenshot)", () => {
+    expect(shimmerPixel(0, 3, 5)).toEqual([163, 118, 246]);
+    expect(shimmerPixel(1, 3, 5)).toEqual([234, 108, 255]);
+    expect(shimmerPixel(3, 3, 5)).toEqual([199, 108, 255]);
+    // The body, except at its sparkles: about one pixel in 61, the same at every frame.
+    let sparkles = 0;
+    for (let y = 0; y < 61; y++) for (let x = 0; x < 61; x++) {
+      const pixel = shimmerPixel(8, x, y);
+      if (pixel.join() === "154,109,233") continue;
+      expect(pixel).toEqual([222, 178, 255]);
+      sparkles++;
+    }
+    expect(sparkles).toBeGreaterThan(30);
+    expect(sparkles).toBeLessThan(100);
   });
 
   test("a liquid has its surface unless the tile above holds liquid, its own or flowing into its shape", () => {

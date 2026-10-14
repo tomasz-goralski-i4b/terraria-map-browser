@@ -2,7 +2,7 @@
 // liquid against synthetic Liquid_0/1/11 sheets; what lies behind shows through; the liquids toggle removes exactly
 // the liquid pixels.
 import { afterEach, describe, expect, test } from "vitest";
-import { LIQUID_SHEETS, LIQUID_SPRITE_ALPHA, createMapRenderer, liquidBleed, liquidColors, liquidFillPixels, liquidSheetRow, renderChunk } from "../src/index.js";
+import { LIQUID_SHEETS, LIQUID_SPRITE_ALPHA, createMapRenderer, liquidBleed, shimmerPixel, liquidFillPixels, liquidSheetRow, renderChunk } from "../src/index.js";
 import type { SpriteSheetEntry, ChunkLayers, MapRenderer, RenderableWorld, SpriteAtlasSource } from "../src/index.js";
 
 const created: MapRenderer[] = [];
@@ -104,7 +104,6 @@ function over(top: Rgba, below: Rgba): Rgba {
 
 const ZOOM = 16;
 /** Shimmer's map colour (placeholder palette: the renderer's liquid colours without a map palette). */
-const SHIMMER_COLOR: Rgba = [...(liquidColors()[SHIMMER] ?? [0, 0, 0]).slice(0, 3), 255] as unknown as Rgba;
 const ALL: ChunkLayers = { background: true, walls: true, blocks: true, liquids: true };
 
 function pixelAt(pixels: ArrayLike<number>, x: number, y: number): Rgba {
@@ -140,10 +139,10 @@ function expectedCanvas(world: RenderableWorld, layers: ChunkLayers, sheets = tr
         if (sheet === undefined) {
           color = pixelAt(mapped, tx, ty);
         } else if (sheet === null) {
-          // Shimmer: its map colour, flat, cut to the fill, in both layers.
+          // Shimmer: its measured colours by row, with sparkles, cut to the fill, in both layers.
           const row = liquidSheetRow(py % ZOOM, liquidFillPixels(amount), true);
           if (row !== null) {
-            const flat = SHIMMER_COLOR;
+            const flat: Rgba = [...shimmerPixel(row, px, py), 255];
             if (open(tx, ty)) color = flat;
             color = over([flat[0], flat[1], flat[2], Math.floor((255 * (LIQUID_SPRITE_ALPHA[kind - 1] ?? 0) + 127) / 255)], color);
           }

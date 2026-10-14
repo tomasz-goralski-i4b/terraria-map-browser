@@ -5,7 +5,7 @@
 /**
  * The `Liquid_<n>` sheet of CWM liquid kinds 1–4 (water, lava, honey, shimmer), measured in the art (S): Liquid_0 is
  * the forest water, Liquid_1 lava, Liquid_11 honey. Shimmer's Liquid_14 is a grey mask the game colours while drawing,
- * so shimmer is drawn in its flat map colour (null), cut to its fill and through shapes like the others. Water is always the forest style: the biome water styles 2–10, 12 and 13
+ * so shimmer (null) is drawn in its measured colours (shimmerPixel), cut to its fill and through shapes like the others. Water is always the forest style: the biome water styles 2–10, 12 and 13
  * depend on where the player stands, which a world file does not record.
  */
 export const LIQUID_SHEETS: readonly (number | null)[] = [0, 1, 11, null];
@@ -94,3 +94,30 @@ export function liquidBleed(
   if (fromLeft) return { side: "left", kind: left.kind, amount: left.amount };
   return null;
 }
+
+/**
+ * Shimmer's colours in sprite mode (G: measured in an in-game screenshot of a shimmer pool, 2026-10-14; its sheet is a
+ * grey mask the game colours while drawing, which the viewer does not reproduce): the surface rows 0–3 and the body,
+ * with light sparkles at about one pixel in SHIMMER_SPARKLE_PERIOD, fixed per world sprite pixel (no animation).
+ */
+export const SHIMMER_SURFACE: readonly (readonly [number, number, number])[] = [[163, 118, 246], [234, 108, 255], [199, 108, 255], [199, 108, 255]];
+export const SHIMMER_BODY: readonly [number, number, number] = [154, 109, 233];
+export const SHIMMER_SPARKLE: readonly [number, number, number] = [222, 178, 255];
+export const SHIMMER_SPARKLE_PERIOD = 61;
+
+/** Whether world sprite pixel (x, y) (16 per tile) of a shimmer body sparkles: a fixed hash of the position. */
+export function shimmerSparkles(x: number, y: number): boolean {
+  let hash = (Math.imul(x, 0x9e3779b1) ^ Math.imul(y, 0x85ebca77)) >>> 0;
+  hash = (hash ^ (hash >>> 15)) >>> 0;
+  return hash % SHIMMER_SPARKLE_PERIOD === 0;
+}
+
+/** Shimmer's colour at frame row `row` (liquidSheetRow) of world sprite pixel (x, y). */
+export function shimmerPixel(row: number, x: number, y: number): readonly [number, number, number] {
+  const surface = SHIMMER_SURFACE[row];
+  if (surface !== undefined) return surface;
+  return shimmerSparkles(x, y) ? SHIMMER_SPARKLE : SHIMMER_BODY;
+}
+
+/** Shimmer's waterfall: its core and its light edge (G: measured in an in-game screenshot of a shimmer waterfall). */
+export const SHIMMER_WATERFALL: readonly [readonly [number, number, number], readonly [number, number, number]] = [[164, 161, 245], [164, 203, 255]];

@@ -19,6 +19,8 @@ const DOWN_LEFT = 3;
 const ABSENT = 0xffff;
 /** CWM liquid kind of shimmer. */
 const SHIMMER = 4;
+/** The first row of shimmer's edge band in Waterfall_25 (measured, S). */
+const SHIMMER_EDGE_BAND = 42;
 
 /** The slice of a world waterfalls are read from. Planes are column-major (`x * height + y`). */
 export interface WaterfallWorld {
@@ -192,26 +194,29 @@ export function waterfallSprites(world: WaterfallWorld, area: TileArea): ObjectS
       // Shimmer's sheet is a grey mask the game colours while drawing (S): tinted by its map colour (chosen). Behind the
       // blocks (G: the source's half block stays visible under the lip, the walls cover the column's edge).
       const base = { kind: "waterfall" as const, id, flip, alpha: step.alpha, behind: true, ...(source.kind === SHIMMER ? { tint: true } : {}) };
+      // Shimmer's sheet: three bands 42 rows apart, the shape (rows 0–39), its edge mask (42–81) and a fainter one; the
+      // viewer draws the edge band, blended from lavender to its light edge by its grey (the object pass, OBJECT_TINT).
+      const band = source.kind === SHIMMER ? SHIMMER_EDGE_BAND : 0;
       const left = step.x * TILE;
       const ground = (step.y + 1) * TILE + (reader.solid(step.x, step.y + 1) && reader.shape(step.x, step.y + 1) === HALF ? TILE / 2 : 0);
       if (step.piece === "lip" && step.x === source.x && step.y === source.y) {
-        out.push({ ...base, ...LIP, dx: flip ? left : left - LIP_OVERHANG, dy: step.y * TILE });
+        out.push({ ...base, ...LIP, sy: LIP.sy + band, dx: flip ? left : left - LIP_OVERHANG, dy: step.y * TILE });
       } else if (step.piece === "lip") {
         // A ledge's end (G): the film over the ledge, and the corner turning down past its edge.
-        out.push({ ...base, ...FILM, dx: left, dy: ground - FILM.height });
+        out.push({ ...base, ...FILM, sy: FILM.sy + band, dx: left, dy: ground - FILM.height });
         const corner = oneTileDrop(index) ? { ...CORNER, height: TILE } : CORNER;
-        out.push({ ...base, ...corner, dx: flip ? left + TILE - COLUMN_BACK : left - CORNER.width + COLUMN_BACK, dy: ground - FILM.height });
+        out.push({ ...base, ...corner, sy: corner.sy + band, dx: flip ? left + TILE - COLUMN_BACK : left - CORNER.width + COLUMN_BACK, dy: ground - FILM.height });
       } else if (step.piece === "fall" || turnsBack) {
         // The column hugs the edge the stream falls along: 4 pixels over the side it came from (mirrored: right of it).
         const edge = straight?.edge ?? (step.direction === 1 ? left : left + TILE);
-        out.push({ ...base, ...COLUMN, dx: flip ? edge - COLUMN_BACK : edge - COLUMN.width + COLUMN_BACK, dy: step.y * TILE });
+        out.push({ ...base, ...COLUMN, sy: COLUMN.sy + band, dx: flip ? edge - COLUMN_BACK : edge - COLUMN.width + COLUMN_BACK, dy: step.y * TILE });
       } else if (step.piece === "run") {
-        out.push({ ...base, ...FILM, dx: left, dy: ground - FILM.height });
+        out.push({ ...base, ...FILM, sy: FILM.sy + band, dx: left, dy: ground - FILM.height });
       } else {
         // A slope's surface: down to the right from its top-left (shape 2), down to the left from its top-right (3).
         for (let column = 0; column < TILE / 2; column++) {
           const surface = step.direction === 1 ? 2 * column : TILE - 2 - 2 * column;
-          out.push({ ...base, sx: FILM.sx + 2 * column, sy: 0, width: 2, height: FILM.height, dx: left + 2 * column, dy: step.y * TILE + surface - FILM.height });
+          out.push({ ...base, sx: FILM.sx + 2 * column, sy: band, width: 2, height: FILM.height, dx: left + 2 * column, dy: step.y * TILE + surface - FILM.height });
         }
       }
     }
