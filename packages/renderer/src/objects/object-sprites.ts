@@ -26,6 +26,8 @@ export interface ObjectSprite {
   readonly flip?: boolean;
   /** Opacity 0–255 the sprite's pixels are scaled by (a fading waterfall); absent means 255. */
   readonly alpha?: number;
+  /** Multiplied by shimmer's map colour (its waterfall sheet is a grey mask the game colours); absent means not. */
+  readonly tint?: boolean;
 }
 
 /**

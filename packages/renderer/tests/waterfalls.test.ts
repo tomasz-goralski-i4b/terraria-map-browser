@@ -155,10 +155,30 @@ describe("waterfall sprites", () => {
     ]);
   });
 
+  test("at a ledge's end the film runs over the ledge and only the lip's corner hangs past it", () => {
+    const w = world(["~h....", "#.....", "..#...", "......", "######"]);
+    const sprites = waterfallSprites(w, { left: 0, top: 0, right: w.width, bottom: w.height });
+    const common = { kind: "waterfall", id: 0, flip: true, alpha: 255 };
+    // Steps: lip (1, 0), fall (2, 1), lip (2, 1) at the one-tile ledge (2, 2), its top at y 32.
+    expect(sprites.slice(2, 4)).toEqual([
+      { ...common, sx: 16, sy: 0, width: 16, height: 8, dx: 2 * 16, dy: 2 * 16 - 8 },
+      { ...common, sx: 10, sy: 0, width: 10, height: 24, dx: 3 * 16 - 4, dy: 2 * 16 - 8 },
+    ]);
+  });
+
   test("lava, honey and shimmer draw from Waterfall_1, Waterfall_14 and Waterfall_25; a left-flowing one is not mirrored", () => {
     expect(WATERFALL_SHEETS).toEqual([0, 1, 14, 25]);
     const w = world(["..hl#", "..###", ".....", "#####"]);
     const [lip] = waterfallSprites(w, { left: 0, top: 0, right: w.width, bottom: w.height });
     expect(lip).toEqual({ kind: "waterfall", id: 1, flip: false, alpha: 255, sx: 10, sy: 0, width: 22, height: 24, dx: 2 * 16 - 6, dy: 0 });
+  });
+
+  test("a shimmer waterfall's grey sheet is tinted by shimmer's colour; the others are not", () => {
+    const shimmer = world(["...", ".h.", "..."]);
+    shimmer.planes.liquid[0 * 3 + 1] = 4;
+    shimmer.planes.liquidAmount[0 * 3 + 1] = 255;
+    const area = { left: 0, top: 0, right: 3, bottom: 3 };
+    expect(waterfallSprites(shimmer, area)[0]).toMatchObject({ id: 25, tint: true });
+    expect(waterfallSprites(world(["...", "~h.", "..."]), area)[0]?.tint).toBeUndefined();
   });
 });

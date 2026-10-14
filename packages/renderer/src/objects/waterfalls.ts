@@ -17,6 +17,8 @@ const HALF = 1;
 const DOWN_RIGHT = 2;
 const DOWN_LEFT = 3;
 const ABSENT = 0xffff;
+/** CWM liquid kind of shimmer. */
+const SHIMMER = 4;
 
 /** The slice of a world waterfalls are read from. Planes are column-major (`x * height + y`). */
 export interface WaterfallWorld {
@@ -150,6 +152,8 @@ export const WATERFALL_SHEETS: readonly number[] = [0, 1, 14, 25];
 const LIP = { sx: 10, sy: 0, width: 22, height: 24 } as const;
 const COLUMN = { sx: 10, sy: 24, width: 10, height: 16 } as const;
 const FILM = { sx: 16, sy: 0, width: 16, height: 8 } as const;
+/** The lip's corner: its column part with the 4 pixels of flat part the column reaches back over (x 10–19). */
+const CORNER = { sx: 10, sy: 0, width: 10, height: 24 } as const;
 /** The lip's column part reaches this far past its tile; the column 4 pixels back over it. */
 const LIP_OVERHANG = 6;
 const COLUMN_BACK = 4;
@@ -169,12 +173,16 @@ export function waterfallSprites(world: WaterfallWorld, area: TileArea): ObjectS
     if (id === undefined) continue;
     for (const step of waterfallPath(world, source)) {
       const flip = step.direction === 1;
-      const base = { kind: "waterfall" as const, id, flip, alpha: step.alpha };
+      // Shimmer's sheet is a grey mask the game colours while drawing (S): tinted by its map colour (chosen).
+      const base = { kind: "waterfall" as const, id, flip, alpha: step.alpha, ...(source.kind === SHIMMER ? { tint: true } : {}) };
       const left = step.x * TILE;
       const ground = (step.y + 1) * TILE + (reader.solid(step.x, step.y + 1) && reader.shape(step.x, step.y + 1) === HALF ? TILE / 2 : 0);
-      if (step.piece === "lip") {
-        const top = step.x === source.x && step.y === source.y ? step.y * TILE : ground - FILM.height;
-        out.push({ ...base, ...LIP, dx: flip ? left : left - LIP_OVERHANG, dy: top });
+      if (step.piece === "lip" && step.x === source.x && step.y === source.y) {
+        out.push({ ...base, ...LIP, dx: flip ? left : left - LIP_OVERHANG, dy: step.y * TILE });
+      } else if (step.piece === "lip") {
+        // A ledge's end (G): the film over the ledge, and the corner turning down past its edge.
+        out.push({ ...base, ...FILM, dx: left, dy: ground - FILM.height });
+        out.push({ ...base, ...CORNER, dx: flip ? left + TILE - COLUMN_BACK : left - CORNER.width + COLUMN_BACK, dy: ground - FILM.height });
       } else if (step.piece === "fall") {
         out.push({ ...base, ...COLUMN, dx: flip ? left - COLUMN_BACK : left + TILE - COLUMN.width + COLUMN_BACK, dy: step.y * TILE });
       } else if (step.piece === "run") {

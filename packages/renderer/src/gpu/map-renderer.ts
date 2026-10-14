@@ -30,7 +30,7 @@ import {
   CELLS_INSTANCE_BIT, WALLS_INSTANCE_BIT, LAYER_ATTRIBUTE, PAGE_APRON, PLANES_16, PLANES_8, PLANE_COUNT_16, PLANE_COUNT_8, PRESENT, RECT_ATTRIBUTE,
   LIQUID_FLAT, RULE_HEADER_ROWS, RULE_ROW, SPRITE_MIN_ZOOM, SPRITE_SHEET_ROW, SPRITE_SHEET_TEXELS, spriteSampling, SPRITE_STATE, chunkFragmentSource, chunkSpriteFragmentSource, chunkVertexSource, overviewBuildFragmentSource,
   halfAtlasFragmentSource, halfAtlasVertexSource, overviewBuildVertexSource, overviewFragmentSource, overviewVertexSource,
-  OBJECT_DEST_ATTRIBUTE, OBJECT_FADE_SHIFT, OBJECT_FLIP, OBJECT_SOURCE_ATTRIBUTE, objectFragmentSource, objectVertexSource, wireFragmentSource,
+  OBJECT_DEST_ATTRIBUTE, OBJECT_FADE_SHIFT, OBJECT_FLIP, OBJECT_SOURCE_ATTRIBUTE, OBJECT_TINT, objectFragmentSource, objectVertexSource, wireFragmentSource,
   WIRE_RUN_ATTRIBUTE, wireVertexSource,
 } from "./shaders.js";
 import { OBJECT_TILES, objectSprites, type ObjectSprite, type TreeSettings } from "../objects/object-sprites.js";
@@ -354,6 +354,8 @@ const SPRITE_CHUNK_UNIFORMS = [...CHUNK_PASS_UNIFORMS, ...SPRITE_UNIFORMS] as co
 const OBJECT_UNIFORMS = [
   "uCamera", "uZoom", "uViewport", "uAtlas", "uAtlasHalf", "uSpriteSamples", "uSpriteStep", "uSpriteLevel", "uSpriteWeight",
 ] as const;
+/** The object program's uniforms: the shared sprite pass ones and the tint of shimmer's waterfalls. */
+const OBJECT_PROGRAM_UNIFORMS = [...OBJECT_UNIFORMS, "uTint"] as const;
 /** The wire pass's uniforms (wireFragmentSource). */
 const WIRE_UNIFORMS = [
   ...OBJECT_UNIFORMS, "uPlanes16", "uPresent", "uLayers", "uWireColors", "uWireBits", "uWireAlpha", "uWorldSize", "uWireSheet",
@@ -709,7 +711,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   let spriteLinking: Linking | null = null;
   // The object and wire passes of sprite mode: small programs, linked at once on their first use (a frame with an
   // object sprite, or with wires shown), so a renderer that never draws one never compiles it.
-  let objectProgram: Program<(typeof OBJECT_UNIFORMS)[number]> | null = null;
+  let objectProgram: Program<(typeof OBJECT_PROGRAM_UNIFORMS)[number]> | null = null;
   let wireProgram: Program<(typeof WIRE_UNIFORMS)[number]> | null = null;
   const gridUniforms = ["uCamera", "uViewport", "uWorld", "uZoom", "uSpacing", "uOpacity", "uDensity", "uMinor", "uScene"] as const;
   let gridProgram: Program<(typeof gridUniforms)[number]> | null = null;
@@ -1495,7 +1497,8 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       const sheet = sheetsByKey.get(`${sprite.kind}:${String(sprite.id)}`);
       if (sheet === undefined || sprite.sx < 0 || sprite.sy < 0) continue;
       if (sprite.sx + sprite.width > sheet.width || sprite.sy + sprite.height > sheet.height) continue;
-      const flags = (sprite.flip === true ? OBJECT_FLIP : 0) | ((255 - (sprite.alpha ?? 255)) << OBJECT_FADE_SHIFT);
+      const flags = (sprite.flip === true ? OBJECT_FLIP : 0) | ((255 - (sprite.alpha ?? 255)) << OBJECT_FADE_SHIFT)
+        | (sprite.tint === true ? OBJECT_TINT : 0);
       placed.set([sprite.dx, sprite.dy, sprite.width, sprite.height, sheet.page, sheet.x + sprite.sx, sheet.y + sprite.sy, flags], at);
       at += OBJECT_INTS;
     }
@@ -1543,9 +1546,11 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     }
     const instances = objectUploaded?.instances ?? 0;
     if (instances === 0) return 0;
-    objectProgram ??= link(gl, objectVertexSource, objectFragmentSource, OBJECT_UNIFORMS);
+    objectProgram ??= link(gl, objectVertexSource, objectFragmentSource, OBJECT_PROGRAM_UNIFORMS);
     gl.useProgram(objectProgram.program);
     setSpritePassUniforms(objectProgram.uniforms);
+    // Shimmer (CWM liquid kind 4) is the last of the liquid colours.
+    gl.uniform3iv(objectProgram.uniforms.uTint, liquidUniform.subarray(9, 12));
     gl.bindVertexArray(resources.objectArray);
     gl.enable(gl.BLEND);
     gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
