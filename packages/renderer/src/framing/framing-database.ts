@@ -28,6 +28,53 @@ export interface FramingDatabaseData {
   readonly walls: Readonly<Record<string, WallFramingData>>;
   /** Block types that count as a wall's neighbour where there is no wall. */
   readonly wallNeighbourBlocks: readonly number[];
+  /** Self-framed tiles that are not blocks: vines and cactus (docs/assets.md, "Vines and cactus"). */
+  readonly nonBlocks: NonBlockFramingData;
+}
+
+/**
+ * The types that store no frame and are not block types, observed in place (docs/assets.md, "Vines and cactus"):
+ * hanging types (vines) frame from the tiles above and below them, standing types (cactus) from their whole plant.
+ */
+export interface NonBlockFramingData {
+  readonly types: readonly number[];
+  readonly hanging: readonly HangingFramingData[];
+  readonly standing: readonly StandingFramingData[];
+}
+
+/** A hanging type: per group of tiles above that hold it, the cells it takes. Other tiles above do not hold it. */
+export interface HangingFramingData {
+  readonly id: number;
+  readonly groups: readonly HangingGroupData[];
+}
+
+export interface HangingGroupData {
+  /** The tile ids above (−1: none) that hold it and give these cells. */
+  readonly above: readonly number[];
+  /** Tile ids that join it below (the vine going on), west and east (a vine beside it). */
+  readonly below: readonly number[];
+  readonly west: readonly number[];
+  readonly east: readonly number[];
+  /**
+   * Per combination (1 below joined + 2 west joined + 4 east joined), the cell indices the game picks among at random.
+   */
+  readonly cells: readonly (readonly number[])[];
+}
+
+/** A standing type: its grounds and every configuration of its window, as observed. */
+export interface StandingFramingData {
+  readonly id: number;
+  /** Ground types it stands on (a root). */
+  readonly roots: readonly number[];
+  readonly width: number;
+  readonly height: number;
+  /**
+   * Raw-deflated, base64; inflated, one line per window configuration c (0 … 2^(width · height + width) − 1): bit
+   * y · width + x places the type at window tile (x, y), bit width · height + x its first root below column x. The line
+   * has one cell-index char (char code − 48) per placed tile in reading order; UNSTABLE_CELL where the game left the
+   * tile unframed.
+   */
+  readonly windows: string;
 }
 
 export interface BlockFramingData {
@@ -148,6 +195,11 @@ export interface FramingDatabase {
   readonly mapVariantCell: (map: number, cell: number, variant: number) => number;
   /** Block types that count as a wall's neighbour where there is no wall. */
   readonly wallNeighbourBlocks: readonly number[];
+
+  /** Hanging types (vines) by id, their cell indices sorted by cell (column, then row). */
+  readonly hanging: ReadonlyMap<number, HangingFramingData>;
+  /** Standing types (cactus) by id, with their windows inflated: one string per configuration. */
+  readonly standing: ReadonlyMap<number, StandingFramingData & { readonly windowCells: readonly string[] }>;
 }
 
 /** The table indices of one wall type (WallFramingData). */
@@ -180,6 +232,17 @@ export async function loadFramingDatabase(data: FramingDatabaseData): Promise<Fr
     return map;
   });
   const rows = (await inflate(data.relations)).split("\n");
+  const byCell = (a: number, b: number): number => {
+    const [ac = 0, ar = 0] = data.cells[a] ?? [];
+    const [bc = 0, br = 0] = data.cells[b] ?? [];
+    return ac - bc || ar - br;
+  };
+  const hanging = new Map(data.nonBlocks.hanging.map((type) => [type.id, {
+    id: type.id,
+    groups: type.groups.map((group) => ({ ...group, cells: group.cells.map((cells) => [...cells].sort(byCell)) })),
+  }]));
+  const standing = new Map(await Promise.all(data.nonBlocks.standing.map(async (type) =>
+    [type.id, { ...type, windowCells: (await inflate(type.windows)).split("\n") }] as const)));
   const typeIndex = new Map(data.blockTypes.map((type, index) => [type, index]));
   const cellKey = new Map(data.cells.map((cell, index) => [`${String(cell[0])},${String(cell[1])}`, index]));
   // By number: the index-based lookups run per tile and must not build a key string.
@@ -270,5 +333,7 @@ export async function loadFramingDatabase(data: FramingDatabaseData): Promise<Fr
       return entry === undefined ? -1 : variant === 1 ? entry[0] : entry[1];
     },
     wallNeighbourBlocks: data.wallNeighbourBlocks,
+    hanging,
+    standing,
   };
 }

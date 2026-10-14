@@ -5,6 +5,7 @@ import type { BlockRegion } from "./cells.js";
 import type { FramingDatabase } from "./framing-database.js";
 import { createWallFraming } from "./frame-wall.js";
 import type { WallFraming } from "./frame-wall.js";
+import { createNonBlockFraming } from "./non-block-rules.js";
 
 /** A cell of a tile sheet: column and row of 18-pixel cells. */
 export interface SheetCell {
@@ -73,8 +74,14 @@ export interface BlockFraming {
    * (x − left) · height + (y − top)), the packed cell column · 64 + row, or NO_CELL. It reads the tiles around the
    * region. Tiles frame in passes: first
    * the types without relatives, then each type once its relatives (whose cells its edge check reads) are framed.
+   * Vines and cactus (non-block-rules.ts) are framed too; a cactus reads its whole plant.
    */
   readonly frameRegion: (world: FramingWorld, region: BlockRegion, out: Uint16Array) => void;
+  /**
+   * The area whose cells a change at (x, y) can change beyond the reach of `depth`: the cactus plants touching its
+   * 3 × 3 (non-block-rules.ts, standingExtent); null without one.
+   */
+  readonly extent: (world: FramingWorld, x: number, y: number) => BlockRegion | null;
   /** The wall framing of the same database (frame-wall.ts): sprite mode draws walls with the cells it gives them. */
   readonly walls: WallFraming;
 }
@@ -119,6 +126,7 @@ function ruleCell(code: number, two: number): number {
 }
 
 export function createBlockFraming(database: FramingDatabase): BlockFraming {
+  const nonBlocks = createNonBlockFraming(database);
   const types = database.blockTypes;
   const count = types.length;
   const indexOfType = new Int16Array(Math.max(...types) + 1).fill(-1);
@@ -390,8 +398,34 @@ export function createBlockFraming(database: FramingDatabase): BlockFraming {
     return ids;
   }
 
+  /** The tile id at (x, y) of `world` as non-block-rules.ts reads it: −1 without a block, NOT_VANILLA for other content. */
+  function typeReader(world: FramingWorld): (x: number, y: number) => number {
+    const { width, height, planes } = world;
+    const vanilla = vanillaIds(world.palette);
+    return (x, y) => {
+      if (x < 0 || y < 0 || x >= width || y >= height) return -1;
+      const block = planes.block[x * height + y] ?? 0xffff;
+      return block === 0xffff ? -1 : vanilla[block] ?? NOT_VANILLA;
+    };
+  }
+
+  /** Writes the cells of the vines and cactus of `region` into `out` (frameRegion's layout). */
+  function frameNonBlocks(world: FramingWorld, region: BlockRegion, out: Uint16Array): void {
+    const typeAt = typeReader(world);
+    const right = Math.min(world.width, region.left + region.width);
+    const bottom = Math.min(world.height, region.top + region.height);
+    for (let x = Math.max(0, region.left); x < right; x++) {
+      for (let y = Math.max(0, region.top); y < bottom; y++) {
+        const type = typeAt(x, y);
+        if (type < 0 || !nonBlocks.covers(type)) continue;
+        out[(x - region.left) * region.height + (y - region.top)] = nonBlocks.cell(typeAt, type, x, y);
+      }
+    }
+  }
+
   function frameRegion(world: FramingWorld, region: BlockRegion, out: Uint16Array): void {
     out.fill(NO_CELL);
+    frameNonBlocks(world, region, out);
     const { width, height, planes, palette } = world;
     const vanilla = vanillaIds(palette);
     // A tile of pass p reads cells of pass p − 1 one tile away, and so on: the deepest type in the region sets how
@@ -497,6 +531,7 @@ export function createBlockFraming(database: FramingDatabase): BlockFraming {
       return index === -1 ? -1 : depthOf(index);
     },
     frameRegion,
+    extent: (world, x, y) => nonBlocks.extent(typeReader(world), x, y, world.width, world.height),
   };
 }
 

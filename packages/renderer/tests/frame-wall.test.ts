@@ -298,6 +298,7 @@ describe("wall framing by position (interior variants and edges observed at ever
 
   const data = (byPosition: boolean): FramingDatabaseData => ({
     gameVersion: "test", cells: CELLS, blockTypes: [], relations: deflateText(""), blocks: {}, wallNeighbourBlocks: [],
+    nonBlocks: { types: [], hanging: [], standing: [] },
     tables: [deflate(fill(6561, 0)), deflate(interior), deflate(interiorVariants), deflate(edges)],
     // The variant map as the 6 561-neighbourhood table observes it: the lone cell does not vary, (6, 2) does.
     variantMaps: [deflate([0, 0, 0, 1, 3, 4])],

@@ -23,13 +23,16 @@ export type { FrameWrap } from "./gpu/frame-wrap.js";
 export { MISSING_SPRITE_COLORS, SPRITE_FULL_ZOOM, SPRITE_MIN_ZOOM, spriteSampling } from "./gpu/shaders.js";
 export { NEIGHBOUR_ORDER, UNSTABLE_CELL, loadFramingDatabase, neighbourhoodCode } from "./framing/framing-database.js";
 export type {
-  BlockFramingData, BlockRelation, Cell, FramingDatabase, FramingDatabaseData, WallFramingData, WallTables,
+  BlockFramingData, BlockRelation, Cell, FramingDatabase, FramingDatabaseData, HangingFramingData, HangingGroupData,
+  NonBlockFramingData, StandingFramingData, WallFramingData, WallTables,
 } from "./framing/framing-database.js";
 export { terrariaFramingData } from "./framing/terraria-framing.generated.js";
 export { NOT_VANILLA, NO_CELL, createBlockFraming } from "./framing/frame-block.js";
 export type {
   BlockFraming, BlockFramingInput, BlockKind, BlockRegion, FramingWorld, SheetCell,
 } from "./framing/frame-block.js";
+export { createNonBlockFraming, hangingCell, standingCell, standingExtent } from "./framing/non-block-rules.js";
+export type { HangingGroupRule, HangingRule, NonBlockFraming, StandingRule, TypeAt } from "./framing/non-block-rules.js";
 export { BLOCK_CELL_STRIDE, blockSourceRect, createChunkCellCache, shapedColumns } from "./framing/chunk-cells.js";
 export type { ChunkCellCache, ShapedColumn, SourceRect } from "./framing/chunk-cells.js";
 export {

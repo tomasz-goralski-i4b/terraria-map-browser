@@ -83,8 +83,9 @@ export interface ChunkCellCache {
   readonly cellAt: (x: number, y: number) => number;
   /**
    * Recomputes the cached cells around changed tiles, after the world's planes changed: per tile the (2d + 3)² area
-   * around it, d the deepest `BlockFraming.depth` of the types within 6 tiles of it. Chunks never framed are left to
-   * frame later. Returns each tile's area, clipped to the world.
+   * around it, d the deepest `BlockFraming.depth` of the types within 6 tiles of it, and the cactus plants touching
+   * its 3 × 3 (`BlockFraming.extent`). Chunks never framed are left to frame later. Returns the areas, clipped to the
+   * world.
    */
   readonly invalidate: (tiles: Iterable<{ readonly x: number; readonly y: number }>) => readonly BlockRegion[];
   /** Tiles framed into the cache since creation. */
@@ -141,6 +142,9 @@ export function createChunkCellCache(world: FramingWorld, framing: BlockFraming,
       regions.push({
         left, top, width: Math.min(width, x + reach + 1) - left, height: Math.min(height, y + reach + 1) - top,
       });
+      // A cactus plant touching the change: its every tile may take another cell.
+      const plant = framing.extent(world, x, y);
+      if (plant !== null) regions.push(plant);
     }
     // Each area is framed on its own (sparse edits never frame the box between them), clipped to every cached chunk
     // it covers; a tile that overlapping areas share is written once.
