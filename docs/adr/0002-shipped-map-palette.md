@@ -24,7 +24,7 @@ work without a local install; icons still require the user's own Content folder.
 [the extraction contract](../file-format/entities.md#chest-extraction-item-display-and-export-156) and
 [the generator instructions](../../scripts/items/README.md).
 
-This records the user's project-policy approval, not permission from Re-Logic or approval to merge.
+This records the project owner's policy decision; it is not a licence or permission from Re-Logic.
 
 ## Context
 
