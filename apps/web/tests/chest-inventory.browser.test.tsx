@@ -80,6 +80,31 @@ test("closing a world removes its decoded chest rows and cannot republish its ol
   expect(useChestNavigation.getState().areas).toEqual([]);
 });
 
+test("closing while the real idle index is pending cannot restore the previous world's rows or markers", async () => {
+  const bytes = Uint8Array.from(atob(await commands.readWorldFixture("SCCO1.wld")), (character) => character.charCodeAt(0));
+  await getDefaultWorldSession().open(new File([bytes], "SCCO1.wld"));
+  const idle = vi.spyOn(window, "requestIdleCallback").mockImplementation((callback) => window.setTimeout(() => { callback({ didTimeout: false, timeRemaining: () => 8 }); }, 30));
+  try {
+    await render(<EntitiesPanel mode="search" />);
+    await expect.element(page.getByText("Indexing chest items…")).toBeVisible();
+    resetDefaultWorldSession();
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    await expect.element(page.getByText("Open a world to inspect its chests.")).toBeVisible();
+    await expect.element(page.getByRole("textbox", { name: "Items in chests" })).not.toBeInTheDocument();
+    expect(useChestNavigation.getState().areas).toEqual([]);
+  } finally { idle.mockRestore(); }
+});
+
+test("search keeps invalid-record item totals and diagnostics without inventing highlights", async () => {
+  const world = createWorld(80, 40);
+  const record = { ...mining, name: "Missing wooden chest" };
+  await render(<EntitiesPanel source={{ ...world, chests: [record] }} />);
+  await page.getByRole("textbox", { name: "Items in chests" }).fill("8");
+  await expect.element(page.getByText("Torch: 15 in 1 chests")).toBeVisible();
+  await expect.element(page.getByRole("grid", { name: "Chests" })).toMatchTextContent("mismatch");
+  expect(useChestNavigation.getState().areas).toEqual([]);
+});
+
 function SearchShortcuts(): null { useGlobalShortcuts(useCommands()); return null; }
 
 test("search highlights two chest footprints on the GPU, overview markers survive zoom and F3 steps both ways", async () => {

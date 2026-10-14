@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import { readWorldEntities, type WorldChest } from "@studio/world-codec";
 import { buildChestItemIndex } from "../src/world/chest-search.js";
 
@@ -27,6 +27,16 @@ test("building the index yields between bounded batches instead of one long task
   if (mining === undefined) throw new Error("Missing mining inventory fixture");
   await buildChestItemIndex(Array.from({ length: 1500 }, (_, chestIndex) => ({ ...mining, x: chestIndex })), () => { slices++; return Promise.resolve(); });
   expect(slices).toBeGreaterThan(1);
+});
+
+test("an expired eight-millisecond budget yields even before the batch reaches 256 slots", async () => {
+  let clock = 0;
+  let slices = 0;
+  const now = vi.spyOn(performance, "now").mockImplementation(() => { clock += 4; return clock; });
+  try {
+    await buildChestItemIndex(chests, () => { slices++; return Promise.resolve(); });
+    expect(slices).toBeGreaterThan(2);
+  } finally { now.mockRestore(); }
 });
 
 test("SCCO1 chest counts and Torch totals match the recorded corpus", async () => {
