@@ -19,6 +19,28 @@ test("Shift previews a rectangle while held, and committed measurements support 
   expect(useRulerStore.getState().items).toHaveLength(1);
 });
 
+test("a line snaps to the block under the pointer and spans both end blocks, wherever in the block the pointer is", () => {
+  // Pointing a few pixels above or below the middle of a row must not tilt the line onto the next boundary.
+  beginMeasurement({ x: 120.5, y: 80.45 }, "line"); moveMeasurement({ x: 143.5, y: 80.55 }, false);
+  expect(useRulerStore.getState().draft).toMatchObject({ start: { x: 120, y: 80 }, end: { x: 144, y: 80 } });
+  // A diagonal ends at the far corner of the block the pointer is in, so that block is on the line.
+  moveMeasurement({ x: 123.2, y: 83.9 }, false);
+  expect(useRulerStore.getState().draft).toMatchObject({ start: { x: 120, y: 80 }, end: { x: 124, y: 84 } });
+  moveMeasurement({ x: 110.9, y: 80.1 }, false);
+  expect(useRulerStore.getState().draft).toMatchObject({ start: { x: 121, y: 80 }, end: { x: 110, y: 80 } });
+  moveMeasurement({ x: 123.2, y: 83.9 }, false); finishMeasurement(true);
+  // Dragging the end handle keeps the start block and moves the end to the block under the pointer.
+  const line = useRulerStore.getState().items[0];
+  if (line === undefined) throw new Error("Line was not created");
+  beginMeasurement({ x: 124, y: 84 }, "line", { id: line.id, part: "end" }); moveMeasurement({ x: 130.4, y: 84.6 }, false); finishMeasurement(true);
+  expect(useRulerStore.getState().items[0]).toMatchObject({ start: { x: 120, y: 80 }, end: { x: 131, y: 85 } });
+  // A click inside one block is not a measurement.
+  beginMeasurement({ x: 200.2, y: 200.3 }, "line"); moveMeasurement({ x: 200.8, y: 200.7 }, false);
+  expect(useRulerStore.getState().draft).toMatchObject({ start: { x: 200, y: 200 }, end: { x: 200, y: 200 } });
+  finishMeasurement(true);
+  expect(useRulerStore.getState().items).toHaveLength(1);
+});
+
 test("replacement is undoable, cancelled and zero-size drafts never remove existing measurements", () => {
   beginMeasurement({ x: 120, y: 80 }, "line"); moveMeasurement({ x: 130, y: 80 }, false); finishMeasurement(true);
   beginMeasurement({ x: 140, y: 80 }, "line"); moveMeasurement({ x: 150, y: 80 }, false); finishMeasurement(false);

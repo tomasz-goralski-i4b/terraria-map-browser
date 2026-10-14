@@ -27,6 +27,26 @@ export interface MeasurementLabel { readonly x: number; readonly y: number; read
 export function snapBoundary(point: TilePoint, bounds: { readonly width: number; readonly height: number }): TilePoint {
   return { x: Math.max(0, Math.min(bounds.width, Math.round(point.x))), y: Math.max(0, Math.min(bounds.height, Math.round(point.y))) };
 }
+/** The block under a point; lines are drawn between blocks, so a pointer anywhere inside one picks the same block. */
+export function snapTile(point: TilePoint, bounds: { readonly width: number; readonly height: number }): TilePoint {
+  return { x: Math.max(0, Math.min(bounds.width - 1, Math.floor(point.x))), y: Math.max(0, Math.min(bounds.height - 1, Math.floor(point.y))) };
+}
+/**
+ * The boundaries of a line covering both blocks: per axis it runs from the near edge of the first block to the far
+ * edge of the last. Blocks in one row (or column) give a line on that row's top (or left) boundary, which the outline
+ * and block path read as that row.
+ */
+export function lineFromTiles(first: TilePoint, last: TilePoint): { readonly start: TilePoint; readonly end: TilePoint } {
+  const axis = (from: number, to: number): readonly [number, number] => from === to ? [from, to] : from < to ? [from, to + 1] : [from + 1, to];
+  const [startX, endX] = axis(first.x, last.x), [startY, endY] = axis(first.y, last.y);
+  return { start: { x: startX, y: startY }, end: { x: endX, y: endY } };
+}
+/** The end blocks of a line, the inverse of `lineFromTiles`. */
+export function lineTiles(measurement: Measurement): { readonly first: TilePoint; readonly last: TilePoint } {
+  const axis = (from: number, to: number): readonly [number, number] => from === to ? [from, to] : from < to ? [from, to - 1] : [from - 1, to];
+  const [firstX, lastX] = axis(measurement.start.x, measurement.end.x), [firstY, lastY] = axis(measurement.start.y, measurement.end.y);
+  return { first: { x: firstX, y: firstY }, last: { x: lastX, y: lastY } };
+}
 export function measurementDimensions(measurement: Measurement): { readonly width: number; readonly height: number; readonly length: number; readonly angle: number } {
   const width = Math.abs(measurement.end.x - measurement.start.x), height = Math.abs(measurement.end.y - measurement.start.y);
   return { width, height, length: Math.hypot(width, height), angle: Math.atan2(height, width) * 180 / Math.PI };
@@ -89,12 +109,28 @@ export function measurementSegments(measurement: Measurement): readonly Measurem
   }
   return segments;
 }
+/**
+ * A line is straight when its blocks fill one row or column. Endpoints snap to boundaries, so a line dragged along a
+ * row can end one boundary off its start without leaving that row; it is still straight. Blocks are monotonic, so the
+ * first and last decide.
+ */
+function isStraightLine(measurement: Measurement): boolean {
+  const blocks = measurementBlocks(measurement), first = blocks[0], last = blocks[blocks.length - 1];
+  return first === undefined || last === undefined || first.x === last.x || first.y === last.y;
+}
+/** The straight length of a diagonal, or null when it would only repeat the block count. */
+function diagonalLength(measurement: Measurement): string | null {
+  const { width, height } = measurementDimensions(measurement);
+  if (isStraightLine(measurement)) return null;
+  const long = numberFormat.format(Math.hypot(width, height));
+  return long === numberFormat.format(measurementLength(measurement)) ? null : long;
+}
 /** The list's one-line size: rectangles by their sides, lines by the blocks on them (and the length of a diagonal). */
 export function measurementSummary(measurement: Measurement): string {
   const { width, height } = measurementDimensions(measurement);
   if (measurement.kind === "rectangle") return `${numberFormat.format(width)} × ${numberFormat.format(height)} blocks`;
-  const blocks = `${numberFormat.format(measurementLength(measurement))} blocks`;
-  return width === 0 || height === 0 ? blocks : `${blocks} · ${numberFormat.format(Math.hypot(width, height))} long`;
+  const blocks = `${numberFormat.format(measurementLength(measurement))} blocks`, long = diagonalLength(measurement);
+  return long === null ? blocks : `${blocks} · ${long} long`;
 }
 export function measurementLabels(measurement: Measurement, display: MeasurementDisplay): readonly MeasurementLabel[] {
   const { width, height, angle } = measurementDimensions(measurement);
@@ -107,8 +143,9 @@ export function measurementLabels(measurement: Measurement, display: Measurement
   ] : [];
   const labels: MeasurementLabel[] = [];
   // A diagonal has two honest sizes: its straight length and the blocks a path along it occupies; name both.
-  const size = width === 0 || height === 0 ? `${value(length)} ${unit}` : `${value(Math.hypot(width, height))} long · ${value(length)} ${unit}`;
-  const parts = [display.dimensions ? size : "", display.angle && width !== 0 && height !== 0 ? `${angle.toFixed(1)}°` : ""].filter(Boolean);
+  const long = diagonalLength(measurement), straight = isStraightLine(measurement);
+  const size = long === null ? `${value(length)} ${unit}` : `${long} long · ${value(length)} ${unit}`;
+  const parts = [display.dimensions ? size : "", display.angle && !straight ? `${angle.toFixed(1)}°` : ""].filter(Boolean);
   if (parts.length > 0) labels.push({ x: midX, y: midY, offsetX: 0, offsetY: -16, text: parts.join(" · "), align: "center" });
   if (display.components) labels.push({ x: midX, y: midY, offsetX: 0, offsetY: 14, text: `ΔX ${value(width)} · ΔY ${value(height)}`, align: "center" });
   return labels;
