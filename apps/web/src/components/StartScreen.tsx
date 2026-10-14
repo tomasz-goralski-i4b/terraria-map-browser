@@ -1,4 +1,6 @@
 import { useAssetStore } from "../assets/asset-session.js";
+import worldArt from "../brand/world-art-portrait-transparent.webp";
+import rightWorldArt from "../brand/world-art-right.webp";
 import { formatBytes } from "../panels/world-fields.js";
 import type { Command } from "../shell/commands.js";
 import { Icon, type IconName } from "../ui/Icon.js";
@@ -49,75 +51,82 @@ export function StartScreen({ commands }: { readonly commands?: readonly Command
 
   return (
     <section className="start" aria-label="Start">
-      <div className="start-hero">
-        <span className="brand-mark brand-mark-large" aria-hidden="true" />
-        <div>
-          <h2 className="start-title">Terraria Map Studio</h2>
-          <p className="start-lead">Open a world to explore its map. Worlds are read on this computer and never uploaded.</p>
+      <img className="start-art" src={worldArt} width={768} height={1152} alt="" aria-hidden="true" decoding="async" draggable={false} />
+      <div className="start-content">
+        <div className="start-hero">
+          <span className="brand-mark brand-mark-large" aria-hidden="true" />
+          <div>
+            <h2 className="start-title">Terraria Map Studio</h2>
+            <p className="start-lead">Open a world to explore its map. Worlds are read on this computer and never uploaded.</p>
+          </div>
         </div>
-      </div>
-      <div className="start-columns">
-        <div className="start-column">
-          <h3 className="start-heading">Start</h3>
+        <div className="start-actions">
           <StartAction command={find("file.open")} icon="file" />
           <StartAction command={find("file.openFolder")} icon="folder" label="Open Worlds Folder…" />
           {!assetsReady && <StartAction command={find("file.assets")} icon="object" />}
           <p className="start-hint">Or drop a .wld file here.</p>
         </div>
-        <div className="start-column">
-          {folder.kind === "ready" && (
-            <>
-              <h3 className="start-heading">Worlds in “{folder.name}”</h3>
-              {folder.worlds.length === 0
-                ? <p className="start-hint">This folder has no .wld files.</p>
-                : (
-                  <ul className="start-list" aria-label={`Worlds in ${folder.name}`}>
-                    {folder.worlds.slice(0, LIST_LIMIT).map((world) => (
-                      <WorldRow
-                        key={world.fileName} name={world.fileName.replace(/\.wld$/i, "")}
-                        detail={`${formatBytes(world.size)} · ${formatAge(world.modified, now)}`}
-                        onOpen={() => void openFolderWorld(world.fileName)}
-                      />
-                    ))}
-                  </ul>
-                )}
-            </>
-          )}
-          {folder.kind === "permission" && (
-            <>
-              <h3 className="start-heading">Worlds in “{folder.name}”</h3>
-              <button type="button" className="start-action" onClick={() => void reconnectWorldsFolder()}>
-                <Icon name="lock" />
-                <span className="start-action-label">Allow access to “{folder.name}” again</span>
-              </button>
-            </>
-          )}
-          {recent.length > 0 && (
-            <>
-              <h3 className="start-heading">Recent</h3>
-              <ul className="start-list" aria-label="Recent worlds">
-                {recent.slice(0, LIST_LIMIT).map((world, index) => (
-                  <WorldRow
-                    key={`${world.fileName}-${String(world.openedAt)}`} name={world.worldName}
-                    detail={`${world.fileName} · ${formatAge(world.openedAt, now)}`}
-                    onOpen={() => void openRecentWorld(index)}
-                  />
-                ))}
-              </ul>
-            </>
-          )}
-          {folder.kind !== "ready" && folder.kind !== "permission" && recent.length === 0 && (
-            <>
-              <h3 className="start-heading">Where are my worlds?</h3>
-              <p className="start-hint">Terraria keeps them in</p>
-              <code className="start-path">Documents\My Games\Terraria\Worlds</code>
-              <p className="start-hint">and tModLoader in</p>
-              <code className="start-path">Documents\My Games\Terraria\tModLoader\Worlds</code>
-              <p className="start-hint">Open that folder once and its worlds stay listed here and in File ▸ Worlds.</p>
-            </>
-          )}
+        <div className="start-columns">
+          <div className="start-column">
+            {folder.kind === "ready" && (
+              <>
+                <h3 className="start-heading">Worlds in “{folder.name}”</h3>
+                {folder.worlds.length === 0
+                  ? <p className="start-hint">This folder has no .wld files.</p>
+                  : (
+                    <ul className="start-list" aria-label={`Worlds in ${folder.name}`}>
+                      {folder.worlds.slice(0, LIST_LIMIT).map((world) => (
+                        <WorldRow
+                          key={world.fileName} name={world.fileName.replace(/\.wld$/i, "")}
+                          detail={`${formatBytes(world.size)} · ${formatAge(world.modified, now)}`}
+                          onOpen={() => void openFolderWorld(world.fileName)}
+                        />
+                      ))}
+                    </ul>
+                  )}
+              </>
+            )}
+            {folder.kind === "permission" && (
+              <>
+                <h3 className="start-heading">Worlds in “{folder.name}”</h3>
+                <button type="button" className="start-action" onClick={() => void reconnectWorldsFolder()}>
+                  <Icon name="lock" />
+                  <span className="start-action-label">Allow access to “{folder.name}” again</span>
+                </button>
+              </>
+            )}
+            {folder.kind !== "ready" && folder.kind !== "permission" && (
+              <>
+                <h3 className="start-heading">Where are my worlds?</h3>
+                <p className="start-hint">Terraria keeps them in</p>
+                <code className="start-path">Documents\My Games\Terraria\Worlds</code>
+                <p className="start-hint">and tModLoader in</p>
+                <code className="start-path">Documents\My Games\Terraria\tModLoader\Worlds</code>
+                <p className="start-hint">Open that folder once and its worlds stay listed here and in File ▸ Worlds.</p>
+              </>
+            )}
+          </div>
+          <div className="start-column">
+            <h3 className="start-heading">Recent</h3>
+            {recent.length > 0 ? (
+              <>
+                <ul className="start-list" aria-label="Recent worlds">
+                  {recent.slice(0, LIST_LIMIT).map((world, index) => (
+                    <WorldRow
+                      key={`${world.fileName}-${String(world.openedAt)}`} name={world.worldName}
+                      detail={`${world.fileName} · ${formatAge(world.openedAt, now)}`}
+                      onOpen={() => void openRecentWorld(index)}
+                    />
+                  ))}
+                </ul>
+              </>
+            ) : (
+              <p className="start-hint">Worlds you open will appear here.</p>
+            )}
+          </div>
         </div>
       </div>
+      <img className="start-art start-art-right" src={rightWorldArt} width={768} height={1152} alt="" aria-hidden="true" decoding="async" draggable={false} />
     </section>
   );
 }
