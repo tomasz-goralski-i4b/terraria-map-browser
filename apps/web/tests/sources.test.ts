@@ -37,7 +37,7 @@ test("HTTP Content/Images listing fetches only atlas sheets and preserves cache 
       { name: "Wall_1.xnb", size: 3, lastModified: 1700000000001 },
       { name: "TerrariaLogo.png", size: 7, lastModified: 1700000000002 },
     ] }))
-    .mockResolvedValue(new Response(new Uint8Array([0x58, 0x4e, 0x42])));
+    .mockImplementation(() => Promise.resolve(new Response(new Uint8Array([0x58, 0x4e, 0x42]))));
   const result = await httpAssetSource("http://127.0.0.1:8123/content/").read(signal);
   expect(Array.isArray(result)).toBe(true);
   const files = result as readonly File[];
