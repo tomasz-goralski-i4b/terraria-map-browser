@@ -137,8 +137,8 @@ describe("wall framing", () => {
     for (let y = 0; y < 12; y++) {
       for (let x = 0; x < 12; x++) {
         for (let variant = 0; variant < 3; variant++) {
-          const cell = table[y % 3]?.[x % 3]?.[variant] ?? [0, 0];
-          expect(walls.wallCell(1, 15, x, y, variant)).toBe(cell[0] * 64 + cell[1]);
+          const [column, row] = table[y % 3]?.[x % 3]?.[variant] ?? [0, 0];
+          expect(walls.wallCell(1, 15, x, y, variant)).toBe((column ?? 0) * 64 + (row ?? 0));
         }
       }
     }
