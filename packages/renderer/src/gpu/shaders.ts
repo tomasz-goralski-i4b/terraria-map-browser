@@ -11,13 +11,13 @@ import { WALL_CELL_STRIDE, WALL_OVERHANG } from "../framing/frame-wall.js";
 import { TRACK_CELL_STRIDE, trackShaderConstants } from "../objects/tracks.js";
 import { WIRE_CELL_STRIDE } from "../objects/wires.js";
 
-/** Tiles of neighbouring chunks stored around each chunk's page layer, so the box filter can cross chunk edges. */
 /** A colour as a GLSL ivec3 literal. */
 function glslColor(color: readonly number[] | undefined): string {
   const [r = 0, g = 0, b = 0] = color ?? [];
   return `ivec3(${String(r)}, ${String(g)}, ${String(b)})`;
 }
 
+/** Tiles of neighbouring chunks stored around each chunk's page layer, so the box filter can cross chunk edges. */
 export const PAGE_APRON = 1;
 
 /**
@@ -764,7 +764,11 @@ ivec4 localColorAt(ivec2 local, vec2 sub) {
   bool liquidShaped;
   bool liquidBleeds;
   ivec2 liquidPixelAt = clamp(ivec2(floor(sub)), ivec2(0), ivec2(${String(SPRITE_TILE_PIXELS - 1)}));
-  bool liquidAny = pixelLiquid(texel, liquidPixelAt, (uLayers & 4) != 0 && plane16(texel, ${String(PLANES_16.block)}) != ABSENT,
+  // Liquid bleeds into blocks only: not into the tiles the object pass draws (frame-important tiles, trees) or tracks.
+  uint liquidBlock = (uLayers & 4) != 0 ? plane16(texel, ${String(PLANES_16.block)}) : ABSENT;
+  int liquidBlockState = liquidBlock != ABSENT ? texelFetch(uSpriteSheets, sheetAt(liquidBlock), 0).w : -1;
+  bool liquidIntoBlock = liquidBlock != ABSENT && liquidBlockState != ${String(SPRITE_STATE.object)} && liquidBlockState != ${String(SPRITE_STATE.track)};
+  bool liquidAny = pixelLiquid(texel, liquidPixelAt, liquidIntoBlock,
     liquidKind, liquidAmount, liquidSurface, liquidShaped, liquidBleeds);
   bool liquidShown = liquidAny && !liquidBleeds;
   // The pixel's liquid art, sampled once for both layers; a bleed is one pixel wide: one sample.
@@ -899,18 +903,18 @@ void main() {
 `;
 
 /**
+ * The window depth of the sprites behind the blocks (OBJECT_BEHIND without OBJECT_UNDER_LIQUID; NDC -0.5), as a GLSL
+ * literal: the liquid overlay pass draws the liquids' front layer where the object pass left exactly it.
+ */
+const OBJECT_BEHIND_DEPTH = "0.25";
+
+/**
  * Chunk pass fragment. At one pixel per tile and above (uFilter 0) a pixel is the one tile under it, bit-exact with
  * `renderChunk`. Below (uFilter 1) it is the box filter of `filterTiles` (../chunk/box-filter.ts): the premultiplied
  * mean of the in-world tiles its footprint covers, weighted by covered area in 1 / FILTER_SUBTILE tile units, in
  * unsigned integers so that it equals the CPU reference. A footprint of at most MAX_FILTER_TILES tiles around a
  * centre inside the chunk covers at most three tiles per axis and stays within the page apron.
  */
-/**
- * The window depth of the sprites behind the blocks (OBJECT_BEHIND without OBJECT_UNDER_LIQUID; NDC -0.5): the liquid
- * overlay pass draws the liquids' front layer where the object pass left exactly it.
- */
-export const OBJECT_BEHIND_DEPTH = "0.25";
-
 const chunkFragmentBody = `
 uniform vec2 uCamera;
 uniform float uZoom;
@@ -970,17 +974,17 @@ ivec4 pointColor(vec2 screen) {
 
 void main() {
   vec2 screen = vec2(gl_FragCoord.x, uViewport.y - gl_FragCoord.y);
+  // One call of the colour functions: each call site inlines all of them (compile time).
+  ivec4 color = uFilter != 0 ? filtered(ivec2(floor(screen))) : pointColor(screen);
 #ifdef SPRITES
   if (uLiquidOverlay != 0) {
-    if (uFilter != 0) discard;
-    pointColor(screen);
-    if (liquidOverlay.a == 0) discard;
+    if (uFilter != 0 || liquidOverlay.a == 0) discard;
     outColor = vec4(liquidOverlay) / 255.0;
     gl_FragDepth = ${OBJECT_BEHIND_DEPTH};
     return;
   }
 #endif
-  outColor = vec4(uFilter != 0 ? filtered(ivec2(floor(screen))) : pointColor(screen)) / 255.0;
+  outColor = vec4(color) / 255.0;
 #ifdef SPRITES
   gl_FragDepth = blockDepth;
 #endif

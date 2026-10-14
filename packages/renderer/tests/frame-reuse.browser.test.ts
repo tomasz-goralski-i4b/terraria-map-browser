@@ -2,7 +2,7 @@
 // copy it shifted and draw only the strips the pan revealed. The result equals the frame drawn in full.
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { createMapRenderer } from "../src/index.js";
-import type { Camera, MapRenderer, RenderableWorld } from "../src/index.js";
+import type { Camera, MapRenderer, RenderableWorld, SpriteAtlasSource } from "../src/index.js";
 
 const renderers: MapRenderer[] = [];
 afterEach(() => {
@@ -95,6 +95,58 @@ describe("frame reuse", () => {
     expect(renderer.stats().reusedFrames).toBe(1);
     const reused = pixels();
     expect(reused).toEqual(fullFrame(world, moved, step));
+  });
+
+  test("in sprite mode a pan reuses the frame with the depth layering intact: plants behind blocks and under water", () => {
+    const step = animationFrames();
+    // Stone (map colour) with plants (3, 16 × 20, reaching 4 pixels into the stone below) on it, half of them under water.
+    const width = 60, height = 40, count = width * height;
+    const block = new Uint16Array(count).fill(ABSENT);
+    const frameX = new Int16Array(count).fill(-1);
+    const frameY = new Int16Array(count).fill(-1);
+    const liquid = new Uint8Array(count), liquidAmount = new Uint8Array(count);
+    for (let x = 0; x < width; x++) {
+      for (let y = 20; y < height; y++) block[x * height + y] = 0;
+      if (x % 3 !== 0) {
+        block[x * height + 19] = 1;
+        frameX[x * height + 19] = 0;
+        frameY[x * height + 19] = 0;
+      }
+      if (x % 4 < 2) for (let y = 17; y < 20; y++) { liquid[x * height + y] = 1; liquidAmount[x * height + y] = 255; }
+    }
+    const world: RenderableWorld = {
+      width, height, surfaceY: 10,
+      palette: [{ kind: "vanilla", id: 1 }, { kind: "vanilla", id: 3 }],
+      planes: { block, wall: new Uint16Array(count).fill(ABSENT), frameX, frameY, liquid, liquidAmount, paint: new Uint8Array(count), wallPaint: new Uint8Array(count) },
+    };
+    const PAGE = 64;
+    const page = new Uint8Array(PAGE * PAGE * 4);
+    const plant = { kind: "tile", id: 3, page: 0, x: 2, y: 2, width: 16, height: 20, frameWidth: 16, frameHeight: 20 } as const;
+    const water = { kind: "liquid", id: 0, page: 0, x: 2, y: 26, width: 34, height: 16, frameWidth: 16, frameHeight: 16 } as const;
+    for (let y = 0; y < 20; y++) for (let x = 0; x < 16; x++) page.set([200, x * 9, y * 11, (x + y) % 4 === 0 ? 0 : 255], ((plant.y + y) * PAGE + plant.x + x) * 4);
+    for (let y = 0; y < 16; y++) for (let x = 0; x < 34; x++) page.set([10, 60 + y * 5, 200, 255], ((water.y + y) * PAGE + water.x + x) * 4);
+    const atlas: SpriteAtlasSource = { pages: [page], index: { pageSize: PAGE, entries: [plant, water] } };
+    const sprites = (renderer: MapRenderer): void => {
+      renderer.setAtlas(atlas);
+      renderer.setSpriteMode(true);
+      renderer.setLayers({ background: true, walls: true, blocks: true, liquids: true });
+    };
+    const { renderer, pixels } = setup(world);
+    sprites(renderer);
+    const start = { x: 10.3, y: 14.2, zoom: 16 };
+    renderer.setCamera(start);
+    step();
+    const moved = { x: start.x + 1.75, y: start.y + 0.5, zoom: 16 };
+    renderer.setCamera(moved);
+    step();
+    expect(renderer.stats().reusedFrames).toBe(1);
+    const reused = pixels();
+    const full = setup(world);
+    sprites(full.renderer);
+    full.renderer.setCamera(moved);
+    step();
+    expect(full.renderer.stats().reusedFrames).toBe(0);
+    expect(reused).toEqual(full.pixels());
   });
 
   test("anything else than the camera, another zoom or a synchronous render draws the frame in full", () => {

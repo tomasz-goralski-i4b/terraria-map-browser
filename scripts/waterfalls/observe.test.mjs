@@ -46,7 +46,7 @@ function world(tiles) {
 const TYPES = [0, 1, 14, 25];
 
 test("the viewer's waterfall sources are the game's, case by case", { skip: assembly === undefined ? "TERRARIA_ASSEMBLY is not set" : false }, async () => {
-  const { waterfallSources, WATERFALL_MAX_LENGTH } = await import("../../packages/renderer/dist/index.js");
+  const { waterfallSources, WATERFALL_MAX_LENGTH, WATERFALL_MIN_WET } = await import("../../packages/renderer/dist/index.js");
   const directory = mkdtempSync(join(tmpdir(), "waterfalls-"));
   try {
     const all = cases();
@@ -58,6 +58,7 @@ test("the viewer's waterfall sources are the game's, case by case", { skip: asse
     assert.equal(run.status, 0, run.stderr);
     const observed = JSON.parse(readFileSync(outputPath, "utf8"));
     assert.equal(observed.constants.maxLength, WATERFALL_MAX_LENGTH);
+    assert.equal(observed.constants.minWet, WATERFALL_MIN_WET);
     assert.equal(observed.cases.length, all.length);
     // Not vacuous: water, lava, honey and shimmer sources are among them.
     const types = new Set(observed.cases.flat().map((source) => source[2]));

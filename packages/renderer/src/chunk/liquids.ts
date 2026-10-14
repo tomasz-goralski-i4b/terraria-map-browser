@@ -24,7 +24,6 @@ const TILE_PIXELS = 16;
 /** The first row of a frame's body: rows 0–1 are the surface highlight, 2–3 its edge, 4–15 one flat colour (S). */
 export const LIQUID_BODY_ROW = 4;
 
-
 /** The height in sprite pixels a liquid amount (0–255) fills, from the tile's bottom: rounded up, 255 is the tile. */
 export function liquidFillPixels(amount: number): number {
   return Math.ceil((amount * TILE_PIXELS) / 255);

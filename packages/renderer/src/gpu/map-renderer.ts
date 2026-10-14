@@ -793,7 +793,12 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   let actuatorSheet: Int32Array = new Int32Array(4);
   // The object pass's instances by chunk key, for the current world and atlas: computed on the CPU from the world's
   // planes on first draw, dropped by invalidateTiles around changed tiles.
-  const objectCache = new Map<number, Int32Array>();
+  /**
+   * Per chunk key: its object-pass instances, whether any is a sprite behind the blocks that the liquids cover
+   * (OBJECT_BEHIND without OBJECT_UNDER_LIQUID), and whether the chunk holds liquid (both pick the liquid overlay pass's
+   * chunks).
+   */
+  const objectCache = new Map<number, { readonly instances: Int32Array; readonly behind: boolean; readonly liquid: boolean }>();
   let objectData = new Int32Array(OBJECT_INTS * 256);
   // The chunk keys whose instances the object buffer holds, in order, and their instance count: a frame showing the
   // same chunks with none of their lists collected again draws the buffer as it is, without uploading it again.
@@ -1487,16 +1492,19 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
    */
   const objectsOf = (source: RenderableWorld, chunk: ChunkCoord, key: number): Int32Array => {
     const cached = objectCache.get(key);
-    if (cached !== undefined) return cached;
+    if (cached !== undefined) return cached.instances;
     const area = {
       left: chunk.x * CHUNK_SIZE, top: chunk.y * CHUNK_SIZE, right: (chunk.x + 1) * CHUNK_SIZE, bottom: (chunk.y + 1) * CHUNK_SIZE,
     };
-    // Waterfalls belong to the liquids layer (docs/assets.md, "Waterfalls"); toggling it drops these lists.
-    const sprites: readonly ObjectSprite[] = (layers & 8) !== 0
-      ? [...objectSprites(source, area), ...waterfallSprites(source, area)]
-      : objectSprites(source, area);
+    // Waterfalls belong to the liquids layer (docs/assets.md, "Waterfalls"), the other objects to the blocks layer;
+    // toggling either drops these lists.
+    const sprites: readonly ObjectSprite[] = [
+      ...((layers & 4) !== 0 ? objectSprites(source, area) : []),
+      ...((layers & 8) !== 0 ? waterfallSprites(source, area) : []),
+    ];
     const placed = new Int32Array(sprites.length * OBJECT_INTS);
     let at = 0;
+    let behind = false;
     for (const sprite of sprites) {
       const sheet = sheetsByKey.get(`${sprite.kind}:${String(sprite.id)}`);
       if (sheet === undefined || sprite.sx < 0 || sprite.sy < 0) continue;
@@ -1506,10 +1514,38 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
         | (sprite.underLiquid === true ? OBJECT_UNDER_LIQUID : 0);
       placed.set([sprite.dx, sprite.dy, sprite.width, sprite.height, sheet.page, sheet.x + sprite.sx, sheet.y + sprite.sy, flags], at);
       at += OBJECT_INTS;
+      if (sprite.behind === true && sprite.underLiquid !== true) behind = true;
+    }
+    let liquid = false;
+    const { liquidAmount } = source.planes;
+    for (let x = area.left; x < Math.min(area.right, source.width) && !liquid; x++) {
+      const column = x * source.height;
+      for (let y = area.top; y < Math.min(area.bottom, source.height); y++) {
+        if ((liquidAmount[column + y] ?? 0) !== 0) {
+          liquid = true;
+          break;
+        }
+      }
     }
     const instances = placed.subarray(0, at);
-    objectCache.set(key, instances);
+    objectCache.set(key, { instances, behind, liquid });
     return instances;
+  };
+
+  /**
+   * The liquid overlay pass's chunks among `items`: those holding liquid with a sprite behind the blocks in them or in
+   * a chunk around them (an object reaches past its own chunk), by the object lists drawObjects just collected.
+   */
+  const overlayChunks = (
+    source: RenderableWorld, items: readonly (readonly [ChunkCoord, number])[],
+  ): (readonly [ChunkCoord, number])[] => {
+    const chunksX = Math.ceil(source.width / CHUNK_SIZE);
+    const behindAt = (x: number, y: number): boolean => x >= 0 && x < chunksX && objectCache.get(y * chunksX + x)?.behind === true;
+    return items.filter(([chunk]) => {
+      if (objectCache.get(chunk.y * chunksX + chunk.x)?.liquid !== true) return false;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (behindAt(chunk.x + dx, chunk.y + dy)) return true;
+      return false;
+    });
   };
 
   /**
@@ -2144,16 +2180,17 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
         // The objects leave their depth: the sprites behind the blocks OBJECT_BEHIND_DEPTH, where the liquid overlay pass
         // then draws the liquids' front layer over them (they lie under the liquids, as the blocks do).
         gl.depthFunc(gl.LEQUAL);
-        const objects = (layers & 4) !== 0 ? drawObjects(source, visible) : 0;
+        const objects = (layers & 12) !== 0 ? drawObjects(source, visible) : 0;
         drawCalls += objects;
-        if (objects > 0 && (layers & 8) !== 0) {
+        const covered = objects > 0 && (layers & 8) !== 0 ? overlayChunks(source, ready) : [];
+        if (covered.length > 0) {
           gl.useProgram(spriteChunk.program);
           gl.uniform1i(spriteChunk.uniforms.uLiquidOverlay, 1);
           gl.depthFunc(gl.EQUAL);
           gl.depthMask(false);
           gl.enable(gl.BLEND);
           gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ZERO, gl.ONE);
-          drawCalls += drawInstances(source, ready);
+          drawCalls += drawInstances(source, covered);
           gl.disable(gl.BLEND);
           gl.uniform1i(spriteChunk.uniforms.uLiquidOverlay, 0);
           gl.depthMask(true);
@@ -2583,8 +2620,8 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     setLayers: (next) => {
       const bits = layerBits(next);
       if (bits !== layers && !gl.isContextLost()) invalidateOverview();
-      // The object lists hold the waterfalls only while liquids are shown.
-      if (((bits ^ layers) & 8) !== 0) {
+      // The object lists hold the waterfalls only while liquids are shown, the other objects while blocks are.
+      if (((bits ^ layers) & 12) !== 0) {
         objectCache.clear();
         objectUploaded = null;
       }

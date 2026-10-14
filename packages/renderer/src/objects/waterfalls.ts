@@ -11,7 +11,7 @@ export const WATERFALL_MAX_LENGTH = 100;
 /** The last steps over which a waterfall fades out (G: the long drop fades over about eight tiles). */
 export const WATERFALL_FADE_STEPS = 8;
 /** The liquid beside a source must hold more than this (R: the manager's `minWet`). */
-const MIN_WET = 160;
+export const WATERFALL_MIN_WET = 160;
 /** CWM block shapes: a half block, and the slopes whose surface goes down to the right / to the left. */
 const HALF = 1;
 const DOWN_RIGHT = 2;
@@ -136,7 +136,7 @@ export function waterfallSources(world: WaterfallWorld, area: TileArea): Waterfa
       if (!reader.solid(x, y) || reader.shape(x, y) !== HALF || reader.liquid(x, y - 1).kind !== 0) continue;
       for (const direction of [1, -1] as const) {
         const wet = reader.liquid(x - direction, y);
-        if (wet.amount <= MIN_WET) continue;
+        if (wet.amount <= WATERFALL_MIN_WET) continue;
         const open = x + direction;
         const blocked = reader.liquid(open, y).kind !== 0 || (reader.solid(open, y) && reader.shape(open, y) !== HALF);
         if (!blocked) out.push({ x, y, direction, kind: wet.kind });
@@ -184,7 +184,7 @@ export function waterfallSprites(world: WaterfallWorld, area: TileArea): ObjectS
   for (const source of waterfallSources(world, area)) {
     const id = WATERFALL_SHEETS[source.kind - 1];
     if (id === undefined) continue;
-    const path = waterfallPath(world, source);
+    const path = pathOf(reader, source);
     // Down a step of one tile (a ledge's lip, one falling tile, then ground again) the game shows the film and a short
     // corner reaching the next step, no falling column (G: in-game screenshot of a staircase, 2026-10-14).
     const oneTileDrop = (index: number): boolean =>
@@ -203,7 +203,7 @@ export function waterfallSprites(world: WaterfallWorld, area: TileArea): ObjectS
       }
       const flip = straight?.flip ?? step.direction === 1;
       // Shimmer's sheet is a grey mask the game colours while drawing (S): tinted by its map colour (chosen). Behind the
-      // blocks (G: the source's half block stays visible under the lip, the walls cover the column's edge) and under the
+      // blocks (G: the source's half block stays visible under the lip, the basin's blocks cover the column's edge) and under the
       // liquids (G: a stream pouring into a pool ends at its surface).
       const base = { kind: "waterfall" as const, id, flip, alpha: step.alpha, behind: true, underLiquid: true, ...(source.kind === SHIMMER ? { tint: true } : {}) };
       // Shimmer's sheet: three bands 42 rows apart, the shape (rows 0–39), its edge mask (42–81) and a fainter one; the
@@ -255,7 +255,11 @@ function fade(index: number): number {
  * it pours over the edge (a lip) and falls again. It ends in liquid, against a solid block or at the world's edge.
  */
 export function waterfallPath(world: WaterfallWorld, source: WaterfallSource): WaterfallStep[] {
-  const reader = new Reader(world);
+  return pathOf(new Reader(world), source);
+}
+
+/** waterfallPath over a reader already set up (waterfallSprites walks every source with one). */
+function pathOf(reader: Reader, source: WaterfallSource): WaterfallStep[] {
   const out: WaterfallStep[] = [];
   let direction = source.direction;
   const push = (piece: WaterfallStep["piece"], x: number, y: number): boolean => {

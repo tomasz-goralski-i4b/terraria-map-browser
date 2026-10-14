@@ -1,7 +1,7 @@
 // Waterfalls (docs/assets.md, "Waterfalls"): where the game starts one (observed at runtime, R) and the path it takes
 // (in-game screenshots, G), as sources and pieces over synthetic worlds.
 import { describe, expect, test } from "vitest";
-import { WATERFALL_FADE_STEPS, WATERFALL_MAX_LENGTH, WATERFALL_SHEETS, waterfallPath, waterfallSources, waterfallSprites } from "../src/index.js";
+import { CHUNK_SIZE, WATERFALL_FADE_STEPS, WATERFALL_MAX_LENGTH, WATERFALL_SHEETS, waterfallPath, waterfallSources, waterfallSprites } from "../src/index.js";
 import type { WaterfallSource, WaterfallWorld } from "../src/index.js";
 
 const ABSENT = 0xffff;
@@ -158,6 +158,11 @@ describe("waterfall paths (G)", () => {
     const last = path[WATERFALL_MAX_LENGTH - 1]?.alpha ?? 255;
     expect(last).toBeGreaterThan(0);
     expect(last).toBeLessThan(64);
+  });
+
+  test("a waterfall stays within the chunks around its source's chunk, which the object pass draws and drops on edits", () => {
+    // Its pieces reach at most one tile past its path, which covers at most WATERFALL_MAX_LENGTH tiles per axis.
+    expect(WATERFALL_MAX_LENGTH + 1).toBeLessThan(CHUNK_SIZE);
   });
 });
 

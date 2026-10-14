@@ -13,19 +13,22 @@ type Rgba = readonly [number, number, number, number];
 const ABSENT = 0xffff;
 const ZOOM = 16;
 
-/** 3 × 3: a plant (3, frame (0, 0): 16 × 20, drawn from its tile's top) at (1, 0) over a bottle (13) at (1, 1). */
-function world(water = false): RenderableWorld {
+/**
+ * 3 × 3: a plant (3, frame (0, 0): 16 × 20, drawn from its tile's top) at (1, 0) over a bottle (13) at (1, 1), plus
+ * the `plants` and full water at the `water` tiles given.
+ */
+function world(water: readonly (readonly [number, number])[] = [], plants: readonly (readonly [number, number])[] = []): RenderableWorld {
   const n = 3, count = n * n;
   const block = new Uint16Array(count).fill(ABSENT);
   const frameX = new Int16Array(count).fill(-1);
   const frameY = new Int16Array(count).fill(-1);
-  for (const [x, y, palette] of [[1, 0, 0], [1, 1, 1]] as const) {
+  for (const [x, y, palette] of [[1, 0, 0], [1, 1, 1], ...plants.map(([px, py]) => [px, py, 0] as const)] as const) {
     block[x * n + y] = palette;
     frameX[x * n + y] = 0;
     frameY[x * n + y] = 0;
   }
   const liquid = new Uint8Array(count), liquidAmount = new Uint8Array(count);
-  if (water) { liquid[1 * n + 0] = 1; liquidAmount[1 * n + 0] = 255; }
+  for (const [x, y] of water) { liquid[x * n + y] = 1; liquidAmount[x * n + y] = 255; }
   return {
     width: n, height: n, surfaceY: 3,
     planes: {
@@ -45,10 +48,13 @@ const SHEETS: readonly SpriteSheetEntry[] = [
 /** The water sheet: one opaque colour. */
 const WATER: Rgba = [10, 60, 200, 255];
 
-/** The plant: opaque, distinct per pixel. The bottle: its top 4 rows transparent on every other column. */
+/**
+ * The plant: opaque, distinct per pixel, but for its right 2 columns above row 16. The bottle: its top 4 rows
+ * transparent on every other column.
+ */
 function sheetPixel(sheet: number, x: number, y: number): Rgba {
   if (sheet === 2) return WATER;
-  if (sheet === 0) return [200, (x * 9) % 256, (y * 11) % 256, 255];
+  if (sheet === 0) return [200, (x * 9) % 256, (y * 11) % 256, x >= 14 && y < 16 ? 0 : 255];
   return [(x * 13) % 256, 40, (y * 7) % 256, y < 4 && x % 2 === 0 ? 0 : 255];
 }
 
@@ -101,7 +107,7 @@ test("a plant reaching into the tile below lies behind that tile's opaque pixels
 });
 
 test("a plant under water lies under the water's front layer, as blocks do (water at 128 of 255)", () => {
-  const at = draw(world(true));
+  const at = draw(world([[1, 0]]));
   const plant = sheetPixel(0, 5, 5);
   const actual = at(ZOOM + 5, 5);
   for (let k = 0; k < 3; k++) {
@@ -110,4 +116,17 @@ test("a plant under water lies under the water's front layer, as blocks do (wate
     expect(Math.abs((actual[k] ?? 0) - expected), `channel ${String(k)}: ${actual.join()}`).toBeLessThanOrEqual(1.5);
   }
   expect(actual[3]).toBe(255);
+});
+
+test("the water's front layer stays on the tiles holding it: a dry plant beside a wet one is not tinted", () => {
+  // A plant at (0, 0) too, mirrored (x = 0 is even); only (1, 0) holds water.
+  const at = draw(world([[1, 0]], [[0, 0]]));
+  expect(at(5, 5)).toEqual(sheetPixel(0, 15 - 5, 5));
+});
+
+test("liquid does not bleed into a tile drawn as an object sprite: its transparent pixels show what lies behind", () => {
+  // Water right of the plant at (1, 0); the plant's right 2 columns are transparent above row 16.
+  const wet = draw(world([[2, 0]]));
+  const dry = draw(world());
+  for (const x of [ZOOM + 14, ZOOM + 15]) expect(wet(x, 5), `x ${String(x)}`).toEqual(dry(x, 5));
 });

@@ -505,7 +505,7 @@ not observable:
   its alpha scaled by `LIQUID_SPRITE_ALPHA` — water 128 (chosen to match), lava 230, honey and shimmer 191 (chosen) — so what lies
   in front of the background shows through, tinted. In map colours (map mode, and below `SPRITE_MIN_ZOOM` in sprite mode) a liquid keeps
   the map rule, opacity `amount / 255`; from `SPRITE_MIN_ZOOM` to `SPRITE_FULL_ZOOM` its sprite fades in over that
-  colour like a block sprite. The liquids layer toggle removes the liquid and nothing else.
+  colour like a block sprite. The liquids layer toggle removes the liquid and the waterfalls ("Waterfalls"), nothing else.
 
 ### Draw offsets
 
@@ -545,7 +545,9 @@ from the 165 above it) 2 pixels up and its standing rows (36, 54, 90) 2 pixels d
 ### Waterfalls
 
 **Sheets (S).** `Waterfall_<n>` (28 sheets, `WaterfallID` names them: 0 water, 1 lava, 14 honey, 25 shimmer, the
-others biome waters, gemspark waters and rain) are 512 × 40: 16 animation frames of 32 × 40 side by side (atlas kind
+others biome waters, gemspark waters and rain) are mostly 512 × 40: 16 animation frames of 32 × 40 side by side
+(shimmer's `Waterfall_25` is 512 × 124, three bands 42 rows apart; 11, 12, 22, 26 and 27 are small 142–144 × 18 sheets
+the viewer does not draw; atlas kind
 `waterfall`, format 8). A frame's art flows **left**: rows 0–23 are the **lip**, its flat part (x 16–31) lying over the
 tile the stream pours from and its column part (x 10–15) hanging into the next tile; rows 24–39 the 10-pixel
 **column** (x 10–19) the stream falls in. `Waterfall_25` (shimmer) is a grey mask the game colours while drawing.
@@ -584,8 +586,8 @@ real liquid that had leaked from the basins); water is the forest style; frame 0
 drawn from its edge band (rows 42–81 of `Waterfall_25`, whose three bands 42 rows apart are the shape, its edge mask
 and a fainter one), blended from the measured core (164, 161, 245) to the light edge (164, 203, 255) by the band's grey
 (G). The object pass draws waterfalls over the chunk pass, mirrored when they flow
-right, behind the blocks ("Draw offsets": the source's half block stays visible under the lip, the walls cover the
-column's edge) and **under the liquids** (G: the corner pouring off the walkway into setup 5's pool ends at the pool's
+right, behind the blocks ("Draw offsets": the source's half block stays visible under the lip, the basin's blocks
+cover the column's edge) and **under the liquids** (G: the corner pouring off the walkway into setup 5's pool ends at the pool's
 surface): the chunk pass writes depth 0 where a block covers a pixel and 0.5 where only a tile's own liquid does; waterfalls (`OBJECT_UNDER_LIQUID`) are drawn only where it left 1, the other sprites behind the blocks where it did not leave 0, with the liquid overlay pass over them ("Draw offsets"). The liquids layer
 toggle shows and hides them.
 
@@ -617,7 +619,7 @@ Expected sheet sizes (consistent with the size arithmetic, confirmed only by the
 | Trees (5, 583–589, 596, 616, 634), palms (323), the giant mushroom (72) | trunk cells by ground, tops and branches by ground, zone and tree top variation, palm rows and lean, mushroom caps, in an object pass over the chunk pass (#238, "Trees") | wind sway, paint, lighting, the oasis palm rows |
 | Other variant sheets (`Tiles_2_Beach`, `Tiles_59_2`, …) | — | yes |
 | Wires and actuators | the `WiresNew` piece the four same-colour side neighbours give, red to yellow, the actuator on top, over everything in a wire pass; the colour overlay below `SPRITE_MIN_ZOOM` (#241, "Wires") | animation, the wiring tools' translucency modes, the other `WiresNew` rows |
-| Liquids | water, lava and honey from frame 0 of their `Liquid_<n>` sheet, cut to the fill level, with one surface line at the top of a pool, filling the cut-away part of half blocks and slopes, an opaque back layer over the background and a translucent front layer over what lies in front of it (#240, "Liquids"); shimmer flat in its map colour | animation (waves, lava glow), biome water styles, the slope pieces (`LiquidSlope_<n>`), waterfalls, lighting |
+| Liquids | water, lava and honey from frame 0 of their `Liquid_<n>` sheet, cut to the fill level, with one surface line at the top of a pool, filling the cut-away part of half blocks and slopes, an opaque back layer over the background and a translucent front layer over what lies in front of it, also over the object-pass sprites under it (#240, "Liquids"); shimmer in its measured colours, a rainbow surface with sparkles | animation (waves, lava glow), biome water styles, the slope pieces (`LiquidSlope_<n>`), lighting |
 | Waterfalls | sources by the game's own source finder (R), the path from in-game screenshots (G): lips, falling columns, runs along the ground and films along slopes from frame 0 of `Waterfall_<n>`, in the object pass ("Waterfalls") | animation, waterfalls from liquid films, rain, the biome water styles, the gemspark and rain waterfalls |
 | Paint, actuated/inactive tint, illumination | — | yes |
 
@@ -1543,6 +1545,9 @@ shorter cells retain their native height. Paint remains a corner mark.
 8. Waterfalls: how far a stream runs on dry flat ground, how the game draws the slide along a slope and the turn off
    its end, the thin streams from liquid films at ledge edges; the choices are in "Waterfalls".
 9. Draw offsets: the horizontal offset of frames wider than a tile, the exact shift of stalactites (165), the liquid's opacity over
-   object-pass tiles; the choices are in "Draw offsets".
+   object-pass tiles; the item flask (698), digtoise (751) and huge dragon egg (752), whose observed draw sizes
+   (36 × 44, 56 × 46, 36 × 38) are a whole object's picture, observed alone: which tile of a placed object the game
+   draws it from (the viewer draws it at every tile; 752's rectangle overruns its 38 × 36 sheet, so it is dropped);
+   the choices are in "Draw offsets".
 
 Proposed follow-up issues: [planning/assets-follow-ups.md](planning/assets-follow-ups.md).

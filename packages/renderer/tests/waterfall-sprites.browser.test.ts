@@ -114,6 +114,9 @@ describe("waterfalls in sprite mode", () => {
     if (column === undefined) throw new Error("no column sprite");
     // A pixel of the column in the air beside the wall (its first 4 pixels lie behind the wall).
     expect(at(hidden, column.dx + 6, column.dy + 4)).not.toEqual(at(shown, column.dx + 6, column.dy + 4));
+    // Waterfalls belong to the liquids layer: hiding the blocks keeps them.
+    const blocksHidden = draw({ ...ALL, blocks: false });
+    expect(at(blocksHidden, column.dx + 6, column.dy + 4)).toEqual(at(shown, column.dx + 6, column.dy + 4));
   });
 
   test("liquid covers the waterfall: the corner pouring off a ledge into a pool is hidden under the pool's water", () => {

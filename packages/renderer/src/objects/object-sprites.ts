@@ -248,7 +248,7 @@ function treeTile(
   const frame = Math.floor((frameY - LEAFY_FRAME_Y) / FRAME_STRIDE) + foliage.frame;
   if (frameX === TOP_FRAME_X) {
     out.tops.push({
-    behind: true,
+      behind: true,
       kind: "treeTop", id: foliage.style, sx: frame * (foliage.width + FOLIAGE_GAP), sy: 0, width: foliage.width, height: foliage.height,
       dx: x * SPRITE_PIXELS_PER_TILE + SPRITE_PIXELS_PER_TILE / 2 - Math.floor(foliage.width / 2),
       dy: (y + 1) * SPRITE_PIXELS_PER_TILE - foliage.height,
@@ -305,7 +305,6 @@ function mushroomTile(reader: ObjectReader, x: number, y: number, out: Collected
   });
 }
 
-/** Sprites by drawing layer: trunk cells and track extras, then branches, then tops and caps. */
 /**
  * A frame-important tile drawn with its observed draw size and top offset (docs/assets.md, "Draw offsets"), centred on
  * its tile (chosen: the draw data gives no horizontal offset) and mirrored as observed for its column's parity. Styles
@@ -326,6 +325,7 @@ function drawnTile(reader: ObjectReader, id: number, x: number, y: number, out: 
   });
 }
 
+/** Sprites by drawing layer: trunk cells and track extras, then branches, then tops and caps. */
 interface Collected {
   readonly drawn: ObjectSprite[];
   readonly trunks: ObjectSprite[];

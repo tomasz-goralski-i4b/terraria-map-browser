@@ -211,7 +211,7 @@ describe("liquids in sprite mode", () => {
 });
 
 describe("liquid at block edges", () => {
-  /** 3 × 3: water at (0, 1) and (1, 0); a framed vanilla tile (21) at (1, 1) whose sheet has transparent pixels. */
+  /** 3 × 3: water at (0, 1) and (1, 0); a framed vanilla tile (13, drawn by the chunk pass) at (1, 1) whose sheet has transparent pixels. */
   function edgeWorld(): RenderableWorld {
     const n = 3, count = n * n;
     const block = new Uint16Array(count).fill(ABSENT);
@@ -227,11 +227,11 @@ describe("liquid at block edges", () => {
     return {
       width: n, height: n, surfaceY: 3,
       planes: { block, wall: new Uint16Array(count).fill(ABSENT), frameX, frameY, liquid, liquidAmount, paint: new Uint8Array(count), wallPaint: new Uint8Array(count) },
-      palette: [{ kind: "vanilla", id: 21 }],
+      palette: [{ kind: "vanilla", id: 13 }],
     };
   }
 
-  const TILE = { kind: "tile", id: 21, page: 0, x: 4, y: 40, width: 16, height: 16, frameWidth: 16, frameHeight: 16 } as const;
+  const TILE = { kind: "tile", id: 13, page: 0, x: 4, y: 40, width: 16, height: 16, frameWidth: 16, frameHeight: 16 } as const;
   /** Every third diagonal of the tile's art transparent. */
   const tilePixel = (x: number, y: number): Rgba => [(x * 13) % 256, (y * 17) % 256, 200, (x + y) % 3 === 0 ? 0 : 255];
 
