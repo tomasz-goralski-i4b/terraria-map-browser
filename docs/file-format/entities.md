@@ -298,3 +298,233 @@ Names are ids only — item, NPC and tile display names are out of scope.
 (NPCs, mobs). Whether an entry stands on a matching tile (e.g. a chest on 21/88/441/467/468) is **derived** in
 the view from the tile planes, not decided by the decoder: the decoder never drops records (unlike TEdit for
 signs), so a read-only list and a later round trip see the same data.
+
+## Chest extraction, item display and export (#156)
+
+The section-3 layout above is unchanged. #165 already implements independent .NET/TS decoding, including
+legacy shared slot counts. #187 owns the Inspector inventory, Entities chest list and item search; #186 owns
+the search panel and map highlights. This section supplies their item display, aggregation and export contract.
+At the user's request on 2026-10-14, the spike also implements a complete generated item catalog and local
+sprite extraction, rather than leaving name/icon extraction as a future feasibility exercise.
+
+### Sources and reproducible evidence
+
+| Source | Revision / location | Evidence used |
+|---|---|---|
+| Section-3 reader/writer | T29/T30 in [sources-and-versions.md](sources-and-versions.md), TEdit `182031b83ce825719f857a6db4ecb6967118abd3` | Binary record layout, restated above |
+| [TEdit texture loader](https://github.com/TEdit/Terraria-Map-Editor/blob/99928583086ff1c0c970c5528c7d72c76da39a53/src/TEdit/Render/Textures.cs#L294-L300) | `99928583086ff1c0c970c5528c7d72c76da39a53`, `src/TEdit/Render/Textures.cs:294–300` | Item sheet lookup uses the local `Images/Item_<id>` family |
+| [TEdit item property](https://github.com/TEdit/Terraria-Map-Editor/blob/99928583086ff1c0c970c5528c7d72c76da39a53/src/TEdit.Terraria/Objects/ItemProperty.cs#L56-L58) | same revision, `src/TEdit.Terraria/Objects/ItemProperty.cs:56–58` | Texture aliasing needs a distinct source texture ID; no values copied |
+| Our existing assets | [../assets.md](../assets.md), "XNB container", "Atlas"; `packages/assets/src/atlas-types.ts`, `atlas-build.ts:65–72` | Independent XNB/LZX decode and atlas item-sheet entries |
+| Our existing decoder | `packages/world-codec/src/entities.ts:5–6,122–133,263–277`; `tiles.ts:15–36` | Sparse slots, per-section errors, column-major tile planes plus palette |
+| Local runtime observation | Terraria 1.4.5.8, Steam build `24893155`, observed 2026-10-14; `TerrariaServer.exe` SHA-256 `328872c65a4a7a94f050ead1566f1567af15c3193d4d7008a460507d3686d7c2` | Names, aliases and animation rectangles through reflection and calls, not decompilation |
+| Generated corpus | `packages/test-fixtures/worlds/manifest.json`, SHA-256 checked before each read | Counts and samples in the table below |
+
+Runtime members used by our observer: `LanguageManager.Instance`, `SetLanguage("en-US")`, `ReloadLanguage`,
+`Lang.InitializeLegacyLocalization`, `Lang.GetItemNameValue`, `Lang.prefix`, `ItemID.Count`, symbolic `ItemID`
+fields, `ItemID.Sets.TextureCopyLoad`, `Main.InitializeItemAnimations`, `Main.itemAnimations` and animation
+`GetFrame(Texture2D, 0)`. The call observes a first-frame rectangle using decoded sheet dimensions; XNA's
+reflected `_width` / `_height` fields populate a dimensions-only texture, with its native finalizer suppressed.
+The Windows game needs the 32-bit .NET Framework host. `Program.SavePath` must be initialized before `Main`;
+the observer uses the temporary directory and loads no player/world files, following the map-palette exporter.
+Unsupported contracts fail the export. No third-party tables, game code or images are committed.
+
+### Extraction model and gaps in #165
+
+Keep `WorldTilesResult.entities.Chests` next to the CWM; the tile planes remain typed arrays. A chest is
+`{ x, y, name, slotCount, items: [{ slot, itemId, stack, prefix }] }`. `items` contains occupied slots only;
+indices are zero-based and a missing index in `[0, slotCount)` is empty. Keep the actual `slotCount`, never
+assume 40. The Inspector can materialize its slot grid on demand; do not expand all worlds into objects per tile.
+
+`chestIndex` is the zero-based **section record order**, useful as a world-session key and export key. It is
+not a persistent game chest ID, and must be paired with the world/session revision. Keep duplicate coordinates
+as separate records. Loading another world or editing chest contents invalidates the index and totals.
+
+Derive `tileId`, kind and footprint from the CWM at `x * height + y`, resolving the block-plane palette index
+(not treating that index as a tile ID). Supported vanilla anchors: 21/467 = chest (2 × 2), 88 = dresser
+(3 × 2), 441/468 = trapped chest (2 × 2), from T36. This classification does not prove a valid complete object:
+check bounds, footprint tiles and stored frames before indexing its clickable footprint. Preserve and list
+records with out-of-bounds, absent, unknown or mismatched anchors; label them and do not index an invented
+footprint. The binary decoder intentionally does not filter them. Unsupported anchors remain `kind: "unknown"`.
+
+No binary field is missing for listing, totals or export. Derived kind/footprint, catalog lookup, item-to-chest
+index and UI identity belong outside the codec. The decoder reads an Int32 item ID without checking that a
+catalog knows it; retain that ID, even when zero/negative/unknown with a positive stack, and display a diagnostic
+fallback. A malformed chest section is unreadable, not an empty inventory: disable complete chest exports and
+totals for that section, while the other entity sections still work.
+
+### Generated item names and local icons
+
+The generated `terrariaItems` catalog in `@studio/assets` has one entry per ID, including ID 0. It includes
+`id`, exact English `name`, `nameStatus` (`resolved`, `unnamed`, `empty`), reflected `symbols`, resolved
+`textureId`, an observed first-frame `frame: { x, y, width, height }` or null, and `spriteStatus`
+(`available`, `missing`, `empty`). Prefix names are indexed separately. Provenance is `schemaVersion: 1`,
+game version, assembly SHA-256 and `itemCount`. See [ADR 0002's addendum](../adr/0002-shipped-map-palette.md).
+
+Route every item display in #187 through one function taking `(itemId, prefix, connectedAtlas)`. It returns a
+base name, prefix label, stable numeric IDs and an optional icon rectangle. Names work without connecting game
+assets. For missing names/IDs use `Item <id>`; for unknown prefixes use `Prefix <id>`; prefix 0 adds no label.
+For example, the runtime resolves item 1156 to Piranha Gun and prefix 55 to Unpleasant; keep those two labels
+separate instead of inventing the game's grammar. Item 8 resolves to Torch, 19 to Gold Bar, 73 to Gold Coin,
+and 6165 to Poison Barb. Display lookup never rewrites stored IDs or stacks.
+
+Icons come from the user's local XNB files, decoded by `readXnbTexture`, or their cached item atlas entries.
+Look up `kind: "item", id: textureId`; offset the observed frame into the atlas entry. An alias can share pixels
+while keeping its own item ID/name. Select a static inventory frame for animation strips, not the full strip;
+no frame-height/gutter rule is guessed from sheet aspect ratio. Use a neutral placeholder if assets are absent,
+the entry is missing, the crop does not fit, or the connected install cannot be matched to the catalog version.
+Keep names usable when icons are unavailable. No PNGs or localization JSON resources are shipped.
+
+Regeneration and extraction are implemented by `scripts/items/export.mjs` and `observe.ps1`; the commands and
+complete-ID coverage report are in [../../scripts/items/README.md](../../scripts/items/README.md). The generator
+decodes every local item sheet, observes every ID, validates all available crops, and optionally emits one PNG
+per available ID (including aliases) plus a manifest entry for **every** ID. An unnamed ID is retained,
+not silently removed or assigned an invented game name. Re-run after game updates; never edit the table by hand.
+
+The only unnamed nonempty ID observed is 4143, symbol `ManaCloakStar`, with an available 18 × 18 sprite.
+The [official wiki](https://terraria.wiki.gg/wiki/Mana_Cloak_Star) identifies it as Mana Cloak Star, a pickup
+restoring 50 mana (checked 2026-10-14). This explains its identity; it does not establish why the runtime returns
+an empty name. Preserve the observed empty name instead of copying the wiki's display label into generated data.
+
+### Listing, search and totals
+
+The #187 Entities table shows name (empty = Unnamed), coordinates, kind, filled slots and `totalStack`, the sum
+of all occupied stacks. Selecting a row centres on the bounded footprint; Enter pins the chest. The Inspector
+shows `slotCount` cells, including empty slots. Find items delegates area highlights and stepping to #186.
+
+Index occupied slots once per world in the Worker or idle slices. Keys are numeric item IDs, not names or
+prefixes. For each ID retain per-chest slot references and summed stack; one chest with several matching slots
+appears once. Names can match multiple IDs; an exact numeric query selects an ID, while a case-insensitive name
+query matches base item names. Prefixes do not affect matching or the primary item total. Do not sum across
+different IDs just because their localized names or icons are the same. A query result reports a total per
+matched ID and a per-chest total for its matching slots; distinguish this from the chest's total inventory.
+
+Per item: `totalStack = sum(stack)`, `slotCount = number of occupied matching slots`, and `chestCount = number
+of distinct chestIndex values`. Primary totals combine prefixes; optional prefix breakdown groups by
+`(itemId, prefix)` using the same rules. All sums use exact safe integers and are checked before export.
+For the SCCO1 sample chest #2 below: seven filled slots, `totalStack = 71`; item 8 contributes 15. Across the
+whole SCCO1 world, item 8 contributes 995 in 51 chests. Neither number is a count of distinct item types.
+
+### Export contract proposal (not yet implemented)
+
+JSON is the authoritative lossless report, proposed media type `application/json`, filename
+`<world-name>.chests.v1.json`. The name is sanitized for a download, never used as an input path. Always export
+the **whole decoded chest section**; a UI filter does not silently limit this report. No timestamps, absolute
+local paths or pixels are included. The proposed schema is `contracts/schemas/chest-extract.v1.schema.json`;
+this spike describes it without adding the schema or implementing chest export.
+
+| JSON field | Contract |
+|---|---|
+| `schemaVersion` | exactly 1; incompatible changes need a new schema/filename version |
+| `source` | original file `sha256`, `formatVersion`, world `worldId`, exact `name`, `width`, `height`; also `worldRevision` (nonnegative session edit counter) so an edited report is not mistaken for original bytes |
+| `chests[]` | section order; each has `chestIndex`, exact `x`, `y`, `name`, `slotCount`, occupied `items[]`, derived `tileId` (integer or null), `kind` (`chest`, `dresser`, `trappedChest`, `unknown`), `anchorStatus` (`valid`, `outOfBounds`, `mismatch`, `unknown`) |
+| `items[]` | ascending zero-based `slot`; exact Int32 `itemId`, positive Int16 `stack`, UInt8 `prefix`; no entries for empty slots |
+| `totals[]` | ascending numeric `itemId`; `itemId`, `totalStack`, occupied `slotCount`, distinct `chestCount` |
+
+The schema disallows extra fields, limits positions/IDs to Int32, prefixes to 0–255 and stack to 1–32767,
+and requires nonnegative safe-integer counts. It permits nonstandard slot counts rather than enforcing 40.
+Relational checks (unique chest indices, unique slots within range, ordering, totals and valid footprints)
+also run in the exporter; JSON Schema alone cannot express all of them. Exact empty chest names and empty
+chests survive, so slot gaps can be reconstructed from `slotCount`. Item names are presentation, not export
+identity: v1 exports numeric IDs, so an installation/language change does not change inventory bytes.
+
+Worked JSON chest entry (from SCCO1; tile-derived fields must be filled by the exporter from its CWM):
+
+```json
+{
+  "chestIndex": 2, "x": 3708, "y": 651, "name": "", "slotCount": 40,
+  "items": [
+    { "slot": 0, "itemId": 1156, "stack": 1, "prefix": 55 },
+    { "slot": 1, "itemId": 167, "stack": 1, "prefix": 0 },
+    { "slot": 2, "itemId": 706, "stack": 5, "prefix": 0 },
+    { "slot": 3, "itemId": 279, "stack": 45, "prefix": 0 },
+    { "slot": 4, "itemId": 2350, "stack": 3, "prefix": 0 },
+    { "slot": 5, "itemId": 8, "stack": 15, "prefix": 0 },
+    { "slot": 6, "itemId": 5234, "stack": 1, "prefix": 0 }
+  ]
+}
+```
+
+This is the recorded binary payload excerpt, not a complete export document. Slots 7–39 are empty. Another
+record, chest #0 at (2655,1072), is `{ "name": "", "slotCount": 40, "items": [] }`. The complete-world
+totals entry for Torch is `{ "itemId": 8, "totalStack": 995, "slotCount": 51, "chestCount": 51 }`.
+
+Offer three CSV downloads alongside JSON: `chests.v1.csv` (one row per chest, including empty chests),
+`items.v1.csv` (one row per occupied slot), `totals.v1.csv` (one row per item ID). Each has
+`schema_version,world_sha256,world_revision` first; remaining columns are:
+
+- Chests: `chest_index,x,y,name,tile_id,kind,anchor_status,slot_count,filled_slots,total_stack`.
+- Items: `chest_index,slot,item_id,stack,prefix`.
+- Totals: `item_id,total_stack,slot_count,chest_count`.
+
+Rows follow JSON ordering. UTF-8 without BOM, comma separators, CRLF, header row, RFC 4180 quoting (double
+quotes doubled). Names with commas/newlines retain quoted content. In text cells only, prefix a leading
+apostrophe if the first non-whitespace character is `=`, `+`, `-` or `@`, or the value starts with a tab/CR/LF;
+CSV is for spreadsheets, while JSON preserves the exact original text. Numeric cells stay numeric. For the
+worked chest's Torch slot the Items columns after provenance are `2,5,8,15,0`; the whole-world Torch total is
+`8,995,51,51`. Never represent an unreadable chest section as a successful empty CSV/JSON report.
+
+### Checked corpus chest contents
+
+Checked 2026-10-14 with an independent, throwaway section-3 walk: verify each manifest SHA-256; read the
+header's pointers at offset 26; start at `pointer[2]`; decode count, records and slots as above; assert the final
+offset equals `pointer[3]`. All files have format 326, all chest slot counts are 40, and all names are empty.
+No new world or full tile-grid dump is committed. The existing codec can reproduce these counts after build:
+
+```js
+// Run as a Node ES module from the repository root after pnpm typecheck.
+import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { readWorldEntities } from "./packages/world-codec/dist/index.js";
+const directory = "packages/test-fixtures/worlds/";
+const manifest = JSON.parse(readFileSync(directory + "manifest.json", "utf8"));
+for (const world of manifest.worlds) {
+  const bytes = readFileSync(directory + world.file);
+  if (createHash("sha256").update(bytes).digest("hex") !== world.sha256) throw Error("Fixture hash mismatch");
+  const section = readWorldEntities(bytes).Chests;
+  if (section.error) throw Error(JSON.stringify(section.error));
+  const chests = section.data.entries;
+  console.log(world.file, chests.length, chests.reduce((n,c) => n+c.items.length,0),
+    chests.filter((c) => c.items.length === 0).length,
+    chests.reduce((n,c) => n+c.items.reduce((sum,i) => sum+i.stack,0),0));
+}
+```
+
+| Fixture | Section [start,end) | Chests | Filled slots | Empty chests | Sum of stacks | Item 8 total / chests |
+|---|---|---:|---:|---:|---:|---:|
+| SCCO1 | [2970538,2994270) | 190 | 1212 | 8 | 15184 | 995 / 51 |
+| SCCR2 | [2906205,2926976) | 168 | 1029 | 2 | 12642 | 963 / 49 |
+| SECR1 | [2994780,3016660) | 176 | 1102 | 3 | 12930 | 586 / 32 |
+| SJCO1 | [2804301,2825325) | 169 | 1061 | 3 | 12781 | 800 / 41 |
+| SMCO1 | [2941576,2963014) | 172 | 1088 | 6 | 12867 | 716 / 37 |
+
+Sample notation: `slot:itemId × stack / prefix`; every slot not shown is empty. Indices are section order,
+offsets are the start of the chest record, before x/y.
+
+| Fixture / chestIndex | Record offset | Position | Contents |
+|---|---:|---|---|
+| SCCO1 / 0 | 2970540 | (2655,1072) | empty, 40 slots |
+| SCCO1 / 2 | 2970726 | (3708,651) | 0:1156 ×1 /55; 1:167 ×1 /0; 2:706 ×5 /0; 3:279 ×45 /0; 4:2350 ×3 /0; 5:8 ×15 /0; 6:5234 ×1 /0 |
+| SCCR2 / 0 | 2906207 | (1379,1070) | empty, 40 slots |
+| SCCR2 / 2 | 2906393 | (429,631) | 0:1156 ×1 /57; 1:19 ×10 /0; 2:188 ×3 /0; 3:299 ×2 /0; 4:73 ×1 /0 |
+| SECR1 / 3 | 2995061 | (575,734) | 0:1156 ×1 /42; 1:51 ×44 /0; 2:706 ×8 /0; 3:41 ×28 /0 |
+| SJCO1 / 2 | 2804489 | (637,541) | 0:1156 ×1 /58; 1:43 ×1 /0; 2:51 ×48 /0; 3:279 ×28 /0; 4:299 ×2 /0; 5:2350 ×2 /0; 6:282 ×17 /0 |
+| SMCO1 / 5 | 2942103 | (3456,534) | 0:1260 ×1 /53; 1:302 ×2 /0; 2:2329 ×1 /0; 3:8 ×25 /0; 4:5234 ×1 /0 |
+
+Coverage limits remain: freshly generated worlds do not cover custom names, arbitrary slot gaps, several
+stacks of the same item with different prefixes, bad anchors, overlapping records or unknown IDs. Cover those
+with realistic synthetic inventories in implementation issues, not by committing player worlds.
+
+### Open questions and follow-ups
+
+1. How should connected Content directories prove they match the generated catalog's game version? A folder
+   fingerprint proves cache identity, not the game's version. Until established, do not assume a crop from one
+   game release works on another; omit unsupported icons and keep names/IDs visible.
+2. Should a later export include optional localized display names or per-prefix totals? V1 uses stable IDs
+   and combined totals; those additions need a separately specified schema change.
+3. What exact footprint-validation behavior should #187 use for overlapping/corrupt chest records? Preserve
+   records and diagnostic status; do not let a later record silently overwrite another's click target.
+4. The generator's dimensions-only XNA contract is specific to the observed Windows install. Other game
+   runtimes must be observed separately; do not infer support from the same `.wld` format version.
+
+Implementation drafts and links to existing #165/#186/#187 live in
+[../planning/file-format-follow-ups.md](../planning/file-format-follow-ups.md#chest-extraction-follow-ups-156).

@@ -3,6 +3,143 @@
 Issue drafts written by the `spike` steps while specifying the `.wld` format (moved out of the format
 specification so that chain steps do not read them). Some are already done or filed; check the backlog first.
 
+## Chest extraction follow-ups (#156)
+
+The user extended #156 to implement the generated item/prefix database and prove sprite extraction for every
+ID. That generator is included in this spike (`scripts/items/`, `packages/assets/src/items/`); do not file a
+duplicate generator task. #165 already supplies both entity decoders; no additional section-3 decode issue is
+needed. #186 owns search/highlights and #187 owns chest inventory, list and item search. The drafts below are
+not filed automatically and do not duplicate those UI tasks.
+
+```markdown
+**Status:** not filed. Suggested title: [M4] Connect generated item names and local inventory icons.
+Blocked by: #156, #187.
+
+## Goal
+Every chest slot and item-search result shows its generated English name, prefix and local inventory icon.
+
+## Scope
+- Connect #187's single item-display function to @studio/assets terrariaItems: names and prefix labels work
+  without local assets; empty, unnamed and unknown IDs have the documented numeric fallback.
+- Resolve textureId and the observed inventory-frame rectangle into the user's item atlas. Apply catalog/
+  install compatibility checks; missing, mismatched or invalid assets show a placeholder while names work.
+- Share the same display resolver in the Inspector, Entities summaries and search results. Keep IDs in the
+  accessible label; prefix 0 has no modifier label.
+
+## Out of scope
+- New generators, shipping PNGs, editing inventories, translated catalogs, mods or player storage.
+
+## Ownership
+- apps/web/src/** and its tests; packages/assets/** only for atlas/catalog compatibility helpers if needed.
+
+## Spec
+- docs/file-format/entities.md, "Generated item names and local icons"; scripts/items/README.md.
+- #187's item-display function and #186's search-provider interface.
+
+## Compatibility impact
+- Vanilla: Render
+- Modded worlds: None (unknown IDs retain numeric labels)
+
+## Acceptance criteria
+- Without Content, the SCCO1 chest at (3708,651) shows Piranha Gun, prefix Unpleasant, and Torch with correct
+  stacks; unknown/unnamed IDs and unknown prefixes retain their numeric fallback.
+- With matching local Content, alias item 3665 uses texture 48; animated item 75 draws only its observed
+  inventory frame. An unavailable/mismatched atlas leaves a placeholder rather than a wrong crop.
+- Keyboard/accessible slot labels preserve slot number, item ID, stack and prefix information.
+
+## Proof
+- Fixture: SCCO1.wld plus synthetic unavailable/unknown items and synthetic item atlas entries.
+- Test command: bash scripts/verify.sh
+- Manual test: inspect the same chest before and after connecting local Content.
+```
+
+```markdown
+**Status:** not filed. Suggested title: [M4] Shared chest extraction index and item totals.
+Blocked by: #165, #156. Coordinate with #187; reuse its index if already implemented.
+
+## Goal
+The chest list, item search and exports agree on inventory totals without rescanning every chest per query.
+
+## Scope
+- A shared chest extraction service over WorldTilesResult.entities.Chests; preserve record order, empty
+  chests, sparse slot indices, raw IDs and actual slot counts. Derive bounded anchor status from the CWM.
+- Reuse #187's item-to-chest index; add exact per-ID totalStack, occupied slotCount and distinct chestCount.
+  Multiple slots and prefixes of an ID merge into one per-chest result and one primary item total.
+- Construct in the Worker/idle slices; world replacement or edits invalidate the session revision. Surface
+  an unreadable chest section explicitly; invalid/overlapping anchors do not silently lose records.
+
+## Out of scope
+- Another chest decoder, new search/highlight UI, catalog generation, mods and player storage.
+
+## Ownership
+- apps/web/src/world/** and tests; extend the existing search provider rather than building a second index.
+
+## Spec
+- docs/file-format/entities.md, "Extraction model and gaps in #165", "Listing, search and totals".
+- #187's shared chest lookup/index.
+
+## Compatibility impact
+- Vanilla: None (read-only reports)
+- Modded worlds: None
+
+## Acceptance criteria
+- SCCO1 produces 190 chests, 1212 filled slots and 15184 total units; ID 8 totals 995 across 51 chests.
+  SCCR2 produces 168 chests, 1029 filled slots and 12642 units; ID 8 totals 963 across 49 chests.
+- A realistic synthetic expedition inventory with Torch in several slots/prefixes counts stacks and unique
+  chests separately, preserves gaps, and does not merge different IDs sharing a name or texture.
+- Section errors and invalid/duplicate anchors are explicit; world replacement/edit invalidates old totals.
+- Index construction never blocks input for more than #187's 50 ms budget.
+
+## Proof
+- Fixture: SCCO1.wld, SCCR2.wld and synthetic expedition inventories.
+- Test command: bash scripts/verify.sh
+```
+
+```markdown
+**Status:** not filed. Suggested title: [M4] Export chest inventory and totals as JSON and CSV.
+Blocked by: #156 and the shared extraction service above (or #187 if it owns that service).
+
+## Goal
+The user downloads complete chest inventories and exact item totals from the loaded world.
+
+## Scope
+- Implement the version-1 JSON and three CSV downloads from "Export contract proposal". Export all decoded
+  chest records even if the UI is filtered; preserve empty chests, sparse slots, prefixes and diagnostics.
+- Add contracts/schemas/chest-extract.v1.schema.json and small report vectors, not full tile grids.
+- Use deterministic ordering, provenance/revision and safe-integer totals. Validate relational constraints;
+  reject unreadable chest sections. Keep exact names in JSON and escape spreadsheet formulas in CSV text.
+- Downloads use sanitized filenames and contain no absolute local paths or sprite pixels.
+
+## Out of scope
+- Import/editing, filtered exports, localized display-name columns, pixels, ZIP packaging, modded item identity.
+
+## Ownership
+- apps/web/src/** and tests; contracts/schemas/ and small contracts/vectors/ report fixtures.
+
+## Spec
+- docs/file-format/entities.md, "Export contract proposal", "Checked corpus chest contents".
+
+## Compatibility impact
+- Vanilla: None (report export only)
+- Modded worlds: None
+
+## Acceptance criteria
+- SCCO1 and SCCR2 JSON/CSV exports match the recorded counts/samples and per-ID totals; empty chests appear
+  in JSON and chests.csv. Repeated unchanged export bytes are identical.
+- JSON reconstructs synthetic gap slots, custom chest names, prefixes and nonstandard slot counts; relational
+  validation rejects duplicate/out-of-range slots and incorrect totals.
+- CSV correctly quotes comma/newline/quote text and guards formula-leading names; JSON retains exact strings.
+- A malformed chest section disables complete export while other entity sections still work; changing a UI
+  filter does not change which chest records are exported.
+
+## Proof
+- Fixture: SCCO1.wld, SCCR2.wld and small synthetic report vectors.
+- Test command: bash scripts/verify.sh
+- Manual test: download JSON and all three CSVs, open CSVs in a spreadsheet, compare Torch totals.
+```
+
+## Earlier format-spike drafts
+
 ```markdown
 **Status:** done (#5, #6).
 

@@ -12,6 +12,8 @@ if runs_part web; then
   run_logged framing-tests node --test scripts/framing/observe.test.mjs || rc=1
   echo "== sprite object exporter (observer opt-in: TERRARIA_ASSEMBLY)"
   run_logged sprite-object-tests node --test scripts/sprite-objects/export.test.mjs || rc=1
+  echo "== item catalog and sprite exporter"
+  run_logged item-export-tests node --test scripts/items/export.test.mjs || rc=1
 fi
 if runs_part dotnet; then
   # Microsoft.Testing.Platform mode (opted in via global.json "test.runner").
