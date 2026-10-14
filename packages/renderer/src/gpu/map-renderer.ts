@@ -350,6 +350,7 @@ const CHUNK_UNIFORMS = [...CHUNK_PASS_UNIFORMS, ...OVERLAY_UNIFORMS] as const;
 /** The sprite program's own uniforms (chunkSpriteFragmentSource), besides CHUNK_UNIFORMS. */
 const SPRITE_UNIFORMS = [
   "uAtlas", "uAtlasHalf", "uSpriteSheets", "uSpriteSamples", "uSpriteStep", "uSpriteLevel", "uSpriteWeight", "uLiquidSheets",
+  "uLiquidOverlay",
 ] as const;
 const HALF_ATLAS_UNIFORMS = ["uAtlas", "uPage"] as const;
 const SPRITE_CHUNK_UNIFORMS = [...CHUNK_PASS_UNIFORMS, ...SPRITE_UNIFORMS] as const;
@@ -2140,10 +2141,23 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       drawCalls += drawInstances(source, ready);
       // Sprite mode draws the objects (trees, track extras) over the chunks, and the wires over everything.
       if (spriteChunk !== null) {
+        // The objects leave their depth: the sprites behind the blocks OBJECT_BEHIND_DEPTH, where the liquid overlay pass
+        // then draws the liquids' front layer over them (they lie under the liquids, as the blocks do).
         gl.depthFunc(gl.LEQUAL);
-        gl.depthMask(false);
-        if ((layers & 4) !== 0) drawCalls += drawObjects(source, visible);
-        gl.depthMask(true);
+        const objects = (layers & 4) !== 0 ? drawObjects(source, visible) : 0;
+        drawCalls += objects;
+        if (objects > 0 && (layers & 8) !== 0) {
+          gl.useProgram(spriteChunk.program);
+          gl.uniform1i(spriteChunk.uniforms.uLiquidOverlay, 1);
+          gl.depthFunc(gl.EQUAL);
+          gl.depthMask(false);
+          gl.enable(gl.BLEND);
+          gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ZERO, gl.ONE);
+          drawCalls += drawInstances(source, ready);
+          gl.disable(gl.BLEND);
+          gl.uniform1i(spriteChunk.uniforms.uLiquidOverlay, 0);
+          gl.depthMask(true);
+        }
         gl.disable(gl.DEPTH_TEST);
         if (((layers >> 4) & WIRE_LAYER.all) !== 0 && ((planeSources?.present ?? 0) & PRESENT.flags) !== 0) {
           drawCalls += drawWires(source, ready);

@@ -533,8 +533,10 @@ the chunk pass shows what lies behind such a tile. They lie **behind the blocks*
 a block covers a pixel (its map colour, or a sprite pixel that is not transparent) and these sprites are drawn only
 elsewhere (`OBJECT_BEHIND`). Trees, palms and the giant mushroom (trunks, branches, tops, caps) lie behind the blocks
 too (G: a block's grass covers a trunk's foot), and so do waterfalls (G: the source's half block stays visible under
-the lip); track extras stay in front. They still lie over liquids (the game
-draws liquid over them; open question). Stalactites and stalagmites (165) are plain in the draw data, alone or with stone
+the lip); track extras stay in front. They lie **under the liquids** as the blocks do (chosen, the game draws liquid
+over them; its opacity there is not measured): the object pass leaves their depth (0.25), and a liquid overlay pass,
+the chunk program with `uLiquidOverlay` set, then blends the tile's own liquid front layer (water 128 of 255, as over
+blocks) where it finds exactly that depth (coral, cattails, chests and pots under water). Stalactites and stalagmites (165) are plain in the draw data, alone or with stone
 above or below: the game shifts them elsewhere. In-game screenshots (G) show hanging ones drawn up and standing ones
 drawn down so both touch the stone, as the observed moss plants (184: rows 0–36 down 2, rows 54–108 up 2); the
 viewer draws 165's hanging rows (frameY 0, 18 and 72; in the user's worlds every such tile hangs from the ceiling or
@@ -584,7 +586,7 @@ and a fainter one), blended from the measured core (164, 161, 245) to the light 
 (G). The object pass draws waterfalls over the chunk pass, mirrored when they flow
 right, behind the blocks ("Draw offsets": the source's half block stays visible under the lip, the walls cover the
 column's edge) and **under the liquids** (G: the corner pouring off the walkway into setup 5's pool ends at the pool's
-surface): the chunk pass writes depth 0 where a block covers a pixel and 0.5 where only a tile's own liquid does; waterfalls (`OBJECT_UNDER_LIQUID`) are drawn only where it left 1, the other sprites behind the blocks (which stay over the liquids) where it did not leave 0. The liquids layer
+surface): the chunk pass writes depth 0 where a block covers a pixel and 0.5 where only a tile's own liquid does; waterfalls (`OBJECT_UNDER_LIQUID`) are drawn only where it left 1, the other sprites behind the blocks where it did not leave 0, with the liquid overlay pass over them ("Draw offsets"). The liquids layer
 toggle shows and hides them.
 
 ### Worked examples
@@ -1540,7 +1542,7 @@ shorter cells retain their native height. Paint remains a corner mark.
    observable without its renderer; the choices are in "Liquids".
 8. Waterfalls: how far a stream runs on dry flat ground, how the game draws the slide along a slope and the turn off
    its end, the thin streams from liquid films at ledge edges; the choices are in "Waterfalls".
-9. Draw offsets: the horizontal offset of frames wider than a tile, the exact shift of stalactites (165), liquid over
+9. Draw offsets: the horizontal offset of frames wider than a tile, the exact shift of stalactites (165), the liquid's opacity over
    object-pass tiles; the choices are in "Draw offsets".
 
 Proposed follow-up issues: [planning/assets-follow-ups.md](planning/assets-follow-ups.md).

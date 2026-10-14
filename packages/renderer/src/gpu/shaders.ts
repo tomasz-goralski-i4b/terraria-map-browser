@@ -739,12 +739,17 @@ bool paletteColor(uint index, int xOffset, out ivec3 color) {
 // liquid does (for the waterfalls, OBJECT_UNDER_LIQUID: the game's end under the liquid they pour into), 1 elsewhere.
 // Set by localColorAt.
 float blockDepth = 1.0;
+// The liquid overlay pass (uLiquidOverlay, after the object pass): the tile's own liquid front layer alone, drawn over
+// the sprites behind the blocks (OBJECT_BEHIND_DEPTH), which lie under the liquids as the blocks do. Set by localColorAt.
+uniform int uLiquidOverlay;
+ivec4 liquidOverlay = ivec4(0);
 #endif
 
 ivec4 localColorAt(ivec2 local, vec2 sub) {
   ivec2 texel = ivec2(local.y + ${String(PAGE_APRON)}, local.x + ${String(PAGE_APRON)});
 #ifdef SPRITES
   blockDepth = 1.0;
+  liquidOverlay = ivec4(0);
 #endif
   int tileY = vRect.y + local.y;
 
@@ -831,12 +836,16 @@ ivec4 localColorAt(ivec2 local, vec2 sub) {
       // In sprite mode a liquid with a sheet shows it cut to its fill, with the surface where the tile above holds no
       // liquid (the page apron holds the row above the chunk), faded in over its map colour like a block sprite.
       if (uLiquidSheets[liquid - 1u].w != 0) {
-        ivec4 drawn = over(liquidFront(liquidArt, liquid), color);
+        ivec4 front = liquidFront(liquidArt, liquid);
+        ivec4 drawn = over(front, color);
         color = uSpriteWeight < 256 ? (mappedLiquid * (256 - uSpriteWeight) + drawn * uSpriteWeight + 128) / 256 : drawn;
         if (liquidShown && liquidArt.a > 0) blockDepth = min(blockDepth, 0.5);
+        ivec4 plainFront = ivec4(uLiquids[liquid - 1u], amount);
+        liquidOverlay = uSpriteWeight < 256 ? (plainFront * (256 - uSpriteWeight) + front * uSpriteWeight + 128) / 256 : front;
       } else {
         color = mappedLiquid;
         blockDepth = min(blockDepth, 0.5);
+        liquidOverlay = ivec4(uLiquids[liquid - 1u], amount);
       }
 #else
       color = mappedLiquid;
@@ -896,6 +905,12 @@ void main() {
  * unsigned integers so that it equals the CPU reference. A footprint of at most MAX_FILTER_TILES tiles around a
  * centre inside the chunk covers at most three tiles per axis and stays within the page apron.
  */
+/**
+ * The window depth of the sprites behind the blocks (OBJECT_BEHIND without OBJECT_UNDER_LIQUID; NDC -0.5): the liquid
+ * overlay pass draws the liquids' front layer where the object pass left exactly it.
+ */
+export const OBJECT_BEHIND_DEPTH = "0.25";
+
 const chunkFragmentBody = `
 uniform vec2 uCamera;
 uniform float uZoom;
@@ -955,6 +970,16 @@ ivec4 pointColor(vec2 screen) {
 
 void main() {
   vec2 screen = vec2(gl_FragCoord.x, uViewport.y - gl_FragCoord.y);
+#ifdef SPRITES
+  if (uLiquidOverlay != 0) {
+    if (uFilter != 0) discard;
+    pointColor(screen);
+    if (liquidOverlay.a == 0) discard;
+    outColor = vec4(liquidOverlay) / 255.0;
+    gl_FragDepth = ${OBJECT_BEHIND_DEPTH};
+    return;
+  }
+#endif
   outColor = vec4(uFilter != 0 ? filtered(ivec2(floor(screen))) : pointColor(screen)) / 255.0;
 #ifdef SPRITES
   gl_FragDepth = blockDepth;

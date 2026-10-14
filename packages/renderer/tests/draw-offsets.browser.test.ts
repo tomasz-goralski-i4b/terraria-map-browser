@@ -1,7 +1,7 @@
 // Frame-important tiles with draw offsets lie behind the blocks (docs/assets.md, "Draw offsets"): where a plant reaches
 // into the tile below it, that tile's opaque sprite pixels cover it and its transparent ones show it.
 import { afterEach, expect, test } from "vitest";
-import { createMapRenderer } from "../src/index.js";
+import { LIQUID_SPRITE_ALPHA, createMapRenderer } from "../src/index.js";
 import type { MapRenderer, RenderableWorld, SpriteAtlasSource, SpriteSheetEntry } from "../src/index.js";
 
 const created: MapRenderer[] = [];
@@ -40,10 +40,14 @@ const PAGE = 64;
 const SHEETS: readonly SpriteSheetEntry[] = [
   { kind: "tile", id: 3, page: 0, x: 2, y: 2, width: 16, height: 20, frameWidth: 16, frameHeight: 20 },
   { kind: "tile", id: 13, page: 0, x: 22, y: 2, width: 16, height: 16, frameWidth: 16, frameHeight: 16 },
+  { kind: "liquid", id: 0, page: 0, x: 2, y: 26, width: 34, height: 16, frameWidth: 16, frameHeight: 16 },
 ];
+/** The water sheet: one opaque colour. */
+const WATER: Rgba = [10, 60, 200, 255];
 
 /** The plant: opaque, distinct per pixel. The bottle: its top 4 rows transparent on every other column. */
 function sheetPixel(sheet: number, x: number, y: number): Rgba {
+  if (sheet === 2) return WATER;
   if (sheet === 0) return [200, (x * 9) % 256, (y * 11) % 256, 255];
   return [(x * 13) % 256, 40, (y * 7) % 256, y < 4 && x % 2 === 0 ? 0 : 255];
 }
@@ -96,7 +100,14 @@ test("a plant reaching into the tile below lies behind that tile's opaque pixels
   expect(at(ZOOM + 5, 5)).toEqual(sheetPixel(0, 5, 5));
 });
 
-test("a plant under water is drawn over the liquid; only waterfalls lie under it", () => {
+test("a plant under water lies under the water's front layer, as blocks do (water at 128 of 255)", () => {
   const at = draw(world(true));
-  expect(at(ZOOM + 5, 5)).toEqual(sheetPixel(0, 5, 5));
+  const plant = sheetPixel(0, 5, 5);
+  const actual = at(ZOOM + 5, 5);
+  for (let k = 0; k < 3; k++) {
+    const [p, w, alpha] = [plant[k] ?? 0, WATER[k] ?? 0, LIQUID_SPRITE_ALPHA[0] ?? 0];
+    const expected = p + ((w - p) * alpha) / 255;
+    expect(Math.abs((actual[k] ?? 0) - expected), `channel ${String(k)}: ${actual.join()}`).toBeLessThanOrEqual(1.5);
+  }
+  expect(actual[3]).toBe(255);
 });
