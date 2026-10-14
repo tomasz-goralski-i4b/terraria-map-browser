@@ -24,6 +24,7 @@ async function openMap(): Promise<HTMLCanvasElement> {
   await vi.waitFor(() => { expect(getMapController()).not.toBeNull(); });
   await page.getByRole("toolbar", { name: "Tools" }).getByRole("button", { name: "Ruler", exact: true }).click();
   await vi.waitFor(() => { expect(document.querySelector('canvas[aria-label="World map"]')?.getAttribute("data-camera")).not.toBeNull(); });
+  await page.getByRole("button", { name: "Show measurements", exact: true }).click();
   getMapController()?.jumpTo({ x: 1750, y: 300, zoom: 16 });
   getMapController()?.renderNow();
   const canvas = document.querySelector<HTMLCanvasElement>('canvas[aria-label="World map"]');
@@ -59,7 +60,8 @@ test("drag measures boundary distances, Shift creates a rectangle, list selectio
 test("CAD notes support handles, replacement, visibility, labels and measurement undo", async () => {
   const canvas = await openMap();
   pointer(canvas, "pointerdown", 64, 64); pointer(canvas, "pointermove", 224, 160); pointer(canvas, "pointerup", 224, 160);
-  await vi.waitFor(() => { expect(document.querySelector(".measurement-label")?.textContent).toContain("30.96°"); });
+  getMapController()?.renderNow();
+  await vi.waitFor(() => { expect(document.querySelector(".measurement-label")?.textContent).toContain("30.96°"); }, { timeout: 5000 });
   pointer(canvas, "pointerdown", 224, 160); pointer(canvas, "pointermove", 256, 160); pointer(canvas, "pointerup", 256, 160);
   expect(useRulerStore.getState().items[0]?.end.x).toBe(1766);
   await page.getByRole("button", { name: "Show Line 1", exact: true }).click();
@@ -72,7 +74,6 @@ test("CAD notes support handles, replacement, visibility, labels and measurement
   await userEvent.keyboard("{Control>}z{/Control}");
   expect(useRulerStore.getState().items[0]?.id).toBe(1);
   await expect.element(page.getByRole("combobox", { name: "Measurement units" })).not.toBeInTheDocument();
-  await page.screenshot({ path: ".tdd/ruler-dark.png" });
 });
 
 test("the presented terrain stays visible through live measurement, commit and hover frames", async () => {

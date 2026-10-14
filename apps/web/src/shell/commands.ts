@@ -77,10 +77,6 @@ export function toolCommands(tool: ToolId, setTool: (tool: ToolId) => void, edit
       finishBrush();
       finishMeasurement(true, true);
       setTool(definition.id);
-      if (definition.id === "ruler") {
-        const layout = useLayoutStore.getState();
-        layout.setDockHidden(false); layout.setDockTab("view"); layout.setSectionOpen("measurements", true);
-      }
     },
   });
   });

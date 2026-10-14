@@ -309,8 +309,8 @@ test("the tool rail is one Tab stop; arrows move it and a tool change moves it t
   expect(tabbableTools()).toEqual(["Pan"]);
   page.getByRole("button", { name: "Pan" }).element().focus();
   await userEvent.keyboard("{ArrowDown}{ArrowDown}");
-  await expect.element(page.getByRole("button", { name: "Brush" })).toHaveFocus();
-  expect(tabbableTools()).toEqual(["Brush"]);
+  await expect.element(page.getByRole("button", { name: "Ruler" })).toHaveFocus();
+  expect(tabbableTools()).toEqual(["Ruler"]);
   await userEvent.keyboard("{ArrowUp}");
   await expect.element(page.getByRole("button", { name: "Inspect" })).toHaveFocus();
   await userEvent.keyboard("{Enter}");

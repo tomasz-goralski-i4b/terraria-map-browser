@@ -51,20 +51,27 @@ export function measurementSegments(measurement: Measurement): readonly Measurem
     return [[{ x: left, y: top }, { x: right, y: top }], [{ x: right, y: top }, { x: right, y: bottom }],
       [{ x: right, y: bottom }, { x: left, y: bottom }], [{ x: left, y: bottom }, { x: left, y: top }]];
   }
-  const cells = measurementBlocks(measurement), occupied = new Set(cells.map(({ x, y }) => `${String(x)},${String(y)}`));
-  const has = (x: number, y: number): boolean => occupied.has(`${String(x)},${String(y)}`);
-  const rows = new Map<string, { readonly horizontal: boolean; readonly fixed: number; readonly intervals: [number, number][] }>();
+  const rows = new Map<number, { readonly horizontal: boolean; readonly fixed: number; readonly intervals: [number, number][] }>();
   const edge = (horizontal: boolean, fixed: number, first: number, last: number): void => {
-    const key = `${horizontal ? "h" : "v"}${String(fixed)}`;
+    const key = fixed * 2 + (horizontal ? 0 : 1);
     let row = rows.get(key);
     if (row === undefined) { row = { horizontal, fixed, intervals: [] }; rows.set(key, row); }
     row.intervals.push([first, last]);
   };
-  for (const { x, y } of cells) {
-    if (!has(x, y - 1)) edge(true, y, x, x + 1);
-    if (!has(x, y + 1)) edge(true, y + 1, x, x + 1);
-    if (!has(x - 1, y)) edge(false, x, y, y + 1);
-    if (!has(x + 1, y)) edge(false, x + 1, y, y + 1);
+  // The path has one block per step of the dominant axis, so blocks only touch within a run along that axis: each run
+  // is a rectangle whose four sides are the outline. Per run, not per block: a world-wide diagonal is rebuilt on every
+  // pointer move of a drag.
+  const cells = measurementBlocks(measurement), xMajor = Math.abs(dx) >= Math.abs(dy);
+  let first = cells[0];
+  for (let index = 1; index <= cells.length; index++) {
+    const cell = cells[index], last = cells[index - 1];
+    if (first === undefined || last === undefined) break;
+    if (cell !== undefined && (xMajor ? cell.y === first.y : cell.x === first.x)) continue;
+    const runLeft = Math.min(first.x, last.x), runRight = Math.max(first.x, last.x) + 1;
+    const runTop = Math.min(first.y, last.y), runBottom = Math.max(first.y, last.y) + 1;
+    edge(true, runTop, runLeft, runRight); edge(true, runBottom, runLeft, runRight);
+    edge(false, runLeft, runTop, runBottom); edge(false, runRight, runTop, runBottom);
+    first = cell;
   }
   const segments: MeasurementSegment[] = [];
   for (const { horizontal, fixed, intervals } of rows.values()) {
