@@ -156,7 +156,7 @@ beforeEach(() => {
   installFrameClock();
 });
 
-test("GPU grid tracks the camera, hides below sprite zoom and does not redraw on hover", async () => {
+test("GPU grid tracks the camera, thins out and then hides when zoomed out, and does not redraw on hover", async () => {
   await mountMap();
   const gl = canvas().getContext("webgl2");
   if (gl === null) throw new Error("World map has no WebGL context");
@@ -180,13 +180,15 @@ test("GPU grid tracks the camera, hides below sprite zoom and does not redraw on
   getMapController()?.jumpTo({ x: 103, y: 52, zoom: 10 });
   await settle();
   expect(pixels().some((value, index) => value !== on[index])).toBe(true);
-  getMapController()?.jumpTo({ x: 103, y: 52, zoom: 4.99 });
+  // 5-block intervals under 8 CSS pixels apart: no lines at all.
+  getMapController()?.jumpTo({ x: 103, y: 52, zoom: 1.5 });
   await settle();
   const belowThreshold = pixels();
   useLayoutStore.getState().setGrid({ mode: "off" });
   await settle();
   expect(pixels().every((value, index) => value === belowThreshold[index])).toBe(true);
-  getMapController()?.jumpTo({ x: 103, y: 52, zoom: 5 });
+  // Below the dashed block lines' 6 pixels per tile the interval lines remain.
+  getMapController()?.jumpTo({ x: 103, y: 52, zoom: 4 });
   await settle();
   const threshold = pixels();
   useLayoutStore.getState().setGrid({ mode: 5 });
