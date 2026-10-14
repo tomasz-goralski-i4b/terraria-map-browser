@@ -1185,6 +1185,9 @@ kbd {
   gap: var(--space-1);
 }
 
+/* The column menu opens leftwards from its button, so the button stays at the right edge even without a filter box. */
+.table-toolbar > .menu:last-child { margin-left: auto; }
+
 .search-field {
   flex: 1;
   display: flex;

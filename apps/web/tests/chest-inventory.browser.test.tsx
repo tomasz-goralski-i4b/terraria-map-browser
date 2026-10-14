@@ -75,7 +75,7 @@ test("several matching items are listed with totals and choosing one narrows the
   hydrateLayout(null);
   const tiles = chestWorld();
   const bars = { ...lights, items: [...lights.items, { slot: 0, itemId: 22, stack: 12, prefix: 0 }] };
-  await render(<SearchPanel chests={{ width: tiles.width, height: tiles.height, chests: [mining, bars], tileAt: (x, y) => tiles.tileAt(x, y) }} />);
+  await render(<div style={{ width: 320 }}><SearchPanel chests={{ width: tiles.width, height: tiles.height, chests: [mining, bars], tileAt: (x, y) => tiles.tileAt(x, y) }} /></div>);
   // "r" matches Torch and Iron Bar.
   await page.getByRole("searchbox", { name: "Search Items in chests" }).fill("r");
   await expect.element(page.getByText("2 items: 52 in 2 chests")).toBeVisible();
@@ -84,6 +84,10 @@ test("several matching items are listed with totals and choosing one narrows the
   await items.getByRole("button", { name: /Iron Bar/ }).click();
   await expect.element(page.getByText("Iron Bar: 12 in 1 chest")).toBeVisible();
   await expect.element(page.getByRole("grid", { name: "Matching chests" })).toHaveAttribute("aria-rowcount", "2");
+  // Without a filter box, the column menu still sits at the right, so its leftward popup stays inside the dock.
+  const toolbar = document.querySelector(".search-panel .table-toolbar");
+  const columns = toolbar?.querySelector(".menu");
+  expect(Math.round(columns?.getBoundingClientRect().right ?? 0)).toBe(Math.round(toolbar?.getBoundingClientRect().right ?? -1));
   expect(useChestNavigation.getState().areas).toEqual([{ x: 32, y: 18, width: 2, height: 2, chestIndex: 1 }]);
   await items.getByRole("button", { name: /Iron Bar/ }).click();
   await expect.element(page.getByText("2 items: 52 in 2 chests")).toBeVisible();
