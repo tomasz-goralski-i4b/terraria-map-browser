@@ -3,6 +3,7 @@ import { useLayoutStore } from "../shell/layout-store.js";
 import { deleteStored, readStored, writeStored } from "../handle-db.js";
 import { isAtlasSheetName } from "@studio/assets";
 import type { AtlasWorkerRequest, AtlasWorkerResponse, BuildProgress, BuildResult, MissingSheet, SpriteAtlas } from "@studio/assets";
+import { filesAssetSource, folderAssetSource, type AssetSource } from "../sources.js";
 
 /** A picked `Content` folder with the permission calls of the File System Access API. */
 export interface ContentFolder extends FileSystemDirectoryHandle {
@@ -11,7 +12,7 @@ export interface ContentFolder extends FileSystemDirectoryHandle {
 }
 
 /** What the atlas is built from: a picked folder, or the files of the folder-input fallback. */
-export type ContentSource = ContentFolder | readonly File[];
+export type ContentSource = ContentFolder | readonly File[] | AssetSource;
 
 /** Builds the sprite atlas off the main thread; rejects with an `AbortError` when `signal` aborts. */
 export interface AtlasBuilder {
@@ -100,6 +101,8 @@ export interface AssetSession {
   readonly cancelChoosing: () => void;
   /** Builds the atlas from the files of the folder-input fallback. */
   readonly connectFiles: (files: readonly File[]) => Promise<void>;
+  /** Loads an independent source without remembering it as a native folder. */
+  readonly connectSource: (source: AssetSource) => Promise<void>;
   /** Asks again for the remembered folder (must run on a user gesture) and builds the atlas. */
   readonly reconnect: () => Promise<void>;
   /** Loads the remembered folder of an earlier visit, once; never prompts. */
@@ -212,7 +215,7 @@ export function createAssetSession({ builder, remembered, pickDirectory, openFol
   const build = async (
     source: ContentSource,
     folderName: string,
-    remember: (result: BuildResult) => RememberedSource,
+    remember: ((result: BuildResult) => RememberedSource) | null,
     fromRemembered = false,
   ): Promise<void> => {
     builds++;
@@ -239,7 +242,7 @@ export function createAssetSession({ builder, remembered, pickDirectory, openFol
       }
       atlas = result.atlas;
       setStatus(readyStatus(folderName, result));
-      await remembered.save(remember(result)).catch(() => undefined);
+      if (remember !== null) await remembered.save(remember(result)).catch(() => undefined);
     } catch (error) {
       // A superseded build is settled by the newer one; only the latest reports.
       if (current !== controller) return;
@@ -364,6 +367,7 @@ export function createAssetSession({ builder, remembered, pickDirectory, openFol
 
   return {
     connect, chooseFiles, cancelChoosing, hasDirectoryPicker: pickDirectory !== null, connectFiles, reconnect, restore, cancel,
+    connectSource: (source) => build(source, source.name, null),
     getAtlas: () => atlas,
     disconnect,
   };
@@ -398,8 +402,10 @@ export function createWorkerAtlasBuilder(createWorker: () => Worker, cacheName =
         };
         worker.postMessage({ type: "load", fingerprint, cacheName } satisfies AtlasWorkerRequest);
       }),
-    build: (source, { onProgress, signal }) =>
-      new Promise<BuildResult>((resolve, reject) => {
+    build: async (source, { onProgress, signal }) => {
+      const adapter = "read" in source ? source : "kind" in source ? folderAssetSource(source) : filesAssetSource(source, "Images");
+      const contentDir = await adapter.read(signal);
+      return new Promise<BuildResult>((resolve, reject) => {
         if (signal.aborted) {
           reject(new DOMException("Atlas build cancelled", "AbortError"));
           return;
@@ -436,8 +442,9 @@ export function createWorkerAtlasBuilder(createWorker: () => Worker, cacheName =
           reject(new Error(event.message || "The atlas Worker failed"));
         };
         signal.addEventListener("abort", onAbort);
-        worker.postMessage({ type: "build", contentDir: source, cacheName } satisfies AtlasWorkerRequest);
-      }),
+        worker.postMessage({ type: "build", contentDir, cacheName } satisfies AtlasWorkerRequest);
+      });
+    },
   };
 }
 

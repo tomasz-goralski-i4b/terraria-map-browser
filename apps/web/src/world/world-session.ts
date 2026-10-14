@@ -8,6 +8,7 @@ import { setPropertiesWorld, propertyReadOnly, checkPropertyRange, type Property
 import { resizeWorld } from "./resize-world.js";
 import { setAreaWorld } from "./area-session.js";
 import { setRulerWorld } from "./ruler-session.js";
+import { fileWorldSource, type WorldSource } from "../sources.js";
 
 /** Small display facts about the loaded world; the planes and palette themselves stay outside React and the store. */
 export interface WorldSummary {
@@ -31,7 +32,7 @@ export interface WorldParser {
 
 export interface WorldSession {
   /** Parses `file` in the Worker; a failure or cancel keeps the previous world. */
-  readonly open: (file: File, handle?: OpenWorldHandle, directory?: WorldSaveDirectory) => Promise<void>;
+  readonly open: (file: File | WorldSource, handle?: OpenWorldHandle, directory?: WorldSaveDirectory) => Promise<void>;
   /** Cancels a parse in progress and returns to the previous state. */
   readonly cancel: () => void;
   /** Cancels a parse in progress and forgets the loaded world. */
@@ -72,7 +73,8 @@ export function createWorldSession(parser: WorldParser): WorldSession {
     current?.abort();
   };
 
-  const open = async (file: File, handle?: OpenWorldHandle, directory?: WorldSaveDirectory): Promise<void> => {
+  const open = async (input: File | WorldSource, handle?: OpenWorldHandle, directory?: WorldSaveDirectory): Promise<void> => {
+    const source = input instanceof File ? fileWorldSource(input) : input;
     finishBrush();
     // Only an unsaved world waits for the question, before anything changes: declining leaves a load in flight going.
     if (useAppStore.getState().unsavedChanges && !(await confirmDiscardChanges())) return;
@@ -81,8 +83,12 @@ export function createWorldSession(parser: WorldParser): WorldSession {
     current = controller;
     resetWorldSave();
     const store = useAppStore.getState();
-    store.setLoading(file.name);
+    store.setLoading(source.name);
     try {
+      // A native selection already has its bytes: retain the existing same-task Worker start for picker/drop input.
+      const file = input instanceof File ? input : await source.read(controller.signal);
+      controller.signal.throwIfAborted();
+      if (current !== controller) return;
       const world = await parser.parse(file, { signal: controller.signal });
       if (current !== controller) return;
       loaded = world;
@@ -96,7 +102,7 @@ export function createWorldSession(parser: WorldParser): WorldSession {
       // A superseded request is settled by the newer open; only the latest one reports.
       if (current !== controller) return;
       if (controller.signal.aborted) useAppStore.getState().cancelLoading();
-      else useAppStore.getState().setFailed(toLoadError(error, file.name));
+      else useAppStore.getState().setFailed(toLoadError(error, source.name));
     } finally {
       if (current === controller) current = null;
     }
