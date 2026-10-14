@@ -94,7 +94,7 @@ const layerCombos: ChunkLayers[] = Array.from({ length: 16 }, (_, bits) => ({
 }));
 const allLayers: ChunkLayers = { background: true, walls: true, blocks: true, liquids: true };
 
-test("GPU grid replaces dashed boundaries with solid intervals, clips to the world and obeys sprite zoom", () => {
+test("GPU grid replaces dashed boundaries with solid intervals, clips to the world and thins out when zoomed out", () => {
   const canvas = makeCanvas(100, 80);
   const renderer = makeRenderer(canvas, { prefetchChunks: 0 });
   renderer.setWorld(syntheticWorld(12, 10));
@@ -112,7 +112,13 @@ test("GPU grid replaces dashed boundaries with solid intervals, clips to the wor
   renderer.setCamera({ x: -2, y: -1, zoom: 10 });
   renderer.render();
   expect(readCanvas(canvas).subarray(0, 4)).toEqual(new Uint8Array(4));
-  renderer.setCamera({ x: 0, y: 0, zoom: 4.99 });
+  // Below 6 CSS pixels per tile only the interval lines remain; once those are under 8 pixels apart, nothing.
+  renderer.setCamera({ x: 0, y: 0, zoom: 4 });
+  renderer.render();
+  const sparse = readCanvas(canvas);
+  expect([...sparse.subarray((3 * 100 + 20) * 4, (3 * 100 + 20) * 4 + 4)]).toEqual([200, 205, 210, 255]);
+  expect([...sparse.subarray((1 * 100 + 4) * 4, (1 * 100 + 4) * 4 + 4)]).toEqual([0, 0, 0, 0]);
+  renderer.setCamera({ x: 0, y: 0, zoom: 1.5 });
   renderer.render();
   expect(readCanvas(canvas).some((value) => value !== 0)).toBe(false);
   renderer.setCamera({ x: 0, y: 0, zoom: 10 });
@@ -208,7 +214,9 @@ test("grid opacity preserves straight alpha over transparent terrain and is shar
   renderer.render();
   const overlaid = pixel(readCanvas(canvas), 50, 50);
   const base = pixel(opaque, 50, 50);
-  for (const [channel, color] of [200, 205, 210].entries()) {
+  // The line contrasts with the terrain: dark over light tiles, light over dark ones.
+  const light = (0.2126 * (base[0] ?? 0) + 0.7152 * (base[1] ?? 0) + 0.0722 * (base[2] ?? 0)) / 255 > 0.6;
+  for (const [channel, color] of (light ? [30, 34, 40] : [200, 205, 210]).entries()) {
     expect(Math.abs((overlaid[channel] ?? 0) - Math.round(color * 0.3 + (base[channel] ?? 0) * 0.7))).toBeLessThanOrEqual(1);
   }
   expect(overlaid[3]).toBe(255);

@@ -185,7 +185,10 @@ export interface MapRenderer {
   /** The viewport is the canvas backing store (`canvas.width` × `canvas.height`). */
   readonly setCamera: (camera: Camera) => void;
   readonly setLayers: (layers: ChunkLayers) => void;
-  /** GPU overlay at sprite zoom, composed while presenting the existing frame cache; null disables it. */
+  /**
+   * GPU overlay composed while presenting the existing frame cache; null disables it. Dashed block lines from 6 CSS
+   * pixels per tile, solid interval lines while they are 8 CSS pixels apart; none over the zoomed-out overview.
+   */
   readonly setGrid: (grid: MapGrid | null) => void;
   /** Vector notes drawn after cached terrain; null disables the pass. */
   readonly setAnnotations: (annotations: MapAnnotations | null) => void;
@@ -261,6 +264,10 @@ const INSTANCE_INTS = 5;
 const LINK_POLL_MILLISECONDS = 50;
 /** The smallest overview factor: one overview texel per 2 × 2 tiles, used below half a pixel per tile. */
 const MIN_OVERVIEW_FACTOR = 2;
+/** CSS pixels per tile from which the grid's dashed block lines are drawn; below it they would merge into a tint. */
+const GRID_MIN_BLOCK_PIXELS = 6;
+/** CSS pixels between the grid's solid interval lines from which they are drawn. */
+const GRID_MIN_INTERVAL_PIXELS = 8;
 
 // Texture units: 0–1 the chunk page; 2 palette; 3 background and paint colours; 4 map option rules; 5 overview;
 // 6 sprite atlas pages; 7 sprite sheet lookup; 8 the atlas pages at half resolution. WebGL2 guarantees 16.
@@ -652,7 +659,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   // object sprite, or with wires shown), so a renderer that never draws one never compiles it.
   let objectProgram: Program<(typeof OBJECT_UNIFORMS)[number]> | null = null;
   let wireProgram: Program<(typeof WIRE_UNIFORMS)[number]> | null = null;
-  const gridUniforms = ["uCamera", "uViewport", "uWorld", "uZoom", "uSpacing", "uOpacity", "uDensity", "uScene"] as const;
+  const gridUniforms = ["uCamera", "uViewport", "uWorld", "uZoom", "uSpacing", "uOpacity", "uDensity", "uMinor", "uScene"] as const;
   let gridProgram: Program<(typeof gridUniforms)[number]> | null = null;
   let grid: MapGrid | null = null;
   const annotationUniforms = ["uCamera", "uViewport", "uZoom", "uDensity"] as const;
@@ -1661,7 +1668,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   };
 
   /** Replaces the final framebuffer blit when enabled; cached terrain still redraws only its exposed strips. */
-  const presentGrid = (source: RenderableWorld, scene: WebGLTexture): void => {
+  const presentGrid = (source: RenderableWorld, scene: WebGLTexture, minor: boolean): void => {
     if (grid === null) return;
     gridProgram ??= link(gl, gridVertexSource, gridFragmentSource, gridUniforms);
     gl.useProgram(gridProgram.program);
@@ -1673,6 +1680,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     gl.uniform1f(uniforms.uSpacing, grid.spacing);
     gl.uniform1f(uniforms.uOpacity, grid.opacity);
     gl.uniform1f(uniforms.uDensity, grid.density);
+    gl.uniform1f(uniforms.uMinor, minor ? 1 : 0);
     gl.activeTexture(gl.TEXTURE0 + UNIT_OVERVIEW);
     gl.bindTexture(gl.TEXTURE_2D, scene);
     gl.uniform1i(uniforms.uScene, UNIT_OVERVIEW);
@@ -1919,7 +1927,10 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     };
 
     const { width, height } = viewport;
-    const gridVisible = grid !== null && grid.opacity > 0 && view.zoom >= SPRITE_MIN_ZOOM;
+    // Block lines need room between them; interval lines stay while they are apart, so the grid helps zoomed out too.
+    const gridTile = grid === null ? 0 : view.zoom / grid.density;
+    const gridMinor = gridTile >= GRID_MIN_BLOCK_PIXELS;
+    const gridVisible = grid !== null && grid.opacity > 0 && (gridMinor || gridTile * grid.spacing >= GRID_MIN_INTERVAL_PIXELS);
     if (target === null && (scheduled || gridVisible)) {
       // The previous frame shifted by whole pixels, when only the camera moved since (by less than the canvas).
       const pixelX = Math.round(view.x * view.zoom);
@@ -1965,7 +1976,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       }
       if (gridVisible) {
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-        presentGrid(source, output.texture);
+        presentGrid(source, output.texture, gridMinor);
       } else {
         gl.bindFramebuffer(gl.READ_FRAMEBUFFER, output.framebuffer);
         gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
