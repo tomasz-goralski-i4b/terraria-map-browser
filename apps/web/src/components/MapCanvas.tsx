@@ -258,7 +258,7 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
     });
   }, []);
 
-  const annotationCache = useRef<{ readonly ruler: Float32Array; readonly chests: ReturnType<typeof useChestNavigation.getState>; readonly markers: boolean; readonly data: Float32Array } | null>(null);
+  const annotationCache = useRef<{ readonly ruler: Float32Array; readonly chests: ReturnType<typeof useChestNavigation.getState>; readonly markers: boolean; readonly match: unknown; readonly data: Float32Array } | null>(null);
   const updateRuler = useCallback((session: MapSession): void => {
     const canvas = canvasRef.current, overlay = rulerLabelsRef.current;
     if (canvas === null || overlay === null || canvas.clientWidth === 0) return;
@@ -275,11 +275,14 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
     const chests = useChestNavigation.getState();
     let annotations = annotationCache.current;
     const markers = session.camera.zoom / density < CHEST_MARKER_ZOOM;
-    if (annotations?.ruler !== cached.scene.data || annotations.chests !== chests || annotations.markers !== markers) {
-      const chestData = chestAnnotations(chests.areas, chests.selected, markers);
+    // The content match F3 last went to is framed like the selected chest, so the current one stands out.
+    const match = useSearchStore.getState().position;
+    if (annotations?.ruler !== cached.scene.data || annotations.chests !== chests || annotations.markers !== markers || annotations.match !== match) {
+      const current = match === null ? [] : [{ x: match.x, y: match.y, width: 1, height: 1 }];
+      const chestData = chestAnnotations([...chests.areas, ...current], current[0] ?? chests.selected, markers);
       const data = new Float32Array(cached.scene.data.length + chestData.length);
       data.set(cached.scene.data); data.set(chestData, cached.scene.data.length);
-      annotations = { ruler: cached.scene.data, chests, markers, data };
+      annotations = { ruler: cached.scene.data, chests, markers, match, data };
       annotationCache.current = annotations;
     }
     session.renderer.setAnnotations(annotations.data.length === 0 ? null : { data: annotations.data, density });
@@ -426,6 +429,7 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
     applyHighlight(useSearchStore.getState());
     const unsubscribeHighlight = useSearchStore.subscribe((state, previous) => {
       if (state.highlight !== previous.highlight || state.dim !== previous.dim) applyHighlight(state);
+      if (state.position !== previous.position) session.requestFrame();
     });
     const unsubscribeArea = useAreaStore.subscribe((state) => {
       if (state.selection === null) selectionPointer.current = null;

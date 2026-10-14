@@ -108,6 +108,12 @@ test("a content search outlines its tiles on the GPU map and dims the rest until
   expect(pixel(20.05, 13.5).slice(0, 3)).toEqual([255, 214, 64]);
   const dimmed = pixel(4.5, 12.5);
   expect(dimmed[0] ?? 0).toBeLessThan((dirt[0] ?? 0) * 0.6);
+  // F3 frames the match it went to in white, over the yellow outlines of the others.
+  stepSearch(1);
+  await expect.poll(() => useSearchStore.getState().position).toMatchObject({ x: 20, y: 12 });
+  await draw();
+  expect(pixel(20.02, 12.5).slice(0, 3)).toEqual([255, 255, 255]);
+  expect(pixel(20.02, 13.5).slice(0, 3)).toEqual([255, 214, 64]);
   await userEvent.keyboard("{Escape}");
   await draw();
   expect(pixel(4.5, 12.5)).toEqual(dirt);
