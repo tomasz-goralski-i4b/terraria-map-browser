@@ -8,15 +8,17 @@ import { buildChestItemIndex, type ChestItemIndex, type ChestMatch } from "../wo
 import { chestArea, chestKind, useChestNavigation, visitChest } from "../world/chest-navigation.js";
 import { itemLabel } from "../world/items.js";
 import { Table, type Column } from "../ui/Table.js";
+import { chestAnchorStatus, type ChestWorld } from "../world/chests.js";
 
-export interface EntitiesSource { readonly chests: readonly WorldChest[]; readonly tileAt: (x: number, y: number) => Tile }
-interface ChestRow { readonly chestIndex: number; readonly chest: WorldChest; readonly kind: string; readonly totalStack: number }
+export interface EntitiesSource extends ChestWorld { readonly chests: readonly WorldChest[] }
+interface ChestRow { readonly chestIndex: number; readonly chest: WorldChest; readonly kind: string; readonly anchor: string; readonly totalStack: number }
 const chestColumns: readonly Column<ChestRow>[] = [
   { id: "name", title: "Name", width: 130, sortValue: (row) => row.chest.name || "Unnamed", render: (row) => row.chest.name || "Unnamed", hideable: false },
   { id: "position", title: "Position", width: 90, sortValue: (row) => row.chest.x, render: (row) => `${String(row.chest.x)}, ${String(row.chest.y)}` },
   { id: "kind", title: "Kind", width: 80, sortValue: (row) => row.kind, render: (row) => row.kind },
   { id: "filled", title: "Filled slots", width: 80, sortValue: (row) => row.chest.items.length, render: (row) => `${String(row.chest.items.length)}/${String(row.chest.slotCount)}` },
   { id: "stack", title: "Total items", width: 80, sortValue: (row) => row.totalStack, render: (row) => String(row.totalStack) },
+  { id: "anchor", title: "Anchor status", width: 110, sortValue: (row) => row.anchor, render: (row) => row.anchor },
 ];
 const matchColumns: readonly Column<ChestMatch>[] = [
   { id: "name", title: "Chest", width: 130, render: (row) => row.chest.name || "Unnamed", hideable: false, sortValue: (row) => row.chest.name },
@@ -28,15 +30,18 @@ const indices = new WeakMap<readonly WorldChest[], Promise<ChestItemIndex>>();
 
 export function EntitiesPanel({ source, mode = "all" }: { readonly source?: EntitiesSource; readonly mode?: "all" | "entities" | "search" }): React.JSX.Element {
   const revision = useAppStore((state) => state.worldRevision);
+  const hasWorld = useAppStore((state) => state.summary !== null);
   const loadedSource = useMemo(() => {
+    if (!hasWorld) return null;
     const loaded = getDefaultWorldSession().getLoadedWorld();
     const chests = loaded?.entities.Chests.data?.entries;
-    return loaded === null || chests === undefined ? null : { revision, chests, tileAt: (x: number, y: number): Tile => x < 0 || y < 0 || x >= loaded.metadata.width || y >= loaded.metadata.height ? { wires: 0, actuator: false } : canonicalWorldOf(loaded).tileAt(x, y) };
-  }, [revision]);
+    return loaded === null || chests === undefined ? null : { revision, width: loaded.metadata.width, height: loaded.metadata.height, chests, tileAt: (x: number, y: number): Tile => x < 0 || y < 0 || x >= loaded.metadata.width || y >= loaded.metadata.height ? { wires: 0, actuator: false } : canonicalWorldOf(loaded).tileAt(x, y) };
+  }, [revision, hasWorld]);
   const shown = source ?? loadedSource;
   const [ready, setReady] = useState<{ readonly chests: readonly WorldChest[]; readonly index: ChestItemIndex } | null>(null);
+  if (ready !== null && ready.chests !== shown?.chests) setReady(null);
   const query = useChestNavigation((state) => state.query);
-  const [selected, setSelected] = useState<number | null>(null);
+  const current = useChestNavigation((state) => state.selected);
   const input = useRef<HTMLInputElement>(null);
   const request = useChestNavigation((state) => state.searchRequested);
   useEffect(() => { if (request > 0) input.current?.focus(); }, [request]);
@@ -48,18 +53,19 @@ export function EntitiesPanel({ source, mode = "all" }: { readonly source?: Enti
     void pending.then((index) => { if (!cancelled) setReady({ chests: shown.chests, index }); });
     return () => { cancelled = true; };
   }, [shown, mode]);
-  const rows = useMemo(() => shown?.chests.map((chest, chestIndex) => ({ chest, chestIndex, kind: chestKind(shown.tileAt(chest.x, chest.y)), totalStack: chest.items.reduce((sum, item) => sum + item.stack, 0) })) ?? [], [shown]);
+  const rows = useMemo(() => shown?.chests.map((chest, chestIndex) => ({ chest, chestIndex, kind: chest.x < 0 || chest.y < 0 || chest.x >= shown.width || chest.y >= shown.height ? "Unknown" : chestKind(shown.tileAt(chest.x, chest.y)), anchor: chestAnchorStatus(chest, shown), totalStack: chest.items.reduce((sum, item) => sum + item.stack, 0) })) ?? [], [shown]);
+  const selected = current === null ? null : rows.find((row) => row.chest.x === current.x && row.chest.y === current.y)?.chestIndex ?? null;
   const index = ready?.chests === shown?.chests ? ready?.index : null;
   const found = useMemo(() => index?.search(query) ?? { matches: [], totals: [] }, [index, query]);
   useEffect(() => {
     if (mode === "entities") return;
-    useChestNavigation.setState({ areas: shown === null ? [] : found.matches.map((match) => chestArea(match.chest, shown.tileAt(match.chest.x, match.chest.y))) });
+    useChestNavigation.setState({ areas: shown === null ? [] : found.matches.flatMap((match) => { const area = chestArea(match.chest, shown); return area === null ? [] : [area]; }) });
   }, [found, shown, mode]);
   if (shown === null) {
     const section = getDefaultWorldSession().getLoadedWorld()?.entities.Chests;
     return <p className="panel-empty">{section?.error === undefined ? "Open a world to inspect its chests." : "The chest section could not be decoded."}</p>;
   }
-  const select = (row: ChestRow | ChestMatch, pin: boolean): void => { setSelected(row.chestIndex); visitChest(row.chest, shown.tileAt(row.chest.x, row.chest.y), pin); };
+  const select = (row: ChestRow | ChestMatch, pin: boolean): void => { visitChest(row.chest, shown, pin); };
   return <div className="entities-chests">
     {mode !== "search" && <Table id="chests" label="Chests" columns={chestColumns} rows={rows} rowKey={(row) => String(row.chestIndex)} filterText={(row) => `${row.chest.name || "Unnamed"} ${row.kind} ${String(row.chest.x)} ${String(row.chest.y)}`} selectedKey={selected === null ? null : String(selected)} onSelect={(row) => { select(row, false); }} onActivate={(row) => { select(row, true); }} />}
     {mode !== "entities" && <>

@@ -58,7 +58,7 @@ export function ChestDialog({ chest, title, onClose }: { readonly chest: WorldCh
       </header>
       {/* Both views share the grid's box, so switching never resizes the dialog; the list scrolls inside it. */}
       <div className="chest-body" style={{ "--rows": Math.max(1, Math.ceil(chest.slotCount / SLOTS_PER_ROW)) } as React.CSSProperties}>
-        {view === "grid" ? <SlotGrid slotCount={chest.slotCount} bySlot={bySlot} onPreview={setPreview} /> : <SlotList items={chest.items} />}
+        {view === "grid" ? <SlotGrid slotCount={chest.slotCount} bySlot={bySlot} onPreview={setPreview} /> : <SlotList items={chest.items} onPreview={setPreview} />}
       </div>
       <footer className="chest-item-detail" aria-live="polite">{preview === null ? "Empty slot" : `${slotLabel(preview)} · Item ID ${String(preview.itemId)}${preview.prefix === 0 ? "" : ` · Prefix ID ${String(preview.prefix)}`}`}</footer>
     </dialog>
@@ -97,7 +97,7 @@ function SlotGrid({ slotCount, bySlot, onPreview }: { readonly slotCount: number
   );
 }
 
-function SlotList({ items }: { readonly items: readonly EntityItem[] }): React.JSX.Element {
+function SlotList({ items, onPreview }: { readonly items: readonly EntityItem[]; readonly onPreview: (item: EntityItem | null) => void }): React.JSX.Element {
   if (items.length === 0) return <p className="panel-empty">This chest is empty.</p>;
   return (
     <table className="chest-list">
@@ -106,7 +106,7 @@ function SlotList({ items }: { readonly items: readonly EntityItem[] }): React.J
       </thead>
       <tbody>
         {[...items].sort((a, b) => a.slot - b.slot).map((item) => (
-          <tr key={item.slot}>
+          <tr key={item.slot} tabIndex={0} onFocus={() => { onPreview(item); }} onMouseEnter={() => { onPreview(item); }}>
             <td>{String(item.slot + 1)}</td>
             <td><span className="chest-list-item"><ItemSprite itemId={item.itemId} fallback={false} /><span>{itemLabel(item.itemId)}</span></span></td>
             <td>{String(item.stack)}</td>

@@ -4,6 +4,10 @@ import { canonicalWorldOf } from "./canonical-world.js";
 
 export type ChestAt = (x: number, y: number) => WorldChest | null;
 
+export interface ChestWorld { readonly width: number; readonly height: number; readonly tileAt: (x: number, y: number) => Tile }
+export interface ChestFootprint { readonly x: number; readonly y: number; readonly width: number; readonly height: number }
+export type ChestAnchorStatus = "valid" | "outOfBounds" | "mismatch" | "unknown";
+
 const DRESSER = 88;
 
 /** Chests are 2 × 2 from their top-left tile; dressers, the one vanilla 3-wide chest object, are 3 × 2. */
@@ -11,17 +15,38 @@ function footprintWidth(origin: Tile): number {
   return origin.block?.kind === "vanilla" && origin.block.id === DRESSER ? 3 : 2;
 }
 
+/** Records survive invalid anchors; only a complete, consistently framed vanilla object gets a footprint. */
+export function chestAnchorStatus(chest: WorldChest, world: ChestWorld): ChestAnchorStatus {
+  if (chest.x < 0 || chest.y < 0 || chest.x >= world.width || chest.y >= world.height) return "outOfBounds";
+  const origin = world.tileAt(chest.x, chest.y);
+  if (origin.block?.kind !== "vanilla") return origin.block === undefined ? "mismatch" : "unknown";
+  if (![21, 88, 441, 467, 468].includes(origin.block.id)) return "unknown";
+  const width = footprintWidth(origin);
+  if (chest.x + width > world.width || chest.y + 2 > world.height) return "outOfBounds";
+  if (origin.frameX === undefined || origin.frameY === undefined || origin.frameX < 0 || origin.frameY < 0 || origin.frameX % (width * 18) !== 0 || origin.frameY % 36 !== 0) return "mismatch";
+  for (let dx = 0; dx < width; dx++) for (let dy = 0; dy < 2; dy++) {
+    const tile = world.tileAt(chest.x + dx, chest.y + dy);
+    if (tile.block?.kind !== "vanilla" || tile.block.id !== origin.block.id || tile.frameX !== origin.frameX + dx * 18 || tile.frameY !== origin.frameY + dy * 18) return "mismatch";
+  }
+  return "valid";
+}
+
+export function chestFootprint(chest: WorldChest, world: ChestWorld): ChestFootprint | null {
+  return chestAnchorStatus(chest, world) === "valid" ? { x: chest.x, y: chest.y, width: footprintWidth(world.tileAt(chest.x, chest.y)), height: 2 } : null;
+}
+
 /**
  * Maps every tile of every chest's footprint to its record, built once, so a lookup is a hash probe rather than a
- * scan of all chests. The footprint size comes from the tile at the record's position; tiles past the world edge
- * are dropped.
+ * scan of all chests. Only complete, consistently framed objects inside the world are indexed. Ambiguous overlaps
+ * resolve to no record, while invalid records remain available to the Entities list and item totals.
  */
 export function createChestLookup(chests: readonly WorldChest[], width: number, height: number, tileAt: (x: number, y: number) => Tile): ChestAt {
   const byTile = new Map<number, WorldChest | null>();
   for (const chest of chests) {
-    if (chest.x < 0 || chest.y < 0 || chest.x >= width || chest.y >= height) continue;
-    const right = Math.min(width, chest.x + footprintWidth(tileAt(chest.x, chest.y)));
-    const bottom = Math.min(height, chest.y + 2);
+    const footprint = chestFootprint(chest, { width, height, tileAt });
+    if (footprint === null) continue;
+    const right = chest.x + footprint.width;
+    const bottom = chest.y + footprint.height;
     for (let y = chest.y; y < bottom; y++) for (let x = chest.x; x < right; x++) {
       const key = y * width + x;
       byTile.set(key, byTile.has(key) ? null : chest);

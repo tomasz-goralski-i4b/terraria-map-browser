@@ -4,10 +4,11 @@ import type { Tile } from "@studio/world-model";
 import { getMapController, useViewStore } from "../shell/view-store.js";
 import { useLayoutStore } from "../shell/layout-store.js";
 import { useAppStore } from "../store.js";
+import { chestFootprint, type ChestWorld } from "./chests.js";
 
 export interface ChestArea { readonly x: number; readonly y: number; readonly width: number; readonly height: number }
-export function chestArea(chest: WorldChest, origin: Tile): ChestArea {
-  return { x: chest.x, y: chest.y, width: origin.block?.kind === "vanilla" && origin.block.id === 88 ? 3 : 2, height: 2 };
+export function chestArea(chest: WorldChest, world: ChestWorld): ChestArea | null {
+  return chestFootprint(chest, world);
 }
 export function chestKind(origin: Tile): string {
   const id = origin.block?.kind === "vanilla" ? origin.block.id : null;
@@ -20,8 +21,13 @@ useAppStore.subscribe((state, previous) => {
   if (state.worldRevision !== previous.worldRevision || (state.summary === null && previous.summary !== null)) useChestNavigation.setState({ areas: [], selected: null, query: "" });
 });
 
-export function visitChest(chest: WorldChest, origin: Tile, pin: boolean): void {
-  const area = chestArea(chest, origin);
+export function visitChest(chest: WorldChest, world: ChestWorld, pin: boolean): void {
+  const area = chestArea(chest, world);
+  if (area === null) {
+    useChestNavigation.setState({ selected: null });
+    if (chest.x >= 0 && chest.y >= 0 && chest.x < world.width && chest.y < world.height) getMapController()?.centerOn(chest.x, chest.y);
+    return;
+  }
   getMapController()?.centerOn(chest.x + area.width / 2, chest.y + area.height / 2);
   useChestNavigation.setState({ selected: area });
   if (pin) {

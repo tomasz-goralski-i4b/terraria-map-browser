@@ -75,6 +75,9 @@ names use the generated English catalog. Inventory sprites are cropped from the 
 observed texture aliases and first-frame rectangles; absent/unknown sprites retain readable names or numeric IDs.
 No item textures are shipped. Search totals combine prefixes for each item ID and count each chest once; the
 index is built once per chest collection in idle slices capped at 256 slots or 8 ms.
+Invalid chest anchors remain in tables and item totals with an anchor diagnostic. Click lookup and navigation
+share complete footprint validation (bounds, tile IDs and frames); invalid records have no invented highlight.
+Ambiguous overlapping records do not overwrite another chest's click target.
 
   `Alt` + the first letter opens a menu; `←` and `→` move between menus, also while one is open; pointing at another
   title while a menu is open switches to it. A disabled item shows why on its right.

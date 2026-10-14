@@ -86,7 +86,8 @@ export function InspectorPanel({ world }: { readonly world?: InspectorWorld | nu
   const summary = useAppStore((state) => state.summary);
   const worldRevision = useAppStore((state) => state.worldRevision);
   const hasWorld = summary !== null;
-  const pinned = useViewStore((state) => state.pinnedTile);
+  const pinnedTile = useViewStore((state) => state.pinnedTile);
+  const hover = useViewStore((state) => state.hoverTile);
   const setPinned = useViewStore((state) => state.setPinnedTile);
   const showAll = useLayoutStore((state) => state.inspectorShowAll);
   const setShowAll = useLayoutStore((state) => state.setInspectorShowAll);
@@ -95,6 +96,7 @@ export function InspectorPanel({ world }: { readonly world?: InspectorWorld | nu
     // eslint-disable-next-line react-hooks/exhaustive-deps -- rebuild on new tiles, not on metadata edits
     [hasWorld, worldRevision]);
   const shown = world === undefined ? sessionWorld : world;
+  const pinned = pinnedTile ?? (hover !== null && shown?.chestAt?.(hover.x, hover.y) != null ? hover : null);
   const chest = pinned === null ? null : shown?.chestAt?.(pinned.x, pinned.y) ?? null;
   const [openChest, setOpenChest] = useState<WorldChest | null>(null);
   const closeChest = useCallback(() => {
@@ -112,7 +114,7 @@ export function InspectorPanel({ world }: { readonly world?: InspectorWorld | nu
   return (
     <div className="inspector-panel">
       <div className="inspector-header">
-        <span className="inspector-state" data-pinned="true">Pinned</span>
+        <span className="inspector-state" data-pinned={pinnedTile !== null}>{pinnedTile === null ? "Preview" : "Pinned"}</span>
         <span className="inspector-actions">
           {/* The same eye as the Layers rows: pressed (open eye) shows the empty fields too. */}
           <IconButton icon={showAll ? "eye" : "eyeOff"} label="Show empty fields" pressed={showAll} tooltipSide="left" onClick={() => {
@@ -138,6 +140,7 @@ export function InspectorPanel({ world }: { readonly world?: InspectorWorld | nu
         <>
           <h3 className="inspector-subheading">{chestTitle(shown.tileAt(chest.x, chest.y))}</h3>
           <PropertyGrid label="Chest" properties={chestProperties(chest, shown.tileAt(chest.x, chest.y), showAll, () => {
+            setPinned(pinned);
             setOpenChest(chest);
           })} />
         </>
