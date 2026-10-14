@@ -34,7 +34,7 @@ function firstDifference(left, right) {
 }
 
 /** Return one bounded diagnostic; byte equality, rather than digests or parsed JSON, decides agreement. */
-export function compareCwm(left, right) {
+export function compareCwm(left, right, { leftSource = ".NET export", rightSource = "TypeScript export" } = {}) {
   const offset = firstDifference(left, right);
   if (offset >= 0 && offset < 12) {
     const region = offset < 4 ? "magic" : offset < 8 ? "schema version" : "header length";
@@ -48,8 +48,8 @@ export function compareCwm(left, right) {
     return `prefix ${region}, byte offset ${offset}`;
   }
   let a; let b;
-  try { a = framing(left); } catch (error) { return `invalid .NET export: ${error.message}`; }
-  try { b = framing(right); } catch (error) { return `invalid TypeScript export: ${error.message}`; }
+  try { a = framing(left); } catch (error) { return `invalid ${leftSource}: ${error.message}`; }
+  try { b = framing(right); } catch (error) { return `invalid ${rightSource}: ${error.message}`; }
   if (offset === -1) return null;
   if (offset < Math.max(a.start, b.start)) {
     const keys = ["schemaVersion", "formatVersion", "metadata", "dimensions", "palette"];

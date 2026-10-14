@@ -16,15 +16,15 @@ export function compareWorldBytes(left, right) {
 }
 
 /** No palette changes are needed for a wire edit, so exact CWM bytes can prove its complete scope. */
-export function compareSingleTileEdit(original, actual, edit) {
+export function compareSingleTileEdit(original, actual, edit, actualSource = "TypeScript edited expectation") {
   let layout;
-  try { layout = framing(original); } catch (error) { return `invalid original CWM: ${error.message}`; }
+  try { layout = framing(original); } catch (error) { return `invalid TypeScript original CWM: ${error.message}`; }
   if (edit?.plane !== "flags" || edit.mask !== 1 || !Number.isInteger(edit.x) || !Number.isInteger(edit.y)
     || edit.x < 0 || edit.x >= layout.width || edit.y < 0 || edit.y >= layout.height) return "invalid edit coordinate or red-wire operation";
   const expected = Buffer.from(original);
   const offset = layout.start + layout.cells * 13 + (edit.x * layout.height + edit.y) * 2;
   expected[offset] ^= 1;
-  return compareCwm(expected, actual);
+  return compareCwm(expected, actual, { leftSource: "expected single-tile CWM", rightSource: actualSource });
 }
 
 async function required(path) {
@@ -84,10 +84,11 @@ export async function runWriterDifferential({ fixtures = join(root, "packages/te
         for (const variant of ["unchanged", "edited"]) {
           await run("dotnet", [...inspector, "export-cwm", join(directory, `${variant}.wld`), join(directory, `${variant}-dotnet.cwm`)]);
           const actual = await required(join(directory, `${variant}-dotnet.cwm`));
-          mismatch = compareCwm(variant === "unchanged" ? original : expectedEdit, actual);
+          mismatch = compareCwm(variant === "unchanged" ? original : expectedEdit, actual,
+            { leftSource: "TypeScript pre-save CWM", rightSource: ".NET reload export" });
           if (mismatch !== null) throw new Error(`${variant} save: ${mismatch}`);
           if (variant === "edited") {
-            mismatch = compareSingleTileEdit(original, actual, edit);
+            mismatch = compareSingleTileEdit(original, actual, edit, ".NET reload export");
             if (mismatch !== null) throw new Error(`edited save scope: ${mismatch}`);
           }
         }
