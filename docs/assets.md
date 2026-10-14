@@ -31,6 +31,9 @@ Revisions are commit SHAs (first 8 hex digits) of the default branch on 2026-10-
 
 ## Local install
 
+For picker-free local development, [the HTTP source helper](../scripts/dev/README.md) serves a selected world and
+`Content/Images` in place. Its dev-only URL hook shares the same world parser and atlas Worker as the native pickers.
+
 Checked on one Windows install of Terraria **1.4.5.8** (L). `Content/Images/` holds **14 015** `.xnb` files.
 
 | Family | Files | Notes |

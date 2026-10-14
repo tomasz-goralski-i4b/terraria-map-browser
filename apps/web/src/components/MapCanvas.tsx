@@ -16,6 +16,7 @@ import { useSearchStore } from "../world/search-store.js";
 import { measurementScene, type MeasurementScene } from "../world/measurement-scene.js";
 import { hitMeasurement, type MeasurementHit, type RulerSettings } from "../world/measurements.js";
 import { useRulerStore, beginMeasurement, moveMeasurement, finishMeasurement } from "../world/ruler-session.js";
+import { installPerformance, type FrameObservation } from "../performance.js";
 
 const KEY_PAN_PIXELS_PER_MS = 0.384;
 const KEY_ZOOM_FACTOR = 1.25;
@@ -330,11 +331,13 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
 
   /** Creates the renderer and wires input for the mounted canvas; returns the teardown, or null when it failed. */
   const start = (canvas: HTMLCanvasElement): (() => void) | null => {
+    const frameReporter: { report?: (frame: FrameObservation) => void } = {};
     let renderer: MapRenderer;
     try {
       renderer = createMapRenderer(canvas, {
         mapPalette: terrariaMapPalette,
         onSpritesPreparing: (preparing) => { useViewStore.getState().setSpritesPreparing(preparing); },
+        onFrame: (frame) => { frameReporter.report?.(frame); },
       });
     } catch (cause) {
       // Creating the renderer needs the mounted canvas, so its failure is only known after mounting.
@@ -393,6 +396,17 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
       renderer.flushFrame();
     }
     sessionRef.current = session;
+    const measurements = installPerformance(canvas, {
+      fit: () => {
+        endStroke();
+        session.keys.clear();
+        session.animator.reset(fitWorld(session.viewport, session.world), session.viewport, session.world);
+        applyCamera(session, session.animator.current);
+        session.requestFrame();
+      },
+      settled: () => Math.abs(Math.log(session.animator.current.zoom / session.animator.target.zoom)) < 1e-4,
+    });
+    frameReporter.report = measurements.onFrame;
     const unsubscribeBrushOptions = useBrushStore.subscribe((state) => {
       if (!state.active) { brushTrail.current = null; brushPointer.current = null; }
       session.requestFrame();
@@ -529,6 +543,7 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
     });
 
     return () => {
+      measurements.dispose();
       endStroke();
       unsubscribeEdits();
       unsubscribeBrushOptions();

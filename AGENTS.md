@@ -14,6 +14,7 @@ PR descriptions, issues and review notes.
 | Tests only | `bash scripts/test.sh` |
 | Install | `pnpm install` |
 | Backlog: unblock the next issues | `bash scripts/backlog/promote.sh [--dry-run]` |
+| Open a local world + Images in the dev app without pickers (perf overlay `?perf`, benchmark `window.__studioBench.run()`) | `node scripts/dev/serve-local.mjs <world.wld> <Content/Images>` — see `scripts/dev/README.md` |
 
 `verify.sh` must end with `VERIFY: OK`. Nothing else counts as "green".
 

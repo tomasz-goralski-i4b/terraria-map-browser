@@ -33,6 +33,17 @@ test("diagonal labels name the straight length and the blocks on the path; strai
     .toEqual(["3 blocks", "4 blocks"]);
 });
 
+test("a line whose blocks all sit in one row or column is straight: one size, no extra length, no angle", () => {
+  // Endpoints snap to boundaries, so a line dragged along a row can end one boundary lower without leaving that row.
+  const row = { ...diagonal, end: { x: 144, y: 81 } };
+  expect(measurementBlocks(row).every((block) => block.y === 80)).toBe(true);
+  expect(measurementLabels(row, { dimensions: true, components: false, angle: true }).map((label) => label.text)).toEqual(["24 blocks"]);
+  expect(measurementSummary(row)).toBe("24 blocks");
+  const column = { ...diagonal, end: { x: 119, y: 104 } };
+  expect(measurementLabels(column, { dimensions: true, components: false, angle: true }).map((label) => label.text)).toEqual(["24 blocks"]);
+  expect(measurementSummary(column)).toBe("24 blocks");
+});
+
 test("horizontal and vertical outlines are one block thick and are identical when drawn backwards", () => {
   const horizontal = { ...diagonal, end: { x: 130, y: 80 } };
   const vertical = { ...diagonal, end: { x: 120, y: 90 } };

@@ -70,14 +70,18 @@ function worldPanel(): ReturnType<typeof page.getByRole> {
   return page.getByRole("region", { name: "World", exact: true });
 }
 
-/** The World panel's field values: since its properties became editable (#246) name and size are inputs, not text. */
-function worldValues(): string[] {
-  const region = worldPanel().query();
-  return region === null ? [] : [...region.querySelectorAll<HTMLInputElement | HTMLSelectElement>("input, select")].map((field) => field.value);
+/** An editable World property, found by its accessible label (values live in inputs, not in text). */
+function worldField(label: string): ReturnType<typeof page.getByLabelText> {
+  return worldPanel().getByLabelText(label, { exact: true });
 }
 
-async function expectWorld(...values: string[]): Promise<void> {
-  await expect.poll(worldValues).toEqual(expect.arrayContaining(values));
+async function expectWorldName(name: string): Promise<void> {
+  await expect.element(worldField("Name")).toHaveValue(name);
+}
+
+async function expectSmallSize(): Promise<void> {
+  await expect.element(worldField("Size width")).toHaveValue(4200);
+  await expect.element(worldField("Size height")).toHaveValue(1200);
 }
 
 async function worldFile(name: string): Promise<File> {
@@ -87,13 +91,12 @@ async function worldFile(name: string): Promise<File> {
 test("opening SCCO1.wld through the file input shows its name and dimensions", async () => {
   await render(<App />);
   chooseFile(await worldFile("SCCO1.wld"));
-  await expectWorld("SCCR1");
-  await expectWorld("4200", "1200");
-  await expectWorld("948580918");
-  const summary = worldPanel();
-  await expect.element(summary).toMatchTextContent("326");
-  await expect.element(summary).toMatchTextContent("Classic");
-  await expect.element(summary).toMatchTextContent("Corruption");
+  await expectWorldName("SCCR1");
+  await expectSmallSize();
+  await expect.element(worldField("Seed")).toHaveValue("948580918");
+  await expect.element(worldPanel()).toMatchTextContent("326");
+  await expect.element(worldField("Game mode")).toHaveDisplayValue("Classic");
+  await expect.element(worldField("Evil")).toHaveDisplayValue("Corruption");
 });
 
 test("opening a truncated file shows the codec's code and offset and the app stays usable", async () => {
@@ -107,7 +110,7 @@ test("opening a truncated file shows the codec's code and offset and the app sta
   await expect.element(alert).toMatchTextContent(`offset ${String(expected.offset)}`);
 
   chooseFile(new File([valid], "SCCO1.wld"));
-  await expectWorld("4200", "1200");
+  await expectSmallSize();
   await expect.element(page.getByRole("alert")).not.toBeInTheDocument();
 });
 
@@ -116,12 +119,12 @@ test("opening a non-.wld file shows the codec's error and keeps the previously l
   const expected = codecError(garbage);
   await render(<App />);
   chooseFile(await worldFile("SCCO1.wld"));
-  await expectWorld("SCCR1");
+  await expectWorldName("SCCR1");
 
   chooseFile(new File([garbage], "notes.txt"));
   await expect.element(page.getByRole("alert")).toMatchTextContent(expected.kind);
   await expect.element(page.getByRole("alert")).toMatchTextContent(`offset ${String(expected.offset)}`);
-  await expectWorld("SCCR1");
+  await expectWorldName("SCCR1");
 });
 
 /**
@@ -168,7 +171,7 @@ test("the main thread is never blocked while a Small fixture is parsed", async (
   await nextTask();
   try {
     chooseFile(new File([bytes], "SCCO1.wld"));
-    await expectWorld("4200", "1200");
+    await expectSmallSize();
   } finally {
     observer.disconnect();
   }
@@ -190,24 +193,24 @@ test("the main thread is never blocked while a Small fixture is parsed", async (
 test("cancel during loading returns to the previous state", async () => {
   await render(<App />);
   chooseFile(await worldFile("SCCO1.wld"));
-  await expectWorld("SCCR1");
+  await expectWorldName("SCCR1");
 
   // A Small parse can finish before a driver click lands, so Cancel is clicked in the same task React renders it.
   const cancelled = clickCancelWhenShown();
   chooseFile(await worldFile("SCCR2.wld"));
   await cancelled;
   await expect.element(page.getByRole("button", { name: "Cancel" })).not.toBeInTheDocument();
-  await expectWorld("SCCR1");
+  await expectWorldName("SCCR1");
   await expect.element(page.getByRole("alert")).not.toBeInTheDocument();
 });
 
 test("dropping a file onto the map area behaves like the file input", async () => {
   await render(<App />);
   dropFile(await worldFile("SCCO1.wld"));
-  await expectWorld("SCCR1");
-  await expectWorld("4200", "1200");
+  await expectWorldName("SCCR1");
+  await expectSmallSize();
 
   dropFile(new File([new TextEncoder().encode("nope".repeat(100))], "x.txt"));
   await expect.element(page.getByRole("alert")).toBeVisible();
-  await expectWorld("SCCR1");
+  await expectWorldName("SCCR1");
 });

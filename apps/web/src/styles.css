@@ -2529,3 +2529,5 @@ kbd {
   .tool-options .brush-option-group:has(.layer-toggles) { max-width: 100%; flex-shrink: 1; min-width: 0; }
   .brush-segments.layer-toggles { flex-wrap: wrap; flex-shrink: 1; min-width: 0; }
 }
+/* Four updates per second; pointer input reaches the map underneath. */
+.performance-overlay { position: fixed; left: 64px; bottom: 40px; z-index: 5; pointer-events: none; padding: 8px 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface-1); color: var(--text-1); font: 12px/1.5 monospace; font-variant-numeric: tabular-nums; }
