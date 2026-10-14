@@ -17,16 +17,17 @@ export default defineConfig({
         start_url: ".",
         scope: ".",
         display: "standalone",
-        background_color: "#1f2a37",
-        theme_color: "#1f2a37",
+        background_color: "#16181d",
+        theme_color: "#16181d",
         icons: [
-          { src: "icon.svg", sizes: "any", type: "image/svg+xml", purpose: "any" },
-          { src: "icon.svg", sizes: "any", type: "image/svg+xml", purpose: "maskable" },
+          { src: "brand/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+          { src: "brand/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+          { src: "brand/icon-maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
         ],
       },
       // Precache the built app shell only; user files (worlds, assets) are never cached by the service worker.
       workbox: {
-        globPatterns: ["**/*.{js,css,html,svg,webmanifest}"],
+        globPatterns: ["**/*.{js,css,html,svg,png,webp,webmanifest}"],
         navigateFallback: "index.html",
       },
     }),
