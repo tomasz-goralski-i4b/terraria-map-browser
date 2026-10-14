@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { TilePoint } from "../shell/view-store.js";
-import { measurementDimensions, snapBoundary, type Measurement, type MeasurementHit, type MeasurementKind } from "./measurements.js";
+import { lineFromTiles, lineTiles, measurementDimensions, snapBoundary, snapTile, type Measurement, type MeasurementHit, type MeasurementKind } from "./measurements.js";
 
 interface RulerState {
   readonly items: readonly Measurement[];
@@ -17,7 +17,10 @@ let world: RulerWorld | null = null, storage: RulerStorage | null = null;
 let nextId = 1;
 let past: (readonly Measurement[])[] = [], future: (readonly Measurement[])[] = [];
 let gesture: {
-  readonly origin: TilePoint; readonly original: Measurement | null; readonly hit: MeasurementHit | null; readonly mode: MeasurementKind;
+  readonly origin: TilePoint;
+  /** The block under the press: lines run between blocks, rectangles between boundaries. */
+  readonly originTile: TilePoint;
+  readonly original: Measurement | null; readonly hit: MeasurementHit | null; readonly mode: MeasurementKind;
   /** The measurement under the press (any, selected or not): a click without a drag selects it. */
   readonly clicked: number | null;
   readonly previous: number | null;
@@ -68,22 +71,26 @@ export function beginMeasurement(point: TilePoint, mode: MeasurementKind, hit: M
   const origin = snapBoundary(point, world);
   const original = hit === null ? null : useRulerStore.getState().items.find((item) => item.id === hit.id) ?? null;
   const draft: Measurement = original ?? { id: nextId, name: `${mode === "line" ? "Line" : "Rectangle"} ${String(nextId)}`, kind: mode, start: origin, end: origin, visible: true };
-  gesture = { origin, original, hit, mode, clicked, previous: useRulerStore.getState().selected };
+  gesture = { origin, originTile: snapTile(point, world), original, hit, mode, clicked, previous: useRulerStore.getState().selected };
   useRulerStore.setState((state) => ({ selected: draft.id, draft, revision: state.revision + 1 }));
 }
 export function moveMeasurement(point: TilePoint, shift: boolean): void {
   const state = useRulerStore.getState();
   if (world === null || gesture === null || state.draft === null || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return;
-  const to = snapBoundary(point, world), original = gesture.original;
+  const to = snapBoundary(point, world), tile = snapTile(point, world), original = gesture.original;
   let start: TilePoint;
   let end = to, kind = state.draft.kind;
-  if (original === null) { start = gesture.origin; kind = gesture.mode === "rectangle" || shift ? "rectangle" : "line"; }
+  if (original === null) {
+    kind = gesture.mode === "rectangle" || shift ? "rectangle" : "line";
+    if (kind === "rectangle") start = gesture.origin;
+    else ({ start, end } = lineFromTiles(gesture.originTile, tile));
+  }
   else if (gesture.hit?.part === "move") {
     const dx = Math.max(-Math.min(original.start.x, original.end.x), Math.min(world.width - Math.max(original.start.x, original.end.x), to.x - gesture.origin.x));
     const dy = Math.max(-Math.min(original.start.y, original.end.y), Math.min(world.height - Math.max(original.start.y, original.end.y), to.y - gesture.origin.y));
     start = { x: original.start.x + dx, y: original.start.y + dy }; end = { x: original.end.x + dx, y: original.end.y + dy };
-  } else if (gesture.hit?.part === "start") { start = to; end = original.end; }
-  else if (gesture.hit?.part === "end") { start = original.start; end = to; }
+  } else if (gesture.hit?.part === "start") ({ start, end } = lineFromTiles(tile, lineTiles(original).last));
+  else if (gesture.hit?.part === "end") ({ start, end } = lineFromTiles(lineTiles(original).first, tile));
   else {
     const left = Math.min(original.start.x, original.end.x), right = Math.max(original.start.x, original.end.x);
     const top = Math.min(original.start.y, original.end.y), bottom = Math.max(original.start.y, original.end.y);

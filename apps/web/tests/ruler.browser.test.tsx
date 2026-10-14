@@ -41,9 +41,10 @@ function pointer(canvas: HTMLCanvasElement, type: string, x: number, y: number, 
 test("drag measures boundary distances, Shift creates a rectangle, list selection centers the camera", async () => {
   const canvas = await openMap();
   expect(canvas.style.cursor).toBe("crosshair");
-  pointer(canvas, "pointerdown", 64, 64); pointer(canvas, "pointermove", 224, 64);
+  // Lines run between the blocks under the pointer (16 px each): the 1st block centre to the 10th spans 10 blocks.
+  pointer(canvas, "pointerdown", 72, 72); pointer(canvas, "pointermove", 216, 72);
   expect(canvas.style.cursor).toBe("crosshair");
-  pointer(canvas, "pointerup", 224, 64);
+  pointer(canvas, "pointerup", 216, 72);
   await expect.element(page.getByRole("button", { name: "Line 1 10 blocks", exact: true })).toBeVisible();
   pointer(canvas, "pointerdown", 320, 128); pointer(canvas, "pointermove", 480, 224, true); pointer(canvas, "pointerup", 480, 224, true);
   expect(useRulerStore.getState().items).toHaveLength(2);
@@ -59,7 +60,7 @@ test("drag measures boundary distances, Shift creates a rectangle, list selectio
 
 test("CAD notes support handles, replacement, visibility, labels and measurement undo", async () => {
   const canvas = await openMap();
-  pointer(canvas, "pointerdown", 64, 64); pointer(canvas, "pointermove", 224, 160); pointer(canvas, "pointerup", 224, 160);
+  pointer(canvas, "pointerdown", 72, 72); pointer(canvas, "pointermove", 216, 152); pointer(canvas, "pointerup", 216, 152);
   getMapController()?.renderNow();
   await vi.waitFor(() => { expect(document.querySelector(".measurement-label")?.textContent).toContain("31.0°"); }, { timeout: 5000 });
   // A new measurement is not selected: a drag from its end starts another one, a click selects it for editing.
@@ -68,7 +69,7 @@ test("CAD notes support handles, replacement, visibility, labels and measurement
   await userEvent.keyboard("{Control>}z{/Control}");
   pointer(canvas, "pointerdown", 224, 160); pointer(canvas, "pointerup", 224, 160);
   expect(useRulerStore.getState().selected).toBe(1);
-  pointer(canvas, "pointerdown", 224, 160); pointer(canvas, "pointermove", 256, 160); pointer(canvas, "pointerup", 256, 160);
+  pointer(canvas, "pointerdown", 224, 160); pointer(canvas, "pointermove", 248, 152); pointer(canvas, "pointerup", 248, 152);
   expect(useRulerStore.getState().items[0]?.end.x).toBe(1766);
   await page.getByRole("button", { name: "Show Line 1", exact: true }).click();
   expect(useRulerStore.getState().items[0]?.visible).toBe(false);
