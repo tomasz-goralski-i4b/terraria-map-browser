@@ -236,6 +236,7 @@ function treeTile(
   const ground = groundUnder(reader, trunkX, y, type);
   const block = type === COMMON_TREE ? trunkBlocks.get(ground) ?? 0 : 0;
   out.trunks.push({
+    behind: true,
     kind: "tile", id: type, sx: frameX + block * TRUNK_BLOCK, sy: frameY, width: TRUNK_CELL, height: TRUNK_CELL,
     dx: x * SPRITE_PIXELS_PER_TILE - TRUNK_OFFSET, dy: y * SPRITE_PIXELS_PER_TILE,
   });
@@ -245,6 +246,7 @@ function treeTile(
   const frame = Math.floor((frameY - LEAFY_FRAME_Y) / FRAME_STRIDE) + foliage.frame;
   if (frameX === TOP_FRAME_X) {
     out.tops.push({
+    behind: true,
       kind: "treeTop", id: foliage.style, sx: frame * (foliage.width + FOLIAGE_GAP), sy: 0, width: foliage.width, height: foliage.height,
       dx: x * SPRITE_PIXELS_PER_TILE + SPRITE_PIXELS_PER_TILE / 2 - Math.floor(foliage.width / 2),
       dy: (y + 1) * SPRITE_PIXELS_PER_TILE - foliage.height,
@@ -253,6 +255,7 @@ function treeTile(
   }
   const left = trunkX > x;
   out.branches.push({
+    behind: true,
     kind: "treeBranch", id: foliage.style, sx: left ? 0 : BRANCH_SIZE + FOLIAGE_GAP, sy: frame * (BRANCH_SIZE + FOLIAGE_GAP),
     width: BRANCH_SIZE, height: BRANCH_SIZE,
     dx: left ? (x + 1) * SPRITE_PIXELS_PER_TILE - BRANCH_SIZE : x * SPRITE_PIXELS_PER_TILE, dy: y * SPRITE_PIXELS_PER_TILE - BRANCH_RAISE,
@@ -267,12 +270,14 @@ function palmTile(reader: ObjectReader, x: number, y: number, out: Collected): v
   if (row === undefined || frameX < 0) return;
   const dx = x * SPRITE_PIXELS_PER_TILE + lean;
   out.trunks.push({
+    behind: true,
     kind: "tile", id: PALM_TREE, sx: frameX, sy: row * FRAME_STRIDE, width: TRUNK_CELL, height: TRUNK_CELL, dx: dx - TRUNK_OFFSET,
     dy: y * SPRITE_PIXELS_PER_TILE,
   });
   if (frameX < PALM_TOP_FRAME_X) return;
   const stride = PALM_TOP_SIZE + FOLIAGE_GAP;
   out.tops.push({
+    behind: true,
     kind: "treeTop", id: PALM_TOPS, sx: Math.floor((frameX - PALM_TOP_FRAME_X) / FRAME_STRIDE) * stride, sy: row * stride,
     width: PALM_TOP_SIZE, height: PALM_TOP_SIZE, dx: dx + SPRITE_PIXELS_PER_TILE / 2 - PALM_TOP_SIZE / 2,
     dy: (y + 1) * SPRITE_PIXELS_PER_TILE - PALM_TOP_SIZE,
@@ -285,11 +290,13 @@ function mushroomTile(reader: ObjectReader, x: number, y: number, out: Collected
   const frameY = reader.frameY(x, y);
   if (frameX < 0 || frameY < 0) return;
   out.trunks.push({
+    behind: true,
     kind: "tile", id: GIANT_MUSHROOM, sx: frameX, sy: frameY, width: SPRITE_PIXELS_PER_TILE, height: SHROOM_CELL_HEIGHT,
     dx: x * SPRITE_PIXELS_PER_TILE, dy: y * SPRITE_PIXELS_PER_TILE,
   });
   if (frameX !== SHROOM_TOP_FRAME_X) return;
   out.tops.push({
+    behind: true,
     kind: "shroomTop", id: 0, sx: Math.floor(frameY / SHROOM_CELL_HEIGHT) * (SHROOM_TOP_WIDTH + FOLIAGE_GAP), sy: 0,
     width: SHROOM_TOP_WIDTH, height: SHROOM_TOP_HEIGHT,
     dx: x * SPRITE_PIXELS_PER_TILE + SPRITE_PIXELS_PER_TILE / 2 - SHROOM_TOP_WIDTH / 2, dy: (y + 1) * SPRITE_PIXELS_PER_TILE - SHROOM_TOP_HEIGHT,

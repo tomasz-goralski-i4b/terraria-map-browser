@@ -526,7 +526,8 @@ the offset, centred on its tile horizontally (chosen: the draw data gives no hor
 the chunk pass shows what lies behind such a tile. They lie **behind the blocks** around them, as the game draws them
 (G: a block's border covers a stalagmite's base; its transparent pixels show it): the chunk pass writes depth 0 where
 a block covers a pixel (its map colour, or a sprite pixel that is not transparent) and these sprites are drawn only
-elsewhere (`OBJECT_BEHIND`); trees, track extras and waterfalls stay in front. They still lie over liquids (the game
+elsewhere (`OBJECT_BEHIND`). Trees, palms and the giant mushroom (trunks, branches, tops, caps) lie behind the blocks
+too (G: a block's grass covers a trunk's foot); track extras and waterfalls stay in front. They still lie over liquids (the game
 draws liquid over them; open question). Stalactites and stalagmites (165) are plain in the draw data, alone or with stone
 above or below: the game shifts them elsewhere. In-game screenshots (G) show hanging ones drawn up and standing ones
 drawn down so both touch the stone, as the observed moss plants (184: rows 0–36 down 2, rows 54–108 up 2); the
