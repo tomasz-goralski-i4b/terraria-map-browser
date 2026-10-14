@@ -5,6 +5,7 @@ import { pathToFileURL } from "node:url";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vitest/config";
 import { playwright } from "@vitest/browser-playwright";
+import type { BrowserCommandContext } from "vitest/node";
 import { distServer, setDistServerOffline } from "./apps/web/tests/support/dist-server.ts";
 
 // One Vitest project per workspace package/app with a src/ directory, named after its package.json.
@@ -113,6 +114,10 @@ const browserProjects = [
         provider: playwright({ launchOptions: { args: softwareWebGl } }),
         instances: [{ browser: "chromium" as const }],
         commands: {
+          captureMapScreenshot: async (context: BrowserCommandContext) => {
+            const png = await context.iframe.locator('canvas[aria-label="World map"]').screenshot({ scale: "css" });
+            return png.toString("base64");
+          },
           readWorldFixture: (_context: unknown, file: string) => {
             if (!/^[A-Za-z0-9]+\.wld$/.test(file)) throw new Error(`not a fixture world: ${file}`);
             return readFileSync(join("packages/test-fixtures/worlds", file)).toString("base64");

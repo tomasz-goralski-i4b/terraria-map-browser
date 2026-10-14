@@ -42,6 +42,7 @@ export function menuItem(command: Command): MenuItem {
   if (command.checked !== undefined) {
     return {
       kind: "check", label: command.label, checked: command.checked, disabled: !command.enabled, onChange: command.run,
+      ...(command.id === "view.grid.custom" ? { closeOnChange: true } : {}),
       ...(command.shortcut === undefined ? {} : { shortcut: command.shortcut }),
     };
   }
@@ -161,6 +162,7 @@ export function TopBar({ commands }: { readonly commands: readonly Command[] }):
         menuItem(get("view.actual")),
         { kind: "separator" },
         menuItem(get("view.stats")),
+        { kind: "submenu", label: "Grid", icon: "grid", items: commands.filter((command) => command.id.startsWith("view.grid.")).map(menuItem) },
         { kind: "submenu", label: "Theme", icon: "theme", items: commands.filter((command) => command.id.startsWith("view.theme.")).map(menuItem) },
         menuItem(get("view.reset")),
       ],

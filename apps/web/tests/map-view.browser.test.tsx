@@ -9,6 +9,9 @@ import { MapView } from "../src/components/MapView.js";
 import { StatusBar } from "../src/shell/StatusBar.js";
 import { useAppStore } from "../src/store.js";
 import { getDefaultWorldSession } from "../src/world/world-session.js";
+import { hydrateLayout, useLayoutStore } from "../src/shell/layout-store.js";
+import { getMapController } from "../src/shell/view-store.js";
+import "../src/styles.css";
 
 const width = 1200;
 const height = 600;
@@ -148,8 +151,49 @@ function restoreDevicePixelRatio(): void {
 }
 
 beforeEach(() => {
+  hydrateLayout(null);
   vi.restoreAllMocks();
   installFrameClock();
+});
+
+test("GPU grid tracks the camera, thins out and then hides when zoomed out, and does not redraw on hover", async () => {
+  await mountMap();
+  const gl = canvas().getContext("webgl2");
+  if (gl === null) throw new Error("World map has no WebGL context");
+  const pixels = (): Uint8Array => {
+    getMapController()?.renderNow(); // The default framebuffer is cleared by the browser after presentation.
+    const result = new Uint8Array(canvas().width * canvas().height * 4);
+    gl.readPixels(0, 0, canvas().width, canvas().height, gl.RGBA, gl.UNSIGNED_BYTE, result);
+    return result;
+  };
+  getMapController()?.jumpTo({ x: 102.5, y: 51.5, zoom: 10 });
+  await settle();
+  const off = pixels();
+  useLayoutStore.getState().setGrid({ mode: 5 });
+  await settle();
+  const on = pixels();
+  expect(on.some((value, index) => value !== off[index])).toBe(true);
+  const draws = vi.spyOn(gl, "drawArrays");
+  pointer("pointermove", 140, 100, 0);
+  await settle();
+  expect(draws).not.toHaveBeenCalled();
+  getMapController()?.jumpTo({ x: 103, y: 52, zoom: 10 });
+  await settle();
+  expect(pixels().some((value, index) => value !== on[index])).toBe(true);
+  // 5-block intervals under 8 CSS pixels apart: no lines at all.
+  getMapController()?.jumpTo({ x: 103, y: 52, zoom: 1.5 });
+  await settle();
+  const belowThreshold = pixels();
+  useLayoutStore.getState().setGrid({ mode: "off" });
+  await settle();
+  expect(pixels().every((value, index) => value === belowThreshold[index])).toBe(true);
+  // Below the dashed block lines' 6 pixels per tile the interval lines remain.
+  getMapController()?.jumpTo({ x: 103, y: 52, zoom: 4 });
+  await settle();
+  const threshold = pixels();
+  useLayoutStore.getState().setGrid({ mode: 5 });
+  await settle();
+  expect(pixels().some((value, index) => value !== threshold[index])).toBe(true);
 });
 afterEach(() => {
   vi.restoreAllMocks();

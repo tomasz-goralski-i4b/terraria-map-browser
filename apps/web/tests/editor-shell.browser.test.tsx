@@ -8,8 +8,9 @@ import type { Tile } from "@studio/world-model";
 import { App } from "../src/App.js";
 import { worldFieldGroups } from "../src/panels/world-fields.js";
 import { DEFAULT_LAYOUT, type LayoutStorage } from "../src/shell/layout-store.js";
+import { useLayoutStore } from "../src/shell/layout-store.js";
 import { parseZoomPercent, StatusBar, type StatusWorld } from "../src/shell/StatusBar.js";
-import { useViewStore } from "../src/shell/view-store.js";
+import { getMapController, useViewStore } from "../src/shell/view-store.js";
 import "../src/styles.css";
 import "./support/commands.js";
 import { dockTab, menu } from "./support/shell.js";
@@ -28,6 +29,82 @@ class MemoryStorage implements LayoutStorage {
 }
 
 let storage: MemoryStorage;
+
+test("View grid menu and dock controls stay synchronized and survive reopening", async () => {
+  const first = await render(<App layoutStorage={storage} />);
+  await menu("View", "Grid");
+  await page.getByRole("menuitemcheckbox", { name: "5", exact: true }).click();
+  await dockTab("View");
+  await expect.element(page.getByRole("combobox", { name: "Grid spacing", exact: true })).toHaveValue("5");
+  await page.getByRole("slider", { name: "Grid opacity" }).fill("45");
+  await menu("View", "Grid");
+  await page.getByRole("menuitemcheckbox", { name: "Custom…" }).click();
+  const custom = page.getByRole("spinbutton", { name: "Custom grid spacing" });
+  await expect.element(custom).toHaveFocus();
+  await expect.element(page.getByRole("menu", { name: "Grid", exact: true })).not.toBeInTheDocument();
+  await custom.fill("12");
+  await userEvent.keyboard("{Enter}");
+  await first.unmount();
+  await render(<App layoutStorage={storage} />);
+  await expect.element(page.getByRole("combobox", { name: "Grid spacing", exact: true })).toHaveValue("custom");
+  await expect.element(page.getByRole("spinbutton", { name: "Custom grid spacing" })).toHaveValue(12);
+  await expect.element(page.getByRole("slider", { name: "Grid opacity" })).toHaveValue("45");
+  await page.getByRole("combobox", { name: "Grid spacing", exact: true }).selectOptions("off");
+  await menu("View", "Grid");
+  await expect.element(page.getByRole("menuitemcheckbox", { name: "Off", exact: true })).toHaveAttribute("aria-checked", "true");
+});
+
+test.each(["dark", "light"] as const)("grid panel matches the %s editor theme", async (theme) => {
+  await render(<App layoutStorage={storage} />);
+  await openFixture("SCCO1.wld");
+  useLayoutStore.getState().setTheme(theme);
+  await menu("View", "Grid");
+  await page.getByRole("menuitemcheckbox", { name: "Custom…" }).click();
+  await page.getByRole("spinbutton", { name: "Custom grid spacing" }).fill("12");
+  await userEvent.keyboard("{Enter}");
+  getMapController()?.jumpTo({ x: 1750, y: 300, zoom: 16 });
+  getMapController()?.renderNow();
+  await page.screenshot({ path: `.tdd/grid-${theme}.png` });
+  const result = await axe.run(document.body);
+  expect(result.violations).toEqual([]);
+});
+
+test("grid controls keep a stable layout at the narrowest dock and custom values commit on blur", async () => {
+  await render(<App layoutStorage={storage} />);
+  await dockTab("View");
+  useLayoutStore.getState().setDockWidth(DEFAULT_LAYOUT.minDockWidth);
+  const panel = document.querySelector<HTMLElement>(".grid-panel");
+  if (panel === null) throw new Error("Grid panel is missing");
+  const spacing = page.getByRole("combobox", { name: "Grid spacing", exact: true });
+  const custom = page.getByRole("spinbutton", { name: "Custom grid spacing" });
+  const height = panel.getBoundingClientRect().height;
+  for (const mode of ["off", "3", "5", "10", "custom"]) {
+    await spacing.selectOptions(mode);
+    expect(panel.getBoundingClientRect().height).toBe(height);
+    expect(custom.element().getBoundingClientRect().width).toBeGreaterThanOrEqual(58);
+    for (const row of panel.querySelectorAll(".property-row")) {
+      const label = row.querySelector("dt");
+      const control = row.querySelector<HTMLElement>("input, select");
+      if (label === null || control === null) throw new Error("Grid row is missing a label or control");
+      expect(label.getBoundingClientRect().right).toBeLessThanOrEqual(control.getBoundingClientRect().left);
+    }
+    for (const control of panel.querySelectorAll("input, select, output, .grid-spacing span")) {
+      expect(control.getBoundingClientRect().right).toBeLessThanOrEqual(panel.getBoundingClientRect().right);
+    }
+    if (mode !== "custom") await expect.element(custom).toBeDisabled();
+  }
+  for (const interval of [2, 1000, 12]) {
+    await custom.fill(String(interval));
+    await page.getByRole("slider", { name: "Grid opacity" }).click();
+    expect(useLayoutStore.getState().grid.customSpacing).toBe(interval);
+  }
+  for (const invalid of ["", "1", "1001", "2.5"]) {
+    await custom.fill(invalid);
+    await userEvent.keyboard("{Enter}");
+    await expect.element(custom).toHaveValue(12);
+    expect(useLayoutStore.getState().grid.customSpacing).toBe(12);
+  }
+});
 
 beforeEach(async () => {
   storage = new MemoryStorage();
@@ -232,8 +309,8 @@ test("the tool rail is one Tab stop; arrows move it and a tool change moves it t
   expect(tabbableTools()).toEqual(["Pan"]);
   page.getByRole("button", { name: "Pan" }).element().focus();
   await userEvent.keyboard("{ArrowDown}{ArrowDown}");
-  await expect.element(page.getByRole("button", { name: "Brush" })).toHaveFocus();
-  expect(tabbableTools()).toEqual(["Brush"]);
+  await expect.element(page.getByRole("button", { name: "Ruler" })).toHaveFocus();
+  expect(tabbableTools()).toEqual(["Ruler"]);
   await userEvent.keyboard("{ArrowUp}");
   await expect.element(page.getByRole("button", { name: "Inspect" })).toHaveFocus();
   await userEvent.keyboard("{Enter}");

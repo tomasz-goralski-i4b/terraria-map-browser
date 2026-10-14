@@ -16,7 +16,7 @@ export { CameraAnimator, wheelPixels } from "./camera/animator.js";
 export type { CameraStep } from "./camera/animator.js";
 export { WebGl2UnavailableError, createMapRenderer } from "./gpu/map-renderer.js";
 export type {
-  MapRenderer, MapRendererOptions, MapRendererStats, RenderableWorld, SpriteAtlasSource, SpriteSheetEntry,
+  MapAnnotations, MapGrid, MapRenderer, MapRendererOptions, MapRendererStats, RenderableWorld, SpriteAtlasSource, SpriteSheetEntry,
 } from "./gpu/map-renderer.js";
 export { SPRITE_FRAME_WRAPS, wrappedFrame } from "./gpu/frame-wrap.js";
 export type { FrameWrap } from "./gpu/frame-wrap.js";

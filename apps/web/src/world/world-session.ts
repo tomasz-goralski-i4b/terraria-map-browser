@@ -7,6 +7,7 @@ import type { OpenedWorldFile, OpenWorldHandle, WorldSaveDirectory } from "./wor
 import { setPropertiesWorld, propertyReadOnly, checkPropertyRange, type PropertyValue } from "./world-properties.js";
 import { resizeWorld } from "./resize-world.js";
 import { setAreaWorld } from "./area-session.js";
+import { setRulerWorld } from "./ruler-session.js";
 
 /** Small display facts about the loaded world; the planes and palette themselves stay outside React and the store. */
 export interface WorldSummary {
@@ -86,6 +87,7 @@ export function createWorldSession(parser: WorldParser): WorldSession {
       if (current !== controller) return;
       loaded = world;
       setAreaWorld(world);
+      setRulerWorld({ key: world.metadata.guid || file.name, width: world.metadata.width, height: world.metadata.height });
       setPropertiesWorld(world);
       setBrushWorld("entities" in world ? world : null);
       openedFile = { file, handle: handle ?? null, directory: directory ?? null };
@@ -102,6 +104,7 @@ export function createWorldSession(parser: WorldParser): WorldSession {
 
   const reset = (): void => {
     setAreaWorld(null);
+    setRulerWorld(null);
     finishBrush(true);
     setBrushWorld(null);
     resetWorldSave();
@@ -120,6 +123,7 @@ export function createWorldSession(parser: WorldParser): WorldSession {
       const resized = resizeWorld(loaded, path === "metadata.width" ? value : loaded.metadata.width, path === "metadata.height" ? value : loaded.metadata.height);
       loaded = resized;
       setAreaWorld(resized);
+      setRulerWorld({ key: resized.metadata.guid || openedFile.file.name, width: resized.metadata.width, height: resized.metadata.height });
       setBrushWorld(resized);
       setPropertiesWorld(resized, false);
       const resizedSummary = summarize(resized, openedFile.file);

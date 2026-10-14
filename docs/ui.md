@@ -97,7 +97,7 @@ Code: `apps/web/src/ui/` (primitives), `apps/web/src/shell/` (layout, commands, 
   background actions (a saved world, a listed folder) in the map's bottom-right corner, never over its middle.
   Successes close themselves after 6 s; errors stay until closed.
 - **Dock** (`shell/Dock.tsx`) has three tabs, as in image editors (#225): **World**, what the world *is* (World
-  properties, Content, Entities), **View**, what is *shown* (Layers), and **Swatches**, what the brush *paints with*
+  properties, Content, Entities), **View**, what is *shown* (Layers and Grid), and **Swatches**, what the brush *paints with*
   (`panels/SwatchesPanel.tsx`: materials, paints, recent swatches and custom palettes). The **Inspector** sits under
   the tabs and is visible with any; open, it takes up to half the dock. World is the default tab: after opening a world it shows
   what was opened. Inside a tab, sections are an accordion; several may be open at once. A splitter resizes the dock
@@ -106,6 +106,36 @@ Code: `apps/web/src/ui/` (primitives), `apps/web/src/shell/` (layout, commands, 
   with the layout. `P` hides or shows the whole dock.
 
   `Tab` is **not** used for this, unlike some editors: Tab must keep moving focus for keyboard users.
+
+  Grid is also available in **View > Grid**: Off (default), 3, 5, 10, or Custom (2–1000 blocks). Custom opens
+  the Grid section and focuses its interval field; Enter or leaving the field commits a valid integer.
+  Boundaries are counted from world (0, 0): dashed every block, solid at the selected interval, with a shared
+  opacity slider (0–100%, initially 30%). Lines are 1 CSS pixel wide and light grey everywhere (a contrast switch
+  would cut across the sky's gradient). Dashed block lines appear from 6 CSS pixels per tile; zoomed further out only the
+  solid interval lines remain, while they are at least 8 CSS pixels apart (none over the far-out overview).
+  Assets need not be connected.
+  Spacing and opacity are remembered with the browser layout. The overlay does not intercept map input.
+  The GPU grid shader replaces the final terrain framebuffer blit when enabled, preserving straight alpha.
+  Terrain still uses cached-pan scissor strips; grid changes require no SVG, DOM geometry, tile/texture uploads
+  or invalidation of the cached terrain.
+
+  **Ruler** (`L`) is a local dimension overlay. Drag on block boundaries for a line; hold Shift during the drag
+  for a rectangle, release Shift to return to the line, and release the pointer to keep the current shape.
+  Rectangle also has an explicit option for touch input. Lines outline a one-block-thick raster path in white,
+  with transparent interiors; horizontal and vertical paths count the boundary distance, diagonal paths count
+  blocks along the dominant axis (a 3 × 4 path contains 4 blocks). A diagonal's label names both sizes: its straight length and
+  the blocks on the path ("33.62 long · 29 blocks"), plus its angle to horizontal (one decimal).
+  Labels can show dimensions, horizontal/vertical components, and angle. All measurements use blocks.
+
+  **Measurements** sits below Grid in the View tab. Picking the Ruler leaves the dock as it was; the options bar's
+  *Show measurements* button reveals the list. Keep retains earlier notes; off replaces them on the next
+  completed drag. Selecting a row or clicking a note on the map selects it; only the selected note shows
+  handles: drag its endpoints/corners to resize or its body to move it. A finished note is not selected, so a drag
+  that starts on another note (or its corner) draws a new one. Notes can be renamed, hidden, deleted or cleared; Escape cancels a
+  drag. Undo/Redo while Ruler is active applies to measurements, independently of world edit history.
+  Notes are remembered locally by world GUID and never enter the `.wld` writer or mark the world modified.
+  Instanced WebGL outlines render after presenting cached terrain; geometry uploads only on note changes.
+  Visible labels use positioned text nodes, with no React update for each camera frame.
 
   Inspector Block and Wall rows show vanilla map-colour swatches. With connected assets and Sprites enabled they
   show the pinned tile's actual framed cell: stored frames for objects, neighbours for self-framed blocks and walls.

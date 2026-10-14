@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { WIRE_LAYER, type Camera, type ChunkLayers, type MapRendererStats } from "@studio/renderer";
 
 /** Tools of the left rail. Navigation and the first safe brush/erase slice are available (docs/ui.md). */
-export type ToolId = "pan" | "inspect" | "brush" | "erase" | "fill" | "select" | "picker" | "object";
+export type ToolId = "pan" | "inspect" | "ruler" | "brush" | "erase" | "fill" | "select" | "picker" | "object";
 
 export interface TilePoint {
   readonly x: number;

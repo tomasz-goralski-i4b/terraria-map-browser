@@ -10,6 +10,10 @@ import { getBlockFraming } from "../world/block-framing.js";
 import { beginBrush, finishBrush, moveBrush, pickBrushMaterial, subscribeBrushChanges, useBrushStore } from "../world/brush-session.js";
 import { createBrushStabilizer } from "../world/brush-stabilizer.js";
 import { cancelArea, movePaste, pastePreviewWorld, pasteVisibleBounds, placePaste, selectArea, useAreaStore } from "../world/area-session.js";
+import { useLayoutStore } from "../shell/layout-store.js";
+import { measurementScene, type MeasurementScene } from "../world/measurement-scene.js";
+import { hitMeasurement, type MeasurementHit, type RulerSettings } from "../world/measurements.js";
+import { useRulerStore, beginMeasurement, moveMeasurement, finishMeasurement } from "../world/ruler-session.js";
 
 const KEY_PAN_PIXELS_PER_MS = 0.384;
 const KEY_ZOOM_FACTOR = 1.25;
@@ -22,7 +26,13 @@ const CLICK_SLOP = 4;
 const CANVAS_STYLE: React.CSSProperties = {
   position: "absolute", inset: 0, width: "100%", height: "100%", touchAction: "none", cursor: "grab",
 };
-const TOOL_CURSORS: Partial<Record<ToolId, string>> = { inspect: "crosshair", brush: "crosshair", erase: "crosshair", select: "crosshair" };
+/** The selected measurement's handles resize it and its body moves it; everywhere else the Ruler draws. */
+function rulerCursor(hit: MeasurementHit | null): string {
+  if (hit === null) return "crosshair";
+  if (hit.part === "move") return "move";
+  return hit.part === "top-left" || hit.part === "bottom-right" ? "nwse-resize" : hit.part === "top-right" || hit.part === "bottom-left" ? "nesw-resize" : "grab";
+}
+const TOOL_CURSORS: Partial<Record<ToolId, string>> = { inspect: "crosshair", ruler: "crosshair", brush: "crosshair", erase: "crosshair", select: "crosshair" };
 
 // Overlays are positioned inline for the same reason: they must stay above the canvas and clickable.
 const CONTROLS_STYLE: React.CSSProperties = { position: "absolute", top: 8, right: 8, zIndex: 1, display: "flex", gap: 4 };
@@ -104,6 +114,11 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const footprintRef = useRef<HTMLDivElement>(null);
   const sessionRef = useRef<MapSession | null>(null);
+  const rulerLabelsRef = useRef<HTMLDivElement>(null);
+  const rulerPointer = useRef<{ readonly id: number; last: Point; readonly type: string } | null>(null);
+  const rulerCache = useRef<{ readonly revision: number; readonly settings: RulerSettings; readonly editable: boolean; readonly scene: MeasurementScene } | null>(null);
+  const rulerNodes = useRef(new Map<string, HTMLSpanElement>());
+  const rulerLabelCamera = useRef("");
   const worldRef = useRef(world);
   const [error, setError] = useState<string | null>(null);
   const tool = useViewStore((state) => state.tool);
@@ -229,6 +244,51 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
     moveBrush(tile?.x ?? -1, tile?.y ?? -1);
   };
 
+  const updateGrid = useCallback((session: MapSession): void => {
+    const canvas = canvasRef.current;
+    if (canvas === null || canvas.clientWidth === 0 || canvas.width === 0) return;
+    const grid = useLayoutStore.getState().grid;
+    session.renderer.setGrid(grid.mode === "off" ? null : {
+      spacing: grid.mode === "custom" ? grid.customSpacing : grid.mode,
+      opacity: grid.opacity / 100,
+      density: canvas.width / canvas.clientWidth,
+    });
+  }, []);
+
+  const updateRuler = useCallback((session: MapSession): void => {
+    const canvas = canvasRef.current, overlay = rulerLabelsRef.current;
+    if (canvas === null || overlay === null || canvas.clientWidth === 0) return;
+    const state = useRulerStore.getState(), settings = useLayoutStore.getState().ruler;
+    const editable = useViewStore.getState().tool === "ruler";
+    let cached = rulerCache.current;
+    const changed = cached?.revision !== state.revision || cached.settings !== settings || cached.editable !== editable;
+    if (changed) {
+      cached = { revision: state.revision, settings, editable, scene: measurementScene(state.items, state.draft, state.selected, editable, settings) };
+      rulerCache.current = cached;
+    }
+    if (cached === null) return;
+    const density = canvas.width / canvas.clientWidth;
+    session.renderer.setAnnotations(cached.scene.data.length === 0 ? null : { data: cached.scene.data, density });
+    // No DOM work on hover frames; only visible labels exist, and map movement changes transforms, not React state.
+    if (cached.scene.labels.length === 0 && rulerNodes.current.size === 0) return;
+    const cameraKey = `${String(session.camera.x)} ${String(session.camera.y)} ${String(session.camera.zoom)} ${String(canvas.width)} ${String(canvas.height)} ${String(density)}`;
+    if (!changed && rulerLabelCamera.current === cameraKey) return;
+    rulerLabelCamera.current = cameraKey;
+    const visible = new Set<string>();
+    for (const label of cached.scene.labels) {
+      const x = (label.x - session.camera.x) * session.camera.zoom / density + label.offsetX;
+      const y = (label.y - session.camera.y) * session.camera.zoom / density + label.offsetY;
+      if (x < -180 || x > canvas.clientWidth + 180 || y < -24 || y > canvas.clientHeight + 24) continue;
+      visible.add(label.key);
+      let node = rulerNodes.current.get(label.key);
+      if (node === undefined) { node = document.createElement("span"); node.className = "measurement-label"; overlay.append(node); rulerNodes.current.set(label.key, node); }
+      if (node.textContent !== label.text) node.textContent = label.text;
+      node.dataset["selected"] = String(label.selected);
+      node.style.transform = `translate(${String(x)}px, ${String(y)}px) translate(${label.align === "end" ? "-100%" : "-50%"}, -50%)`;
+    }
+    for (const [key, node] of rulerNodes.current) if (!visible.has(key)) { node.remove(); rulerNodes.current.delete(key); }
+  }, []);
+
   const applyCamera = useCallback((session: MapSession, camera: Camera): void => {
     session.camera = camera;
     session.renderer.setCamera(camera);
@@ -315,6 +375,8 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
       if (!settled || !brushSettled) session.requestFrame();
       // The renderer scheduled its frame for the next animation frame; drawn now, the map moves in the frame the camera
       // moved in, one frame closer to the pointer.
+      updateGrid(session);
+      updateRuler(session);
       renderer.flushFrame();
     }
     sessionRef.current = session;
@@ -323,8 +385,12 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
       session.requestFrame();
     });
     const unsubscribeTool = useViewStore.subscribe((state, previous) => {
-      if (state.tool !== previous.tool) session.requestFrame();
+      if (state.tool !== previous.tool) { finishMeasurement(true, true); rulerPointer.current = null; session.requestFrame(); }
     });
+    const unsubscribeGrid = useLayoutStore.subscribe((state, previous) => {
+      if (state.grid !== previous.grid || state.ruler !== previous.ruler) session.requestFrame();
+    });
+    const unsubscribeRuler = useRulerStore.subscribe(() => { session.requestFrame(); });
     const unsubscribeArea = useAreaStore.subscribe((state) => {
       if (state.selection === null) selectionPointer.current = null;
       session.requestFrame();
@@ -424,6 +490,8 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
         applyCamera(session, session.animator.current);
       },
       renderNow: () => {
+        updateGrid(session);
+        updateRuler(session);
         renderer.render();
       },
       stats: () => renderer.stats(),
@@ -434,6 +502,9 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
       unsubscribeEdits();
       unsubscribeBrushOptions();
       unsubscribeTool();
+      unsubscribeGrid();
+      unsubscribeRuler();
+      rulerCache.current = null; rulerLabelCamera.current = "";
       unsubscribeArea();
       registerMapController(null);
       useViewStore.getState().setHoverTile(null);
@@ -512,9 +583,43 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
     if (session !== null && session.viewport.width !== 0) action(session);
   };
 
+  const rulerPoint = (session: MapSession, local: Point): Point => {
+    const point = toBacking(local);
+    return { x: session.camera.x + point.x / session.camera.zoom, y: session.camera.y + point.y / session.camera.zoom };
+  };
+
+  const rulerHit = (session: MapSession, point: Point): MeasurementHit | null => {
+    const canvas = canvasRef.current, density = canvas === null || canvas.clientWidth === 0 ? 1 : canvas.width / canvas.clientWidth;
+    const state = useRulerStore.getState();
+    return hitMeasurement(state.items, point, 7 * density / session.camera.zoom, state.selected);
+  };
+
   const onPointerDown = (event: React.PointerEvent<HTMLCanvasElement>): void => {
     withSession((session) => {
       const selected = useViewStore.getState().tool;
+      if (rulerPointer.current !== null) {
+        const previous = rulerPointer.current;
+        finishMeasurement(true, true); rulerPointer.current = null;
+        if (previous.type === "touch" && event.pointerType === "touch") session.pointers.set(previous.id, previous.last);
+      }
+      if (selected === "ruler" && event.isPrimary && event.button === 0 && session.pointers.size === 0) {
+        const local = localPoint(event.clientX, event.clientY), point = rulerPoint(session, local);
+        if (point.x >= 0 && point.y >= 0 && point.x <= session.world.width && point.y <= session.world.height) {
+          event.preventDefault(); event.currentTarget.focus(); session.animator.cancelMotion(); session.keys.clear();
+          const state = useRulerStore.getState(), settings = useLayoutStore.getState().ruler;
+          const under = rulerHit(session, point);
+          // Only the selected measurement is edited; a drag anywhere else (even on another one) starts a new one.
+          const hit = under !== null && under.id === state.selected ? under : null;
+          event.currentTarget.style.cursor = rulerCursor(hit);
+          beginMeasurement(point, settings.mode, hit, under?.id ?? null);
+          moveMeasurement(point, event.shiftKey);
+          rulerPointer.current = { id: event.pointerId, last: local, type: event.pointerType };
+          session.hover = local; session.requestFrame();
+          try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* The pointer can end before capture. */ }
+          return;
+        }
+        event.preventDefault(); event.currentTarget.style.cursor = "crosshair"; return;
+      }
       if (selectionPointer.current !== null) {
         const selecting = selectionPointer.current;
         selectionPointer.current = null;
@@ -589,6 +694,17 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
   const onPointerMove = (event: React.PointerEvent<HTMLCanvasElement>): void => {
     withSession((session) => {
       const local = localPoint(event.clientX, event.clientY);
+      if (rulerPointer.current?.id === event.pointerId) {
+        rulerPointer.current.last = local;
+        if ((event.pointerType === "mouse" || event.pointerType === "pen") && event.buttons !== 1) {
+          finishMeasurement(true, true); rulerPointer.current = null;
+        } else moveMeasurement(rulerPoint(session, local), event.shiftKey);
+        session.hover = local; session.requestFrame(); return;
+      }
+      if (useViewStore.getState().tool === "ruler" && event.buttons === 0 && event.pointerType !== "touch") {
+        const hit = rulerHit(session, rulerPoint(session, local));
+        event.currentTarget.style.cursor = rulerCursor(hit !== null && hit.id === useRulerStore.getState().selected ? hit : null);
+      }
       if (selectionPointer.current?.id === event.pointerId) {
         selectionPointer.current.last = local;
         const point = toBacking(local), tile = session.renderer.tileAt(point.x, point.y);
@@ -664,6 +780,12 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
   };
 
   const onPointerEnd = (event: React.PointerEvent<HTMLCanvasElement>): void => {
+    if (rulerPointer.current?.id === event.pointerId) {
+      withSession((session) => { if (event.type === "pointerup") moveMeasurement(rulerPoint(session, localPoint(event.clientX, event.clientY)), event.shiftKey); });
+      finishMeasurement(useLayoutStore.getState().ruler.keep, event.type !== "pointerup");
+      event.currentTarget.style.cursor = TOOL_CURSORS[useViewStore.getState().tool] ?? "grab";
+      rulerPointer.current = null; return;
+    }
     if (selectionPointer.current?.id === event.pointerId) {
       const origin = selectionPointer.current.origin;
       if (event.type === "pointerup") withSession((session) => {
@@ -709,6 +831,13 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
   };
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLCanvasElement>): void => {
+    if (event.key === "Shift" && rulerPointer.current !== null) {
+      withSession((session) => { if (rulerPointer.current !== null) moveMeasurement(rulerPoint(session, rulerPointer.current.last), true); });
+      return;
+    }
+    if (event.key === "Escape" && rulerPointer.current !== null) {
+      event.preventDefault(); event.stopPropagation(); finishMeasurement(true, true); rulerPointer.current = null; return;
+    }
     withSession((session) => {
       const { viewport } = session;
       const anchor = session.hover === null ? { x: viewport.width / 2, y: viewport.height / 2 } : toBacking(session.hover);
@@ -768,11 +897,15 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
         }}
         onKeyDown={onKeyDown}
         onKeyUp={(event) => {
+          if (event.key === "Shift" && rulerPointer.current !== null) {
+            withSession((session) => { if (rulerPointer.current !== null) moveMeasurement(rulerPoint(session, rulerPointer.current.last), false); });
+          }
           withSession((session) => {
             if (session.keys.delete(event.key)) updateKeyPan(session);
           });
         }}
         onBlur={() => {
+          finishMeasurement(true, true); rulerPointer.current = null;
           selectionPointer.current = null;
           endStroke();
           withSession((session) => {
@@ -783,6 +916,7 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
       />
       <div ref={footprintRef} className="brush-footprint" aria-hidden="true" hidden style={{ position: "absolute", pointerEvents: "none" }}><svg width="100%" height="100%"><path className="brush-footprint-fill" /><path className="brush-footprint-halo" /><path className="brush-footprint-edge" /></svg></div>
       <div ref={areaRef} className="area-outline" aria-hidden="true" hidden><canvas ref={pasteCanvasRef} className="area-paste-preview" hidden /></div>
+      <div ref={rulerLabelsRef} className="measurement-labels" aria-hidden="true" />
       <div className="map-controls" style={CONTROLS_STYLE}>
         <button
           type="button"

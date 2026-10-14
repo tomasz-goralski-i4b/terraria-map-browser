@@ -17,6 +17,8 @@ export type MenuItem =
   }
   | {
     readonly kind: "check";
+    /** Close choices that transfer focus outside the menu (for example, a custom value editor). */
+    readonly closeOnChange?: boolean;
     readonly label: string;
     readonly checked: boolean;
     readonly shortcut?: string;
@@ -94,7 +96,10 @@ export function MenuList({ id, items, labelledBy, label, className, align = "sta
     if (item.kind === "action") {
       onClose(true);
       item.onSelect();
-    } else if (item.kind === "check") item.onChange(!item.checked);
+    } else if (item.kind === "check") {
+      if (item.closeOnChange === true) onClose(true);
+      item.onChange(!item.checked);
+    }
     else openSubmenu(index, "first");
   };
 
