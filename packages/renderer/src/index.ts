@@ -57,6 +57,6 @@ export { terrariaSpriteObjects } from "./objects/terraria-sprite-objects.generat
 export { WIRE_CELL_STRIDE, WIRE_DRAW_ORDER, wireCell, wirePiece } from "./objects/wires.js";
 export type { WireColor, WireNeighbours } from "./objects/wires.js";
 export { OBJECT_TILES, SPRITE_PIXELS_PER_TILE, objectSprites } from "./objects/object-sprites.js";
-export { WATERFALL_FADE_STEPS, WATERFALL_MAX_LENGTH, waterfallPath, waterfallSources } from "./objects/waterfalls.js";
+export { WATERFALL_FADE_STEPS, WATERFALL_MAX_LENGTH, WATERFALL_SHEETS, waterfallPath, waterfallSources, waterfallSprites } from "./objects/waterfalls.js";
 export type { WaterfallSource, WaterfallStep, WaterfallWorld } from "./objects/waterfalls.js";
 export type { ObjectSheetKind, ObjectSprite, ObjectWorld, TileArea, TreeSettings } from "./objects/object-sprites.js";

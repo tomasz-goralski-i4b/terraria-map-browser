@@ -4,7 +4,7 @@
  * `Actuator` (id 0).
  */
 export type SheetKind =
-  "tile" | "wall" | "treeTop" | "treeBranch" | "shroomTop" | "wire" | "actuator" | "item" | "liquid" | "liquidSlope";
+  "tile" | "wall" | "treeTop" | "treeBranch" | "shroomTop" | "wire" | "actuator" | "item" | "liquid" | "liquidSlope" | "waterfall";
 
 /** Frame and gutter metrics of a family (docs/assets.md, "Sprite layout"). */
 export interface SheetMetrics {

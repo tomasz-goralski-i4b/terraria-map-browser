@@ -9,7 +9,7 @@ import { TRACK_CELL_STRIDE, TRACK_EXTRA_OFFSET, TRACK_TILE, trackExtraCell, trac
 export const SPRITE_PIXELS_PER_TILE = 16;
 
 /** The sheets object sprites come from, as the atlas names them (`SpriteSheetEntry.kind` and id). */
-export type ObjectSheetKind = "tile" | "treeTop" | "treeBranch" | "shroomTop";
+export type ObjectSheetKind = "tile" | "treeTop" | "treeBranch" | "shroomTop" | "waterfall";
 
 export interface ObjectSprite {
   readonly kind: ObjectSheetKind;
@@ -22,6 +22,10 @@ export interface ObjectSprite {
   /** Where the rectangle's top-left lands, in world sprite pixels (tile x · 16 + offset). */
   readonly dx: number;
   readonly dy: number;
+  /** Mirrored left to right (a waterfall flowing right); absent means not. */
+  readonly flip?: boolean;
+  /** Opacity 0–255 the sprite's pixels are scaled by (a fading waterfall); absent means 255. */
+  readonly alpha?: number;
 }
 
 /**

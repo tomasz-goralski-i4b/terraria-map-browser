@@ -1,7 +1,7 @@
 // Waterfalls (docs/assets.md, "Waterfalls"): where the game starts one (observed at runtime, R) and the path it takes
 // (in-game screenshots, G), as sources and pieces over synthetic worlds.
 import { describe, expect, test } from "vitest";
-import { WATERFALL_FADE_STEPS, WATERFALL_MAX_LENGTH, waterfallPath, waterfallSources } from "../src/index.js";
+import { WATERFALL_FADE_STEPS, WATERFALL_MAX_LENGTH, WATERFALL_SHEETS, waterfallPath, waterfallSources, waterfallSprites } from "../src/index.js";
 import type { WaterfallSource, WaterfallWorld } from "../src/index.js";
 
 const ABSENT = 0xffff;
@@ -136,5 +136,29 @@ describe("waterfall paths (G)", () => {
     const last = path[WATERFALL_MAX_LENGTH - 1]?.alpha ?? 255;
     expect(last).toBeGreaterThan(0);
     expect(last).toBeLessThan(64);
+  });
+});
+
+describe("waterfall sprites", () => {
+  test("a lip, its falling column and the run on the floor, mirrored for a waterfall flowing right", () => {
+    const w = world(["#~h..", "###..", ".....", "#####"]);
+    const sprites = waterfallSprites(w, { left: 0, top: 0, right: w.width, bottom: w.height });
+    const common = { kind: "waterfall", id: 0, flip: true, alpha: 255 };
+    expect(sprites.slice(0, 4)).toEqual([
+      // The lip: its flat part over the half block (2, 0), its column part hanging 6 pixels into the tile beside it.
+      { ...common, sx: 10, sy: 0, width: 22, height: 24, dx: 2 * 16, dy: 0 },
+      // The column down the side of (3, 1) and (3, 2) facing the source, 4 pixels over the half block's column.
+      { ...common, sx: 10, sy: 24, width: 10, height: 16, dx: 3 * 16 - 4, dy: 16 },
+      { ...common, sx: 10, sy: 24, width: 10, height: 16, dx: 3 * 16 - 4, dy: 32 },
+      // The run: the lip's flat part, 8 pixels high, on the floor below (3, 2).
+      { ...common, sx: 16, sy: 0, width: 16, height: 8, dx: 3 * 16, dy: 3 * 16 - 8 },
+    ]);
+  });
+
+  test("lava, honey and shimmer draw from Waterfall_1, Waterfall_14 and Waterfall_25; a left-flowing one is not mirrored", () => {
+    expect(WATERFALL_SHEETS).toEqual([0, 1, 14, 25]);
+    const w = world(["..hl#", "..###", ".....", "#####"]);
+    const [lip] = waterfallSprites(w, { left: 0, top: 0, right: w.width, bottom: w.height });
+    expect(lip).toEqual({ kind: "waterfall", id: 1, flip: false, alpha: 255, sx: 10, sy: 0, width: 22, height: 24, dx: 2 * 16 - 6, dy: 0 });
   });
 });

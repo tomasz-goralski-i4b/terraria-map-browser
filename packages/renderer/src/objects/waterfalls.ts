@@ -4,7 +4,7 @@
 import type { ContentRef } from "@studio/world-model";
 import { terrariaFramingData } from "../framing/terraria-framing.generated.js";
 import { OBJECT_TILES } from "./object-sprites.js";
-import type { TileArea } from "./object-sprites.js";
+import type { ObjectSprite, TileArea } from "./object-sprites.js";
 
 /** Steps a waterfall takes at most, its source's lip included (R: the manager's `maxLength`). */
 export const WATERFALL_MAX_LENGTH = 100;
@@ -130,6 +130,61 @@ export function waterfallSources(world: WaterfallWorld, area: TileArea): Waterfa
         const open = x + direction;
         const blocked = reader.liquid(open, y).kind !== 0 || (reader.solid(open, y) && reader.shape(open, y) !== HALF);
         if (!blocked) out.push({ x, y, direction, kind: wet.kind });
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * The `Waterfall_<n>` sheet of CWM liquid kinds 1–4 (R: the type the source finder gives water, lava, honey and
+ * shimmer). Water is always the forest style, as for the liquids ("Liquids").
+ */
+export const WATERFALL_SHEETS: readonly number[] = [0, 1, 14, 25];
+
+/**
+ * The frame the viewer draws (S, docs/assets.md "Waterfalls": 16 animation frames 32 pixels apart; frame 0, as liquids
+ * are not animated). Its art flows left: the lip's flat part (x 16–31) lies over the tile it pours from, its column
+ * part (x 10–15) hangs into the next tile; below it (rows 24–39) the 10-pixel column the stream falls in.
+ */
+const LIP = { sx: 10, sy: 0, width: 22, height: 24 } as const;
+const COLUMN = { sx: 10, sy: 24, width: 10, height: 16 } as const;
+const FILM = { sx: 16, sy: 0, width: 16, height: 8 } as const;
+/** The lip's column part reaches this far past its tile; the column 4 pixels back over it. */
+const LIP_OVERHANG = 6;
+const COLUMN_BACK = 4;
+const TILE = 16;
+
+/**
+ * The object pass's sprites of the waterfalls whose source lies in `area` (docs/assets.md, "Waterfalls"): per step of
+ * its path, a lip at the tile it pours from (its top at the source's liquid surface, or on the ground a ledge's lip
+ * sits on), the column down the side of a falling tile, a film on the ground under a running tile, and on a slope 2-pixel
+ * films along its surface. Mirrored for a waterfall flowing right; faded by its step.
+ */
+export function waterfallSprites(world: WaterfallWorld, area: TileArea): ObjectSprite[] {
+  const reader = new Reader(world);
+  const out: ObjectSprite[] = [];
+  for (const source of waterfallSources(world, area)) {
+    const id = WATERFALL_SHEETS[source.kind - 1];
+    if (id === undefined) continue;
+    for (const step of waterfallPath(world, source)) {
+      const flip = step.direction === 1;
+      const base = { kind: "waterfall" as const, id, flip, alpha: step.alpha };
+      const left = step.x * TILE;
+      const ground = (step.y + 1) * TILE + (reader.solid(step.x, step.y + 1) && reader.shape(step.x, step.y + 1) === HALF ? TILE / 2 : 0);
+      if (step.piece === "lip") {
+        const top = step.x === source.x && step.y === source.y ? step.y * TILE : ground - FILM.height;
+        out.push({ ...base, ...LIP, dx: flip ? left : left - LIP_OVERHANG, dy: top });
+      } else if (step.piece === "fall") {
+        out.push({ ...base, ...COLUMN, dx: flip ? left - COLUMN_BACK : left + TILE - COLUMN.width + COLUMN_BACK, dy: step.y * TILE });
+      } else if (step.piece === "run") {
+        out.push({ ...base, ...FILM, dx: left, dy: ground - FILM.height });
+      } else {
+        // A slope's surface: down to the right from its top-left (shape 2), down to the left from its top-right (3).
+        for (let column = 0; column < TILE / 2; column++) {
+          const surface = step.direction === 1 ? 2 * column : TILE - 2 - 2 * column;
+          out.push({ ...base, sx: FILM.sx + 2 * column, sy: 0, width: 2, height: FILM.height, dx: left + 2 * column, dy: step.y * TILE + surface - FILM.height });
+        }
       }
     }
   }

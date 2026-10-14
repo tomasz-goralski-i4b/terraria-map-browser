@@ -913,6 +913,9 @@ void writeFaded(ivec4 color) {
 /** Per-instance attributes of the object pass: the sprite's rectangle in world sprite pixels and its atlas source. */
 export const OBJECT_DEST_ATTRIBUTE = 0;
 export const OBJECT_SOURCE_ATTRIBUTE = 1;
+/** The object pass's source flags: mirrored left to right, and the shift of 255 minus its opacity. */
+export const OBJECT_FLIP = 1;
+export const OBJECT_FADE_SHIFT = 1;
 
 /**
  * Object pass (docs/assets.md, "Trees", "Minecart tracks"): in sprite mode, after the chunk pass, one instanced quad
@@ -939,7 +942,9 @@ void main() {
 
 /**
  * Object pass fragment: the straight-alpha mean of uSpriteSamples² atlas pixels of the object's source rectangle (its
- * top-left (x, y) on page `page`: vSource = (page, x, y, 0)), sampled as the chunk pass samples sprites, faded in.
+ * top-left (x, y) on page `page`: vSource = (page, x, y, flags)), sampled as the chunk pass samples sprites, faded in.
+ * Flags (OBJECT_FLIP, OBJECT_FADE_SHIFT): bit 0 mirrors the rectangle left to right, bits 1–8 hold 255 minus the
+ * opacity its pixels are scaled by (a waterfall's fade; 0 for an opaque sprite).
  */
 export const objectFragmentSource: string = header + spritePassInputs + `
 flat in ivec4 vDest;
@@ -951,7 +956,9 @@ void main() {
   for (int y = 0; y < count; y++) {
     for (int x = 0; x < count; x++) {
       ivec2 sub = samplePixelIn(centre, vDest.zw, x, y);
+      if ((vSource.w & ${String(OBJECT_FLIP)}) != 0) sub.x = vDest.z - 1 - sub.x;
       ivec4 sampled = ivec4(round(atlasTexel(vSource.yz, vSource.yz + sub, vSource.x) * 255.0));
+      sampled.a = sampled.a * (255 - (vSource.w >> ${String(OBJECT_FADE_SHIFT)})) / 255;
       sum += ivec4(sampled.rgb * sampled.a, sampled.a);
     }
   }

@@ -1,7 +1,7 @@
 import type { AtlasEntry, PackableSheet, SheetKind, SheetMetrics, SpriteAtlas } from "./atlas-types.js";
 
 /** Bump when the page layout or index shape changes; it is part of the cache key. */
-export const ATLAS_FORMAT_VERSION = 7;
+export const ATLAS_FORMAT_VERSION = 8;
 
 /** Page edge used when the caller passes none. */
 export const DEFAULT_PAGE_SIZE = 4096;
@@ -26,6 +26,8 @@ const METRICS: Readonly<Record<SheetKind, SheetMetrics>> = {
   // docs/assets.md, "Liquids" (S): 16 × 16 frames at a stride of 18, frame 0 drawn; the slope pieces likewise.
   liquid: { cell: 16, gap: 2 },
   liquidSlope: { cell: 16, gap: 2 },
+  // docs/assets.md, "Waterfalls" (S): 16 animation frames of 32 × 40 side by side; layoutOf carries the height.
+  waterfall: { cell: 32, gap: 0 },
 };
 
 interface SheetLayout {
@@ -106,10 +108,12 @@ const TILE_LAYOUT_EXCEPTIONS: ReadonlyMap<number, SheetLayout> = new Map(
 
 /** The giant mushroom caps are 60 × 42 (measured, S). */
 const SHROOM_TOP_HEIGHT = 42;
+/** Waterfall frames are 40 high (measured, S). */
+const WATERFALL_HEIGHT = 40;
 
 function layoutOf(kind: SheetKind, id: number): SheetLayout {
   const { cell, gap } = METRICS[kind];
-  const height = kind === "shroomTop" ? SHROOM_TOP_HEIGHT : cell;
+  const height = kind === "shroomTop" ? SHROOM_TOP_HEIGHT : kind === "waterfall" ? WATERFALL_HEIGHT : cell;
   const base: SheetLayout = { frameWidth: cell, frameHeight: height, gapX: gap, gapY: gap };
   return kind === "tile" ? (TILE_LAYOUT_EXCEPTIONS.get(id) ?? base) : base;
 }

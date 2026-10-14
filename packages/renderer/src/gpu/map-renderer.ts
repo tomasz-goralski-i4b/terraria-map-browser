@@ -30,10 +30,11 @@ import {
   CELLS_INSTANCE_BIT, WALLS_INSTANCE_BIT, LAYER_ATTRIBUTE, PAGE_APRON, PLANES_16, PLANES_8, PLANE_COUNT_16, PLANE_COUNT_8, PRESENT, RECT_ATTRIBUTE,
   LIQUID_FLAT, RULE_HEADER_ROWS, RULE_ROW, SPRITE_MIN_ZOOM, SPRITE_SHEET_ROW, SPRITE_SHEET_TEXELS, spriteSampling, SPRITE_STATE, chunkFragmentSource, chunkSpriteFragmentSource, chunkVertexSource, overviewBuildFragmentSource,
   halfAtlasFragmentSource, halfAtlasVertexSource, overviewBuildVertexSource, overviewFragmentSource, overviewVertexSource,
-  OBJECT_DEST_ATTRIBUTE, OBJECT_SOURCE_ATTRIBUTE, objectFragmentSource, objectVertexSource, wireFragmentSource,
+  OBJECT_DEST_ATTRIBUTE, OBJECT_FADE_SHIFT, OBJECT_FLIP, OBJECT_SOURCE_ATTRIBUTE, objectFragmentSource, objectVertexSource, wireFragmentSource,
   WIRE_RUN_ATTRIBUTE, wireVertexSource,
 } from "./shaders.js";
 import { OBJECT_TILES, objectSprites, type ObjectSprite, type TreeSettings } from "../objects/object-sprites.js";
+import { waterfallSprites } from "../objects/waterfalls.js";
 
 /** The slice of a world the renderer reads. Planes are column-major (`x * height + y`); never copied by the caller. */
 export interface RenderableWorld {
@@ -69,7 +70,7 @@ export interface RenderableWorld {
 
 /** One sheet of a sprite atlas: where it lies on its page and the size of its frame cells (docs/assets.md, "Atlas"). */
 export interface SpriteSheetEntry {
-  readonly kind: "tile" | "wall" | "treeTop" | "treeBranch" | "shroomTop" | "wire" | "actuator" | "item" | "liquid" | "liquidSlope";
+  readonly kind: "tile" | "wall" | "treeTop" | "treeBranch" | "shroomTop" | "wire" | "actuator" | "item" | "liquid" | "liquidSlope" | "waterfall";
   readonly id: number;
   readonly page: number;
   readonly x: number;
@@ -1484,14 +1485,18 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     const area = {
       left: chunk.x * CHUNK_SIZE, top: chunk.y * CHUNK_SIZE, right: (chunk.x + 1) * CHUNK_SIZE, bottom: (chunk.y + 1) * CHUNK_SIZE,
     };
-    const sprites: readonly ObjectSprite[] = objectSprites(source, area);
+    // Waterfalls belong to the liquids layer (docs/assets.md, "Waterfalls"); toggling it drops these lists.
+    const sprites: readonly ObjectSprite[] = (layers & 8) !== 0
+      ? [...objectSprites(source, area), ...waterfallSprites(source, area)]
+      : objectSprites(source, area);
     const placed = new Int32Array(sprites.length * OBJECT_INTS);
     let at = 0;
     for (const sprite of sprites) {
       const sheet = sheetsByKey.get(`${sprite.kind}:${String(sprite.id)}`);
       if (sheet === undefined || sprite.sx < 0 || sprite.sy < 0) continue;
       if (sprite.sx + sprite.width > sheet.width || sprite.sy + sprite.height > sheet.height) continue;
-      placed.set([sprite.dx, sprite.dy, sprite.width, sprite.height, sheet.page, sheet.x + sprite.sx, sheet.y + sprite.sy, 0], at);
+      const flags = (sprite.flip === true ? OBJECT_FLIP : 0) | ((255 - (sprite.alpha ?? 255)) << OBJECT_FADE_SHIFT);
+      placed.set([sprite.dx, sprite.dy, sprite.width, sprite.height, sheet.page, sheet.x + sprite.sx, sheet.y + sprite.sy, flags], at);
       at += OBJECT_INTS;
     }
     const instances = placed.subarray(0, at);
@@ -2537,6 +2542,11 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     setLayers: (next) => {
       const bits = layerBits(next);
       if (bits !== layers && !gl.isContextLost()) invalidateOverview();
+      // The object lists hold the waterfalls only while liquids are shown.
+      if (((bits ^ layers) & 8) !== 0) {
+        objectCache.clear();
+        objectUploaded = null;
+      }
       layers = bits;
       frameVersion++;
       schedule();
