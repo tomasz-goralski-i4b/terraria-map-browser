@@ -72,7 +72,7 @@ test("the production bundle ignores source parameters and has no dev benchmark w
     await expect.poll(() => frame.contentDocument?.body.textContent, { timeout: 15000 }).toContain("Open World…");
     expect(frame.contentDocument?.querySelector('canvas[aria-label="World map"]')).toBeNull();
     expect(frame.contentDocument?.querySelector('[aria-label="Viewer performance"]')).not.toBeNull();
-    expect((frame.contentWindow as Window | null)?.__studioBench).toBeUndefined();
+    expect(frame.contentWindow?.__studioBench).toBeUndefined();
     expect(frame.contentDocument?.body.textContent).not.toMatch(/loopback|localhost/i);
   } finally { frame.remove(); }
 });
