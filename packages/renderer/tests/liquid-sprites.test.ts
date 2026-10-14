@@ -1,7 +1,7 @@
 // Liquid sprite rules (docs/assets.md, "Liquids"): the sheet of each liquid kind, the fill height of a liquid amount
 // and the sheet row a sprite pixel of a liquid tile reads.
 import { describe, expect, test } from "vitest";
-import { LIQUID_BODY_ROW, LIQUID_SHEETS, LIQUID_SPRITE_ALPHA, liquidFillPixels, LIQUID_BLEED, liquidBleed, liquidHasSurface, liquidSheetRow, shapedTileLiquid } from "../src/index.js";
+import { LIQUID_BODY_ROW, LIQUID_SHEETS, LIQUID_SPRITE_ALPHA, liquidFillPixels, LIQUID_BLEED, LIQUID_EDGE_ROW, liquidBleed, liquidHasSurface, liquidSheetRow, shapedTileLiquid } from "../src/index.js";
 
 describe("liquid sprites", () => {
   test("water, lava and honey draw from Liquid_0, Liquid_1 and Liquid_11; shimmer is drawn flat in its map colour", () => {
@@ -46,6 +46,8 @@ describe("liquid sprites", () => {
     const water = { kind: 1, amount: 255 };
     const half = { kind: 2, amount: 127 };
     expect(LIQUID_BLEED).toBe(1);
+    // Beside a block the bleed shows the art's edge band (rows 2–3), not its body.
+    expect(LIQUID_EDGE_ROW).toBe(2);
     // Liquid above reaches into the top rows, full.
     expect(liquidBleed(5, 0, water, none, none)).toEqual({ side: "above", kind: 1, amount: 255 });
     expect(liquidBleed(5, LIQUID_BLEED, water, none, none)).toBeNull();

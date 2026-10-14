@@ -1,7 +1,7 @@
 // GLSL for the WebGL2 backend. The colour rules mirror `renderChunk` (../chunk/render.ts) and use integer arithmetic so
 // the chunk pass is bit-exact: no tie-breaking can differ because (l*a + c*(255-a)) / 255 never has a .5 fraction.
 import { FILTER_SUBTILE } from "../chunk/box-filter.js";
-import { LIQUID_BLEED, LIQUID_BODY_ROW, LIQUID_SPRITE_ALPHA } from "../chunk/liquids.js";
+import { LIQUID_BLEED, LIQUID_BODY_ROW, LIQUID_EDGE_ROW, LIQUID_SPRITE_ALPHA } from "../chunk/liquids.js";
 import { BLOCK_CELL_STRIDE } from "../framing/chunk-cells.js";
 import { NO_CELL } from "../framing/frame-block.js";
 import { WALL_CELL_STRIDE, WALL_OVERHANG } from "../framing/frame-wall.js";
@@ -406,15 +406,22 @@ bool spriteSample(uint index, ivec2 texel, vec2 centre, out ivec4 color) {
 // The liquid sprite pixel at sprite pixel sub of a tile filled fill pixels high (liquidSheetRow in ../chunk/liquids.ts):
 // frame 0 of the sheet at place from its top row at the liquid's top on a surface tile, its body rows under liquid;
 // its alpha scaled by the liquid's opacity. Transparent above the liquid.
-ivec4 liquidPixel(ivec4 place, int alpha, int fill, bool surface, ivec2 sub, ivec3 plain) {
+// liquidPixel, but where it would show the frame's body it shows its edge band (LIQUID_EDGE_ROW) when edge is set:
+// the liquid beside a block.
+ivec4 liquidPixelAt(ivec4 place, int alpha, int fill, bool surface, ivec2 sub, ivec3 plain, bool edge) {
   int top = ${String(SPRITE_TILE_PIXELS)} - fill;
   if (sub.y < top) return ivec4(0);
   if (place.w == ${String(LIQUID_FLAT)}) return ivec4(plain, (255 * alpha + 127) / 255);
   int depth = sub.y - top;
   int row = surface ? depth : ${String(LIQUID_BODY_ROW)} + depth % ${String(SPRITE_TILE_PIXELS - LIQUID_BODY_ROW)};
+  if (edge && row >= ${String(LIQUID_BODY_ROW)}) row = ${String(LIQUID_EDGE_ROW)};
   ivec4 color = ivec4(round(atlasTexel(place.yz, place.yz + ivec2(sub.x, row), place.x) * 255.0));
   color.a = (color.a * alpha + 127) / 255;
   return color.a == 0 ? ivec4(0) : color;
+}
+
+ivec4 liquidPixel(ivec4 place, int alpha, int fill, bool surface, ivec2 sub, ivec3 plain) {
+  return liquidPixelAt(place, alpha, fill, surface, sub, plain, false);
 }
 
 // A liquid's sprite over the footprint of a screen pixel centred on sprite pixel position centre, as spriteSample
@@ -480,9 +487,18 @@ ivec4 bleedLiquid(ivec2 texel, vec2 centre, ivec4 below) {
   uint kind = plane8(from, ${String(PLANES_8.liquid)});
   int amount = full ? 255 : int(plane8(from, ${String(PLANES_8.liquidAmount)}));
   bool surface = !full && liquidSurfaceAt(from);
-  vec2 at = vec2(p) + 0.5;
-  ivec4 back = drawLiquid(kind, amount, surface, at, below, 255);
-  return drawLiquid(kind, amount, surface, at, back, LIQUID_ALPHA[int(kind) - 1]);
+  if (full) {
+    vec2 at = vec2(p) + 0.5;
+    ivec4 back = drawLiquid(kind, amount, surface, at, below, 255);
+    return drawLiquid(kind, amount, surface, at, back, LIQUID_ALPHA[int(kind) - 1]);
+  }
+  // Beside a block: the edge band where the liquid would show its body (one sample: the bleed is a pixel wide).
+  ivec4 sheet = uLiquidSheets[kind - 1u];
+  if (sheet.w == 0) return below;
+  int fill = (amount * ${String(SPRITE_TILE_PIXELS)} + 254) / 255;
+  ivec3 plain = uLiquids[kind - 1u];
+  ivec4 back = over(liquidPixelAt(sheet, 255, fill, surface, p, plain, true), below);
+  return over(liquidPixelAt(sheet, LIQUID_ALPHA[int(kind) - 1], fill, surface, p, plain, true), back);
 }
 
 // The liquid a tile shows in sprite mode, false for none: its own (kind 1–4, amount, surface where the tile above

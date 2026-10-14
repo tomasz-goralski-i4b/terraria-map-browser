@@ -8,7 +8,7 @@ export {
   createHighlightMask, highlightLiquids, highlightLookup, highlightMatches, highlightOverlay,
 } from "./chunk/highlight.js";
 export type { HighlightMask, HighlightOptions, HighlightWorld, MapHighlight, MaskRect } from "./chunk/highlight.js";
-export { LIQUID_BODY_ROW, LIQUID_SHEETS, LIQUID_SPRITE_ALPHA, liquidFillPixels, LIQUID_BLEED, liquidBleed, liquidHasSurface, liquidSheetRow, shapedTileLiquid } from "./chunk/liquids.js";
+export { LIQUID_BODY_ROW, LIQUID_SHEETS, LIQUID_SPRITE_ALPHA, liquidFillPixels, LIQUID_BLEED, LIQUID_EDGE_ROW, liquidBleed, liquidHasSurface, liquidSheetRow, shapedTileLiquid } from "./chunk/liquids.js";
 export type { TileLiquid } from "./chunk/liquids.js";
 export { FILTER_SUBTILE, MAX_FILTER_TILES, filterTiles, filterTilesPerPixel } from "./chunk/box-filter.js";
 export { backgroundColor, contentColor, liquidColors, mapOption, paintedColor, placeholderColor } from "./palette/map-palette.js";
