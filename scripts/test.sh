@@ -3,6 +3,8 @@
 source "$(dirname "$0")/lib.sh"
 rc=0
 if runs_part web; then
+  echo "== compatibility harness"
+  run_logged compatibility-tests node --test scripts/compatibility/*.test.mjs || rc=1
   echo "== backlog automation routing"
   run_logged backlog-tests node --test scripts/backlog/automation-routing.test.mjs scripts/backlog/baseline.test.mjs scripts/backlog/resume.test.mjs scripts/backlog/usage-probe.test.mjs scripts/backlog/security.test.mjs || rc=1
   echo "== map palette exporter"

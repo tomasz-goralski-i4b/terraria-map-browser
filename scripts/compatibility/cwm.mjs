@@ -8,7 +8,7 @@ const root = fileURLToPath(new URL("../../", import.meta.url));
 const planes = [["block", 2], ["wall", 2], ["frameX", 2], ["frameY", 2], ["paint", 1],
   ["wallPaint", 1], ["liquid", 1], ["liquidAmount", 1], ["shape", 1], ["flags", 2]];
 
-function framing(bytes) {
+export function framing(bytes) {
   if (bytes.length < 12) throw new Error("prefix truncated");
   if (!bytes.subarray(0, 4).equals(Buffer.from("CWM\0"))) throw new Error("prefix magic");
   if (bytes.readUInt32LE(4) !== 1) throw new Error("prefix schema version");
@@ -34,7 +34,7 @@ function firstDifference(left, right) {
 }
 
 /** Return one bounded diagnostic; byte equality, rather than digests or parsed JSON, decides agreement. */
-export function compareCwm(left, right) {
+export function compareCwm(left, right, { leftSource = ".NET export", rightSource = "TypeScript export" } = {}) {
   const offset = firstDifference(left, right);
   if (offset >= 0 && offset < 12) {
     const region = offset < 4 ? "magic" : offset < 8 ? "schema version" : "header length";
@@ -48,8 +48,8 @@ export function compareCwm(left, right) {
     return `prefix ${region}, byte offset ${offset}`;
   }
   let a; let b;
-  try { a = framing(left); } catch (error) { return `invalid .NET export: ${error.message}`; }
-  try { b = framing(right); } catch (error) { return `invalid TypeScript export: ${error.message}`; }
+  try { a = framing(left); } catch (error) { return `invalid ${leftSource}: ${error.message}`; }
+  try { b = framing(right); } catch (error) { return `invalid ${rightSource}: ${error.message}`; }
   if (offset === -1) return null;
   if (offset < Math.max(a.start, b.start)) {
     const keys = ["schemaVersion", "formatVersion", "metadata", "dimensions", "palette"];
@@ -80,7 +80,7 @@ export function execute(command, args) {
   });
 }
 
-function manifestFiles(manifest) {
+export function manifestFiles(manifest) {
   if (manifest?.schemaVersion !== 1 || !Array.isArray(manifest.worlds) || manifest.worlds.length === 0) {
     throw new Error("Expected nonempty schema version 1 manifest");
   }
@@ -94,7 +94,7 @@ function manifestFiles(manifest) {
   });
 }
 
-function inside(directory, path) {
+export function inside(directory, path) {
   const suffix = relative(directory, path);
   return suffix === "" || (!isAbsolute(suffix) && suffix !== ".." && !suffix.startsWith("../") && !suffix.startsWith("..\\"));
 }
