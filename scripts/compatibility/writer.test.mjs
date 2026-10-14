@@ -54,14 +54,18 @@ async function corpus(t) {
   for (const file of ["SCCO1.wld", "SCCR2.wld"]) await writeFile(join(fixtures, file), worldBytes());
   return { fixtures, artifacts: join(directory, "artifacts") };
 }
-function runners(calls, { missing, corrupt, spill, failure } = {}) {
+function runners(calls, { missing, corrupt, spill, failure, reloadDamage, malformedExpectation } = {}) {
   return async (command, args) => {
     calls.push({ command, args });
     if (failure) throw new Error("unsupported world format 327");
     if (command === "dotnet") {
       if (basename(args.at(-1)) === missing) return;
-      await writeFile(args.at(-1), args.includes("roundtrip") ? worldBytes() :
-        args.at(-2).includes("edited") ? edited() : cwm());
+      let bytes = args.includes("roundtrip") ? worldBytes() : args.at(-2).includes("edited") ? edited() : cwm();
+      if (basename(args.at(-1)) === `${reloadDamage?.variant}-dotnet.cwm`) {
+        if (reloadDamage.malformed) bytes = bytes.subarray(0, -1);
+        else bytes[bytes.length - 4] ^= 1; // Unexpected red wire at (1,1), away from the intended edit.
+      }
+      await writeFile(args.at(-1), bytes);
     } else {
       const directory = args.at(-1);
       for (const name of ["unchanged.wld", "edited.wld", "original.cwm", "edited.cwm", "edit.json"]) {
@@ -70,6 +74,7 @@ function runners(calls, { missing, corrupt, spill, failure } = {}) {
         if (name === "edit.json") bytes = JSON.stringify(edit);
         if (corrupt && name === "unchanged.wld") bytes[161] ^= 1;
         if (spill && name === "edited.cwm") bytes[bytes.length - 4] ^= 1;
+        if (name === malformedExpectation) bytes = bytes.subarray(0, -1);
         await writeFile(join(directory, name), bytes);
       }
     }
@@ -97,6 +102,32 @@ test("corrupt tile bytes, unintended edits and exporter errors fail with fixture
     const report = await readFile(join(paths.artifacts, "report.txt"), "utf8");
     assert.match(report, /SCCO1.wld/);
     assert.match(report, options.corrupt ? /byte offset 161/ : options.spill ? /coordinate \(1,1\)/ : /unsupported world format/);
+  }
+});
+test("each independent .NET reload must agree with valid TS pre-save expectations", async (t) => {
+  for (const variant of ["unchanged", "edited"]) {
+    for (const malformed of [false, true]) {
+      const paths = await corpus(t);
+      await assert.rejects(runWriterDifferential({ ...paths, execute: runners([], { reloadDamage: { variant, malformed } }) }));
+      const report = await readFile(join(paths.artifacts, "report.txt"), "utf8");
+      assert.match(report, new RegExp(`SCCO1.wld: ${variant} save:`));
+      if (malformed) {
+        assert.match(report, /invalid \.NET reload export: plane payload length/);
+        assert.doesNotMatch(report, /invalid TypeScript/);
+      } else {
+        const bytes = cwm(); const offset = 12 + bytes.readUInt32LE(8) + 13 * 6 + 4 * 2;
+        assert.match(report, new RegExp(`plane flags, chunk \\(0,0\\), coordinate \\(1,1\\), byte offset ${offset}`));
+      }
+    }
+  }
+});
+test("malformed TS expectations identify TS instead of blaming the .NET reader", async (t) => {
+  for (const malformedExpectation of ["original.cwm", "edited.cwm"]) {
+    const paths = await corpus(t);
+    await assert.rejects(runWriterDifferential({ ...paths, execute: runners([], { malformedExpectation }) }));
+    const report = await readFile(join(paths.artifacts, "report.txt"), "utf8");
+    assert.match(report, /SCCO1.wld: TS pre-save edit: invalid TypeScript/);
+    assert.doesNotMatch(report, /invalid \.NET/);
   }
 });
 test("the corruption probe flips a real tile byte and must trigger the normal comparator", async (t) => {
