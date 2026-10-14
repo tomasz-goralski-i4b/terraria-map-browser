@@ -140,6 +140,8 @@ test("a tile of a chest also shows the chest, whose slots open over the map as a
   for (const [x, y] of [[1, 0], [2, 0], [1, 1], [2, 1]] as const) world.setTile(x, y, { block: { kind: "vanilla", id: 21 }, frameX: 36, frameY: 0, wires: 0, actuator: false });
   const chest = { x: 1, y: 0, name: "Ores", slotCount: 40, items: [{ slot: 2, itemId: 12, stack: 30, prefix: 0 }, { slot: 11, itemId: 46, stack: 1, prefix: 7 }] };
   await render(<InspectorPanel world={{ ...inspectorWorld(world), chestAt: (x, y) => (x >= 1 && x <= 2 && y <= 1 ? chest : null) }} />);
+  useViewStore.getState().setHoverTile({ x: 2, y: 1 });
+  await expect.element(page.getByText("Preview", { exact: true })).toBeVisible();
   useViewStore.getState().setPinnedTile({ x: 2, y: 1 });
   await expect.element(page.getByRole("heading", { name: "Chest" })).toBeVisible();
   const chestRows = (): [string, string][] => [...document.querySelectorAll('dl[aria-label="Chest"] .property-row')].map((row) => [

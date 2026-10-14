@@ -56,12 +56,25 @@ Code: `apps/web/src/ui/` (primitives), `apps/web/src/shell/` (layout, commands, 
     write a verified copy until saving over the opened file exists), Save As… `Ctrl+Shift+S`, Close World (asks
     before dropping unsaved edits, as opening another world does).
   - *View*: Show panels, Fit world, Actual size, Show render stats, **Theme ▸**, Reset layout.
+    Find items in chests (`Ctrl+F`) opens the Search section in the World tab; enter a name or exact item ID.
+    `F3` / `Shift+F3` visits matching chests, centring and pinning each one. Results stay highlighted when the
+    panel is collapsed, with footprint outlines and fixed-pixel overview markers in the GPU annotation overlay.
   - *Edit*: Undo `Ctrl+Z`, Redo `Ctrl+Shift+Z` (Command on macOS); then Copy `Ctrl+C`, Paste `Ctrl+V`, Place paste
     `Enter` and Deselect / Cancel paste `Escape` for the Select tool. Undo and Redo also sit on the top bar right after the
     menus, as in Krita and Photopea; the tool options bar holds only the tool's settings (on phones, where the top
     bar has no room, it carries Undo and Redo at its end).
   - *Assets*: Connect, Preview sprite sheets, Disconnect.
   - *Help*: Command palette, Keyboard shortcuts.
+
+The Entities section lists decoded chests in the shared sortable/filterable table, with name (or Unnamed),
+position, tile-derived kind, filled slots and total stack. Selecting centres and highlights the chest; Enter pins
+it. Hovering previews an unpinned chest in the Inspector. Open shows every decoded inventory slot in ten-column
+rows, including gaps; arrows, Home and End navigate them. The inventory window has a wooden chest frame, a list
+alternative, and a detail line showing the focused/hovered item's name, stack and numeric IDs. Item and prefix
+names use the generated English catalog. Inventory sprites are cropped from the connected local atlas using
+observed texture aliases and first-frame rectangles; absent/unknown sprites retain readable names or numeric IDs.
+No item textures are shipped. Search totals combine prefixes for each item ID and count each chest once; the
+index is built once per chest collection in idle slices capped at 256 slots or 8 ms.
 
   `Alt` + the first letter opens a menu; `←` and `→` move between menus, also while one is open; pointing at another
   title while a menu is open switches to it. A disabled item shows why on its right.

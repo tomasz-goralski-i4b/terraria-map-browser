@@ -17,12 +17,15 @@ function footprintWidth(origin: Tile): number {
  * are dropped.
  */
 export function createChestLookup(chests: readonly WorldChest[], width: number, height: number, tileAt: (x: number, y: number) => Tile): ChestAt {
-  const byTile = new Map<number, WorldChest>();
+  const byTile = new Map<number, WorldChest | null>();
   for (const chest of chests) {
     if (chest.x < 0 || chest.y < 0 || chest.x >= width || chest.y >= height) continue;
     const right = Math.min(width, chest.x + footprintWidth(tileAt(chest.x, chest.y)));
     const bottom = Math.min(height, chest.y + 2);
-    for (let y = chest.y; y < bottom; y++) for (let x = chest.x; x < right; x++) byTile.set(y * width + x, chest);
+    for (let y = chest.y; y < bottom; y++) for (let x = chest.x; x < right; x++) {
+      const key = y * width + x;
+      byTile.set(key, byTile.has(key) ? null : chest);
+    }
   }
   return (x, y) => (x < 0 || y < 0 || x >= width || y >= height ? null : byTile.get(y * width + x) ?? null);
 }

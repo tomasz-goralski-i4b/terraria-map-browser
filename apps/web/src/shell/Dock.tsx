@@ -1,6 +1,6 @@
 import { useId, useLayoutEffect, useRef, useState } from "react";
 import { ContentPanel } from "../panels/ContentPanel.js";
-import { EntitiesPanel } from "../panels/placeholders.js";
+import { EntitiesPanel } from "../panels/EntitiesPanel.js";
 import { InspectorPanel } from "../panels/InspectorPanel.js";
 import { LayersPanel } from "../panels/LayersPanel.js";
 import { GridPanel } from "../panels/GridPanel.js";
@@ -26,7 +26,8 @@ const SECTIONS: Readonly<Record<SectionId, SectionDefinition>> = {
   measurements: { title: "Measurements", body: () => <MeasurementsPanel /> },
   inspector: { title: "Inspector", body: () => <InspectorPanel /> },
   content: { title: "Content", body: () => <ContentPanel /> },
-  entities: { title: "Entities", body: () => <EntitiesPanel /> },
+  entities: { title: "Entities", body: () => <EntitiesPanel mode="entities" /> },
+  search: { title: "Search", body: () => <EntitiesPanel mode="search" /> },
   swatches: { title: "Swatches", body: () => <SwatchesPanel /> },
 };
 

@@ -5,13 +5,16 @@ import axe from "axe-core";
 import { createWorld } from "@studio/world-model";
 import { packSheets, terrariaItems } from "@studio/assets";
 import { ChestDialog } from "../src/panels/ChestDialog.js";
+import { MapView } from "../src/components/MapView.js";
+import { useCommands, useGlobalShortcuts } from "../src/shell/commands.js";
+import { useChestNavigation } from "../src/world/chest-navigation.js";
 import { EntitiesPanel } from "../src/panels/EntitiesPanel.js";
 import { hydrateLayout } from "../src/shell/layout-store.js";
-import { registerMapController, useViewStore } from "../src/shell/view-store.js";
+import { getMapController, registerMapController, useViewStore } from "../src/shell/view-store.js";
 import { createAssetSession, setDefaultAssetSession, useAssetStore } from "../src/assets/asset-session.js";
 import "../src/styles.css";
 
-afterEach(() => { registerMapController(null); setDefaultAssetSession(undefined); useAssetStore.setState({ status: { kind: "none" } }); useViewStore.getState().setPinnedTile(null); });
+afterEach(() => { registerMapController(null); setDefaultAssetSession(undefined); useAssetStore.setState({ status: { kind: "none" } }); useViewStore.getState().setPinnedTile(null); useChestNavigation.setState({ query: "", areas: [], selected: null }); });
 
 const mining = { x: 12, y: 18, name: "Mining supplies", slotCount: 40, items: [{ slot: 2, itemId: 8, stack: 15, prefix: 0 }] };
 const lights = { x: 32, y: 18, name: "Spare lights", slotCount: 40, items: [{ slot: 39, itemId: 8, stack: 25, prefix: 0 }] };
@@ -52,4 +55,44 @@ test("a chest draws connected inventory pixels, labels all slots and passes axe"
   expect([...(canvas?.getContext("2d")?.getImageData(0, 0, 1, 1).data ?? [])]).toEqual([232, 174, 52, 255]);
   expect(document.querySelectorAll(".chest-slot")).toHaveLength(40);
   expect((await axe.run(document.querySelector("dialog") ?? document.body)).violations).toEqual([]);
+});
+
+function SearchShortcuts(): null { useGlobalShortcuts(useCommands()); return null; }
+
+test("search highlights two chest footprints on the GPU, overview markers survive zoom and F3 steps both ways", async () => {
+  hydrateLayout(null);
+  const world = createWorld(80, 40);
+  await render(<><SearchShortcuts /><div style={{ position: "relative", width: 640, height: 320 }}><MapView renderer="@studio/renderer" world={{ ...world, surfaceY: 10 }} /></div><EntitiesPanel source={{ chests: [mining, lights, empty], tileAt: (x, y) => world.tileAt(x, y) }} /></>);
+  await expect.poll(() => getMapController()).not.toBeNull();
+  await page.getByRole("textbox", { name: "Items in chests" }).fill("8");
+  await expect.poll(() => useChestNavigation.getState().areas.length).toBe(2);
+  const controller = getMapController();
+  if (controller === null) throw new Error("Map controller was not mounted");
+  controller.jumpTo({ x: 0, y: 0, zoom: 8 });
+  await new Promise((resolve) => requestAnimationFrame(resolve));
+  controller.renderNow();
+  const canvas = document.querySelector<HTMLCanvasElement>('canvas[aria-label="World map"]');
+  const gl = canvas?.getContext("webgl2");
+  if (canvas === null || gl === null || gl === undefined) throw new Error("WebGL map is missing");
+  const pixel = (x: number, y: number): number[] => { const rgba = new Uint8Array(4); gl.readPixels(x, canvas.height - y - 1, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, rgba); return [...rgba]; };
+  expect(pixel(12 * 8, 19 * 8)[0]).toBeGreaterThan(240);
+  expect(pixel(32 * 8, 19 * 8)[0]).toBeGreaterThan(240);
+  expect(pixel(52 * 8, 19 * 8)[0]).toBeLessThan(240);
+  // Function keys also work while the query field has focus.
+  await userEvent.keyboard("{F3}");
+  expect(useViewStore.getState().pinnedTile).toEqual({ x: 12, y: 18 });
+  await userEvent.keyboard("{F3}");
+  expect(useViewStore.getState().pinnedTile).toEqual({ x: 32, y: 18 });
+  await userEvent.keyboard("{Shift>}{F3}{/Shift}");
+  expect(useViewStore.getState().pinnedTile).toEqual({ x: 12, y: 18 });
+  useChestNavigation.setState({ selected: null });
+  controller.jumpTo({ x: 0, y: 0, zoom: 0.5 });
+  await new Promise((resolve) => requestAnimationFrame(resolve));
+  controller.renderNow();
+  // World centring can clamp the camera; read it back before locating the marker.
+  const camera = JSON.parse(canvas.dataset["camera"] ?? "{}") as { x: number; y: number; zoom: number };
+  const density = canvas.width / canvas.clientWidth;
+  const reds: number[] = [];
+  for (let offsetX = -3; offsetX <= 3; offsetX++) for (let offsetY = -3; offsetY <= 3; offsetY++) reds.push(pixel(Math.floor((13 - camera.x) * camera.zoom + offsetX * density), Math.floor((19 - camera.y) * camera.zoom + offsetY * density))[0] ?? 0);
+  expect(Math.max(...reds)).toBeGreaterThan(240);
 });

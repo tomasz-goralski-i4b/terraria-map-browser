@@ -11,6 +11,7 @@ import { beginBrush, finishBrush, moveBrush, pickBrushMaterial, subscribeBrushCh
 import { createBrushStabilizer } from "../world/brush-stabilizer.js";
 import { cancelArea, movePaste, pastePreviewWorld, pasteVisibleBounds, placePaste, selectArea, useAreaStore } from "../world/area-session.js";
 import { useLayoutStore } from "../shell/layout-store.js";
+import { chestAnnotations, useChestNavigation } from "../world/chest-navigation.js";
 import { measurementScene, type MeasurementScene } from "../world/measurement-scene.js";
 import { hitMeasurement, type MeasurementHit, type RulerSettings } from "../world/measurements.js";
 import { useRulerStore, beginMeasurement, moveMeasurement, finishMeasurement } from "../world/ruler-session.js";
@@ -255,6 +256,7 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
     });
   }, []);
 
+  const annotationCache = useRef<{ readonly ruler: Float32Array; readonly chests: ReturnType<typeof useChestNavigation.getState>; readonly data: Float32Array } | null>(null);
   const updateRuler = useCallback((session: MapSession): void => {
     const canvas = canvasRef.current, overlay = rulerLabelsRef.current;
     if (canvas === null || overlay === null || canvas.clientWidth === 0) return;
@@ -268,7 +270,16 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
     }
     if (cached === null) return;
     const density = canvas.width / canvas.clientWidth;
-    session.renderer.setAnnotations(cached.scene.data.length === 0 ? null : { data: cached.scene.data, density });
+    const chests = useChestNavigation.getState();
+    let annotations = annotationCache.current;
+    if (annotations?.ruler !== cached.scene.data || annotations.chests !== chests) {
+      const chestData = chestAnnotations(chests.areas, chests.selected);
+      const data = new Float32Array(cached.scene.data.length + chestData.length);
+      data.set(cached.scene.data); data.set(chestData, cached.scene.data.length);
+      annotations = { ruler: cached.scene.data, chests, data };
+      annotationCache.current = annotations;
+    }
+    session.renderer.setAnnotations(annotations.data.length === 0 ? null : { data: annotations.data, density });
     // No DOM work on hover frames; only visible labels exist, and map movement changes transforms, not React state.
     if (cached.scene.labels.length === 0 && rulerNodes.current.size === 0) return;
     const cameraKey = `${String(session.camera.x)} ${String(session.camera.y)} ${String(session.camera.zoom)} ${String(canvas.width)} ${String(canvas.height)} ${String(density)}`;
@@ -391,6 +402,7 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
       if (state.grid !== previous.grid || state.ruler !== previous.ruler) session.requestFrame();
     });
     const unsubscribeRuler = useRulerStore.subscribe(() => { session.requestFrame(); });
+    const unsubscribeChests = useChestNavigation.subscribe(() => { session.requestFrame(); });
     const unsubscribeArea = useAreaStore.subscribe((state) => {
       if (state.selection === null) selectionPointer.current = null;
       session.requestFrame();
@@ -504,6 +516,8 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
       unsubscribeTool();
       unsubscribeGrid();
       unsubscribeRuler();
+      unsubscribeChests();
+      annotationCache.current = null;
       rulerCache.current = null; rulerLabelCamera.current = "";
       unsubscribeArea();
       registerMapController(null);

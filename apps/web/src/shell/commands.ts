@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { stepChest, useChestNavigation } from "../world/chest-navigation.js";
 import type { IconName } from "../ui/Icon.js";
 import { getDefaultAssetSession, useAssetStore } from "../assets/asset-session.js";
 import { useAppStore } from "../store.js";
@@ -151,6 +152,7 @@ const THEME_LABELS: Readonly<Record<ThemeChoice, string>> = { system: "Theme: fo
 
 /** The app's commands with their current state. */
 export function useCommands(): Command[] {
+  const chestMatches = useChestNavigation((state) => state.areas.length);
   const hasWorld = useAppStore((state) => state.summary !== null);
   const loadingWorld = useAppStore((state) => state.phase === "loading");
   const saving = useSaveStore((state) => state.open);
@@ -191,6 +193,13 @@ export function useCommands(): Command[] {
   const setSpritePreviewOpen = useViewStore((state) => state.setSpritePreviewOpen);
 
   return [
+    { id: "search.chests", group: "View", label: "Find items in chests…", shortcut: "Control+F", enabled: hasWorld, ...noWorld, run: () => {
+      const layout = useLayoutStore.getState();
+      layout.setDockHidden(false); layout.setDockTab("world"); layout.setSectionOpen("search", true);
+      useChestNavigation.setState((state) => ({ searchRequested: state.searchRequested + 1 }));
+    } },
+    { id: "search.nextChest", group: "View", label: "Next matching chest", shortcut: "F3", enabled: chestMatches > 0, run: () => { stepChest(1); } },
+    { id: "search.previousChest", group: "View", label: "Previous matching chest", shortcut: "Shift+F3", enabled: chestMatches > 0, run: () => { stepChest(-1); } },
     { id: "edit.undo", group: "Edit", label: "Undo", icon: "undo", shortcut: "Control+Z", enabled: canUndo && historyReason === null,
       ...(historyReason !== null ? { disabledReason: historyReason } : !canUndo ? { disabledReason: tool === "ruler" ? "No measurement to undo" : "No stroke to undo" } : {}), run: tool === "ruler" ? undoMeasurement : undoBrush },
     { id: "edit.redo", group: "Edit", label: "Redo", icon: "redo", shortcut: "Control+Shift+Z", enabled: canRedo && historyReason === null,
@@ -367,8 +376,8 @@ export function matchesShortcut(event: KeyboardEvent, shortcut: string): boolean
   const modifiers = new Set(parts.slice(0, -1));
   const control = event.ctrlKey || event.metaKey;
   if (control !== modifiers.has("Control") || event.altKey !== modifiers.has("Alt")) return false;
-  // A printable key that needs Shift (e.g. `?`) is matched by the character; Shift is only compared for letters.
-  if (/^[a-z]$/i.test(key) && event.shiftKey !== modifiers.has("Shift")) return false;
+  // Shift-produced punctuation matches by character; letters and named keys (F3, Escape) compare the modifier.
+  if ((/^[a-z]$/i.test(key) || key.length > 1) && event.shiftKey !== modifiers.has("Shift")) return false;
   // Digits match by physical key: with Alt (Option on macOS) the produced character is not the digit.
   if (/^[0-9]$/.test(key)) return event.code === `Digit${key}` || event.key === key;
   return event.key.toLowerCase() === key.toLowerCase();
@@ -388,7 +397,7 @@ function isTextEntry(target: EventTarget | null): boolean {
 export function useGlobalShortcuts(commands: readonly Command[]): void {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.defaultPrevented || event.repeat || isTextEntry(event.target)) return;
+      if (event.defaultPrevented || event.repeat || (isTextEntry(event.target) && event.key !== "F3")) return;
       if (event.target instanceof Element && event.target.closest("[role=menu], dialog[open]") !== null) return;
       const matching = commands.filter((candidate) => candidate.shortcut !== undefined && matchesShortcut(event, candidate.shortcut));
       const command = matching.find((candidate) => candidate.enabled) ?? matching[0];

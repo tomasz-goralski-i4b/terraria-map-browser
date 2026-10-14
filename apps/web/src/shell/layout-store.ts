@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { DEFAULT_RULER, type RulerSettings } from "../world/measurements.js";
 
 /** The dock sections, in display order. */
-export const SECTION_IDS = ["world", "layers", "grid", "measurements", "inspector", "content", "entities", "swatches"] as const;
+export const SECTION_IDS = ["world", "layers", "grid", "measurements", "inspector", "content", "entities", "search", "swatches"] as const;
 export type SectionId = (typeof SECTION_IDS)[number];
 
 /** The dock's tabs: what the world is (properties, content, entities), what is shown (layers) and what is painted. */
@@ -10,7 +10,7 @@ export const DOCK_TABS = ["world", "view", "swatches"] as const;
 export type DockTab = (typeof DOCK_TABS)[number];
 /** Which tab each section lives in; the Inspector is under the tabs, visible with either. */
 export const SECTION_TAB: Readonly<Record<Exclude<SectionId, "inspector">, DockTab>> = {
-  layers: "view", grid: "view", measurements: "view", world: "world", content: "world", entities: "world", swatches: "swatches",
+  layers: "view", grid: "view", measurements: "view", world: "world", content: "world", entities: "world", search: "world", swatches: "swatches",
 };
 
 export type ThemeChoice = "system" | "dark" | "light";
@@ -61,7 +61,7 @@ export interface Layout {
 }
 
 export const DEFAULT_LAYOUT = {
-  sections: { world: true, layers: true, grid: true, measurements: true, inspector: true, content: false, entities: false, swatches: true },
+  sections: { world: true, layers: true, grid: true, measurements: true, inspector: true, content: false, entities: false, search: false, swatches: true },
   grid: { mode: "off", customSpacing: 10, opacity: 30 },
   ruler: DEFAULT_RULER,
   groups: {},
