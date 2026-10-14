@@ -30,6 +30,8 @@ export interface ObjectSprite {
   readonly alpha?: number;
   /** Multiplied by shimmer's map colour (its waterfall sheet is a grey mask the game colours); absent means not. */
   readonly tint?: boolean;
+  /** Behind the blocks: drawn only where no block covers the pixel (frame-important tiles); absent means in front. */
+  readonly behind?: boolean;
 }
 
 /**
@@ -311,7 +313,7 @@ function drawnTile(reader: ObjectReader, id: number, x: number, y: number, out: 
   out.push({
     kind: "tile", id, sx, sy, width, height,
     dx: x * SPRITE_PIXELS_PER_TILE - (width - SPRITE_PIXELS_PER_TILE) / 2, dy: y * SPRITE_PIXELS_PER_TILE + top,
-    flip: (x % 2 === 0 ? evenFlip : oddFlip) === 1,
+    flip: (x % 2 === 0 ? evenFlip : oddFlip) === 1, behind: true,
   });
 }
 

@@ -30,7 +30,7 @@ import {
   CELLS_INSTANCE_BIT, WALLS_INSTANCE_BIT, LAYER_ATTRIBUTE, PAGE_APRON, PLANES_16, PLANES_8, PLANE_COUNT_16, PLANE_COUNT_8, PRESENT, RECT_ATTRIBUTE,
   LIQUID_FLAT, RULE_HEADER_ROWS, RULE_ROW, SPRITE_MIN_ZOOM, SPRITE_SHEET_ROW, SPRITE_SHEET_TEXELS, spriteSampling, SPRITE_STATE, chunkFragmentSource, chunkSpriteFragmentSource, chunkVertexSource, overviewBuildFragmentSource,
   halfAtlasFragmentSource, halfAtlasVertexSource, overviewBuildVertexSource, overviewFragmentSource, overviewVertexSource,
-  OBJECT_DEST_ATTRIBUTE, OBJECT_FADE_SHIFT, OBJECT_FLIP, OBJECT_SOURCE_ATTRIBUTE, OBJECT_TINT, objectFragmentSource, objectVertexSource, wireFragmentSource,
+  OBJECT_BEHIND, OBJECT_DEST_ATTRIBUTE, OBJECT_FADE_SHIFT, OBJECT_FLIP, OBJECT_SOURCE_ATTRIBUTE, OBJECT_TINT, objectFragmentSource, objectVertexSource, wireFragmentSource,
   WIRE_RUN_ATTRIBUTE, wireVertexSource,
 } from "./shaders.js";
 import { OBJECT_TILES, objectSprites, type ObjectSprite, type TreeSettings } from "../objects/object-sprites.js";
@@ -210,6 +210,8 @@ export interface MapRendererStats {
 interface FrameTarget {
   readonly texture: WebGLTexture;
   readonly framebuffer: WebGLFramebuffer;
+  /** Depth for the sprites behind the blocks (OBJECT_BEHIND). */
+  readonly depth: WebGLRenderbuffer;
   readonly width: number;
   readonly height: number;
 }
@@ -1499,7 +1501,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       if (sheet === undefined || sprite.sx < 0 || sprite.sy < 0) continue;
       if (sprite.sx + sprite.width > sheet.width || sprite.sy + sprite.height > sheet.height) continue;
       const flags = (sprite.flip === true ? OBJECT_FLIP : 0) | ((255 - (sprite.alpha ?? 255)) << OBJECT_FADE_SHIFT)
-        | (sprite.tint === true ? OBJECT_TINT : 0);
+        | (sprite.tint === true ? OBJECT_TINT : 0) | (sprite.behind === true ? OBJECT_BEHIND : 0);
       placed.set([sprite.dx, sprite.dy, sprite.width, sprite.height, sheet.page, sheet.x + sprite.sx, sheet.y + sprite.sy, flags], at);
       at += OBJECT_INTS;
     }
@@ -1733,6 +1735,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     if (existing?.width === width && existing.height === height) return existing;
     if (existing !== undefined) {
       gl.deleteTexture(existing.texture);
+      gl.deleteRenderbuffer(existing.depth);
       gl.deleteFramebuffer(existing.framebuffer);
     }
     const texture = requireValue(gl.createTexture(), "a texture");
@@ -1741,8 +1744,13 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     const framebuffer = requireValue(gl.createFramebuffer(), "a framebuffer");
     gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+    // Depth for the sprites behind the blocks (OBJECT_BEHIND).
+    const depth = requireValue(gl.createRenderbuffer(), "a renderbuffer");
+    gl.bindRenderbuffer(gl.RENDERBUFFER, depth);
+    gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, width, height);
+    gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, depth);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    const created = { texture, framebuffer, width, height };
+    const created = { texture, framebuffer, depth, width, height };
     frameTargets[index] = created;
     lastFrame = null;
     return created;
@@ -1753,6 +1761,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       // Sparse until both targets were used.
       for (const target of frameTargets.filter((entry): entry is FrameTarget => entry !== undefined)) {
         gl.deleteTexture(target.texture);
+        gl.deleteRenderbuffer(target.depth);
         gl.deleteFramebuffer(target.framebuffer);
       }
     }
@@ -2120,10 +2129,20 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       gl.bindTexture(gl.TEXTURE_2D_ARRAY, atlasHalfTexture);
       gl.activeTexture(gl.TEXTURE0 + UNIT_SPRITE_SHEETS);
       gl.bindTexture(gl.TEXTURE_2D, resources.spriteSheets);
+      // In sprite mode the chunk pass writes depth 0 where a block covers a pixel, for the sprites behind the blocks.
+      if (spriteChunk !== null) {
+        gl.enable(gl.DEPTH_TEST);
+        gl.depthFunc(gl.ALWAYS);
+        gl.depthMask(true);
+      }
       drawCalls += drawInstances(source, ready);
       // Sprite mode draws the objects (trees, track extras) over the chunks, and the wires over everything.
       if (spriteChunk !== null) {
+        gl.depthFunc(gl.LEQUAL);
+        gl.depthMask(false);
         if ((layers & 4) !== 0) drawCalls += drawObjects(source, visible);
+        gl.depthMask(true);
+        gl.disable(gl.DEPTH_TEST);
         if (((layers >> 4) & WIRE_LAYER.all) !== 0 && ((planeSources?.present ?? 0) & PRESENT.flags) !== 0) {
           drawCalls += drawWires(source, ready);
         }
@@ -2169,13 +2188,13 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
         gl.enable(gl.SCISSOR_TEST);
         for (const [x, y, w, h] of strips) {
           gl.scissor(x, y, w, h);
-          gl.clear(gl.COLOR_BUFFER_BIT);
+          gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
           drawChunks();
         }
         gl.disable(gl.SCISSOR_TEST);
         reusedFrames++;
       } else {
-        gl.clear(gl.COLOR_BUFFER_BIT);
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
         drawChunks();
       }
       if (gridVisible) {
@@ -2198,7 +2217,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       lastFrame = null;
       gl.viewport(0, 0, width, height);
       gl.clearColor(0, 0, 0, 0);
-      gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
       if (target === null) drawChunks();
       else drawCalls = drawOverview(source, target);
     }

@@ -696,8 +696,17 @@ bool paletteColor(uint index, int xOffset, out ivec3 color) {
 // sheet's pixels there (spriteSample), over the wall layer or background behind it, faded in over its map colour by
 // uSpriteWeight. With framed cells the wall layer is the walls' sprites (wallSample) over the background, faded in over
 // the walls' map colours likewise.
+#ifdef SPRITES
+// The depth the sprite program writes for the sprites behind the blocks (OBJECT_BEHIND in the object pass): 0 where a
+// block covers the pixel (its map colour, or a sprite pixel that is not transparent), 1 elsewhere. Set by localColorAt.
+float blockDepth = 1.0;
+#endif
+
 ivec4 localColorAt(ivec2 local, vec2 sub) {
   ivec2 texel = ivec2(local.y + ${String(PAGE_APRON)}, local.x + ${String(PAGE_APRON)});
+#ifdef SPRITES
+  blockDepth = 1.0;
+#endif
   int tileY = vRect.y + local.y;
 
   ivec4 color = ivec4(0);
@@ -742,6 +751,9 @@ ivec4 localColorAt(ivec2 local, vec2 sub) {
     : ivec4(0);
   if (blockShown && !hasSprite) {
     color = mapped;
+#ifdef SPRITES
+    blockDepth = 0.0;
+#endif
   } else {
     ivec4 behind = color;
     bool wallShown = paletteColor(wall, 256, content);
@@ -765,6 +777,7 @@ ivec4 localColorAt(ivec2 local, vec2 sub) {
       if ((liquidShown && liquidShaped) || liquidBleeds) color = over(liquidFront(liquidArt, liquidKind), color);
       color = over(sprite, color);
       if (uSpriteWeight < 256) color = (mapped * (256 - uSpriteWeight) + color * uSpriteWeight + 128) / 256;
+      if (sprite.a > 0) blockDepth = 0.0;
     }
 #endif
   }
@@ -901,6 +914,9 @@ ivec4 pointColor(vec2 screen) {
 void main() {
   vec2 screen = vec2(gl_FragCoord.x, uViewport.y - gl_FragCoord.y);
   outColor = vec4(uFilter != 0 ? filtered(ivec2(floor(screen))) : pointColor(screen)) / 255.0;
+#ifdef SPRITES
+  gl_FragDepth = blockDepth;
+#endif
 }
 `;
 export const chunkFragmentSource: string = header + chunkFragmentBody;
@@ -957,6 +973,12 @@ export const OBJECT_FLIP = 1;
 export const OBJECT_FADE_SHIFT = 1;
 /** The object pass's source flag of a sprite multiplied by uTint (bit 9, above the fade's 8 bits). */
 export const OBJECT_TINT = 512;
+/**
+ * The object pass's source flag of a sprite that lies behind the blocks (bit 10): frame-important tiles, which the
+ * game draws under the blocks around them (docs/assets.md, "Draw offsets"). The chunk pass writes depth 0 where a
+ * block covers a pixel; such a sprite is drawn only elsewhere.
+ */
+export const OBJECT_BEHIND = 1024;
 
 /**
  * Object pass (docs/assets.md, "Trees", "Minecart tracks"): in sprite mode, after the chunk pass, one instanced quad
@@ -975,7 +997,10 @@ void main() {
   vec2 corner = vec2(float(gl_VertexID & 1), float(gl_VertexID >> 1));
   vec2 tile = (vec2(aDest.xy) + corner * vec2(aDest.zw)) / ${String(SPRITE_TILE_PIXELS)}.0;
   vec2 screen = (tile - uCamera) * uZoom;
-  gl_Position = vec4(screen.x / uViewport.x * 2.0 - 1.0, 1.0 - screen.y / uViewport.y * 2.0, 0.0, 1.0);
+  // Sprites behind the blocks (OBJECT_BEHIND) at depth 0.75: drawn only where the chunk pass left depth 1 (no block
+  // pixel); the others at depth 0, over everything.
+  float depth = (aSource.w & ${String(OBJECT_BEHIND)}) != 0 ? 0.5 : -1.0;
+  gl_Position = vec4(screen.x / uViewport.x * 2.0 - 1.0, 1.0 - screen.y / uViewport.y * 2.0, depth, 1.0);
   vDest = aDest;
   vSource = aSource;
 }

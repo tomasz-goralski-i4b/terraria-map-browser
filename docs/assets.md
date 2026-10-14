@@ -523,8 +523,11 @@ the ground below them, and are **mirrored at every even x** (checked at nine col
 **How the viewer draws them.** Every tile of those types with a stored frame is an object-pass sprite ("Trees"): the
 frame's rectangle (`wrappedFrame` for styles past the sheet's edge) of the drawn size, its top at the tile's top plus
 the offset, centred on its tile horizontally (chosen: the draw data gives no horizontal offset), mirrored as observed;
-the chunk pass shows what lies behind such a tile. Drawn over the chunk pass, they lie over liquids too (the game draws
-liquid over them; open question). Stalactites and stalagmites (165) are plain in the draw data, alone or with stone
+the chunk pass shows what lies behind such a tile. They lie **behind the blocks** around them, as the game draws them
+(G: a block's border covers a stalagmite's base; its transparent pixels show it): the chunk pass writes depth 0 where
+a block covers a pixel (its map colour, or a sprite pixel that is not transparent) and these sprites are drawn only
+elsewhere (`OBJECT_BEHIND`); trees, track extras and waterfalls stay in front. They still lie over liquids (the game
+draws liquid over them; open question). Stalactites and stalagmites (165) are plain in the draw data, alone or with stone
 above or below: the game shifts them elsewhere. In-game screenshots (G) show hanging ones drawn up and standing ones
 drawn down so both touch the stone, as the observed moss plants (184: rows 0–36 down 2, rows 54–108 up 2); the
 viewer draws 165's hanging rows (frameY 0, 18 and 72; in the user's worlds every such tile hangs from the ceiling or
