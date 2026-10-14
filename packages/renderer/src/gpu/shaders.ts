@@ -1,7 +1,7 @@
 // GLSL for the WebGL2 backend. The colour rules mirror `renderChunk` (../chunk/render.ts) and use integer arithmetic so
 // the chunk pass is bit-exact: no tie-breaking can differ because (l*a + c*(255-a)) / 255 never has a .5 fraction.
 import { FILTER_SUBTILE } from "../chunk/box-filter.js";
-import { LIQUID_BLEED, LIQUID_BODY_ROW, LIQUID_EDGE_ROW, LIQUID_SPRITE_ALPHA } from "../chunk/liquids.js";
+import { LIQUID_BLEED, LIQUID_BODY_ROW, LIQUID_SPRITE_ALPHA } from "../chunk/liquids.js";
 import { BLOCK_CELL_STRIDE } from "../framing/chunk-cells.js";
 import { NO_CELL } from "../framing/frame-block.js";
 import { WALL_CELL_STRIDE, WALL_OVERHANG } from "../framing/frame-wall.js";
@@ -404,16 +404,14 @@ bool spriteSample(uint index, ivec2 texel, vec2 centre, out ivec4 color) {
 }
 
 // The liquid art pixel at sprite pixel sub of a tile filled fill pixels high (liquidSheetRow in ../chunk/liquids.ts):
-// frame 0 of the sheet at place from its top row at the liquid's top on a surface tile, its body rows under liquid, and
-// with edge set its edge band (LIQUID_EDGE_ROW) where it would show its body (the liquid beside a block); a flat
-// sheet (LIQUID_FLAT) its colour plain. Transparent above the liquid. Its opacity is applied by the layers.
-ivec4 liquidArtPixel(ivec4 place, int fill, bool surface, ivec2 sub, ivec3 plain, bool edge) {
+// frame 0 of the sheet at place from its top row at the liquid's top on a surface tile, its body rows under liquid; a
+// flat sheet (LIQUID_FLAT) its colour plain. Transparent above the liquid. Its opacity is applied by the layers.
+ivec4 liquidArtPixel(ivec4 place, int fill, bool surface, ivec2 sub, ivec3 plain) {
   int top = ${String(SPRITE_TILE_PIXELS)} - fill;
   if (sub.y < top) return ivec4(0);
   if (place.w == ${String(LIQUID_FLAT)}) return ivec4(plain, 255);
   int depth = sub.y - top;
   int row = surface ? depth : ${String(LIQUID_BODY_ROW)} + depth % ${String(SPRITE_TILE_PIXELS - LIQUID_BODY_ROW)};
-  if (edge && row >= ${String(LIQUID_BODY_ROW)}) row = ${String(LIQUID_EDGE_ROW)};
   ivec4 color = ivec4(round(atlasTexel(place.yz, place.yz + ivec2(sub.x, row), place.x) * 255.0));
   return color.a == 0 ? ivec4(0) : color;
 }
@@ -421,11 +419,11 @@ ivec4 liquidArtPixel(ivec4 place, int fill, bool surface, ivec2 sub, ivec3 plain
 // A liquid's art over the footprint of a screen pixel centred on sprite pixel position centre, as spriteSample
 // averages a block's: one sample is liquidArtPixel at the centre. Called once per fragment: the shader compilers of some
 // drivers unroll every copy of its loop.
-ivec4 liquidSample(ivec4 place, int fill, bool surface, vec2 centre, ivec3 plain, bool edge, int count) {
+ivec4 liquidSample(ivec4 place, int fill, bool surface, vec2 centre, ivec3 plain, int count) {
   ivec4 sum = ivec4(0);
   for (int y = 0; y < count; y++) {
     for (int x = 0; x < count; x++) {
-      ivec4 sampled = liquidArtPixel(place, fill, surface, samplePixel(centre, x, y), plain, edge);
+      ivec4 sampled = liquidArtPixel(place, fill, surface, samplePixel(centre, x, y), plain);
       sum += ivec4(sampled.rgb * sampled.a, sampled.a);
     }
   }
@@ -470,16 +468,15 @@ uint liquidKindAt(ivec2 texel, out int amount) {
 // - for a half block or slope without liquid of its own (shaped): the liquid around it in the part its shape cuts
 //   away (shapedTileLiquid): liquid above fills it, else the fuller side neighbour at its level, with the surface;
 // - for another block (with block set) without liquid of its own (bleeds): the liquid above in its top LIQUID_BLEED rows
-//   (full), else the fuller one beside it in the LIQUID_BLEED columns next to that side, at the neighbour's level,
-//   showing its edge band (edge) (liquidBleed).
+//   (full), else the fuller one beside it in the LIQUID_BLEED columns next to that side, at the neighbour's level
+//   (liquidBleed).
 // Plain variables, no arrays, and the surface looked up once: the shader compilers of some drivers are slow on both.
-bool pixelLiquid(ivec2 texel, ivec2 p, bool block, out uint kind, out int amount, out bool surface, out bool shaped, out bool bleeds, out bool edge) {
+bool pixelLiquid(ivec2 texel, ivec2 p, bool block, out uint kind, out int amount, out bool surface, out bool shaped, out bool bleeds) {
   kind = 0u;
   amount = 0;
   surface = false;
   shaped = false;
   bleeds = false;
-  edge = false;
   if ((uLayers & 8) == 0) return false;
   // texel is transposed: (y, x).
   int ownAmount, aboveAmount, leftAmount, rightAmount;
@@ -519,7 +516,6 @@ bool pixelLiquid(ivec2 texel, ivec2 p, bool block, out uint kind, out int amount
         amount = useRight ? rightAmount : leftAmount;
         surfaceOf = useRight ? texel + ivec2(0, 1) : texel - ivec2(0, 1);
         needsSurface = true;
-        edge = true;
       }
       bleeds = kind != 0u;
     }
@@ -714,10 +710,9 @@ ivec4 localColorAt(ivec2 local, vec2 sub) {
   bool liquidSurface;
   bool liquidShaped;
   bool liquidBleeds;
-  bool liquidEdge;
   ivec2 liquidPixelAt = clamp(ivec2(floor(sub)), ivec2(0), ivec2(${String(SPRITE_TILE_PIXELS - 1)}));
   bool liquidAny = pixelLiquid(texel, liquidPixelAt, (uLayers & 4) != 0 && plane16(texel, ${String(PLANES_16.block)}) != ABSENT,
-    liquidKind, liquidAmount, liquidSurface, liquidShaped, liquidBleeds, liquidEdge);
+    liquidKind, liquidAmount, liquidSurface, liquidShaped, liquidBleeds);
   bool liquidShown = liquidAny && !liquidBleeds;
   // The pixel's liquid art, sampled once for both layers; a bleed is one pixel wide: one sample.
   ivec4 liquidArt = ivec4(0);
@@ -726,7 +721,7 @@ ivec4 localColorAt(ivec2 local, vec2 sub) {
     if (sheet.w != 0) {
       int fill = (liquidAmount * ${String(SPRITE_TILE_PIXELS)} + 254) / 255;
       liquidArt = liquidSample(sheet, fill, liquidSurface, liquidBleeds ? vec2(liquidPixelAt) + 0.5 : sub, uLiquids[liquidKind - 1u],
-        liquidEdge, liquidBleeds ? 1 : uSpriteSamples);
+        liquidBleeds ? 1 : uSpriteSamples);
     }
     ivec4 back = over(liquidArt, color);
     color = uSpriteWeight < 256 ? (color * (256 - uSpriteWeight) + back * uSpriteWeight + 128) / 256 : back;

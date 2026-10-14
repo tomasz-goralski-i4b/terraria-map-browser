@@ -166,6 +166,18 @@ describe("waterfall sprites", () => {
     ]);
   });
 
+  test("down a step of one tile the stream shows the film and a 16-pixel corner, no falling column (G)", () => {
+    // A staircase down to the right: the source pours onto the first step, which drops one tile to the second.
+    const w = world(["~h....", "#.....", "..##..", "....##", "......", "######"]);
+    const sprites = waterfallSprites(w, { left: 0, top: 0, right: w.width, bottom: w.height });
+    // Steps: lip (1, 0), fall (2, 1), run (2, 1), lip (3, 1), fall (4, 2), run (4, 2), lip (5, 2)…
+    const corners = sprites.filter((s) => s.sx === 10 && s.sy === 0 && s.width === 10);
+    expect(corners[0]).toMatchObject({ height: 16, dx: 4 * 16 - 4, dy: 2 * 16 - 8 });
+    // No column on the one-tile drop below that corner (4, 2); the source's own drop (2, 1) keeps its column.
+    const columns = sprites.filter((s) => s.sy === 24);
+    expect(columns.map((s) => s.dy / 16)).toEqual([1]);
+  });
+
   test("lava, honey and shimmer draw from Waterfall_1, Waterfall_14 and Waterfall_25; a left-flowing one is not mirrored", () => {
     expect(WATERFALL_SHEETS).toEqual([0, 1, 14, 25]);
     const w = world(["..hl#", "..###", ".....", "#####"]);

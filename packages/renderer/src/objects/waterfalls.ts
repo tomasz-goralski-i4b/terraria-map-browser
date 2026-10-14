@@ -171,7 +171,13 @@ export function waterfallSprites(world: WaterfallWorld, area: TileArea): ObjectS
   for (const source of waterfallSources(world, area)) {
     const id = WATERFALL_SHEETS[source.kind - 1];
     if (id === undefined) continue;
-    for (const step of waterfallPath(world, source)) {
+    const path = waterfallPath(world, source);
+    // Down a step of one tile (a ledge's lip, one falling tile, then ground again) the game shows the film and a short
+    // corner reaching the next step, no falling column (G: in-game screenshot of a staircase, 2026-10-14).
+    const oneTileDrop = (index: number): boolean =>
+      path[index]?.piece === "lip" && path[index + 1]?.piece === "fall" && path[index + 2]?.piece !== "fall" && index > 0;
+    for (const [index, step] of path.entries()) {
+      if (step.piece === "fall" && oneTileDrop(index - 1)) continue;
       const flip = step.direction === 1;
       // Shimmer's sheet is a grey mask the game colours while drawing (S): tinted by its map colour (chosen).
       const base = { kind: "waterfall" as const, id, flip, alpha: step.alpha, ...(source.kind === SHIMMER ? { tint: true } : {}) };
@@ -182,7 +188,8 @@ export function waterfallSprites(world: WaterfallWorld, area: TileArea): ObjectS
       } else if (step.piece === "lip") {
         // A ledge's end (G): the film over the ledge, and the corner turning down past its edge.
         out.push({ ...base, ...FILM, dx: left, dy: ground - FILM.height });
-        out.push({ ...base, ...CORNER, dx: flip ? left + TILE - COLUMN_BACK : left - CORNER.width + COLUMN_BACK, dy: ground - FILM.height });
+        const corner = oneTileDrop(index) ? { ...CORNER, height: TILE } : CORNER;
+        out.push({ ...base, ...corner, dx: flip ? left + TILE - COLUMN_BACK : left - CORNER.width + COLUMN_BACK, dy: ground - FILM.height });
       } else if (step.piece === "fall") {
         out.push({ ...base, ...COLUMN, dx: flip ? left - COLUMN_BACK : left + TILE - COLUMN.width + COLUMN_BACK, dy: step.y * TILE });
       } else if (step.piece === "run") {

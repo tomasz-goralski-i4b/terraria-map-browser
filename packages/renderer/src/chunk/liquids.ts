@@ -24,11 +24,6 @@ const TILE_PIXELS = 16;
 /** The first row of a frame's body: rows 0–1 are the surface highlight, 2–3 its edge, 4–15 one flat colour (S). */
 export const LIQUID_BODY_ROW = 4;
 
-/**
- * The row of a liquid frame the liquid shows beside a block where it would show its body (G, an in-game screenshot:
- * a lighter line along the blocks' sides): the edge band under the highlight.
- */
-export const LIQUID_EDGE_ROW = 2;
 
 /** The height in sprite pixels a liquid amount (0–255) fills, from the tile's bottom: rounded up, 255 is the tile. */
 export function liquidFillPixels(amount: number): number {
@@ -78,11 +73,11 @@ export function liquidHasSurface(
 }
 
 /**
- * Sprite pixels a liquid reaches into the block beside or below it (G, the user's comparison with the game: liquid
- * meets blocks without single pixels of air between them); drawn under the block's sprite, so only its transparent
- * edge pixels show it.
+ * Sprite pixels a liquid reaches into the block beside or below it (G, in-game screenshots: liquid meets blocks
+ * without air between them; block art is transparent up to 2 rows deep at its edges); drawn under the block's
+ * sprite, so only its transparent edge pixels show it, in the liquid's own colours.
  */
-export const LIQUID_BLEED = 1;
+export const LIQUID_BLEED = 2;
 
 /**
  * The neighbour whose liquid sprite pixel (x, y) (0–15) of a block without liquid of its own shows, under the block:

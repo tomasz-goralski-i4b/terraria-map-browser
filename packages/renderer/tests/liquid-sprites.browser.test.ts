@@ -2,7 +2,7 @@
 // liquid against synthetic Liquid_0/1/11 sheets; what lies behind shows through; the liquids toggle removes exactly
 // the liquid pixels.
 import { afterEach, describe, expect, test } from "vitest";
-import { LIQUID_BODY_ROW, LIQUID_EDGE_ROW, LIQUID_SHEETS, LIQUID_SPRITE_ALPHA, createMapRenderer, liquidBleed, liquidColors, liquidFillPixels, liquidSheetRow, renderChunk } from "../src/index.js";
+import { LIQUID_SHEETS, LIQUID_SPRITE_ALPHA, createMapRenderer, liquidBleed, liquidColors, liquidFillPixels, liquidSheetRow, renderChunk } from "../src/index.js";
 import type { SpriteSheetEntry, ChunkLayers, MapRenderer, RenderableWorld, SpriteAtlasSource } from "../src/index.js";
 
 const created: MapRenderer[] = [];
@@ -274,9 +274,7 @@ describe("liquid at block edges", () => {
         if (bleed !== null) {
           const surface = bleed.side === "left";
           const row = liquidSheetRow(sy, liquidFillPixels(bleed.amount), surface);
-          // Beside a block the liquid shows the art's edge band, where it would show its body (G).
-          const shown = row !== null && bleed.side !== "above" && row >= LIQUID_BODY_ROW ? LIQUID_EDGE_ROW : row;
-          if (shown !== null) expected = waterAt(sx, shown);
+          if (row !== null) expected = waterAt(sx, row);
         }
         expected = over(art, expected);
         expect(read(ZOOM + sx, ZOOM + sy), `(${String(sx)}, ${String(sy)})`).toEqual(expected);

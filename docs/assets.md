@@ -489,10 +489,10 @@ not observable:
   side neighbour (the left on a tie) at that neighbour's level, with the surface (`shapedTileLiquid`). The game's
   `LiquidSlope_<n>` edge pieces are not drawn. Seen in-game for water, lava and shimmer.
 - **Edges (G, the user's comparison with the game):** liquid meets blocks without single pixels of air between them. A
-  block without liquid of its own shows, under its sprite, the liquid above it in its top `LIQUID_BLEED` (1) row and
-  the liquid beside it in the column next to that side (the fuller side where both reach), at that neighbour's level
-  (`liquidBleed`); only the art's transparent edge pixels show it. Beside a block it shows the art's edge band
-  (`LIQUID_EDGE_ROW`, row 2) where it would show the body, as the lighter line along blocks' sides in the game.
+  block without liquid of its own shows, under its sprite, the liquid above it in its top `LIQUID_BLEED` (2) rows and
+  the liquid beside it in the 2 columns next to that side (the fuller side where both reach), at that neighbour's level
+  and in its own colours (`liquidBleed`); only the art's transparent edge pixels show it (block art is transparent up
+  to 2 rows deep at its edges).
 - **Two layers (G):** in-game screenshots of a pool in the Color, White and Retro lighting modes (2026-10-14) show the
   water against the sky as its art's colour (body 11, 63, 193 for the art's 9, 61, 191 over sky 112, 158, 246), while
   plants under it stay visible, darkened. The viewer therefore draws the liquid twice: a **back layer** of its art,
@@ -549,7 +549,9 @@ stream:
 - **falls** down the side of the next tile facing where it came from while the tile below is open (its 10-pixel
   column 4 pixels back over the edge it leaves);
 - on **flat ground** runs along the top (a film 8 pixels high) in its direction; where the tile ahead has open ground
-  below it, it **pours over** the edge (the film and the lip's corner) and falls again;
+  below it, it **pours over** the edge (the film and the lip's corner) and falls again; down a step of one tile the
+  corner is cut to 16 pixels, reaching the next step's film, and no falling column is drawn (G: the game shows a cap
+  of water on each step of a staircase with a short tail to the next);
 - on a **slope** slides along its surface and takes its downhill direction, so on a slope going down towards it the
   stream turns back;
 - ends on entering **liquid** (it stops at the tile holding it), against a **solid block** ahead, at the world's edge,
