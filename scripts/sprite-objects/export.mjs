@@ -94,9 +94,62 @@ export function treeTables(treeStyles, palms) {
   };
 }
 
+/** A frame-important tile drawn as a 16 × 16 cell at its own tile: [width, height, top, mirrored at even x, at odd x]. */
+const PLAIN_DRAW = "16,16,0,0,0";
+/** The grid sample of the observation: 8 columns × 40 rows at a stride of 18. */
+const GRID_COLUMNS = 8;
+const GRID_STRIDE = 18;
+
+/**
+ * Draw sizes, top offsets and mirroring of frame-important tiles (docs/assets.md, "Draw offsets"): the variants, and
+ * per type that is not plain its base variant (frame (0, 0)) and the runs of frameY (at frameX 0) and of frameX (at
+ * frameY 0) that differ from it. A frame takes its frameY run where that differs from the base, else its frameX run.
+ * Frames the game could not draw (null) say nothing; a type whose frame (0, 0) it cannot draw is listed as unobserved.
+ * Refuses a type whose grid sample this does not reproduce.
+ */
+export function drawOffsetTables(drawOffsets) {
+  const variants = [];
+  const ids = new Map();
+  const idOf = (variant) => {
+    const key = variant.join(",");
+    let id = ids.get(key);
+    if (id === undefined) { id = variants.length; ids.set(key, id); variants.push(variant); }
+    return id;
+  };
+  const at = (runs, value) => runs.find(([from, to]) => value >= from && value <= to)?.[2] ?? null;
+  const types = [];
+  const unobserved = [];
+  for (const { type, rows, columns, grid } of drawOffsets) {
+    for (const [, , variant] of [...rows, ...columns]) if (!Array.isArray(variant)) fail(`type ${String(type)}: draw data depends on more than the frame (${String(variant)})`);
+    const base = at(rows, 0);
+    // Some types cannot be drawn without the game's textures or tile entities: they are listed, not tabled.
+    if (base === null) { unobserved.push(type); continue; }
+    const baseKey = base.join(",");
+    const baseId = baseKey === PLAIN_DRAW ? -1 : idOf(base);
+    const differing = (runs) => runs.filter(([, , variant]) => variant.join(",") !== baseKey).map(([from, to, variant]) => [from, to, idOf(variant)]);
+    const rowRuns = differing(rows), columnRuns = differing(columns);
+    grid.forEach((observed, index) => {
+      if (observed === null) return;
+      const fx = (index % GRID_COLUMNS) * GRID_STRIDE, fy = Math.floor(index / GRID_COLUMNS) * GRID_STRIDE;
+      const row = at(rows, fy);
+      const model = row !== null && row.join(",") !== baseKey ? row : at(columns, fx) ?? base;
+      if (model.join(",") !== observed.join(",")) fail(`type ${String(type)}: frame (${String(fx)}, ${String(fy)}) draws ${String(observed)}, the runs give ${String(model)}`);
+    });
+    if (baseId === -1 && rowRuns.length === 0 && columnRuns.length === 0) continue;
+    types.push([type, baseId === -1 ? idOf(base) : baseId, rowRuns, columnRuns]);
+  }
+  return { drawVariants: variants, drawTypes: types, drawUnobserved: unobserved };
+}
+
 export function exportObjects(observed) {
   if (observed.complete !== true) fail("the observation is incomplete");
-  return { gameVersion: observed.gameVersion, ...(() => { const { pieces, extras } = trackTables(observed.tracks); return { trackPieces: pieces, trackExtras: extras }; })(), ...treeTables(observed.treeStyles, observed.palms) };
+  if (!Array.isArray(observed.drawOffsets)) fail("the observation has no draw offsets");
+  return {
+    gameVersion: observed.gameVersion,
+    ...(() => { const { pieces, extras } = trackTables(observed.tracks); return { trackPieces: pieces, trackExtras: extras }; })(),
+    ...treeTables(observed.treeStyles, observed.palms),
+    ...drawOffsetTables(observed.drawOffsets),
+  };
 }
 
 if (process.argv[1]?.endsWith("export.mjs")) {
@@ -109,5 +162,5 @@ import type { SpriteObjectData } from "./sprite-object-data.js";
 export const terrariaSpriteObjects: SpriteObjectData = ${JSON.stringify(data)};
 `;
   writeFileSync(OUTPUT, text);
-  console.log(`wrote ${OUTPUT}: ${String(data.trackPieces.length)} track pieces, ${String(data.foliagePatterns.length)} foliage patterns`);
+  console.log(`wrote ${OUTPUT}: ${String(data.trackPieces.length)} track pieces, ${String(data.foliagePatterns.length)} foliage patterns, ${String(data.drawTypes.length)} drawn types`);
 }

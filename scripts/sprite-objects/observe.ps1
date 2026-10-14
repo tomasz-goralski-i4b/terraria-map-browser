@@ -556,6 +556,87 @@ public static class SpriteObjectObserver {
         return string.Format(CultureInfo.InvariantCulture, "[{0},{1},{2},{3}]", Field(type, "X").GetValue(rect), Field(type, "Y").GetValue(rect), Field(type, "Width").GetValue(rect), Field(type, "Height").GetValue(rect));
     }
 
+    // --- Draw offsets of frame-important tiles ---------------------------------------------------------------------
+
+    /** The draw size, top offset and mirroring the game draws a frame-important tile of `type` with, at frame (fx, fy). */
+    static string DrawVariant(int type, int fx, int fy) {
+        var parts = new string[2];
+        for (int parity = 0; parity < 2; parity++) {
+            int x = 32 + parity;
+            object tile = Activator.CreateInstance(tileType);
+            typeField.SetValue(tile, (ushort)type);
+            setActive.Invoke(tile, new object[] { true });
+            frameXField.SetValue(tile, (short)fx);
+            frameYField.SetValue(tile, (short)fy);
+            world.SetValue(tile, x, 32);
+            ParameterInfo[] parameters = drawData.GetParameters();
+            object[] args = new object[parameters.Length];
+            args[0] = x; args[1] = 32; args[2] = tile; args[3] = (ushort)type; args[4] = (short)fx; args[5] = (short)fy;
+            for (int i = 6; i < args.Length; i++) {
+                Type element = parameters[i].ParameterType.GetElementType();
+                args[i] = element.IsValueType ? Activator.CreateInstance(element) : null;
+            }
+            try { drawData.Invoke(tileDrawing, args); } catch (TargetInvocationException) { return null; }
+            world.SetValue(Activator.CreateInstance(tileType), x, 32);
+            // tileWidth, tileHeight, tileTop and the sprite effect (1: mirrored left to right); frame shifts are animation.
+            parts[parity] = string.Format(CultureInfo.InvariantCulture, "{0},{1},{2},{3}", args[6], args[7], args[8], Convert.ToInt32(args[12]) & 1);
+        }
+        string[] even = parts[0].Split(','), odd = parts[1].Split(',');
+        if (even[0] != odd[0] || even[1] != odd[1] || even[2] != odd[2]) return "\"parity\"";
+        return "[" + parts[0] + "," + odd[3] + "]";
+    }
+
+    /** Runs [from, to, variant] of a sequence of variants along one frame axis (every 2 pixels from 0 to Limit). */
+    static string Runs(Func<int, string> variantAt) {
+        var json = new StringBuilder("[");
+        string current = null;
+        int start = 0;
+        bool first = true;
+        for (int value = 0; value <= DrawFrameLimit + 2; value += 2) {
+            string variant = value > DrawFrameLimit ? "end" : (variantAt(value) ?? "null");
+            if (variant == current) continue;
+            if (current != null && current != "null") {
+                json.Append(first ? "" : ",").AppendFormat(CultureInfo.InvariantCulture, "[{0},{1},{2}]", start, value - 2, current);
+                first = false;
+            }
+            current = variant;
+            start = value;
+        }
+        return json.Append("]").ToString();
+    }
+
+    const int DrawFrameLimit = 2400;
+
+    static void DrawOffsets(StringBuilder json) {
+        if (tileDrawing == null) {
+            object paint = Activator.CreateInstance(game.GetType("Terraria.GameContent.TilePaintSystemV2", true));
+            tileDrawing = Activator.CreateInstance(game.GetType("Terraria.GameContent.Drawing.TileDrawing", true), paint);
+            drawData = MethodNamed(tileDrawing.GetType(), "GetTileDrawData");
+        }
+        bool[] important = (bool[])Field(mainType, "tileFrameImportant").GetValue(null);
+        Clear();
+        json.Append("[");
+        bool first = true;
+        for (int type = 0; type < important.Length; type++) {
+            if (!important[type]) continue;
+            json.Append(first ? "" : ",").Append("{\"type\":").Append(type);
+            first = false;
+            int t = type;
+            json.Append(",\"rows\":").Append(Runs(fy => DrawVariant(t, 0, fy)));
+            json.Append(",\"columns\":").Append(Runs(fx => DrawVariant(t, fx, 0)));
+            // A grid sample at a stride of 18 to check that the two axes describe every frame.
+            json.Append(",\"grid\":[");
+            for (int row = 0; row < 40; row++) {
+                for (int column = 0; column < 8; column++) {
+                    string variant = DrawVariant(type, column * 18, row * 18);
+                    json.Append(row == 0 && column == 0 ? "" : ",").Append(variant ?? "null");
+                }
+            }
+            json.Append("]}");
+        }
+        json.Append("]");
+    }
+
     public static string Observe(string path) {
         Initialize(path);
         var json = new StringBuilder("{\"gameVersion\":\"");
@@ -568,6 +649,8 @@ public static class SpriteObjectObserver {
         TreeStyles(json);
         json.Append(",\"palms\":");
         Palms(json);
+        json.Append(",\"drawOffsets\":");
+        DrawOffsets(json);
         return json.Append(",\"complete\":true}").ToString();
     }
 }

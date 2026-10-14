@@ -26,4 +26,16 @@ export interface SpriteObjectData {
    * world's tree top variations the foliage reads: -1 none (one pattern), -2 the forest zone of the tree's column.
    */
   readonly foliage: readonly { readonly type: number; readonly grounds: readonly (readonly number[])[] }[];
+  /**
+   * How the game draws frame-important tiles (docs/assets.md, "Draw offsets"): variants [width, height, top offset,
+   * mirrored at even x (1), at odd x (1)], the drawn size of the frame and how far below its tile's top it is drawn.
+   */
+  readonly drawVariants: readonly (readonly [number, number, number, number, number])[];
+  /**
+   * Per type that is not drawn as a plain 16 × 16 cell: [type, base variant, frameY runs, frameX runs], each run
+   * [from, to, variant] where it differs from the base. A frame takes its frameY run, else its frameX run, else the base.
+   */
+  readonly drawTypes: readonly (readonly [number, number, readonly (readonly [number, number, number])[], readonly (readonly [number, number, number])[]])[];
+  /** Frame-important types the observer could not draw (they need the game's textures or tile entities). */
+  readonly drawUnobserved: readonly number[];
 }
