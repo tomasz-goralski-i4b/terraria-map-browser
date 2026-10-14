@@ -475,6 +475,7 @@ Expected sheet sizes (consistent with the size arithmetic, confirmed only by the
 | Frame-important tiles with other grids (torches, plants, …) | draw with the tile's `textureGrid` size | exact per-id draw offsets |
 | Non-frame-important blocks | the cell framed by "Tile framing" and its database (#141, #146), grass and moss included; half blocks and slopes cut per "Slopes and half blocks"; falling blocks with nothing below them in map colours | paint, lighting |
 | Walls | the cell framed by "Walls" and the framing database (#147), a 32 × 32 cell centred on the tile, below the blocks | paint, lighting |
+| Vines and cactus (no stored frame, not blocks) | the cell framed by "Vines and cactus" and the database's `nonBlocks` (#237) | the corrupt, crimson and hallowed cactus textures, paint, lighting |
 | Animated tiles (173 ids flagged `isAnimated` in A12, all frame-important) | draw the stored frame (static) | animation |
 | Minecart tracks (314) | the stored pieces' cells, a junction's back piece under its front piece, decorations below and bumpers above (#239, "Minecart tracks") | pressure-plate and booster animation, minecarts, paint |
 | Trees (5, 583–589, 596, 616, 634), palms (323), the giant mushroom (72) | trunk cells by ground, tops and branches by ground, zone and tree top variation, palm rows and lean, mushroom caps, in an object pass over the chunk pass (#238, "Trees") | wind sway, paint, lighting, the oasis palm rows |
@@ -486,7 +487,7 @@ Expected sheet sizes (consistent with the size arithmetic, confirmed only by the
 
 This section explains how a block or wall whose frame is **not** stored in the `.wld` picks its cell: diagonal
 corners, merging with other types (for example stone ↔ dirt), slopes and half blocks, the variant, grass and moss,
-large-frame blocks, walls. Cactus, vines, beams and the other non-block self-framed ids stay deferred ("Not covered").
+large-frame blocks, walls, and the vines and cactus that store no frame ("Vines and cactus").
 
 **How we derived it.** Everything here comes from the game itself, observed as a black box, and from the game's own
 sheet art. The **cell catalogue** (what each cell of a sheet looks like) is **measured from the art** (S). The
@@ -521,8 +522,11 @@ black box called on our own input. Nothing here comes from decompiled game code.
   below them, so the game never frames them in such a place. R observes them standing on a stone floor below the
   neighbourhood's bottom row (outside the centre's 3 × 3); a neighbourhood in which a tile still falls or moves is
   recorded as **unstable** (cell `(63, 63)`, `UNSTABLE_CELL`) instead of a cell.
-- Other ids that store no frame but have no block interior (cactus 80, vines, beams, columns, …) frame by rules of
-  their own; deferred.
+- **Beams, columns, ropes and chains** (124, 561, 574–578, 213, 214, 353, 365, 366, …) take an interior cell in a 3 × 3
+  of their own type, so they are among the block types above: the database tabulates them like any block.
+- **Nine ids** store no frame and are not block types (R: every id neither frame-important nor in `blockTypes`): the
+  **vines** 52, 62, 115, 205, 382, 528, 636, 638 and the **cactus** 80. They frame by rules of their own ("Vines and
+  cactus" below).
 - **Walls** (every wall type, 366 in 1.4.5.8) frame from their four side neighbours ("Walls" in "Sprite layout").
 - Sheet sizes (S): dirt, stone and most blocks use **288 × 270** = 16 columns × 15 rows of 18-pixel cells. The moss
   sheets (moss blocks 179–183, 534, 536, 539, 625, 627; moss bricks 512–517, 535, 537, 540, 626, 628) are
@@ -928,6 +932,69 @@ variant 0 at `x = y = 0`. "Measured look" is the side code of the v0 cell in the
 **Moss (R).** Green moss (179) takes cells from rows 15–21 in 1 840 of the 6 561 neighbourhoods with stone, the same
 beside stone and beside dirt. Its selection is its own (neither the block rule nor grass's); the database holds it.
 
+### Vines and cactus
+
+Observed at runtime (R) by the database run (`observe.ps1 -Mode Database`, "The framing database"): the game frames
+synthetic tiles of the nine non-block ids and the frames it writes are recorded in the database's `nonBlocks`. A tile
+the game removes, or leaves without writing a frame, has no cell (`UNSTABLE_CELL`): sprite mode draws it in its map
+colour, as a falling block with nothing below. Rules: `packages/renderer/src/framing/non-block-rules.ts`.
+
+**Which kind (R).** A stack of two tiles of the type on some ground below frames for the cactus only (on sand 53,
+ebonsand 112, pearlsand 116 and crimsand 234: its **roots**); a vine frames only under a tile that **holds** it. The
+database calls them *standing* and *hanging* types.
+
+**Vines (R).** A vine's cell depends on its four side neighbours only: diagonal neighbours (any tile, another vine
+or none, sampled) change no cell.
+
+- **Above.** Grass and the like hold it (vine 52: grass 2, 192, 477; jungle grass 60, 226; mushroom grass 70; hallowed
+  109, 492; corrupt 23, 661; crimson 199, 662; ash grass 633), and so does a vine of its own type. Anything else (air,
+  dirt, stone, another vine type…) does not: the game removes the vine. Each vine has its own list; the database holds
+  them, grouped by what they give. Under a grass of another family the game also turns the vine into that family's
+  vine (a 52 under jungle grass becomes a 62); sprite mode draws the stored type with the cell the game gives, which
+  the vine sheets share. Under mushroom grass or a mushroom vine (528) another vine is removed or turned into a
+  mushroom vine at random: the game does not keep it, so it has no cell (a game-saved world never holds one).
+- **Joined.** Below, west and east, a vine **joins** it when it is of its own type (for a vine the game turns into
+  another family's, the database lists which types join).
+- **Cell.** Each of the 16 combinations (held by grass or by itself; joined below, west, east) has three cells, and the
+  game picks one at random each time it frames the vine (up to 40 framings per case, so a missed cell is below 10⁻⁶
+  likely). Like the block variant, we **choose** by `(7x + 11y) mod 3` among the cells sorted by column, then row.
+
+| Held by | Nothing joined | Below | West | East | West and east | Below and west | Below and east | Below, west and east |
+|---|---|---|---|---|---|---|---|---|
+| grass | (9–11, 3) | (6–8, 0) | (12, 0–2) | (9, 0–2) | (6–8, 4) | (1, 3) (3, 3) (5, 3) | (0, 3) (2, 3) (4, 3) | (1–3, 0) |
+| itself | (6–8, 3) | (5, 0–2) | (1, 4) (3, 4) (5, 4) | (0, 4) (2, 4) (4, 4) | (1–3, 2) | (4, 0–2) | (0, 0–2) | (6–8, 1) |
+
+**Cactus (R).** The cell depends on the whole plant, not on a 3 × 3: the observation frames every configuration of a
+window of 3 columns × 4 rows (cactus or air on each tile, a root or air below each column: 32 768 windows) and
+records every tile's cell. Framing the window in another order gives the same cells. The rules, in our words:
+
+1. **Role.** Walk down the tile's column of cactus to its lowest tile. On a root: a **trunk** tile. Otherwise look
+   beside that lowest tile, **west first**, at a cactus tile that stands on cactus or a root; walk down its column: on
+   a root, and not at the lowest tile beside the trunk's own lowest tile, the tile is a **branch** (a west branch when
+   the trunk is east of it). Anything else is **loose**.
+2. **Trunk.** Column 0, plus 1 with an **arm** to the east, plus 4 with an arm to the west. An arm is a cactus beside
+   it with no cactus below; to the west it also needs no cactus beyond it. Row 0 at the top (no cactus above), row 2 at
+   the bottom (no cactus below) or with an arm, else row 1.
+3. **Branch.** A lone tile beside its trunk (no cactus above or below): (6,2) west, (6,1) east. Otherwise column 3
+   (west) or 2 (east), row 0 at its top, 2 at its lowest tile, 1 between.
+4. **Loose.** (0,0) when a tile beside it in its row is a trunk or a branch; otherwise the game writes no frame.
+
+| Plant (`c` cactus, `S` sand) | Cells |
+|---|---|
+| `.c.` / `cc.` / `.cc` / `.c.` / `.S.` | trunk (0,0) (4,2) (1,2) (0,2) from the top; west branch (6,2); east branch (6,1) |
+| `c` on `S` | (0,0) |
+| `c` / `c` / `c` on `S` | (0,0) (0,1) (0,2) |
+
+The rule gives every tile of all 32 768 windows its observed cell (`packages/renderer/tests/non-block-framing.test.ts`),
+every other root the same cells as sand (200 sampled windows each), and every tile it roots in 1 500 random 4 × 7
+plants its observed cell (a local check, not in the database). Not modelled, and drawn as the rule gives: loose tiles beside other blocks (the game gives some
+of them (0,0)) and plants that reach a root only through two side steps; neither occurs in a grown cactus. The
+corrupt, crimson and hallowed cactus textures the game draws on those sands are not drawn (deferred).
+
+**Invalidation.** A change can reframe a whole cactus plant: the chunk cell cache recomputes every cactus tile
+connected (diagonals included) to the changed tile's 3 × 3, with two columns and a row around
+(`BlockFraming.extent`). A vine's cell reads only its four side neighbours, which the blocks' reach always covers.
+
 ### Human steps (in-game check, G)
 
 Generate a disposable observation world from an unchanged vanilla corpus fixture. Prepare `local-renders/`
@@ -1164,8 +1231,8 @@ against a local installation.
 
 ### Not covered (deferred)
 
-Non-block self-framed ids (cactus, vines, beams, columns, …), the white mask blocks of `Tiles_2` (O9), modded tiles,
-tile animation, paint and lighting. Neighbourhoods of three or more types at once are covered by the rules, not by
+The white mask blocks of `Tiles_2` (O9), the corrupt, crimson and hallowed cactus textures, modded tiles, tile
+animation, paint and lighting. Neighbourhoods of three or more types at once are covered by the rules, not by
 tables (see "Neighbour classes").
 
 ### Open questions

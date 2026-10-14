@@ -10,7 +10,7 @@ code is read. Its raw output stays local; the one committed product is the frami
 | `export-cases.mjs` | reads the generated observation world (#158) with our codec and writes its cases as observer input |
 | `observe.ps1` | loads `TerrariaServer.exe` in a 32-bit host, frames the cases, every 3 × 3 neighbourhood of 17 type pairs, every side-shape combination and every block's slab, and writes `observed.json` (about 10 s) |
 | `analyse.mjs` | turns `observed.json` into a Markdown report per open question, or compares two observations |
-| `observe.ps1 -Mode Database -Shard i -Shards n` | the framing database: every self-framed block type against every other, walls, shaped corners; run n shards in parallel (12 shards take about 15 minutes) |
+| `observe.ps1 -Mode Database -Shard i -Shards n` | the framing database: every self-framed block type against every other, walls, shaped corners, and the vines and cactus (each shard frames its share of the cactus windows; shard 0 the vines); run n shards in parallel (12 shards take about 15 minutes) |
 | `observe.ps1 -Mode Check` | frames given samples `[centre, other, code, variant]`, to compare the committed database with the installed game |
 | `export-database.mjs` | merges the shards, refuses any failed verification, and writes `packages/renderer/src/framing/terraria-framing.generated.ts` |
 | `observe.test.mjs` | opt-in conformance: runs the observation, checks the documented rules, and checks 3 000 random database samples against the game (`TERRARIA_ASSEMBLY`) |

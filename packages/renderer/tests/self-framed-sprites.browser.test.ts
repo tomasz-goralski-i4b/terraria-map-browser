@@ -45,10 +45,14 @@ const STONE = 1;
 const IRON = 6;
 const SAND = 53;
 const WALL = 2;
+const GRASS = 2;
+const VINE = 52;
+const CACTUS = 80;
 
 /** Dirt shapes: `H` half block (1), slopes cut at NE `T` (2), NW `N` (3), SE `R` (4), SW `L` (5). */
 const LEGEND: Readonly<Record<string, readonly [number, BlockShape]>> = {
-  d: [DIRT, "full"], s: [STONE, "full"], S: [SAND, "full"], H: [DIRT, "half"], T: [DIRT, "slopeTopRight"],
+  d: [DIRT, "full"], s: [STONE, "full"], S: [SAND, "full"], H: [DIRT, "half"], g: [GRASS, "full"], v: [VINE, "full"],
+  c: [CACTUS, "full"], T: [DIRT, "slopeTopRight"],
   N: [DIRT, "slopeTopLeft"], R: [DIRT, "slopeBottomRight"], L: [DIRT, "slopeBottomLeft"],
 };
 
@@ -86,6 +90,10 @@ const SHEETS: readonly SpriteSheetEntry[] = [
     width: SHEET, height: SHEET, frameWidth: 16, frameHeight: 16,
   })),
   { kind: "wall", id: WALL, page: 0, x: 2, y: 600, width: 468, height: 216, frameWidth: 32, frameHeight: 32 },
+  // Grass (22 rows, as the grass sheets), a vine and the cactus.
+  ...[[GRASS, 2, 396], [VINE, 402, 288], [CACTUS, 694, 288]].map(([id = 0, y = 0, height = 0]) => ({
+    kind: "tile" as const, id, page: 0, x: 602, y, width: SHEET, height, frameWidth: 16, frameHeight: 16,
+  })),
 ];
 const WALL_SHEET = 4;
 
@@ -159,7 +167,7 @@ function expectedCanvas(world: CanonicalWorld): Uint8Array {
       if (cell !== NO_CELL) {
         const block = world.planes.block[tx * height + ty] ?? 0xffff;
         const ref = world.palette[block];
-        const sheet = SHEETS.findIndex((entry) => ref?.kind === "vanilla" && entry.id === ref.id);
+        const sheet = SHEETS.findIndex((entry) => entry.kind === "tile" && ref?.kind === "vanilla" && entry.id === ref.id);
         const shape = world.planes.shape[tx * height + ty] ?? 0;
         const column = shapedColumns(shape)[Math.floor(sx / 2)];
         if (column === undefined) throw new Error("no column");
@@ -231,6 +239,41 @@ describe("self-framed blocks in sprite mode", () => {
     renderer.setCamera({ x: 0, y: 0, zoom: SPRITE_MIN_ZOOM - 1 });
     renderer.render();
     expect(renderer.stats().framedTiles).toBe(0);
+  });
+});
+
+describe("vines and cactus in sprite mode", () => {
+  test("a vine hanging from grass and a cactus on sand show the cells their rules give", () => {
+    const world = createWorld(10, 8);
+    stamp(world, 0, 0, ["dggd.....", ".vv...c..", ".v...cc..", ".v....cc.", "......c..", "......c..", "..dddsSs.", "......s.."]);
+    const { pixels } = draw(world);
+    expectClose(pixels, expectedCanvas(world), world.width * ZOOM);
+    const cache = createChunkCellCache(world, framing);
+    const at = (x: number, y: number): Rgba => pixelAt(pixels, (y * world.width * ZOOM + x) * 4);
+    /** Tile (tx, ty) shows sheet `sheet`'s cell (column, row) at every pixel. */
+    const shows = (tx: number, ty: number, sheet: number, column: number, row: number): void => {
+      for (let sy = 0; sy < ZOOM; sy++) for (let sx = 0; sx < ZOOM; sx++) {
+        expect(at(tx * ZOOM + sx, ty * ZOOM + sy)).toEqual(sheetPixel(sheet, column * 18 + sx, row * 18 + sy));
+      }
+    };
+    const vineSheet = SHEETS.findIndex((entry) => entry.id === VINE && entry.kind === "tile");
+    const cactusSheet = SHEETS.findIndex((entry) => entry.id === CACTUS && entry.kind === "tile");
+    // The vine: under grass, going on, with a vine east of it (columns 0, 2, 4 of row 3); under itself going on
+    // (column 5) and ending (columns 6–8 of row 3); the short vine under grass with a vine west of it (column 12).
+    const variant = (x: number, y: number): number => (7 * x + 11 * y) % 3;
+    shows(1, 1, vineSheet, 2 * variant(1, 1), 3);
+    shows(1, 2, vineSheet, 5, variant(1, 2));
+    shows(1, 3, vineSheet, 6 + variant(1, 3), 3);
+    shows(2, 1, vineSheet, 12, variant(2, 1));
+    // The cactus: trunk in column 6 on sand, a west branch from its second tile, an east arm on its third.
+    shows(6, 1, cactusSheet, 0, 0);
+    shows(6, 2, cactusSheet, 4, 2);
+    shows(5, 2, cactusSheet, 6, 2);
+    shows(6, 3, cactusSheet, 1, 2);
+    shows(7, 3, cactusSheet, 6, 1);
+    shows(6, 4, cactusSheet, 0, 1);
+    shows(6, 5, cactusSheet, 0, 2);
+    expect(cache.cellAt(6, 5)).toBe(2);
   });
 });
 

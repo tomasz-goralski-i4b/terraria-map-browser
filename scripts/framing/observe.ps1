@@ -12,8 +12,8 @@ param(
     # Check: frames the samples in CasesPath ([centre, other or -1, code, variant] per line of a JSON array) and writes
     # their cells, to compare a committed database with the installed game.
     [ValidateSet('Observe', 'Database', 'Check')][string]$Mode = 'Observe',
-    # Database mode in parallel: this process handles the block types whose index mod Shards is Shard; shard 0 also
-    # observes walls and shaped corners. export-database.mjs merges the shards.
+    # Database mode in parallel: this process handles the block types and the cactus windows whose index mod Shards is
+    # Shard; shard 0 also observes walls, shaped corners and vines. export-database.mjs merges the shards.
     [int]$Shard = 0,
     [int]$Shards = 1
 )
@@ -405,6 +405,293 @@ public static class FramingObserver {
         json.Append("]");
     }
 
+    // --- Self-framed tiles that are not blocks: vines and cactus ---------------------------------------------------
+
+    /** A frame no framing writes: a tile still holding it after framing was left unframed. */
+    const short Unframed = 1000;
+
+    static void MarkUnframed(int x, int y) {
+        object tile = world.GetValue(x, y);
+        frameXField.SetValue(tile, Unframed);
+        frameYField.SetValue(tile, Unframed);
+    }
+
+    /** The cell index the game gave (x, y), or Unstable when it removed the tile, made it a block, or left it unframed. */
+    static int NonBlockCellAt(int x, int y, ICollection<int> family) {
+        if (!IsActive(x, y) || !family.Contains(TypeAt(x, y)) || FrameX(x, y) == Unframed) return Unstable;
+        return CellIndex(FrameX(x, y) / 18, FrameY(x, y) / 18);
+    }
+
+    /**
+     * Types that store no frame and are not blocks: neither frame-important nor among `blocks`. Each is a hanging type
+     * (it frames under some tile above it: vines) or a standing type (a stack of two frames on some ground: cactus).
+     */
+    static List<int> NonBlockTypes(List<int> blocks, int typeCount) {
+        bool[] important = (bool[])Field(mainType, "tileFrameImportant").GetValue(null);
+        var types = new List<int>();
+        for (int id = 0; id < typeCount; id++) if (!important[id] && !blocks.Contains(id)) types.Add(id);
+        return types;
+    }
+
+    /** Whether some tile above holds a lone tile of `type` (it frames there): a hanging type. */
+    static bool Hangs(int type, int typeCount, ICollection<int> family) {
+        for (int above = 0; above < typeCount; above++) {
+            ClearRect(8, 8, 5, 5);
+            Put(10, 9, above, 0);
+            Put(10, 10, type, 0);
+            MarkUnframed(10, 10);
+            tileFrame.Invoke(null, new object[] { 10, 10, true, true });
+            if (NonBlockCellAt(10, 10, family) != Unstable) { ClearRect(8, 8, 5, 5); return true; }
+        }
+        ClearRect(8, 8, 5, 5);
+        return false;
+    }
+
+    /** Ground types a two-tile stack of `type` frames on (both tiles framed). */
+    static List<int> Roots(int type, int typeCount, ICollection<int> family) {
+        var roots = new List<int>();
+        for (int ground = 0; ground < typeCount; ground++) {
+            ClearRect(8, 7, 5, 7);
+            Put(10, 9, type, 0);
+            Put(10, 10, type, 0);
+            Put(10, 11, ground, 0);
+            // Falling grounds stand on stone, as in a world.
+            Put(10, 12, 1, 0);
+            MarkUnframed(10, 9);
+            MarkUnframed(10, 10);
+            FrameRegion(10, 9, 1, 2, 0);
+            if (NonBlockCellAt(10, 9, family) != Unstable && NonBlockCellAt(10, 10, family) != Unstable) roots.Add(ground);
+        }
+        ClearRect(8, 7, 5, 7);
+        return roots;
+    }
+
+    const int VineTrials = 40;
+
+    /** Framings of a hanging tile before the first three distinct cells may end the search. */
+    const int VineMinTrials = 16;
+
+    /**
+     * The cells a hanging tile `vine` takes between `above` and `below` and beside `west` and `east` (−1: none), with
+     * `diagonals` (or null) on NW NE SW SE: the sorted distinct cell indices over up to VineTrials framings (the game
+     * picks among three at random; 40 framings miss one with probability 3 · (2/3)^40, about 3 · 10⁻⁷), at least
+     * VineMinTrials. Empty when the game removes the tile or leaves it unframed, and when it does so only sometimes or
+     * turns the tile into different types at random (a vine under a mushroom vine or mushroom grass): the game does not
+     * keep such a tile, so it has no frame of its own.
+     */
+    static string VineCells(int vine, int above, int below, int west, int east, int[] diagonals, ICollection<int> family) {
+        var cells = new SortedSet<int>();
+        var types = new HashSet<int>();
+        bool removed = false;
+        for (int trial = 0; trial < VineTrials && (trial < VineMinTrials || cells.Count < 3); trial++) {
+            ClearRect(8, 8, 5, 5);
+            Put(10, 9, above, 0);
+            Put(10, 11, below, 0);
+            Put(9, 10, west, 0);
+            Put(11, 10, east, 0);
+            if (diagonals != null) {
+                Put(9, 9, diagonals[0], 0);
+                Put(11, 9, diagonals[1], 0);
+                Put(9, 11, diagonals[2], 0);
+                Put(11, 11, diagonals[3], 0);
+            }
+            Put(10, 10, vine, 0);
+            MarkUnframed(10, 10);
+            tileFrame.Invoke(null, new object[] { 10, 10, true, true });
+            int cell = NonBlockCellAt(10, 10, family);
+            if (cell == Unstable) { removed = true; continue; }
+            cells.Add(cell);
+            types.Add(TypeAt(10, 10));
+        }
+        if (removed || types.Count > 1) return "";
+        return string.Join(",", cells);
+    }
+
+    /** The tiles that, in place of none on side `side` (0 below, 1 west, 2 east), change the cells of `vine` under `above`. */
+    static List<int> Joining(int vine, int above, int side, int typeCount, string alone, ICollection<int> family) {
+        var joining = new List<int>();
+        for (int type = 0; type < typeCount; type++) {
+            string cells = VineCells(vine, above, side == 0 ? type : -1, side == 1 ? type : -1, side == 2 ? type : -1, null, family);
+            if (cells != alone) joining.Add(type);
+        }
+        return joining;
+    }
+
+    /**
+     * Every hanging type: the tiles above that hold it, grouped by what they give; per group the tiles below and beside
+     * that join it (the vine going on, or hanging beside another), and its cells for each of the 8 combinations
+     * (below joined + 2 · west joined + 4 · east joined). Verified: every member of a group frames like the first, every
+     * joining tile like the first of its list, and diagonal neighbours change no cell.
+     */
+    static string Vines(List<int> vines, int typeCount, ICollection<int> family, ref int verified, ref int failures, StringBuilder failureList) {
+        var json = new StringBuilder("[");
+        var random = new Random(237);
+        for (int v = 0; v < vines.Count; v++) {
+            int vine = vines[v];
+            // Tiles above, grouped by their cells alone and with every hanging type below and beside.
+            var groups = new Dictionary<string, List<int>>();
+            var order = new List<string>();
+            for (int above = -1; above < typeCount; above++) {
+                string alone = VineCells(vine, above, -1, -1, -1, null, family);
+                if (alone.Length == 0) continue;
+                var signature = new StringBuilder(alone);
+                foreach (int other in vines) {
+                    signature.Append("|").Append(VineCells(vine, above, other, -1, -1, null, family));
+                    signature.Append("|").Append(VineCells(vine, above, -1, other, -1, null, family));
+                    signature.Append("|").Append(VineCells(vine, above, -1, -1, other, null, family));
+                }
+                string key = signature.ToString();
+                List<int> members;
+                if (!groups.TryGetValue(key, out members)) { members = new List<int>(); groups[key] = members; order.Add(key); }
+                members.Add(above);
+            }
+            json.Append(v == 0 ? "" : ",").AppendFormat("{{\"id\":{0},\"groups\":[", vine);
+            bool firstGroup = true;
+            for (int g = 0; g < order.Count; g++) {
+                List<int> members = groups[order[g]];
+                int first = members[0];
+                string alone = VineCells(vine, first, -1, -1, -1, null, family);
+                var joining = new List<int>[3];
+                for (int side = 0; side < 3; side++) joining[side] = Joining(vine, first, side, typeCount, alone, family);
+                // A joining tile of each side; −1 where none joins (its combinations then repeat the ones without it).
+                int[] join = new int[3];
+                for (int side = 0; side < 3; side++) join[side] = joining[side].Count > 0 ? joining[side][0] : -1;
+                var cells = new string[8];
+                for (int combo = 0; combo < 8; combo++) {
+                    cells[combo] = VineCells(vine, first, (combo & 1) != 0 ? join[0] : -1, (combo & 2) != 0 ? join[1] : -1,
+                        (combo & 4) != 0 ? join[2] : -1, null, family);
+                }
+                // A group whose framings do not repeat is one the game turns into another type or removes at random (a
+                // vine under mushroom grass or a mushroom vine): the game does not keep its tiles, so they get no cell.
+                bool repeats = true;
+                for (int combo = 0; combo < 8 && repeats; combo++) {
+                    repeats = VineCells(vine, first, (combo & 1) != 0 ? join[0] : -1, (combo & 2) != 0 ? join[1] : -1,
+                        (combo & 4) != 0 ? join[2] : -1, null, family) == cells[combo];
+                }
+                int groupChecks = 0, groupFailures = 0;
+                var groupFailureList = new StringBuilder();
+                // Every joining tile gives the first one's cells, with the other sides joined or not at random.
+                for (int side = 0; side < 3; side++) {
+                    foreach (int type in joining[side]) {
+                        int combo = (random.Next(8) & ~(1 << side)) | (1 << side);
+                        int[] at = new int[3];
+                        for (int k = 0; k < 3; k++) at[k] = (combo & (1 << k)) != 0 ? (k == side ? type : join[k]) : -1;
+                        groupChecks++;
+                        string got = VineCells(vine, first, at[0], at[1], at[2], null, family);
+                        if (got != cells[combo]) {
+                            if (VineCells(vine, first, at[0], at[1], at[2], null, family) != got) repeats = false;
+                            groupFailures++;
+                            groupFailureList.Append("vine" + vine + "j" + side + "t" + type + " ");
+                        }
+                    }
+                }
+                // Every member of the group on every combination, half of them with random diagonal neighbours.
+                foreach (int above in members) {
+                    for (int combo = 0; combo < 8; combo++) {
+                        int[] diagonals = null;
+                        if (random.Next(2) == 0) {
+                            diagonals = new int[4];
+                            for (int k = 0; k < 4; k++) diagonals[k] = random.Next(3) == 0 ? -1 : random.Next(2) == 0 ? vines[random.Next(vines.Count)] : random.Next(typeCount);
+                        }
+                        if (above == first && diagonals == null) continue;
+                        groupChecks++;
+                        int below = (combo & 1) != 0 ? join[0] : -1, west = (combo & 2) != 0 ? join[1] : -1, east = (combo & 4) != 0 ? join[2] : -1;
+                        string got = VineCells(vine, above, below, west, east, diagonals, family);
+                        if (got != cells[combo]) {
+                            if (VineCells(vine, above, below, west, east, diagonals, family) != got) repeats = false;
+                            groupFailures++;
+                            groupFailureList.Append("vine" + vine + "a" + above + "c" + combo + " ");
+                        }
+                    }
+                }
+                // A group whose framings do not repeat (here or in a failing check, framed again) is left out: a failure
+                // there shows only that the game picks at random. For the others every check counts.
+                if (!repeats) {
+                    Console.Error.WriteLine("vine " + vine + ": tiles above " + string.Join(",", members) + " give no reproducible cells; left out");
+                    continue;
+                }
+                verified += groupChecks;
+                failures += groupFailures;
+                failureList.Append(groupFailureList.ToString());
+                json.Append(firstGroup ? "" : ",").AppendFormat("{{\"above\":[{0}],\"below\":[{1}],\"west\":[{2}],\"east\":[{3}],\"cells\":[",
+                    string.Join(",", members), string.Join(",", joining[0]), string.Join(",", joining[1]), string.Join(",", joining[2]));
+                for (int combo = 0; combo < 8; combo++) json.Append(combo == 0 ? "[" : ",[").Append(cells[combo]).Append("]");
+                json.Append("]}");
+                firstGroup = false;
+            }
+            json.Append("]}");
+            Console.Error.WriteLine("vines " + (v + 1) + "/" + vines.Count);
+        }
+        ClearRect(8, 8, 5, 5);
+        return json.Append("]").ToString();
+    }
+
+    /** Tiles of the standing-type window: 3 columns × 4 rows, its ground row below (window configurations 0 … 2^15 − 1). */
+    const int WindowWidth = 3, WindowHeight = 4, WindowLeft = 9, WindowTop = 7;
+
+    /**
+     * Window configuration `config` of a standing type: bit y · 3 + x places `type` at window tile (x, y), bit 12 + x
+     * places `ground` below column x (on stone). Frames the window and returns one cell-index char per placed tile, in
+     * reading order (Unstable where the game left it unframed).
+     */
+    static string Window(int type, int ground, int config, ICollection<int> family) {
+        ClearRect(WindowLeft - 3, WindowTop - 3, WindowWidth + 6, WindowHeight + 7);
+        int tiles = WindowWidth * WindowHeight;
+        for (int i = 0; i < tiles; i++) {
+            if (((config >> i) & 1) == 0) continue;
+            Put(WindowLeft + i % WindowWidth, WindowTop + i / WindowWidth, type, 0);
+            MarkUnframed(WindowLeft + i % WindowWidth, WindowTop + i / WindowWidth);
+        }
+        for (int x = 0; x < WindowWidth; x++) {
+            if (((config >> (tiles + x)) & 1) == 0) continue;
+            Put(WindowLeft + x, WindowTop + WindowHeight, ground, 0);
+            Put(WindowLeft + x, WindowTop + WindowHeight + 1, 1, 0);
+        }
+        FrameRegion(WindowLeft, WindowTop, WindowWidth, WindowHeight, 0);
+        var cells = new StringBuilder();
+        for (int i = 0; i < tiles; i++) {
+            if (((config >> i) & 1) == 1) cells.Append((char)NonBlockCellAt(WindowLeft + i % WindowWidth, WindowTop + i / WindowWidth, family));
+        }
+        return cells.ToString();
+    }
+
+    /**
+     * Every standing type: its grounds (shard 0) and the windows of this shard (configurations ≡ shard mod shards) on its
+     * first ground. Shard 0 also verifies that every other ground frames 200 sampled configurations alike.
+     */
+    static void Standing(StringBuilder json, List<int> standing, Dictionary<int, List<int>> roots, ICollection<int> family, int shard, int shards,
+            ref int verified, ref int failures, StringBuilder failureList) {
+        int configs = 1 << (WindowWidth * WindowHeight + WindowWidth);
+        json.Append("[");
+        for (int s = 0; s < standing.Count; s++) {
+            int type = standing[s];
+            List<int> grounds = roots[type];
+            json.Append(s == 0 ? "" : ",").AppendFormat("{{\"id\":{0},\"roots\":[{1}],\"width\":{2},\"height\":{3},\"windows\":[",
+                type, string.Join(",", grounds), WindowWidth, WindowHeight);
+            bool first = true;
+            for (int config = shard; config < configs; config += shards) {
+                json.Append(first ? "" : ",").Append("[").Append(config).Append(",");
+                AppendTable(json, Window(type, grounds[0], config, family));
+                json.Append("]");
+                first = false;
+                if (config % 4096 == shard) Console.Error.WriteLine(string.Format(CultureInfo.InvariantCulture, "shard {0}: standing {1}, window {2}/{3}", shard, type, config, configs));
+            }
+            json.Append("]}");
+            if (shard != 0) continue;
+            var random = new Random(80);
+            for (int k = 0; k < 200; k++) {
+                // Configurations with ground under at least one column.
+                int config = random.Next(1 << (WindowWidth * WindowHeight)) | ((1 + random.Next((1 << WindowWidth) - 1)) << (WindowWidth * WindowHeight));
+                string reference = Window(type, grounds[0], config, family);
+                for (int g = 1; g < grounds.Count; g++) {
+                    verified++;
+                    if (Window(type, grounds[g], config, family) != reference) { failures++; failureList.Append("stand" + type + "g" + grounds[g] + "c" + config + " "); }
+                }
+            }
+        }
+        json.Append("]");
+    }
+
     // --- Check samples against the game ----------------------------------------------------------------------------
 
     /** Frames each sample `[centre, other, code, variant]` (other −1: none) and returns `[column, row]` per sample. */
@@ -776,6 +1063,23 @@ public static class FramingObserver {
                 done, total, t, seconds, seconds / done * (total - done), shard));
         }
         json.AppendFormat("],\"shard\":{0},\"shards\":{1},\"blockTypes\":[{2}]", shard, shards, string.Join(",", types));
+        // Self-framed tiles that are not blocks: every shard observes its share of the standing types' windows, shard 0
+        // the hanging types.
+        List<int> nonBlockTypes = NonBlockTypes(types, typeCount);
+        var family = new HashSet<int>(nonBlockTypes);
+        var standing = new List<int>();
+        var hanging = new List<int>();
+        var rootsOf = new Dictionary<int, List<int>>();
+        foreach (int type in nonBlockTypes) {
+            if (Hangs(type, typeCount, family)) { hanging.Add(type); continue; }
+            List<int> roots = Roots(type, typeCount, family);
+            if (roots.Count > 0) { standing.Add(type); rootsOf[type] = roots; }
+        }
+        json.AppendFormat(",\"nonBlocks\":{{\"types\":[{0}],\"standing\":", string.Join(",", nonBlockTypes));
+        Standing(json, standing, rootsOf, family, shard, shards, ref verified, ref failures, failureList);
+        if (shard == 0) json.Append(",\"hanging\":").Append(Vines(hanging, typeCount, family, ref verified, ref failures, failureList));
+        json.Append("}");
+        Clear();
         if (shard != 0) {
             json.Append(",\"cells\":[");
             for (int i = 0; i < cellList.Count; i++) json.Append(i == 0 ? "" : ",").AppendFormat("[{0},{1}]", cellList[i] / 64, cellList[i] % 64);
