@@ -105,6 +105,20 @@ test("search keeps invalid-record item totals and diagnostics without inventing 
   expect(useChestNavigation.getState().areas).toEqual([]);
 });
 
+test("duplicate chest anchors keep record selection and totals but have no ambiguous navigation area", async () => {
+  const world = chestWorld();
+  const duplicate = { ...mining, name: "Duplicate mining chest", items: [{ slot: 0, itemId: 8, stack: 25, prefix: 0 }] };
+  await render(<><SearchShortcuts /><EntitiesPanel source={{ ...world, chests: [mining, duplicate, lights] }} /></>);
+  await page.getByRole("grid", { name: "Chests" }).getByRole("row").filter({ hasText: "Duplicate mining chest" }).click();
+  await expect.element(page.getByRole("grid", { name: "Chests" }).getByRole("row").filter({ hasText: "Duplicate mining chest" })).toHaveAttribute("aria-selected", "true");
+  await expect.element(page.getByRole("grid", { name: "Chests" }).getByRole("row").filter({ hasText: "Mining supplies" })).toHaveAttribute("aria-selected", "false");
+  await page.getByRole("textbox", { name: "Items in chests" }).fill("8");
+  await expect.element(page.getByText("Torch: 65 in 3 chests")).toBeVisible();
+  expect(useChestNavigation.getState().areas).toHaveLength(1);
+  await userEvent.keyboard("{F3}");
+  expect(useViewStore.getState().pinnedTile).toEqual({ x: 32, y: 18 });
+});
+
 function SearchShortcuts(): null { useGlobalShortcuts(useCommands()); return null; }
 
 test("search highlights two chest footprints on the GPU, overview markers survive zoom and F3 steps both ways", async () => {
