@@ -37,4 +37,6 @@ export {
   type ContentEntry,
 } from "./atlas-build.js";
 export { filesToContentDirectory, type PickedFile } from "./content-files.js";
+export { terrariaItems } from "./items/terraria-items.generated.js";
+export type { ItemCatalog, ItemCatalogEntry, ItemIconFrame } from "./items/item-catalog.js";
 export type { AtlasWorkerRequest, AtlasWorkerResponse } from "./atlas-worker-protocol.js";
