@@ -233,10 +233,12 @@ The `.wld` stores no wall frame; the game computes it from the neighbours (R, [A
    | **2** | (1,1) | (11,0) | (1,1) |
 
 3. **Variant.** Ordinary walls (344 of 366) take a random variant whenever they are framed, as blocks do; the cells of
-   every variant are in rows 0–4. The viewer uses `(7x + 11y) mod 3` (chosen, as for blocks).
+   every variant are in rows 0–4. Every interior cell has its own variants 1 and 2 (R, at all 144 positions): (6,2) →
+   (7,2), (8,2); (1,1) → (2,1), (3,1); (6,1) → (7,1), (8,1); (10,0) → (10,1), (10,2); (11,0) → (11,1), (11,2). The
+   viewer uses `(7x + 11y) mod 3` (chosen, as for blocks).
 4. **Large-frame walls** (22) ignore the variant and take their cells by position, using row 5 as well: 146, 147,
    167, 179 and 354 repeat every **3 × 12** tiles; 185, 224, 274, 323–330, 355, 358, 359, 362, 363 and 366 every
-   **6 × 6**.
+   **6 × 6**. Their edges (fewer than four counting sides) follow the same period (R, at all 144 positions).
 
 The framing database holds every wall's cell for all 6 561 neighbourhoods (at the reference position (30, 30)), its
 interior cells at 12 × 12 positions, the plain interior's variant-1 and variant-2 cells and the 16 side combinations'

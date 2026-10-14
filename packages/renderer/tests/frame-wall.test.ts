@@ -127,6 +127,36 @@ describe("wall framing", () => {
     }
   });
 
+  test("every interior cell of an ordinary wall has its own variants, observed at its position (docs/assets.md, \"Walls\")", () => {
+    // By (x mod 3, y mod 3): variant 0, 1, 2 of wall 1.
+    const table = [
+      [[[6, 2], [7, 2], [8, 2]], [[1, 1], [2, 1], [3, 1]], [[1, 1], [2, 1], [3, 1]]],
+      [[[1, 1], [2, 1], [3, 1]], [[6, 1], [7, 1], [8, 1]], [[10, 0], [10, 1], [10, 2]]],
+      [[[1, 1], [2, 1], [3, 1]], [[11, 0], [11, 1], [11, 2]], [[1, 1], [2, 1], [3, 1]]],
+    ];
+    for (let y = 0; y < 12; y++) {
+      for (let x = 0; x < 12; x++) {
+        for (let variant = 0; variant < 3; variant++) {
+          const cell = table[y % 3]?.[x % 3]?.[variant] ?? [0, 0];
+          expect(walls.wallCell(1, 15, x, y, variant)).toBe(cell[0] * 64 + cell[1]);
+        }
+      }
+    }
+  });
+
+  test("a large-frame wall's edges follow its period too: 3 × 12 for 146, 6 × 6 for 185", () => {
+    const edgeCells = (wall: number, x: number, y: number): number[] =>
+      Array.from({ length: 15 }, (_, sides) => walls.wallCell(wall, sides, x, y));
+    for (let y = 0; y < 24; y++) {
+      for (let x = 0; x < 24; x++) {
+        expect(edgeCells(146, x, y)).toEqual(edgeCells(146, x + 3, y + 12));
+        expect(edgeCells(185, x, y)).toEqual(edgeCells(185, x + 6, y + 6));
+      }
+    }
+    // The edges differ between positions within a period.
+    expect(new Set(Array.from({ length: 36 }, (_, i) => walls.wallCell(185, 0, i % 6, Math.floor(i / 6)))).size).toBeGreaterThan(1);
+  });
+
   test("a large-frame wall's interior repeats by position: 3 × 12 for 146, 6 × 6 for 185", () => {
     for (let y = 0; y < 24; y++) {
       for (let x = 0; x < 24; x++) {
