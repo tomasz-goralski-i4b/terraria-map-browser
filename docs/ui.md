@@ -57,7 +57,8 @@ Code: `apps/web/src/ui/` (primitives), `apps/web/src/shell/` (layout, commands, 
     before dropping unsaved edits, as opening another world does).
   - *View*: Show panels, Fit world, Actual size, Show render stats, **Theme ▸**, Reset layout.
   - *Edit*: Undo `Ctrl+Z`, Redo `Ctrl+Shift+Z` (Command on macOS); then Copy `Ctrl+C`, Paste `Ctrl+V`, Place paste
-    `Enter` and Deselect / Cancel paste `Escape` for the Select tool. Undo and Redo also sit on the top bar right after the
+    `Enter` and Deselect / Cancel paste `Escape` for the Select tool; then Find… `Ctrl+F`, Next match `F3` and Previous
+    match `Shift+F3` (see the Search section; `F3` also works while the search box has focus). Undo and Redo also sit on the top bar right after the
     menus, as in Krita and Photopea; the tool options bar holds only the tool's settings (on phones, where the top
     bar has no room, it carries Undo and Redo at its end).
   - *Assets*: Connect, Preview sprite sheets, Disconnect.
@@ -96,8 +97,8 @@ Code: `apps/web/src/ui/` (primitives), `apps/web/src/shell/` (layout, commands, 
 - **Notifications** (`shell/Notifications.tsx`, `notify()` in `shell/notification-store.ts`) report finished
   background actions (a saved world, a listed folder) in the map's bottom-right corner, never over its middle.
   Successes close themselves after 6 s; errors stay until closed.
-- **Dock** (`shell/Dock.tsx`) has three tabs, as in image editors (#225): **World**, what the world *is* (World
-  properties, Content, Entities), **View**, what is *shown* (Layers and Grid), and **Swatches**, what the brush *paints with*
+- **Dock** (`shell/Dock.tsx`) has three tabs, as in image editors (#225): **World**, what the world *is* (Search,
+  World properties, Content, Entities), **View**, what is *shown* (Layers and Grid), and **Swatches**, what the brush *paints with*
   (`panels/SwatchesPanel.tsx`: materials, paints, recent swatches and custom palettes). The **Inspector** sits under
   the tabs and is visible with any; open, it takes up to half the dock. World is the default tab: after opening a world it shows
   what was opened. Inside a tab, sections are an accordion; several may be open at once. A splitter resizes the dock
@@ -151,7 +152,8 @@ Code: `apps/web/src/ui/` (primitives), `apps/web/src/shell/` (layout, commands, 
     percentage and press Enter (or leave the field) to zoom there around the centre of the view, clamped to the
     supported range (12.5 %–25 600 %, lower only to fit a large world); Escape keeps the zoom.
 
-  With editing it also shows the selection size, or the floating paste's (left of the zoom; in `--danger` above the
+  While a search is being stepped through it shows the match's place, "3 of 120 matches" or "2 of 9 chests", left of
+  the zoom. With editing it also shows the selection size, or the floating paste's (left of the zoom; in `--danger` above the
   Copy limit).
 
 ### Depth bands (status bar)
@@ -195,9 +197,17 @@ and removes the stored value (View ▸ Reset layout). The active tool, sorting a
 |---|---|---|
 | **World** | Every decoded metadata field in collapsible groups: Identity, Size & layers, Generation, Time & weather, Progression, Bosses (checklist with a count badge), Invasions & NPCs, Spawn & landmarks (each with *Go to on the map*), Ores & backgrounds. | The same rows become editable fields (world properties editor). |
 | **Layers** | Eye rows: **Sprites** first (`Alt+1`; off until Terraria assets are connected), then background, walls, blocks and liquids (`Alt+2`…`Alt+5`), plus wires and actuators (`Alt+6`) with one row per wire colour. A layer is a renderer uniform: toggling it never re-parses the world (see Map rendering for what it uploads). The Sprites row shows the assets' state on its right (not connected, the atlas build's progress, a warning for unreadable sheets) and its actions in an inline menu: connect, cancel, preview the sheets, change the folder, disconnect. A failed connect is a dismissable message over the map. Under the row, the open world's content that has no sprite (placed with a frame, no sheet in the atlas: drawn as a magenta checkerboard) is listed once. | Visibility *and* a lock per layer; a locked layer is never written by a tool. |
-| **Inspector** | The fields of the tile's `tileAt` view. By default it is "shy" and shows only what the tile has. The **Show empty fields** eye (the same eye button as the Layers rows; persisted) lists every field in fixed rows, with "None" for absent ones. The Inspect tool pins a tile on click or `Enter`; `Esc` unpins it. Without a pin, the Inspector previews the hovered tile. | Edits the selected tile or object: frames, paint, slope, wires, chest items, sign text. |
-| **Content** | Tiles per block, wall and liquid with its map colour, in a sortable, filterable, virtualised table. | The material picker: selecting a row sets the brush content; `K` picks it from the map. |
-| **Entities** | A slot (chests, signs, NPCs once decoded). | The same table pattern; selecting a row centres the map on it. |
+| **Inspector** | The fields of the tile's `tileAt` view. By default it is "shy" and shows only what the tile has. The **Show empty fields** eye (the same eye button as the Layers rows; persisted) lists every field in fixed rows, with "None" for absent ones. The Inspect tool pins a tile on click or `Enter`; `Esc` unpins it. Without a pin it shows nothing, except over a chest: hovering one previews it (header "Preview") until the pointer leaves it. | Edits the selected tile or object: frames, paint, slope, wires, chest items, sign text. |
+| **Search** (World tab, first) | One box for the whole world (`Ctrl+F`) and a scope: **Content** (blocks, walls and liquids by name or ID) or **Items in chests** (by item name or exact item ID); signs and NPCs are further scopes. Results list the matching entries with their totals (exact tile counts; item stacks with every prefix added up, chests counted once); choosing an entry narrows the results and the highlight to it, choosing it again widens them. Every match stays highlighted on the map until the search is cleared (`Esc` in the box or the clear button), also with the section collapsed: content tiles in the renderer's highlight pass (outlined, the rest of the world dimmed while **Dim the rest** is on), chests as footprint outlines with fixed-size markers that survive the overview. `Enter` / `F3` and `Shift+Enter` / `Shift+F3` go to the next and previous match, wrapping: content in column-major order, one stop per vertical run of tiles (a 2 × 2 object is two stops), from a per-column index built in slices; chests in record order. A new scope is one entry in `SEARCH_SCOPES` (`world/search-store.ts`) and one results component. | Find & replace. |
+| **Content** | Tiles per block, wall and liquid with its map colour, in a sortable, filterable, virtualised table. `Enter`, a double-click or **Find on map** in the row's context menu runs the content search for that entry and goes to its first tile. | The material picker: selecting a row sets the brush content; `K` picks it from the map. |
+| **Entities** | Every decoded chest record: its name (an unnamed chest shows its object type, "Gold Chest"), position and filled slots; type, total items and the anchor issue are optional columns. A record without a valid map target (outside the world, no complete chest object at its position, a footprint shared with another record) keeps its row with a warning icon, but has no highlight and no click target. A click **selects**: the chest is outlined on the map and shown in the Inspector, and the camera stays. `Enter` or a double-click **goes to** it: the map moves there at once and zooms in to at least 16 CSS pixels per tile (a closer zoom is kept). The context menu (right-click, the Menu key or `Shift+F10`) offers Go to, **Open inventory** and Copy position. | Signs and NPCs in the same table pattern. |
+
+**Chest inventory** (Open, from the Inspector or a chest list): every decoded slot in the game's ten-column rows,
+gaps included; the arrows, `Home` and `End` move between slots, and a List view shows the filled slots as a table. The
+window has a wooden chest frame and a detail line with the focused or hovered item's name, stack and numeric IDs.
+Item and prefix names come from the generated English catalog; inventory sprites are cropped from the connected
+local atlas with the observed texture aliases and first-frame rectangles, and without them a slot shows the item's
+name. No item textures are shipped.
 
 A future **History** section (undo stack, `Ctrl+Z` / `Ctrl+Shift+Z`) goes under Inspector.
 
@@ -264,10 +274,11 @@ Panels compose these primitives, with no ad-hoc styling:
 | `IconButton` | Icon-only button. The label is its accessible name and tooltip, `aria-keyshortcuts` carries the shortcut, and `aria-pressed` marks toggles. A disabled button uses `aria-disabled` so it stays focusable and its tooltip can say why. |
 | `Section` | WAI-ARIA accordion item: a heading button with `aria-expanded` controls a labelled region. A collapsed body is not rendered, so it costs nothing. |
 | `PropertyGrid` | Label and value rows (`<dl>`). Text values copy on click, announced in a polite live region. Flags read Yes or No with a check or a cross. |
-| `Table` | Virtualised ARIA grid with sortable headers (`aria-sort`; ascending → descending → none), a text filter, extra filters, a column menu (show and hide; `defaultHidden` columns start hidden), a sticky header and keyboard row selection (arrows, Page Up/Down, Home, End, Enter). Columns resize by dragging, or with the arrow keys on the handle, starting from the width shown. The first column takes the space left over until the user sizes it. Column layout is persisted per table id. |
+| `Table` | Virtualised ARIA grid with sortable headers (`aria-sort`; ascending → descending → none), a text filter, extra filters, a column menu (show and hide; `defaultHidden` columns start hidden), a sticky header and keyboard row selection (arrows, Page Up/Down, Home, End, Enter). Columns resize by dragging, or with the arrow keys on the handle, starting from the width shown. The first column takes the space left over until the user sizes it. Column layout is persisted per table id. With `onContextMenu`, right-click, the Menu key or `Shift+F10` selects a row and opens its menu; a selection made elsewhere (F3) scrolls into view. `fitRows` shrinks the body to its rows, for short result lists. |
 | `Toggle`, `VisibilityRow` | Switch (`role="switch"`); the eye-icon row of layer lists. |
 | `Splitter` | Focusable `separator` with `aria-valuenow`, `aria-valuemin` and `aria-valuemax`. |
 | `MenuBar`, `MenuButton`, `MenuList` | WAI-ARIA menubar and menu button over one menu list: the arrows, Home, End and Escape work, and focus returns to the trigger. Items are actions (with an icon, a shortcut or a muted detail), checkboxes, headings or submenus; a submenu opens on hover, `Enter` or `→` and closes with `←` or `Escape`. Hover moves focus, so the pointer and the keyboard show one highlight. |
+| `ContextMenu` | A `MenuList` at a viewport point, measured and kept inside the window; it closes on a pointer down outside, on scroll or resize and on Escape, and focus returns to where it was. |
 
 Tooltips are CSS (`data-tooltip` and `data-tooltip-side`), shown on hover and on keyboard focus after a short delay.
 They cost no layout and need no portal.

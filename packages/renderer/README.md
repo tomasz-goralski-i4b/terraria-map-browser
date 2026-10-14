@@ -46,7 +46,7 @@ exactly the pixels `filterTiles` (below) makes of them. The browser tests assert
   winning, and option 0 otherwise. Content without a rule uses its palette colour. The headers are written with the
   palette colours, so building the tables is the only CPU work, once per palette entry.
 - **Texture units.** The chunk pass binds the two page textures, the palette, the background and paint colours, the
-  rules and the overview: 6 of the 16 that WebGL2 guarantees. With sprite mode's atlas pages and lookup the map uses 8. Creating the renderer fails with a clear error if the GPU offers fewer
+  rules and the overview: 6 of the 16 that WebGL2 guarantees. With sprite mode's atlas pages and lookup the map uses 8 (9 with the half-resolution atlas), and the content highlight's lookup or mask one more (10). Creating the renderer fails with a clear error if the GPU offers fewer
   units or array layers than needed.
 - **Adding a plane** (16-bit like the framed `cell`, or 8-bit like `shape`): add it to `PLANES_16` (or `PLANES_8`) in
   `src/gpu/shaders.ts`, add its source to `planesOf` in `src/gpu/map-renderer.ts` (with a `PRESENT` bit if it is
@@ -204,6 +204,34 @@ exactly the pixels `filterTiles` (below) makes of them. The browser tests assert
   tile, and 3 ms against 1.7 ms at 8; in the sky walls cost nothing;
   `tests/wall-sprites-cost.browser.test.ts` (tagged perf) bounds the ratio.
   `invalidateTiles` recomputes the 3 × 3 cells around each changed tile in every cached chunk whose apron holds them.
+- **Content highlight (#186).** `setHighlight({ blocks, walls, liquids, dim })` marks the tiles holding any of the
+  given palette indices (blocks, walls) or CWM liquid kinds 1–4 (`liquid & 7`, the amount ignored), as the web app's
+  content counts count them; an index at or past the palette's length matches nothing. It is drawn over the presented
+  frame, after the grid and before annotations, blended by straight alpha, so the frame cache (and a pan's shifted
+  reuse) stays valid; `null` removes the pass. The colours are options: `highlightColor` (default
+  `DEFAULT_HIGHLIGHT_COLOR`, [255, 214, 64], a warm yellow that reads over sky, dirt, stone and dark caves) and
+  `highlightDim` (the black dim layer's opacity, default 0.6).
+  - From one pixel per tile up, an overlay pass over the resident chunks drawn (one instanced draw call per page,
+    reading the block, wall and liquid planes of the chunk pages, the apron giving the neighbours) leaves matches clear
+    with an outline of the colour, `HIGHLIGHT_OUTLINE_PIXELS` (2) backing pixels wide, inside each side whose neighbour
+    does not match (not along the world's edge); below `HIGHLIGHT_OUTLINE_ZOOM` (4) pixels per tile it tints matches at
+    alpha `HIGHLIGHT_TINT_ALPHA` (179) instead. With `dim` the other tiles are darkened. `highlightOverlay` is the CPU
+    reference; the browser tests compare the GPU output with it.
+  - The block and wall sets are an `R8UI` lookup (256 × 256, one texel per 16-bit palette index), uploaded once per
+    new highlight (64 KiB); liquids are a uniform bitmask. Changing only `dim`, or setting the same contents again,
+    uploads nothing.
+  - Below one pixel per tile chunks are not all resident, so a match mask is built on the CPU from the planes
+    (`createHighlightMask`): one texel per overview texel (factor × factor tiles), 255 when any of its tiles matches,
+    built column by column in idle slices (`requestIdleCallback` with a 50 ms timeout, a timer where there is none) of at most 6 ms, each
+    uploaded (`texSubImage2D`) with the mip levels above it. The levels hold maxima, not means, and are sampled nearest,
+    so a lone match stays visible at any zoom; the mask is drawn as one quad over the world: matches in the colour, the
+    rest dimmed. On a Large world (8400 × 2400) no slice takes more than 16 ms
+    (`tests/map-highlight.browser.test.ts`, tagged perf). A new highlight or world starts the build again;
+    `invalidateTiles` patches the texels of the changed tiles.
+  - Cost: setting, changing or clearing a highlight, and panning or zooming with one, never uploads a chunk texture
+    (`stats().textureUploads`); its own uploads are counted in `stats().highlightUploads`, and
+    `stats().highlightBuilding` is true while the mask is being built. One more texture unit (10 in all). After a
+    context restore the lookup is uploaded and the mask built again.
 - `tileAt` and anything that reads tile data (names, coordinates) use the camera and the CWM planes, never GPU
   textures, so neither path changes them.
 

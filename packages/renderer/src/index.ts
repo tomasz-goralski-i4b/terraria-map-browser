@@ -3,6 +3,11 @@
 export const RENDERER_PACKAGE = "@studio/renderer";
 export { WIRE_ALPHA, WIRE_COLORS, WIRE_LAYER, renderChunk, wireColor } from "./chunk/render.js";
 export type { ChunkLayers, ChunkPixels, ChunkRenderOptions } from "./chunk/render.js";
+export {
+  DEFAULT_HIGHLIGHT_COLOR, DEFAULT_HIGHLIGHT_DIM, HIGHLIGHT_OUTLINE_PIXELS, HIGHLIGHT_OUTLINE_ZOOM, HIGHLIGHT_TINT_ALPHA,
+  createHighlightMask, highlightLiquids, highlightLookup, highlightMatches, highlightOverlay,
+} from "./chunk/highlight.js";
+export type { HighlightMask, HighlightOptions, HighlightWorld, MapHighlight, MaskRect } from "./chunk/highlight.js";
 export { FILTER_SUBTILE, MAX_FILTER_TILES, filterTiles, filterTilesPerPixel } from "./chunk/box-filter.js";
 export { backgroundColor, contentColor, liquidColors, mapOption, paintedColor, placeholderColor } from "./palette/map-palette.js";
 export type { ContentNameMetadata, ContentNameSource, MapBackground, MapColor, MapContentMetadata, MapContentNames, MapOptionRule, MapPalette, Rgba, WorldDepth } from "./palette/map-palette.js";

@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { openSearch, stepSearch, useCanStep } from "../world/search-store.js";
 import type { IconName } from "../ui/Icon.js";
 import { getDefaultAssetSession, useAssetStore } from "../assets/asset-session.js";
 import { useAppStore } from "../store.js";
@@ -151,6 +152,7 @@ const THEME_LABELS: Readonly<Record<ThemeChoice, string>> = { system: "Theme: fo
 
 /** The app's commands with their current state. */
 export function useCommands(): Command[] {
+  const canStep = useCanStep();
   const hasWorld = useAppStore((state) => state.summary !== null);
   const loadingWorld = useAppStore((state) => state.phase === "loading");
   const saving = useSaveStore((state) => state.open);
@@ -191,6 +193,9 @@ export function useCommands(): Command[] {
   const setSpritePreviewOpen = useViewStore((state) => state.setSpritePreviewOpen);
 
   return [
+    { id: "search.find", group: "Edit", label: "Find…", icon: "search", shortcut: "Control+F", enabled: hasWorld, ...noWorld, run: openSearch },
+    { id: "search.next", group: "Edit", label: "Next match", shortcut: "F3", enabled: canStep, ...(canStep ? {} : { disabledReason: "Nothing found" }), run: () => { stepSearch(1); } },
+    { id: "search.previous", group: "Edit", label: "Previous match", shortcut: "Shift+F3", enabled: canStep, ...(canStep ? {} : { disabledReason: "Nothing found" }), run: () => { stepSearch(-1); } },
     { id: "edit.undo", group: "Edit", label: "Undo", icon: "undo", shortcut: "Control+Z", enabled: canUndo && historyReason === null,
       ...(historyReason !== null ? { disabledReason: historyReason } : !canUndo ? { disabledReason: tool === "ruler" ? "No measurement to undo" : "No stroke to undo" } : {}), run: tool === "ruler" ? undoMeasurement : undoBrush },
     { id: "edit.redo", group: "Edit", label: "Redo", icon: "redo", shortcut: "Control+Shift+Z", enabled: canRedo && historyReason === null,
@@ -367,8 +372,8 @@ export function matchesShortcut(event: KeyboardEvent, shortcut: string): boolean
   const modifiers = new Set(parts.slice(0, -1));
   const control = event.ctrlKey || event.metaKey;
   if (control !== modifiers.has("Control") || event.altKey !== modifiers.has("Alt")) return false;
-  // A printable key that needs Shift (e.g. `?`) is matched by the character; Shift is only compared for letters.
-  if (/^[a-z]$/i.test(key) && event.shiftKey !== modifiers.has("Shift")) return false;
+  // Shift-produced punctuation matches by character; letters and named keys (F3, Escape) compare the modifier.
+  if ((/^[a-z]$/i.test(key) || key.length > 1) && event.shiftKey !== modifiers.has("Shift")) return false;
   // Digits match by physical key: with Alt (Option on macOS) the produced character is not the digit.
   if (/^[0-9]$/.test(key)) return event.code === `Digit${key}` || event.key === key;
   return event.key.toLowerCase() === key.toLowerCase();
@@ -388,7 +393,9 @@ function isTextEntry(target: EventTarget | null): boolean {
 export function useGlobalShortcuts(commands: readonly Command[]): void {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.defaultPrevented || event.repeat || isTextEntry(event.target)) return;
+      // Find and its steps also work from a text field (the search box itself included), as in code editors.
+      const findKey = event.key === "F3" || ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "f" && !event.shiftKey && !event.altKey);
+      if (event.defaultPrevented || event.repeat || (isTextEntry(event.target) && !findKey)) return;
       if (event.target instanceof Element && event.target.closest("[role=menu], dialog[open]") !== null) return;
       const matching = commands.filter((candidate) => candidate.shortcut !== undefined && matchesShortcut(event, candidate.shortcut));
       const command = matching.find((candidate) => candidate.enabled) ?? matching[0];
@@ -396,9 +403,10 @@ export function useGlobalShortcuts(commands: readonly Command[]): void {
       if (command.id === "edit.placePaste" && event.target instanceof Element && event.target.closest("button, input, select, [role=button]") !== null) return;
       // Ctrl+C / Ctrl+V stay the browser's for selected page text and whenever there is no area to copy or paste.
       if ((command.id === "edit.copy" || command.id === "edit.paste") && (!command.enabled || window.getSelection()?.isCollapsed === false)) return;
-      // A disabled Ctrl shortcut is still ours: Ctrl+S must not open the browser's "Save page" instead.
+      // A disabled Ctrl shortcut is still ours: Ctrl+S must not open the browser's "Save page" instead, nor F3 its
+      // find bar.
       if (!command.enabled) {
-        if (event.ctrlKey || event.metaKey) event.preventDefault();
+        if (event.ctrlKey || event.metaKey || event.key === "F3") event.preventDefault();
         return;
       }
       event.preventDefault();

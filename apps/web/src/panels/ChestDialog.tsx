@@ -1,10 +1,11 @@
-import { useEffect, useId, useRef } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { EntityItem, WorldChest } from "@studio/world-codec";
 import { useLayoutStore } from "../shell/layout-store.js";
 import { Icon } from "../ui/Icon.js";
 import { IconButton } from "../ui/IconButton.js";
 import { itemLabel, prefixLabel } from "../world/items.js";
 import { slotLabel } from "./chest-fields.js";
+import { ItemSprite } from "./ItemSprite.js";
 
 /** The game lays a chest out in rows of ten slots. */
 const SLOTS_PER_ROW = 10;
@@ -19,6 +20,8 @@ export function ChestDialog({ chest, title, onClose }: { readonly chest: WorldCh
   const titleId = useId();
   const view = useLayoutStore((state) => state.chestView);
   const setView = useLayoutStore((state) => state.setChestView);
+  // The slot under the pointer or focus; each slot already carries its own label, so the line is not a live region.
+  const [preview, setPreview] = useState<EntityItem | null | undefined>(undefined);
 
   useEffect(() => {
     const dialog = ref.current;
@@ -56,23 +59,46 @@ export function ChestDialog({ chest, title, onClose }: { readonly chest: WorldCh
       </header>
       {/* Both views share the grid's box, so switching never resizes the dialog; the list scrolls inside it. */}
       <div className="chest-body" style={{ "--rows": Math.max(1, Math.ceil(chest.slotCount / SLOTS_PER_ROW)) } as React.CSSProperties}>
-        {view === "grid" ? <SlotGrid slotCount={chest.slotCount} bySlot={bySlot} /> : <SlotList items={chest.items} />}
+        {view === "grid" ? <SlotGrid slotCount={chest.slotCount} bySlot={bySlot} onPreview={setPreview} /> : <SlotList items={chest.items} onPreview={setPreview} />}
       </div>
+      <footer className="chest-item-detail">
+        {preview === undefined ? "Point at or focus a slot for its item and IDs."
+          : preview === null ? "Empty slot"
+          : `${slotLabel(preview)} · Item ID ${String(preview.itemId)}${preview.prefix === 0 ? "" : ` · Prefix ID ${String(preview.prefix)}`}`}
+      </footer>
     </dialog>
   );
 }
 
-function SlotGrid({ slotCount, bySlot }: { readonly slotCount: number; readonly bySlot: ReadonlyMap<number, EntityItem> }): React.JSX.Element {
+function SlotGrid({ slotCount, bySlot, onPreview }: {
+  readonly slotCount: number;
+  readonly bySlot: ReadonlyMap<number, EntityItem>;
+  readonly onPreview: (item: EntityItem | null) => void;
+}): React.JSX.Element {
   return (
-    <ol className="chest-grid">
+    <ol className="chest-grid" onKeyDown={(event) => {
+      const current = event.target;
+      if (!(current instanceof HTMLElement)) return;
+      const slot = Number(current.dataset["slot"]);
+      const offsets: Readonly<Record<string, number>> = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -SLOTS_PER_ROW, ArrowDown: SLOTS_PER_ROW };
+      const offset = offsets[event.key];
+      const next = event.key === "Home" ? 0 : event.key === "End" ? slotCount - 1 : offset === undefined ? undefined : Math.max(0, Math.min(slotCount - 1, slot + offset));
+      if (next === undefined) return;
+      event.preventDefault();
+      event.currentTarget.querySelector<HTMLElement>(`[data-slot="${String(next)}"]`)?.focus();
+    }}>
       {Array.from({ length: slotCount }, (_, slot) => {
         const item = bySlot.get(slot);
         const label = `Slot ${String(slot + 1)}: ${item === undefined ? "Empty" : slotLabel(item)}`;
         return (
-          <li key={slot} role="listitem" className="chest-slot" data-empty={item === undefined} aria-label={label} title={label} tabIndex={0}>
+          <li
+            key={slot} role="listitem" className="chest-slot" data-slot={slot} data-empty={item === undefined}
+            aria-label={label} title={label} tabIndex={0}
+            onFocus={() => { onPreview(item ?? null); }} onMouseEnter={() => { onPreview(item ?? null); }}
+          >
             {item !== undefined && (
               <>
-                <span className="chest-slot-item">{String(item.itemId)}</span>
+                <ItemSprite itemId={item.itemId} />
                 {item.stack > 1 && <span className="chest-slot-stack">{String(item.stack)}</span>}
                 {item.prefix !== 0 && <span className="chest-slot-prefix" aria-hidden="true">★</span>}
               </>
@@ -84,7 +110,7 @@ function SlotGrid({ slotCount, bySlot }: { readonly slotCount: number; readonly 
   );
 }
 
-function SlotList({ items }: { readonly items: readonly EntityItem[] }): React.JSX.Element {
+function SlotList({ items, onPreview }: { readonly items: readonly EntityItem[]; readonly onPreview: (item: EntityItem | null) => void }): React.JSX.Element {
   if (items.length === 0) return <p className="panel-empty">This chest is empty.</p>;
   return (
     <table className="chest-list">
@@ -93,9 +119,9 @@ function SlotList({ items }: { readonly items: readonly EntityItem[] }): React.J
       </thead>
       <tbody>
         {[...items].sort((a, b) => a.slot - b.slot).map((item) => (
-          <tr key={item.slot}>
+          <tr key={item.slot} tabIndex={0} onFocus={() => { onPreview(item); }} onMouseEnter={() => { onPreview(item); }}>
             <td>{String(item.slot + 1)}</td>
-            <td>{itemLabel(item.itemId)}</td>
+            <td><span className="chest-list-item"><ItemSprite itemId={item.itemId} fallback={false} /><span>{itemLabel(item.itemId)}</span></span></td>
             <td>{String(item.stack)}</td>
             <td>{item.prefix === 0 ? "" : prefixLabel(item.prefix)}</td>
           </tr>

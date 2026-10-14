@@ -78,15 +78,16 @@ export function tileProperties(point: TilePoint, tile: Tile, showAll = true): Pr
 }
 
 /**
- * The tile pinned with the Inspect tool. Hovering does not change it: the status bar previews the tile under the
- * pointer, so this section changes only on a click and never resizes the dock while the pointer moves.
+ * The tile pinned with the Inspect tool. Hovering other tiles does not change it: the status bar previews the tile
+ * under the pointer. Without a pin, hovering a chest previews that chest (#187); the section then changes only when
+ * the pointer moves onto another chest or off it, not on every tile it crosses.
  */
 export function InspectorPanel({ world }: { readonly world?: InspectorWorld | null }): React.JSX.Element {
   const revision = useBrushStore((state) => state.revision);
   const summary = useAppStore((state) => state.summary);
   const worldRevision = useAppStore((state) => state.worldRevision);
   const hasWorld = summary !== null;
-  const pinned = useViewStore((state) => state.pinnedTile);
+  const pinnedTile = useViewStore((state) => state.pinnedTile);
   const setPinned = useViewStore((state) => state.setPinnedTile);
   const showAll = useLayoutStore((state) => state.inspectorShowAll);
   const setShowAll = useLayoutStore((state) => state.setInspectorShowAll);
@@ -95,6 +96,18 @@ export function InspectorPanel({ world }: { readonly world?: InspectorWorld | nu
     // eslint-disable-next-line react-hooks/exhaustive-deps -- rebuild on new tiles, not on metadata edits
     [hasWorld, worldRevision]);
   const shown = world === undefined ? sessionWorld : world;
+  // The hovered chest's anchor as a string, so moving within one chest (or over non-chest tiles) re-renders nothing.
+  const hoveredChest = useViewStore((state) => {
+    const hover = state.hoverTile;
+    const found = pinnedTile !== null || hover === null ? null : shown?.chestAt?.(hover.x, hover.y) ?? null;
+    return found === null ? null : `${String(found.x)},${String(found.y)}`;
+  });
+  const preview = useMemo(() => {
+    if (hoveredChest === null) return null;
+    const [x = 0, y = 0] = hoveredChest.split(",").map(Number);
+    return { x, y };
+  }, [hoveredChest]);
+  const pinned = pinnedTile ?? preview;
   const chest = pinned === null ? null : shown?.chestAt?.(pinned.x, pinned.y) ?? null;
   const [openChest, setOpenChest] = useState<WorldChest | null>(null);
   const closeChest = useCallback(() => {
@@ -112,15 +125,15 @@ export function InspectorPanel({ world }: { readonly world?: InspectorWorld | nu
   return (
     <div className="inspector-panel">
       <div className="inspector-header">
-        <span className="inspector-state" data-pinned="true">Pinned</span>
+        <span className="inspector-state" data-pinned={pinnedTile !== null}>{pinnedTile === null ? "Preview" : "Pinned"}</span>
         <span className="inspector-actions">
           {/* The same eye as the Layers rows: pressed (open eye) shows the empty fields too. */}
           <IconButton icon={showAll ? "eye" : "eyeOff"} label="Show empty fields" pressed={showAll} tooltipSide="left" onClick={() => {
             setShowAll(!showAll);
           }} />
-          <IconButton icon="close" label="Unpin tile" shortcut="Escape" tooltipSide="left" onClick={() => {
+          {pinnedTile !== null && <IconButton icon="close" label="Unpin tile" shortcut="Escape" tooltipSide="left" onClick={() => {
             setPinned(null);
-          }} />
+          }} />}
         </span>
       </div>
       <PropertyGrid label="Tile" properties={tileProperties(pinned, tile, showAll).map((property) => {
@@ -137,7 +150,8 @@ export function InspectorPanel({ world }: { readonly world?: InspectorWorld | nu
       {chest !== null && (
         <>
           <h3 className="inspector-subheading">{chestTitle(shown.tileAt(chest.x, chest.y))}</h3>
-          <PropertyGrid label="Chest" properties={chestProperties(chest, shown.tileAt(chest.x, chest.y), showAll, () => {
+          <PropertyGrid label="Chest" properties={chestProperties(chest, shown.tileAt(chest.x, chest.y), () => {
+            setPinned(pinned);
             setOpenChest(chest);
           })} />
         </>

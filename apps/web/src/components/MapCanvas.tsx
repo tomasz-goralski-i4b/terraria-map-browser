@@ -11,6 +11,8 @@ import { beginBrush, finishBrush, moveBrush, pickBrushMaterial, subscribeBrushCh
 import { createBrushStabilizer } from "../world/brush-stabilizer.js";
 import { cancelArea, movePaste, pastePreviewWorld, pasteVisibleBounds, placePaste, selectArea, useAreaStore } from "../world/area-session.js";
 import { useLayoutStore } from "../shell/layout-store.js";
+import { CHEST_MARKER_ZOOM, chestAnnotations, useChestNavigation } from "../world/chest-navigation.js";
+import { useSearchStore } from "../world/search-store.js";
 import { measurementScene, type MeasurementScene } from "../world/measurement-scene.js";
 import { hitMeasurement, type MeasurementHit, type RulerSettings } from "../world/measurements.js";
 import { useRulerStore, beginMeasurement, moveMeasurement, finishMeasurement } from "../world/ruler-session.js";
@@ -256,6 +258,7 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
     });
   }, []);
 
+  const annotationCache = useRef<{ readonly ruler: Float32Array; readonly chests: ReturnType<typeof useChestNavigation.getState>; readonly markers: boolean; readonly match: unknown; readonly data: Float32Array } | null>(null);
   const updateRuler = useCallback((session: MapSession): void => {
     const canvas = canvasRef.current, overlay = rulerLabelsRef.current;
     if (canvas === null || overlay === null || canvas.clientWidth === 0) return;
@@ -269,7 +272,20 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
     }
     if (cached === null) return;
     const density = canvas.width / canvas.clientWidth;
-    session.renderer.setAnnotations(cached.scene.data.length === 0 ? null : { data: cached.scene.data, density });
+    const chests = useChestNavigation.getState();
+    let annotations = annotationCache.current;
+    const markers = session.camera.zoom / density < CHEST_MARKER_ZOOM;
+    // The content match F3 last went to is framed like the selected chest, so the current one stands out.
+    const match = useSearchStore.getState().position;
+    if (annotations?.ruler !== cached.scene.data || annotations.chests !== chests || annotations.markers !== markers || annotations.match !== match) {
+      const current = match === null ? [] : [{ x: match.x, y: match.y, width: 1, height: 1 }];
+      const chestData = chestAnnotations([...chests.areas, ...current], current[0] ?? chests.selected, markers);
+      const data = new Float32Array(cached.scene.data.length + chestData.length);
+      data.set(cached.scene.data); data.set(chestData, cached.scene.data.length);
+      annotations = { ruler: cached.scene.data, chests, markers, match, data };
+      annotationCache.current = annotations;
+    }
+    session.renderer.setAnnotations(annotations.data.length === 0 ? null : { data: annotations.data, density });
     // No DOM work on hover frames; only visible labels exist, and map movement changes transforms, not React state.
     if (cached.scene.labels.length === 0 && rulerNodes.current.size === 0) return;
     const cameraKey = `${String(session.camera.x)} ${String(session.camera.y)} ${String(session.camera.zoom)} ${String(canvas.width)} ${String(canvas.height)} ${String(density)}`;
@@ -405,6 +421,16 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
       if (state.grid !== previous.grid || state.ruler !== previous.ruler) session.requestFrame();
     });
     const unsubscribeRuler = useRulerStore.subscribe(() => { session.requestFrame(); });
+    const unsubscribeChests = useChestNavigation.subscribe(() => { session.requestFrame(); });
+    // The content search's matches: highlighted (and the rest dimmed) by the renderer, never by re-uploading chunks.
+    const applyHighlight = (state: ReturnType<typeof useSearchStore.getState>): void => {
+      session.renderer.setHighlight(state.highlight === null ? null : { ...state.highlight, dim: state.dim });
+    };
+    applyHighlight(useSearchStore.getState());
+    const unsubscribeHighlight = useSearchStore.subscribe((state, previous) => {
+      if (state.highlight !== previous.highlight || state.dim !== previous.dim) applyHighlight(state);
+      if (state.position !== previous.position) session.requestFrame();
+    });
     const unsubscribeArea = useAreaStore.subscribe((state) => {
       if (state.selection === null) selectionPointer.current = null;
       session.requestFrame();
@@ -496,6 +522,15 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
       zoomTo: (zoom) => {
         zoomBy(zoom / session.animator.target.zoom);
       },
+      goTo: (x, y, minZoom) => {
+        endStroke();
+        if (session.viewport.width === 0 || canvas.clientWidth === 0) return;
+        session.keys.clear();
+        const zoom = Math.max(session.animator.target.zoom, minZoom * canvas.width / canvas.clientWidth);
+        const camera = { x: x - session.viewport.width / 2 / zoom, y: y - session.viewport.height / 2 / zoom, zoom };
+        session.animator.reset(clampCamera(camera, session.viewport, session.world), session.viewport, session.world);
+        applyCamera(session, session.animator.current);
+      },
       jumpTo: (camera) => {
         endStroke();
         if (session.viewport.width === 0) return;
@@ -519,6 +554,9 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
       unsubscribeTool();
       unsubscribeGrid();
       unsubscribeRuler();
+      unsubscribeChests();
+      unsubscribeHighlight();
+      annotationCache.current = null;
       rulerCache.current = null; rulerLabelCamera.current = "";
       unsubscribeArea();
       registerMapController(null);

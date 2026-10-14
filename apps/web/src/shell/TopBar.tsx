@@ -151,6 +151,10 @@ export function TopBar({ commands }: { readonly commands: readonly Command[] }):
         menuItem(get("edit.paste")),
         menuItem(get("edit.placePaste")),
         menuItem(get("edit.cancelArea")),
+        { kind: "separator" },
+        menuItem(get("search.find")),
+        menuItem(get("search.next")),
+        menuItem(get("search.previous")),
       ],
     },
     {

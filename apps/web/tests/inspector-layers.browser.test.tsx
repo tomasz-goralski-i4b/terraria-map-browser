@@ -140,6 +140,8 @@ test("a tile of a chest also shows the chest, whose slots open over the map as a
   for (const [x, y] of [[1, 0], [2, 0], [1, 1], [2, 1]] as const) world.setTile(x, y, { block: { kind: "vanilla", id: 21 }, frameX: 36, frameY: 0, wires: 0, actuator: false });
   const chest = { x: 1, y: 0, name: "Ores", slotCount: 40, items: [{ slot: 2, itemId: 12, stack: 30, prefix: 0 }, { slot: 11, itemId: 46, stack: 1, prefix: 7 }] };
   await render(<InspectorPanel world={{ ...inspectorWorld(world), chestAt: (x, y) => (x >= 1 && x <= 2 && y <= 1 ? chest : null) }} />);
+  useViewStore.getState().setHoverTile({ x: 2, y: 1 });
+  await expect.element(page.getByText("Preview", { exact: true })).toBeVisible();
   useViewStore.getState().setPinnedTile({ x: 2, y: 1 });
   await expect.element(page.getByRole("heading", { name: "Chest" })).toBeVisible();
   const chestRows = (): [string, string][] => [...document.querySelectorAll('dl[aria-label="Chest"] .property-row')].map((row) => [
@@ -155,14 +157,17 @@ test("a tile of a chest also shows the chest, whose slots open over the map as a
   const cells = (): string[] => [...document.querySelectorAll(".chest-grid [role=listitem]")].map((cell) => cell.getAttribute("aria-label") ?? "");
   expect(cells()).toHaveLength(40);
   expect(cells()[0]).toBe("Slot 1: Empty");
-  expect(cells()[2]).toBe("Slot 3: Item 12 × 30");
-  expect(cells()[11]).toBe("Slot 12: Item 46 × 1, Prefix 7");
+  expect(cells()[2]).toBe("Slot 3: Copper Ore × 30");
+  expect(cells()[11]).toBe("Slot 12: Light's Bane × 1, Tiny");
+  await page.getByRole("listitem", { name: "Slot 3: Copper Ore × 30" }).click();
+  await userEvent.keyboard("{ArrowDown}");
+  expect(document.activeElement?.getAttribute("aria-label")).toBe("Slot 13: Empty");
 
   // The list shows the filled slots only, and the choice is remembered.
   await page.getByRole("button", { name: "List view" }).click();
   await expect.element(page.getByRole("button", { name: "List view" })).toHaveAttribute("aria-pressed", "true");
   const listRows = [...document.querySelectorAll(".chest-list tbody tr")].map((row) => [...row.querySelectorAll("td")].map((cell) => cell.textContent));
-  expect(listRows).toEqual([["3", "Item 12", "30", ""], ["12", "Item 46", "1", "Prefix 7"]]);
+  expect(listRows).toEqual([["3", "Copper Ore", "30", ""], ["12", "Light's Bane", "1", "Tiny"]]);
   expect(useLayoutStore.getState().chestView).toBe("list");
 
   // Escape closes the slots and keeps the tile pinned.

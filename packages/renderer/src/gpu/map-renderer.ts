@@ -5,9 +5,14 @@
 import type { ContentRef } from "@studio/world-model";
 import { gridFragmentSource, gridVertexSource } from "./grid-shaders.js";
 import { annotationFragmentSource, annotationVertexSource } from "./annotation-shaders.js";
+import { highlightChunkFragmentSource, highlightMaskFragmentSource } from "./highlight-shaders.js";
 import { CHUNK_SIZE, visibleChunks } from "../camera/camera.js";
 import type { Camera, ChunkCoord, Size } from "../camera/camera.js";
 import { filterTilesPerPixel } from "../chunk/box-filter.js";
+import {
+  HIGHLIGHT_OUTLINE_PIXELS, HIGHLIGHT_OUTLINE_ZOOM, HIGHLIGHT_TINT_ALPHA, createHighlightMask, highlightColors, highlightLiquids,
+  highlightLookup, type HighlightMask, type MapHighlight, type MaskRect,
+} from "../chunk/highlight.js";
 import { WIRE_ALPHA, WIRE_COLORS, WIRE_LAYER, type ChunkLayers } from "../chunk/render.js";
 import { NO_CELL } from "../framing/cells.js";
 import { createChunkCellCache } from "../framing/chunk-cells.js";
@@ -137,6 +142,16 @@ export interface MapRendererOptions {
    * once and this is never called.
    */
   readonly onSpritesPreparing?: (preparing: boolean) => void;
+  /**
+   * Colour of the content highlight's outlines and tints (`setHighlight`), RGB 0–255. Default `DEFAULT_HIGHLIGHT_COLOR`
+   * ([255, 214, 64], a warm yellow that reads over sky, dirt, stone and dark caves). Throws a RangeError when invalid.
+   */
+  readonly highlightColor?: readonly [number, number, number];
+  /**
+   * Opacity (0–1) of the black layer the highlight lays over tiles that do not match, when dimming. Default
+   * `DEFAULT_HIGHLIGHT_DIM` (0.6). Throws a RangeError when invalid.
+   */
+  readonly highlightDim?: number;
 }
 
 export interface MapFrameObservation {
@@ -179,6 +194,13 @@ export interface MapRendererStats {
    * a pan revealed (only the camera changed since, by whole screen pixels at the same zoom).
    */
   readonly reusedFrames: number;
+  /**
+   * Uploads of the content highlight since creation: one per lookup of a new highlight (64 KiB), one per batch of its
+   * overview mask (an idle slice, or an edit's patch). They never count as `textureUploads`.
+   */
+  readonly highlightUploads: number;
+  /** Whether the highlight's overview mask is still being built in idle slices. */
+  readonly highlightBuilding: boolean;
 }
 
 /** An offscreen colour target the size of the canvas: scheduled frames are drawn into one and copied to the canvas. */
@@ -199,6 +221,14 @@ export interface MapRenderer {
    * pixels per tile, solid interval lines while they are 8 CSS pixels apart; none over the zoomed-out overview.
    */
   readonly setGrid: (grid: MapGrid | null) => void;
+  /**
+   * Highlights the tiles holding any of the given blocks, walls or liquids (`MapHighlight`); null removes the pass.
+   * From one pixel per tile up an overlay pass over the presented frame outlines the matches (tints them below
+   * HIGHLIGHT_OUTLINE_ZOOM) and dims the rest; zoomed out it draws a match mask built from the planes in idle slices.
+   * Never uploads chunk textures and never invalidates the frame cache; the same contents again are a no-op. Throws a
+   * RangeError for an index outside 0–65534 or a liquid kind outside 1–4.
+   */
+  readonly setHighlight: (highlight: MapHighlight | null) => void;
   /** Vector notes drawn after cached terrain; null disables the pass. */
   readonly setAnnotations: (annotations: MapAnnotations | null) => void;
   /**
@@ -279,7 +309,8 @@ const GRID_MIN_BLOCK_PIXELS = 6;
 const GRID_MIN_INTERVAL_PIXELS = 8;
 
 // Texture units: 0–1 the chunk page; 2 palette; 3 background and paint colours; 4 map option rules; 5 overview;
-// 6 sprite atlas pages; 7 sprite sheet lookup; 8 the atlas pages at half resolution. WebGL2 guarantees 16.
+// 6 sprite atlas pages; 7 sprite sheet lookup; 8 the atlas pages at half resolution; 9 the highlight's lookup or mask.
+// WebGL2 guarantees 16.
 const UNIT_PLANES_16 = 0;
 const UNIT_PLANES_8 = 1;
 const UNIT_PALETTE = 2;
@@ -289,7 +320,17 @@ const UNIT_OVERVIEW = 5;
 const UNIT_ATLAS = 6;
 const UNIT_SPRITE_SHEETS = 7;
 const UNIT_ATLAS_HALF = 8;
-const TEXTURE_UNITS = 9;
+const UNIT_HIGHLIGHT = 9;
+const TEXTURE_UNITS = 10;
+/** Texels per row of the highlight lookup (R8UI, 256 × 256: one per 16-bit palette index). */
+const HIGHLIGHT_LOOKUP_ROW = 256;
+/** Time an idle slice of the highlight mask build may spend, in milliseconds (less when the idle period is shorter). */
+const MASK_SLICE_MILLISECONDS = 6;
+const HIGHLIGHT_CHUNK_UNIFORMS = [
+  "uPlanes16", "uPlanes8", "uHighlight", "uLiquids", "uPaletteLength", "uCamera", "uZoom", "uViewport", "uWorldSize",
+  "uColor", "uDimAlpha", "uTintAlpha", "uOutline",
+] as const;
+const HIGHLIGHT_MASK_UNIFORMS = ["uCamera", "uZoom", "uViewport", "uWorld", "uExtent", "uMask", "uColor", "uDimAlpha"] as const;
 /** Texels per row of the sprite sheet lookup: five per palette index (SPRITE_SHEET_ROW in shaders.ts). */
 const SPRITE_SHEET_WIDTH = SPRITE_SHEET_ROW * SPRITE_SHEET_TEXELS;
 
@@ -676,6 +717,21 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   let annotationProgram: Program<(typeof annotationUniforms)[number]> | null = null;
   let annotationBuffer: WebGLBuffer | null = null, annotationArray: WebGLVertexArrayObject | null = null;
   let uploadedAnnotations: Float32Array | null = null;
+  // The content highlight: its colours, the highlight as set (null: no pass), its content sets as a CPU lookup (key:
+  // the sorted sets, to recognize the same contents), the lookup texture (stale until uploaded for the next draw), the
+  // programs of its two passes, and the overview mask with its texture (created by the first upload).
+  const highlightStyle = highlightColors(options);
+  const highlightColorUniform = new Float32Array(highlightStyle.color.map((channel) => channel / 255));
+  let highlight: MapHighlight | null = null;
+  let highlightKey = "";
+  let highlightBytes: Uint8Array | null = null;
+  let highlightLiquidBits = 0;
+  let highlightLookupTexture: WebGLTexture | null = null;
+  let highlightLookupStale = false;
+  let highlightChunkProgram: Program<(typeof HIGHLIGHT_CHUNK_UNIFORMS)[number]> | null = null;
+  let highlightMaskProgram: Program<(typeof HIGHLIGHT_MASK_UNIFORMS)[number]> | null = null;
+  let highlightMask: { readonly mask: HighlightMask; texture: WebGLTexture | null } | null = null;
+  let highlightUploads = 0;
   let parallelCompile = parallelShaderCompile(gl);
   // The timer that asks whether the background link is done; 0 when none is pending.
   let linkPoll = 0;
@@ -1218,15 +1274,23 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     background = { texture, world: source, paintRow };
   };
 
-  /** The overview of `source`, created (empty) on first use; null when even the largest factor cannot fit it. */
-  const overviewOf = (source: RenderableWorld): Overview | null => {
-    if (overview?.world === source) return overview;
-    releaseOverview();
+  /** Tiles per overview texel and axis for `source`; null when even the largest factor cannot fit it. */
+  const overviewFactor = (source: RenderableWorld): number | null => {
     let factor = MIN_OVERVIEW_FACTOR;
     while (factor < CHUNK_SIZE && Math.ceil(Math.max(source.width, source.height) / factor) > maxTextureSize) factor *= 2;
     const width = Math.ceil(source.width / factor);
     const height = Math.ceil(source.height / factor);
-    if (width === 0 || height === 0 || Math.max(width, height) > maxTextureSize) return null;
+    return width === 0 || height === 0 || Math.max(width, height) > maxTextureSize ? null : factor;
+  };
+
+  /** The overview of `source`, created (empty) on first use; null when even the largest factor cannot fit it. */
+  const overviewOf = (source: RenderableWorld): Overview | null => {
+    if (overview?.world === source) return overview;
+    releaseOverview();
+    const factor = overviewFactor(source);
+    if (factor === null) return null;
+    const width = Math.ceil(source.width / factor);
+    const height = Math.ceil(source.height / factor);
     const texture = requireValue(gl.createTexture(), "a texture");
     gl.activeTexture(gl.TEXTURE0 + UNIT_OVERVIEW);
     gl.bindTexture(gl.TEXTURE_2D, texture);
@@ -1732,6 +1796,117 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     drawCalls++;
   };
 
+  /** Uploads the lookup of the current highlight's blocks and walls when it changed (one 64 KiB upload). */
+  const uploadHighlightLookup = (): void => {
+    if (!highlightLookupStale || highlightBytes === null) return;
+    resetUnpack();
+    gl.activeTexture(gl.TEXTURE0 + UNIT_HIGHLIGHT);
+    if (highlightLookupTexture === null) {
+      highlightLookupTexture = integerTexture(gl, gl.R8UI, HIGHLIGHT_LOOKUP_ROW, HIGHLIGHT_LOOKUP_ROW);
+    } else {
+      gl.bindTexture(gl.TEXTURE_2D, highlightLookupTexture);
+    }
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    gl.texSubImage2D(
+      gl.TEXTURE_2D, 0, 0, 0, HIGHLIGHT_LOOKUP_ROW, HIGHLIGHT_LOOKUP_ROW, gl.RED_INTEGER, gl.UNSIGNED_BYTE, highlightBytes,
+    );
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+    highlightLookupStale = false;
+    highlightUploads++;
+  };
+
+  /**
+   * Uploads changed rectangles of the highlight mask, one texSubImage2D per mip level, read in place from its levels;
+   * creates its texture (R8, every level, sampled nearest: the levels hold maxima) on the first one.
+   */
+  const uploadMaskRects = (state: { readonly mask: HighlightMask; texture: WebGLTexture | null }, rects: readonly MaskRect[]): void => {
+    if (rects.length === 0 || gl.isContextLost()) return;
+    const { mask } = state;
+    resetUnpack();
+    gl.activeTexture(gl.TEXTURE0 + UNIT_HIGHLIGHT);
+    if (state.texture === null) {
+      const texture = requireValue(gl.createTexture(), "a texture");
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      gl.texStorage2D(gl.TEXTURE_2D, mask.levels.length, gl.R8, mask.width, mask.height);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST_MIPMAP_NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      state.texture = texture;
+    } else {
+      gl.bindTexture(gl.TEXTURE_2D, state.texture);
+    }
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    for (const rect of rects) {
+      const level = mask.levels[rect.level];
+      if (level === undefined || rect.width <= 0 || rect.height <= 0) continue;
+      gl.pixelStorei(gl.UNPACK_ROW_LENGTH, Math.max(1, mask.width >> rect.level));
+      gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, rect.x);
+      gl.pixelStorei(gl.UNPACK_SKIP_ROWS, rect.y);
+      gl.texSubImage2D(gl.TEXTURE_2D, rect.level, rect.x, rect.y, rect.width, rect.height, gl.RED, gl.UNSIGNED_BYTE, level);
+    }
+    defaultUnpack(gl);
+    highlightUploads++;
+  };
+
+  const releaseHighlightMask = (): void => {
+    if (highlightMask?.texture != null && !gl.isContextLost()) gl.deleteTexture(highlightMask.texture);
+    highlightMask = null;
+  };
+
+  /**
+   * The highlight over the presented frame, on the default framebuffer, blended by straight alpha: from one pixel per
+   * tile up (the chunk pass's range) the chunk overlay over the resident chunks drawn (`ready`), below it the mask.
+   */
+  const drawHighlight = (source: RenderableWorld, target: Overview | null, ready: readonly (readonly [ChunkCoord, number])[]): void => {
+    if (highlight === null) return;
+    const dimAlpha = highlight.dim ? highlightStyle.dim / 255 : 0;
+    gl.enable(gl.BLEND);
+    gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    if (target === null && view.zoom >= 1) {
+      uploadHighlightLookup();
+      highlightChunkProgram ??= link(gl, chunkVertexSource, highlightChunkFragmentSource, HIGHLIGHT_CHUNK_UNIFORMS);
+      const { program, uniforms } = highlightChunkProgram;
+      gl.useProgram(program);
+      gl.uniform1i(uniforms.uPlanes16, UNIT_PLANES_16);
+      gl.uniform1i(uniforms.uPlanes8, UNIT_PLANES_8);
+      gl.uniform1i(uniforms.uHighlight, UNIT_HIGHLIGHT);
+      gl.uniform1i(uniforms.uLiquids, highlightLiquidBits);
+      gl.uniform1i(uniforms.uPaletteLength, Math.min(source.palette.length, PALETTE_CAPACITY));
+      gl.uniform2f(uniforms.uCamera, view.x, view.y);
+      gl.uniform1f(uniforms.uZoom, view.zoom);
+      gl.uniform2f(uniforms.uViewport, canvas.width, canvas.height);
+      gl.uniform2i(uniforms.uWorldSize, source.width, source.height);
+      gl.uniform3fv(uniforms.uColor, highlightColorUniform);
+      gl.uniform1f(uniforms.uDimAlpha, dimAlpha);
+      gl.uniform1f(uniforms.uTintAlpha, HIGHLIGHT_TINT_ALPHA / 255);
+      gl.uniform1f(uniforms.uOutline, view.zoom >= HIGHLIGHT_OUTLINE_ZOOM ? HIGHLIGHT_OUTLINE_PIXELS : 0);
+      gl.activeTexture(gl.TEXTURE0 + UNIT_HIGHLIGHT);
+      gl.bindTexture(gl.TEXTURE_2D, highlightLookupTexture);
+      drawCalls += drawInstances(source, ready);
+    } else if (highlightMask !== null && highlightMask.texture !== null && highlightMask.mask.world === source) {
+      const { mask, texture } = highlightMask;
+      highlightMaskProgram ??= link(gl, overviewVertexSource, highlightMaskFragmentSource, HIGHLIGHT_MASK_UNIFORMS);
+      const { program, uniforms } = highlightMaskProgram;
+      gl.useProgram(program);
+      gl.uniform2f(uniforms.uCamera, view.x, view.y);
+      gl.uniform1f(uniforms.uZoom, view.zoom);
+      gl.uniform2f(uniforms.uViewport, canvas.width, canvas.height);
+      gl.uniform2f(uniforms.uWorld, source.width, source.height);
+      gl.uniform2f(uniforms.uExtent, mask.width * mask.factor, mask.height * mask.factor);
+      gl.uniform1i(uniforms.uMask, UNIT_HIGHLIGHT);
+      gl.uniform3fv(uniforms.uColor, highlightColorUniform);
+      gl.uniform1f(uniforms.uDimAlpha, dimAlpha);
+      gl.activeTexture(gl.TEXTURE0 + UNIT_HIGHLIGHT);
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      gl.bindVertexArray(resources.emptyArray);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      gl.bindVertexArray(null);
+      drawCalls++;
+    }
+    gl.disable(gl.BLEND);
+  };
+
   /** `uploadBudget` chunks at most, and none after `uploadMilliseconds` once one was uploaded. */
   const drawFrame = (uploadBudget: number, uploadMilliseconds: number, wait: boolean): void => {
     if (disposed || gl.isContextLost()) return;
@@ -1991,7 +2166,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
         gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
         // A post-blit vector draw must not trigger the browser's lazy default-buffer clear after presentation.
         // Clear the destination first so the terrain blit and annotation draw share the same live backbuffer.
-        if (annotations !== null && annotations.data.length > 0) gl.clear(gl.COLOR_BUFFER_BIT);
+        if ((annotations !== null && annotations.data.length > 0) || highlight !== null) gl.clear(gl.COLOR_BUFFER_BIT);
         gl.blitFramebuffer(0, 0, width, height, 0, 0, width, height, gl.COLOR_BUFFER_BIT, gl.NEAREST);
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
       }
@@ -2007,6 +2182,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       if (target === null) drawChunks();
       else drawCalls = drawOverview(source, target);
     }
+    drawHighlight(source, target, ready);
     drawAnnotations();
     if (target === null) {
       const drawnKeys = new Set(ready.map(([chunk]) => keyOf(chunk)));
@@ -2109,6 +2285,54 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     if (done > 0 && done < wanted.length) schedulePrefetch();
   };
 
+  // The pending idle slice of the highlight mask build (requestIdleCallback, or a timeout); 0 when none is pending.
+  let maskHandle = 0;
+
+  const scheduleMaskBuild = (): void => {
+    if (maskHandle !== 0 || disposed) return;
+    maskHandle = idle
+      ? requestIdleCallback((deadline) => { maskHandle = 0; maskStep(deadline); }, { timeout: 50 })
+      : globalThis.setTimeout(() => { maskHandle = 0; maskStep(null); }, 0);
+  };
+
+  const cancelMaskBuild = (): void => {
+    if (maskHandle === 0) return;
+    if (idle) cancelIdleCallback(maskHandle);
+    else clearTimeout(maskHandle);
+    maskHandle = 0;
+  };
+
+  /**
+   * One idle slice of the mask build: columns of the mask until MASK_SLICE_MILLISECONDS (or the idle period) is spent,
+   * at least one, uploaded with the levels above them. Reads the planes on the CPU; never uploads chunk planes.
+   */
+  const maskStep = (deadline: IdleDeadline | null): void => {
+    const state = highlightMask;
+    // After a context loss the restore starts the build again.
+    if (state === null || disposed || gl.isContextLost()) return;
+    // A slice that ran because its timeout passed (the page is busy, e.g. animating) still takes a full slice: one
+    // column per timeout would take minutes on a large world, and a slice is far from a long task either way.
+    const budget = deadline === null || deadline.didTimeout
+      ? MASK_SLICE_MILLISECONDS
+      : Math.min(MASK_SLICE_MILLISECONDS, Math.max(1, deadline.timeRemaining() - 1));
+    const end = performance.now() + budget;
+    uploadMaskRects(state, state.mask.step(() => performance.now() >= end));
+    if (!state.mask.done) scheduleMaskBuild();
+    // The mask is drawn below one pixel per tile: show the columns built so far.
+    if (camera.zoom < 1) schedule();
+  };
+
+  /** Starts building the mask of the current highlight and world from scratch, dropping the previous one. */
+  const startHighlightMask = (): void => {
+    cancelMaskBuild();
+    releaseHighlightMask();
+    if (highlight === null || highlightBytes === null || world === null || gl.isContextLost()) return;
+    const factor = overviewFactor(world);
+    if (factor === null) return;
+    highlightMask = { mask: createHighlightMask(world, highlightBytes, highlightLiquidBits, factor), texture: null };
+    scheduleMaskBuild();
+  };
+
   const schedule = (): void => {
     if (frame !== 0 || disposed) return;
     frame = requestAnimationFrame(() => {
@@ -2148,6 +2372,13 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     wireProgram = null;
     gridProgram = null;
     annotationProgram = null; annotationBuffer = null; annotationArray = null; uploadedAnnotations = null;
+    // The highlight's textures and programs died too: its lookup is uploaded again and its mask built again.
+    highlightLookupTexture = null;
+    highlightLookupStale = highlightBytes !== null;
+    highlightChunkProgram = null;
+    highlightMaskProgram = null;
+    if (highlightMask !== null) highlightMask.texture = null;
+    startHighlightMask();
     objectUploaded = null;
     // A background link died with the context; the next sprite frame (or atlas) starts another.
     endSpriteLink(parallelCompile !== null);
@@ -2183,6 +2414,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
         if (gl.isContextLost()) unpackWorld = null;
         else resetUnpack();
         world = next;
+        startHighlightMask();
       }
       schedule();
     },
@@ -2250,6 +2482,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
         for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) objectCache.delete((chunkY + dy) * chunksX + chunkX + dx);
         wireChunks.delete(chunkY * chunksX + chunkX);
       }
+      if (highlightMask?.mask.world === source) uploadMaskRects(highlightMask, highlightMask.mask.patch(tiles));
       for (const [key, area] of touched) {
         if (chunks.has(key)) dirtyChunks.set(key, union(dirtyChunks.get(key), area));
         if (overview?.world === source && overview.built[key] === 1) {
@@ -2257,6 +2490,24 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
           overview.builtCount--;
         }
       }
+      schedule();
+    },
+    setHighlight: (next) => {
+      // Validates before anything changes.
+      const lookup = next === null ? null : highlightLookup(next);
+      const liquids = next === null ? 0 : highlightLiquids(next);
+      const sorted = (values: readonly number[]): number[] => [...new Set(values)].sort((a, b) => a - b);
+      const key = next === null ? "" : JSON.stringify([sorted(next.blocks), sorted(next.walls), sorted(next.liquids)]);
+      if (key === highlightKey && highlight?.dim === next?.dim) return;
+      highlight = next === null ? null : { blocks: [...next.blocks], walls: [...next.walls], liquids: [...next.liquids], dim: next.dim };
+      if (key !== highlightKey) {
+        highlightKey = key;
+        highlightBytes = lookup;
+        highlightLiquidBits = liquids;
+        highlightLookupStale = lookup !== null;
+        startHighlightMask();
+      }
+      // A pass over the presented frame: the frame cache stays valid (frameVersion is not bumped).
       schedule();
     },
     setAnnotations: (next) => {
@@ -2300,12 +2551,15 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       framedWalls: framedWallsBefore + (wallCache?.framedTiles ?? 0),
       spritesPreparing: spriteLinking !== null,
       reusedFrames,
+      highlightUploads,
+      highlightBuilding: highlightMask !== null && !highlightMask.mask.done,
     }),
     dispose: () => {
       if (disposed) return;
       disposed = true;
       cancelAnimationFrame(frame);
       cancelPrefetch();
+      cancelMaskBuild();
       releaseFrames();
       canvas.removeEventListener("webglcontextlost", onContextLost);
       canvas.removeEventListener("webglcontextrestored", onContextRestored);
@@ -2324,6 +2578,10 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
         if (annotationBuffer !== null) gl.deleteBuffer(annotationBuffer);
         if (annotationArray !== null) gl.deleteVertexArray(annotationArray);
         if (halfAtlasProgram !== null) gl.deleteProgram(halfAtlasProgram.program);
+        if (highlightChunkProgram !== null) gl.deleteProgram(highlightChunkProgram.program);
+        if (highlightMaskProgram !== null) gl.deleteProgram(highlightMaskProgram.program);
+        if (highlightLookupTexture !== null) gl.deleteTexture(highlightLookupTexture);
+        releaseHighlightMask();
         gl.deleteTexture(resources.palette);
         gl.deleteTexture(resources.rules);
         gl.deleteTexture(resources.spriteSheets);
@@ -2340,6 +2598,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       endSpriteLink(parallelCompile !== null);
       releaseBackground();
       unpackWorld = null;
+      highlightMask = null;
     },
   };
 }

@@ -13,6 +13,8 @@ import { describeTile } from "../world/content-names.js";
 import { depthLabel, type DepthLevels } from "../world/depth.js";
 import { getDefaultWorldSession } from "../world/world-session.js";
 import { getMapController, useViewStore } from "./view-store.js";
+import { useSearchStore } from "../world/search-store.js";
+import { useChestNavigation } from "../world/chest-navigation.js";
 
 /** What the status bar reads of a world: its levels, the tile view at a coordinate and the chest standing there. */
 export interface StatusWorld extends DepthLevels {
@@ -42,6 +44,24 @@ function AreaSize(): React.JSX.Element | null {
       {`${String(area.width)} × ${String(area.height)}`}
     </span>
   );
+}
+
+/** "3 of 120": the search match last stepped to (F3), while there is one. */
+function SearchPosition(): React.JSX.Element | null {
+  const scope = useSearchStore((state) => state.scope);
+  const position = useSearchStore((state) => state.position);
+  const total = useSearchStore((state) => state.stepIndex?.total ?? 0);
+  const areas = useChestNavigation((state) => state.areas);
+  const selected = useChestNavigation((state) => state.selectedIndex);
+  let text: string | null = null;
+  if (scope === "content" && position !== null && total > 0) {
+    text = `${position.ordinal.toLocaleString("en-US")} of ${total.toLocaleString("en-US")} matches`;
+  } else if (scope === "items" && selected !== null) {
+    const at = areas.findIndex((area) => area.chestIndex === selected);
+    if (at >= 0) text = `${String(at + 1)} of ${String(areas.length)} chests`;
+  }
+  if (text === null) return null;
+  return <span className="status-cell status-search" title="Search match (F3 / Shift+F3)" data-testid="search-position">{text}</span>;
 }
 
 /** "Chest: Ores · 2 of 40 slots": the object, its name when it has one, and how many slots are filled. */
@@ -175,6 +195,7 @@ export function StatusBar({ world }: { readonly world?: StatusWorld | null }): R
         {chestText}
       </span>
       <span className="status-spacer" />
+      <SearchPosition />
       <AreaSize />
       {statsVisible && <RenderStats />}
       <ZoomField zoom={zoom} />
