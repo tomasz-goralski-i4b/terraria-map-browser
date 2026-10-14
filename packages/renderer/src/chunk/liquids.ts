@@ -11,9 +11,10 @@
 export const LIQUID_SHEETS: readonly (number | null)[] = [0, 1, 11, null];
 
 /**
- * The opacity (0–255) a liquid's sprite pixels are drawn with, by kind 1–4. The art is opaque; the game draws liquids
- * translucent, and its exact opacity is not observable without its renderer, so these are chosen: water half, honey
- * three quarters, lava nearly opaque (open question in docs/assets.md).
+ * The opacity (0–255) of a liquid's front layer, by kind 1–4: drawn over the walls, blocks and objects behind the
+ * liquid, which itself lies over its opaque back layer (the art hiding the background; docs/assets.md, "Liquids").
+ * Water's half is chosen to match in-game screenshots (plants stay visible under water, darkened); lava and honey are
+ * chosen (open question).
  */
 export const LIQUID_SPRITE_ALPHA: readonly number[] = [128, 230, 191, 255];
 

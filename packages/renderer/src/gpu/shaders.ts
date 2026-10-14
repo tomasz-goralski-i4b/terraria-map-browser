@@ -428,36 +428,54 @@ ivec4 liquidSample(ivec4 place, int alpha, int fill, bool surface, vec2 centre) 
   return sum.a == 0 ? ivec4(0) : ivec4((2 * sum.rgb + sum.a) / (2 * sum.a), (2 * sum.a + samples) / (2 * samples));
 }
 
-// The liquid sprite of liquid kind (1–4) filled amount high at the screen pixel centred on centre, over below; below
-// unchanged for a kind without a sheet.
-ivec4 drawLiquid(uint kind, int amount, bool surface, vec2 centre, ivec4 below) {
+// The liquid sprite of liquid kind (1–4) filled amount high at the screen pixel centred on centre, over below, its art
+// at opacity alpha; below unchanged for a kind without a sheet.
+ivec4 drawLiquid(uint kind, int amount, bool surface, vec2 centre, ivec4 below, int alpha) {
   ivec4 sheet = uLiquidSheets[kind - 1u];
   if (sheet.w == 0) return below;
   int fill = (amount * ${String(SPRITE_TILE_PIXELS)} + 254) / 255;
-  return over(liquidSample(sheet, LIQUID_ALPHA[int(kind) - 1], fill, surface, centre), below);
+  return over(liquidSample(sheet, alpha, fill, surface, centre), below);
 }
 
-// A half block or slope without liquid of its own holds the liquid around it in the part its shape cuts away, drawn
-// under the block (shapedTileLiquid in ../chunk/liquids.ts): liquid above fills it, else the fuller side neighbour at
-// its level, with the surface.
-ivec4 shapedLiquid(ivec2 texel, vec2 centre, ivec4 below) {
-  if ((uLayers & 8) == 0 || (uPresent & ${String(PRESENT.shape)}) == 0) return below;
-  if (plane8(texel, ${String(PLANES_8.shape)}) == 0u || plane8(texel, ${String(PLANES_8.liquidAmount)}) != 0u) return below;
-  // texel is transposed: (y, x).
-  ivec2 at[3] = ivec2[3](texel - ivec2(1, 0), texel - ivec2(0, 1), texel + ivec2(0, 1));
-  uint kinds[3];
-  int amounts[3];
-  for (int i = 0; i < 3; i++) {
-    uint kind = plane8(at[i], ${String(PLANES_8.liquid)});
-    int amount = int(plane8(at[i], ${String(PLANES_8.liquidAmount)}));
-    bool valid = kind >= 1u && kind <= 4u && amount != 0;
-    kinds[i] = valid ? kind : 0u;
-    amounts[i] = valid ? amount : 0;
+// The liquid a tile shows in sprite mode, false for none: its own (kind 1–4, amount, surface where the tile above
+// holds no liquid), else, for a half block or slope, the liquid around it in the part its shape cuts away
+// (shapedTileLiquid in ../chunk/liquids.ts: liquid above fills it, else the fuller side neighbour at its level, with
+// the surface). shaped is true for the latter.
+bool tileLiquid(ivec2 texel, out uint kind, out int amount, out bool surface, out bool shaped) {
+  kind = 0u;
+  amount = 0;
+  surface = false;
+  shaped = false;
+  if ((uLayers & 8) == 0) return false;
+  // texel is transposed: (y, x). Above, left, right, then the tile itself.
+  ivec2 at[4] = ivec2[4](texel - ivec2(1, 0), texel - ivec2(0, 1), texel + ivec2(0, 1), texel);
+  uint kinds[4];
+  int amounts[4];
+  for (int i = 0; i < 4; i++) {
+    uint k = plane8(at[i], ${String(PLANES_8.liquid)});
+    int a = int(plane8(at[i], ${String(PLANES_8.liquidAmount)}));
+    bool valid = k >= 1u && k <= 4u && a != 0;
+    kinds[i] = valid ? k : 0u;
+    amounts[i] = valid ? a : 0;
   }
-  if (kinds[0] != 0u) return drawLiquid(kinds[0], 255, false, centre, below);
+  if (kinds[3] != 0u) {
+    kind = kinds[3];
+    amount = amounts[3];
+    surface = kinds[0] == 0u;
+    return true;
+  }
+  if ((uPresent & ${String(PRESENT.shape)}) == 0 || plane8(texel, ${String(PLANES_8.shape)}) == 0u) return false;
+  shaped = true;
+  if (kinds[0] != 0u) {
+    kind = kinds[0];
+    amount = 255;
+    return true;
+  }
   int side = amounts[2] > amounts[1] ? 2 : 1;
-  if (kinds[side] == 0u) return below;
-  return drawLiquid(kinds[side], amounts[side], true, centre, below);
+  kind = kinds[side];
+  amount = amounts[side];
+  surface = true;
+  return kind != 0u;
 }
 
 // The walls of the 3 × 3 tiles around the tile being drawn, looked up once per screen pixel by wallSample. Plain
@@ -637,6 +655,19 @@ ivec4 localColorAt(ivec2 local, vec2 sub) {
 
   ivec4 color = ivec4(0);
   if ((uLayers & 1) != 0) color = ivec4(texelFetch(uBackground, ivec2(tileY % 256, tileY / 256), 0));
+#ifdef SPRITES
+  // The liquid's back layer (docs/assets.md, "Liquids"): its art, opaque, hides the background behind it; walls,
+  // blocks and objects come over it and the front layer over them. Faded in like a sprite.
+  uint liquidKind;
+  int liquidAmount;
+  bool liquidSurface;
+  bool liquidShaped;
+  bool liquidShown = tileLiquid(texel, liquidKind, liquidAmount, liquidSurface, liquidShaped);
+  if (liquidShown) {
+    ivec4 back = drawLiquid(liquidKind, liquidAmount, liquidSurface, sub, color, 255);
+    color = uSpriteWeight < 256 ? (color * (256 - uSpriteWeight) + back * uSpriteWeight + 128) / 256 : back;
+  }
+#endif
   ivec3 content;
   uint block = (uLayers & 4) != 0 ? plane16(texel, ${String(PLANES_16.block)}) : ABSENT;
   uint wall = (uLayers & 2) != 0 ? plane16(texel, ${String(PLANES_16.wall)}) : ABSENT;
@@ -671,7 +702,8 @@ ivec4 localColorAt(ivec2 local, vec2 sub) {
     // A sprite over what lies behind it (paint is not applied to sprites).
 #ifdef SPRITES
     if (hasSprite) {
-      color = shapedLiquid(texel, sub, color);
+      // A shaped block's liquid lies under the block: its front layer here.
+      if (liquidShown && liquidShaped) color = drawLiquid(liquidKind, liquidAmount, liquidSurface, sub, color, LIQUID_ALPHA[int(liquidKind) - 1]);
       color = over(sprite, color);
       if (uSpriteWeight < 256) color = (mapped * (256 - uSpriteWeight) + color * uSpriteWeight + 128) / 256;
     }
@@ -687,8 +719,7 @@ ivec4 localColorAt(ivec2 local, vec2 sub) {
       // In sprite mode a liquid with a sheet shows it cut to its fill, with the surface where the tile above holds no
       // liquid (the page apron holds the row above the chunk), faded in over its map colour like a block sprite.
       if (uLiquidSheets[liquid - 1u].w != 0) {
-        bool surface = plane8(texel - ivec2(1, 0), ${String(PLANES_8.liquid)}) == 0u;
-        ivec4 drawn = drawLiquid(liquid, amount, surface, sub, color);
+        ivec4 drawn = drawLiquid(liquid, amount, liquidSurface, sub, color, LIQUID_ALPHA[int(liquid) - 1]);
         color = uSpriteWeight < 256 ? (mappedLiquid * (256 - uSpriteWeight) + drawn * uSpriteWeight + 128) / 256 : drawn;
       } else {
         color = mappedLiquid;

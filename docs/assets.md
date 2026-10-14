@@ -484,9 +484,12 @@ not observable:
   liquid of its own shows, under its block sprite, the liquid above it (full, under liquid), else that of its fuller
   side neighbour (the left on a tie) at that neighbour's level, with the surface (`shapedTileLiquid`). The game's
   `LiquidSlope_<n>` edge pieces are not drawn.
-- **Translucency:** the sprite pixel's alpha is scaled by the liquid's opacity `LIQUID_SPRITE_ALPHA` — water 128,
-  lava 230, honey 191 (of 255) — and drawn over the blocks, walls and background behind the tile (`over`, straight
-  alpha), so they show through. In map colours (map mode, and below `SPRITE_MIN_ZOOM` in sprite mode) a liquid keeps
+- **Two layers (G):** in-game screenshots of a pool in the Color, White and Retro lighting modes (2026-10-14) show the
+  water against the sky as its art's colour (body 11, 63, 193 for the art's 9, 61, 191 over sky 112, 158, 246), while
+  plants under it stay visible, darkened. The viewer therefore draws the liquid twice: a **back layer** of its art,
+  opaque, over the background (which it hides), under the walls, blocks and objects; and a **front layer** over them,
+  its alpha scaled by `LIQUID_SPRITE_ALPHA` — water 128 (chosen to match), lava 230, honey 191 (chosen) — so what lies
+  in front of the background shows through, tinted. In map colours (map mode, and below `SPRITE_MIN_ZOOM` in sprite mode) a liquid keeps
   the map rule, opacity `amount / 255`; from `SPRITE_MIN_ZOOM` to `SPRITE_FULL_ZOOM` its sprite fades in over that
   colour like a block sprite. The liquids layer toggle removes the liquid and nothing else.
 

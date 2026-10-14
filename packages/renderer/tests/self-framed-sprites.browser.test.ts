@@ -213,18 +213,25 @@ function over(top: Rgba, below: Rgba): Rgba {
   return [mix(0), mix(1), mix(2), alpha];
 }
 
-/** The water sprite pixel at (sx, sy) of a tile filled `amount`, or transparent above it. */
-function waterPixel(amount: number, surface: boolean, sx: number, sy: number): Rgba {
+/** The water sprite pixel at (sx, sy) of a tile filled `amount` (its art; `front`: at the water's sprite alpha). */
+function waterPixel(amount: number, surface: boolean, sx: number, sy: number, front: boolean): Rgba {
   const row = liquidSheetRow(sy, liquidFillPixels(amount), surface);
   if (row === null) return [0, 0, 0, 0];
   const art = sheetPixel(WATER_SHEET, sx, row);
-  return [art[0], art[1], art[2], Math.floor((art[3] * (LIQUID_SPRITE_ALPHA[0] ?? 0) + 127) / 255)];
+  return front ? [art[0], art[1], art[2], Math.floor((art[3] * (LIQUID_SPRITE_ALPHA[0] ?? 0) + 127) / 255)] : art;
 }
 
 describe("self-framed blocks in sprite mode", () => {
   test("a half block or slope beside or below water holds the water in its cut-away part, under the block", () => {
     const world = createWorld(8, 4);
     stamp(world, 0, 0, ["........", "..H.T.N.", "dHdddddd", "ssssssss"]);
+    // No walls: the cut-away parts show the background, which the water's back layer hides.
+    for (let x = 0; x < world.width; x++) {
+      for (let y = 0; y < world.height; y++) {
+        const { wall: _wall, ...rest } = world.tileAt(x, y);
+        world.setTile(x, y, rest);
+      }
+    }
     const pour = (x: number, y: number, amount: number): void => {
       world.setTile(x, y, { ...world.tileAt(x, y), liquid: { kind: "water", amount } });
     };
@@ -243,16 +250,21 @@ describe("self-framed blocks in sprite mode", () => {
         const at = (py * width * ZOOM + px) * 4;
         const shape = world.planes.shape[tx * height + ty] ?? 0;
         const own = liquidAt(tx, ty);
-        let water: Rgba = [0, 0, 0, 0];
+        // Where the background shows (open air, a shape's cut-away part): the back layer, then the front layer.
+        let liquid: { amount: number; surface: boolean } | null = null;
+        let open = false;
         if (own.amount !== 0) {
-          water = waterPixel(own.amount, liquidAt(tx, ty - 1).kind === 0, sx, sy);
+          liquid = { amount: own.amount, surface: liquidAt(tx, ty - 1).kind === 0 };
+          open = true;
         } else if (shape !== 0) {
           const column = shapedColumns(shape)[Math.floor(sx / 2)];
-          const inflow = shapedTileLiquid(liquidAt(tx, ty - 1), liquidAt(tx - 1, ty), liquidAt(tx + 1, ty));
-          const cut = column === undefined || sy < column.destY || sy >= column.destY + column.height;
-          if (inflow !== null && cut) water = waterPixel(inflow.amount, inflow.surface, sx, sy);
+          liquid = shapedTileLiquid(liquidAt(tx, ty - 1), liquidAt(tx - 1, ty), liquidAt(tx + 1, ty));
+          open = column === undefined || sy < column.destY || sy >= column.destY + column.height;
         }
-        expected.set(over(water, pixelAt(base, at)), at);
+        if (liquid !== null && open) {
+          const back = over(waterPixel(liquid.amount, liquid.surface, sx, sy, false), pixelAt(base, at));
+          expected.set(over(waterPixel(liquid.amount, liquid.surface, sx, sy, true), back), at);
+        }
       }
     }
     expectClose(pixels, expected, world.width * ZOOM);

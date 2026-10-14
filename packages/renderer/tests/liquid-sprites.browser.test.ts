@@ -112,11 +112,14 @@ function pixelAt(pixels: ArrayLike<number>, x: number, y: number): Rgba {
 
 /**
  * The expected canvas: map colours without liquids, then per liquid tile the frame-0 pixel of its sheet at the row
- * liquidSheetRow gives (surface when the tile above holds no liquid), its alpha scaled by the liquid's sprite alpha;
+ * liquidSheetRow gives (surface when the tile above holds no liquid): opaque over the background (the back layer: the
+ * modded wall and block here are opaque and hide it), then with its alpha scaled by the liquid's sprite alpha on top;
  * a liquid without a sheet (shimmer, or every liquid when `sheets` is false) its map colour as the map mode draws it.
  */
 function expectedCanvas(world: RenderableWorld, layers: ChunkLayers, sheets = true): Uint8Array {
   const behind = renderChunk(world as never, 0, 0, { surfaceY: world.surfaceY, layers: { ...layers, liquids: false } }).pixels;
+  const { block, wall } = world.planes;
+  const open = (x: number, y: number): boolean => block[x * HEIGHT + y] === ABSENT && (!layers.walls || wall[x * HEIGHT + y] === ABSENT);
   const mapped = renderChunk(world as never, 0, 0, { surfaceY: world.surfaceY, layers }).pixels;
   const { liquid, liquidAmount } = world.planes;
   const kindAt = (x: number, y: number): number => (y < 0 ? 0 : liquid[x * HEIGHT + y] ?? 0);
@@ -136,6 +139,7 @@ function expectedCanvas(world: RenderableWorld, layers: ChunkLayers, sheets = tr
           const row = liquidSheetRow(py % ZOOM, liquidFillPixels(amount), kindAt(tx, ty - 1) === 0);
           if (row !== null) {
             const art = sheetPixel(SHEETS.findIndex((entry) => entry.id === sheet), px % ZOOM, row);
+            if (open(tx, ty)) color = over(art, color);
             const alpha = Math.floor((art[3] * (LIQUID_SPRITE_ALPHA[kind - 1] ?? 0) + 127) / 255);
             color = over([art[0], art[1], art[2], alpha], color);
           }
