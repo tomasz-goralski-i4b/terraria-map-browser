@@ -51,7 +51,7 @@ export function StartScreen({ commands }: { readonly commands?: readonly Command
 
   return (
     <section className="start" aria-label="Start">
-      <img className="start-art" src={worldArt} width={768} height={1152} alt="" aria-hidden="true" decoding="async" />
+      <img className="start-art" src={worldArt} width={768} height={1152} alt="" aria-hidden="true" decoding="async" draggable={false} />
       <div className="start-content">
         <div className="start-hero">
           <span className="brand-mark brand-mark-large" aria-hidden="true" />
@@ -126,7 +126,7 @@ export function StartScreen({ commands }: { readonly commands?: readonly Command
           </div>
         </div>
       </div>
-      <img className="start-art start-art-right" src={rightWorldArt} width={768} height={1152} alt="" aria-hidden="true" decoding="async" />
+      <img className="start-art start-art-right" src={rightWorldArt} width={768} height={1152} alt="" aria-hidden="true" decoding="async" draggable={false} />
     </section>
   );
 }

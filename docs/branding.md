@@ -1,12 +1,12 @@
 # Brand assets
 
-Terraria Map Studio uses a stepped world section that also reads as an M, with a detached editable tile. The start-screen illustration expands the same motif into terrain, caves and construction plans. The cobalt and mint palette follows the compact editor's existing accents; neutral chrome and system typography remain the foundation.
+Terraria Map Studio uses a small grass-and-earth world section held by blue selection corners, with a detached editable tile and a cave-shaped opening. This replaces the earlier M monogram. The start-screen illustrations expand the same editing language into construction and terrain selection. The cobalt and mint palette follows the compact editor's existing accents; neutral chrome and system typography remain the foundation.
 
 These are original AI-generated illustrations, not extracted Terraria assets. Generated with the built-in ImageGen tool on 2026-10-14. The mark has genuine alpha transparency. Keep the image text-free; render the product name as accessible application text.
 
 ## Files and usage
 
-- [Original mark](branding/mark-master.png): full-resolution transparent source.
+- [Original world-section mark](branding/mark-world-section-master.png): active full-resolution transparent source. [Earlier monogram](branding/mark-master.png) is retained as a concept.
 - [Selected left illustration: concept B](branding/concepts/b-hellevator.png): surface workshop, planned hellevator, ordinary stone caves and open Underworld with lava and an obsidian structure. This is the final pixel-art style reference for the pair.
 - [Matched right illustration](branding/world-art-right-matched-b-master.png): cloud island with a selected terrain parcel and displaced ghost copy, empty air, and a snowy hillside with bare, snow-capped boreal trees. Pixel scale, shading and textures follow concept B. Earlier masters remain as concepts.
 - [Opaque portrait source](branding/world-art-portrait-master.png): retained input to the background-removal edit.
@@ -21,6 +21,8 @@ These are original AI-generated illustrations, not extracted Terraria assets. Ge
 - `world-art-right.webp`: 768 × 1152px RGBA companion on the right, showing terrain selection/movement above a solid snowy hill. The left artwork shows construction; the right shows another editor tool. Hidden on phone widths to keep controls accessible.
 
 The desktop start screen centers the chooser content itself within the map area; the illustrations occupy the available space on either side. Folder worlds and recent worlds use adjacent columns. Populated eight-entry lists are tested at 1280 × 720 in both themes. Shorter or phone layouts retain vertical scrolling when needed rather than clipping controls. The illustrations scale down with the side margins on narrower desktop windows.
+
+The decorative illustrations cannot be dragged or text-selected and do not receive pointer events. This prevents an accidental image drag from reaching the map's world-file drop handler.
 
 PNG derivatives use Lanczos resampling. The illustrations use WebP quality 88 and retain source alpha. Original outputs are retained for future exports. Outside the portrait's silhouette, transparency blends the illustration into both editor themes; cave interiors retain dark shading. Both assets are precached for offline use. No animation or map-renderer changes.
 

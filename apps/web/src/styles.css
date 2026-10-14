@@ -2081,6 +2081,8 @@ kbd {
 /* ---------- Start screen (the empty map) ---------- */
 .start-art {
   display: block;
+  pointer-events: none;
+  user-select: none;
   width: 100%;
   height: auto;
   max-height: min(580px, calc(100dvh - 144px));
