@@ -1,4 +1,4 @@
-import { afterEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { commands, page, userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
 import axe from "axe-core";
@@ -12,13 +12,16 @@ import { useCommands, useGlobalShortcuts } from "../src/shell/commands.js";
 import { GO_TO_ZOOM, useChestNavigation } from "../src/world/chest-navigation.js";
 import { getDefaultWorldSession, resetDefaultWorldSession } from "../src/world/world-session.js";
 import { EntitiesPanel } from "../src/panels/EntitiesPanel.js";
+import { SearchPanel } from "../src/panels/search/SearchPanel.js";
+import { useSearchStore } from "../src/world/search-store.js";
 import { hydrateLayout, useLayoutStore } from "../src/shell/layout-store.js";
 import { getMapController, registerMapController, useViewStore } from "../src/shell/view-store.js";
 import { createAssetSession, setDefaultAssetSession, useAssetStore } from "../src/assets/asset-session.js";
 import "../src/styles.css";
 import "./support/commands.js";
 
-afterEach(() => { registerMapController(null); setDefaultAssetSession(undefined); useAssetStore.setState({ status: { kind: "none" } }); useViewStore.getState().setPinnedTile(null); useChestNavigation.setState({ query: "", itemFilter: null, areas: [], selected: null, selectedIndex: null }); });
+beforeEach(() => { useSearchStore.setState({ scope: "items", query: "" }); });
+afterEach(() => { registerMapController(null); setDefaultAssetSession(undefined); useAssetStore.setState({ status: { kind: "none" } }); useViewStore.getState().setPinnedTile(null); useChestNavigation.setState({ itemFilter: null, areas: [], selected: null, selectedIndex: null }); useSearchStore.setState({ scope: "items", query: "" }); });
 
 const mining = { x: 12, y: 18, name: "Mining supplies", slotCount: 40, items: [{ slot: 2, itemId: 8, stack: 15, prefix: 0 }] };
 const lights = { x: 32, y: 18, name: "Spare lights", slotCount: 40, items: [{ slot: 39, itemId: 8, stack: 25, prefix: 0 }] };
@@ -36,7 +39,8 @@ test("Entities selects on click without moving, goes to a chest zoomed in on Ent
   const centerOn = vi.fn();
   const goTo = vi.fn();
   registerMapController({ centerOn, goTo, fitWorld: vi.fn(), actualSize: vi.fn(), zoomTo: vi.fn(), jumpTo: vi.fn(), renderNow: vi.fn(), stats: () => { throw new Error("No stats requested"); } });
-  await render(<EntitiesPanel source={{ width: tiles.width, height: tiles.height, chests: [mining, lights, empty], tileAt: (x, y) => tiles.tileAt(x, y) }} />);
+  const source = { width: tiles.width, height: tiles.height, chests: [mining, lights, empty], tileAt: (x: number, y: number) => tiles.tileAt(x, y) };
+  await render(<><EntitiesPanel source={source} /><SearchPanel chests={source} /></>);
   const table = page.getByRole("grid", { name: "Chests" });
   await expect.element(table).toBeVisible();
   // An unnamed record is shown by its object type.
@@ -58,7 +62,7 @@ test("Entities selects on click without moving, goes to a chest zoomed in on Ent
   await expect.element(page.getByRole("dialog", { name: "Spare lights" })).toBeVisible();
   await page.getByRole("button", { name: "Close" }).click();
   await expect.element(page.getByRole("dialog")).not.toBeInTheDocument();
-  await page.getByRole("searchbox", { name: "Find items in chests" }).fill("torch");
+  await page.getByRole("searchbox", { name: "Search Items in chests" }).fill("torch");
   await expect.element(page.getByText("Torch: 40 in 2 chests")).toBeVisible();
   const matches = page.getByRole("grid", { name: "Matching chests" });
   await matches.getByRole("row").filter({ hasText: "Spare lights" }).click();
@@ -71,9 +75,9 @@ test("several matching items are listed with totals and choosing one narrows the
   hydrateLayout(null);
   const tiles = chestWorld();
   const bars = { ...lights, items: [...lights.items, { slot: 0, itemId: 22, stack: 12, prefix: 0 }] };
-  await render(<EntitiesPanel mode="search" source={{ width: tiles.width, height: tiles.height, chests: [mining, bars], tileAt: (x, y) => tiles.tileAt(x, y) }} />);
+  await render(<SearchPanel chests={{ width: tiles.width, height: tiles.height, chests: [mining, bars], tileAt: (x, y) => tiles.tileAt(x, y) }} />);
   // "r" matches Torch and Iron Bar.
-  await page.getByRole("searchbox", { name: "Find items in chests" }).fill("r");
+  await page.getByRole("searchbox", { name: "Search Items in chests" }).fill("r");
   await expect.element(page.getByText("2 items: 52 in 2 chests")).toBeVisible();
   const items = page.getByRole("list", { name: "Matching items" });
   await expect.element(items.getByRole("button")).toHaveLength(2);
@@ -84,9 +88,9 @@ test("several matching items are listed with totals and choosing one narrows the
   await items.getByRole("button", { name: /Iron Bar/ }).click();
   await expect.element(page.getByText("2 items: 52 in 2 chests")).toBeVisible();
   // Escape in the field clears the search.
-  await page.getByRole("searchbox", { name: "Find items in chests" }).click();
+  await page.getByRole("searchbox", { name: "Search Items in chests" }).click();
   await userEvent.keyboard("{Escape}");
-  expect(useChestNavigation.getState().query).toBe("");
+  expect(useSearchStore.getState().query).toBe("");
 });
 
 test("a chest draws connected inventory pixels, labels all slots and passes axe", async () => {
@@ -111,8 +115,8 @@ test("a chest draws connected inventory pixels, labels all slots and passes axe"
 test("closing a world removes its decoded chest rows and cannot republish its old search highlights", async () => {
   const bytes = Uint8Array.from(atob(await commands.readWorldFixture("SCCO1.wld")), (character) => character.charCodeAt(0));
   await getDefaultWorldSession().open(new File([bytes], "SCCO1.wld"));
-  await render(<EntitiesPanel />);
-  await page.getByRole("searchbox", { name: "Find items in chests" }).fill("Torch");
+  await render(<><EntitiesPanel /><SearchPanel /></>);
+  await page.getByRole("searchbox", { name: "Search Items in chests" }).fill("Torch");
   // "Torch" also matches the coloured torches; each item keeps its own total.
   await expect.element(page.getByRole("list", { name: "Matching items" }).getByRole("button", { name: /^Torch\s*995 · 51 chests$/ })).toBeVisible();
   resetDefaultWorldSession();
@@ -126,12 +130,12 @@ test("closing while the real idle index is pending cannot restore the previous w
   await getDefaultWorldSession().open(new File([bytes], "SCCO1.wld"));
   const idle = vi.spyOn(window, "requestIdleCallback").mockImplementation((callback) => window.setTimeout(() => { callback({ didTimeout: false, timeRemaining: () => 8 }); }, 30));
   try {
-    await render(<EntitiesPanel mode="search" />);
+    await render(<SearchPanel />);
     await expect.element(page.getByText("Indexing chest items…")).toBeVisible();
     resetDefaultWorldSession();
     await new Promise((resolve) => setTimeout(resolve, 300));
-    await expect.element(page.getByText("Open a world to inspect its chests.")).toBeVisible();
-    await expect.element(page.getByRole("searchbox", { name: "Find items in chests" })).not.toBeInTheDocument();
+    await expect.element(page.getByText("Open a world to search it.")).toBeVisible();
+    await expect.element(page.getByRole("searchbox", { name: "Search Items in chests" })).not.toBeInTheDocument();
     expect(useChestNavigation.getState().areas).toEqual([]);
   } finally { idle.mockRestore(); }
 });
@@ -139,8 +143,8 @@ test("closing while the real idle index is pending cannot restore the previous w
 test("search keeps invalid-record item totals and diagnostics without inventing highlights", async () => {
   const world = createWorld(80, 40);
   const record = { ...mining, name: "Missing wooden chest" };
-  await render(<EntitiesPanel source={{ ...world, chests: [record] }} />);
-  await page.getByRole("searchbox", { name: "Find items in chests" }).fill("8");
+  await render(<><EntitiesPanel source={{ ...world, chests: [record] }} /><SearchPanel chests={{ ...world, chests: [record] }} /></>);
+  await page.getByRole("searchbox", { name: "Search Items in chests" }).fill("8");
   await expect.element(page.getByText("Torch: 15 in 1 chest")).toBeVisible();
   await expect.element(page.getByRole("grid", { name: "Chests" }).getByRole("img", { name: "No complete chest at this position" })).toBeVisible();
   expect(useChestNavigation.getState().areas).toEqual([]);
@@ -149,11 +153,11 @@ test("search keeps invalid-record item totals and diagnostics without inventing 
 test("duplicate chest anchors keep record selection and totals but have no ambiguous navigation area", async () => {
   const world = chestWorld();
   const duplicate = { ...mining, name: "Duplicate mining chest", items: [{ slot: 0, itemId: 8, stack: 25, prefix: 0 }] };
-  await render(<><SearchShortcuts /><EntitiesPanel source={{ ...world, chests: [mining, duplicate, lights] }} /></>);
+  await render(<><SearchShortcuts /><EntitiesPanel source={{ ...world, chests: [mining, duplicate, lights] }} /><SearchPanel chests={{ ...world, chests: [mining, duplicate, lights] }} /></>);
   await page.getByRole("grid", { name: "Chests" }).getByRole("row").filter({ hasText: "Duplicate mining chest" }).click();
   await expect.element(page.getByRole("grid", { name: "Chests" }).getByRole("row").filter({ hasText: "Duplicate mining chest" })).toHaveAttribute("aria-selected", "true");
   await expect.element(page.getByRole("grid", { name: "Chests" }).getByRole("row").filter({ hasText: "Mining supplies" })).toHaveAttribute("aria-selected", "false");
-  await page.getByRole("searchbox", { name: "Find items in chests" }).fill("8");
+  await page.getByRole("searchbox", { name: "Search Items in chests" }).fill("8");
   await expect.element(page.getByText("Torch: 65 in 3 chests")).toBeVisible();
   expect(useChestNavigation.getState().areas).toHaveLength(1);
   await userEvent.keyboard("{F3}");
@@ -165,9 +169,9 @@ function SearchShortcuts(): null { useGlobalShortcuts(useCommands()); return nul
 test("search highlights two chest footprints on the GPU, overview markers survive zoom and F3 steps both ways", async () => {
   hydrateLayout(null);
   const world = chestWorld();
-  await render(<><SearchShortcuts /><div style={{ position: "relative", width: 640, height: 320 }}><MapView renderer="@studio/renderer" world={{ ...world, surfaceY: 10 }} /></div><EntitiesPanel source={{ width: world.width, height: world.height, chests: [mining, lights, empty], tileAt: (x, y) => world.tileAt(x, y) }} /></>);
+  await render(<><SearchShortcuts /><div style={{ position: "relative", width: 640, height: 320 }}><MapView renderer="@studio/renderer" world={{ ...world, surfaceY: 10 }} /></div><SearchPanel chests={{ width: world.width, height: world.height, chests: [mining, lights, empty], tileAt: (x, y) => world.tileAt(x, y) }} /></>);
   await expect.poll(() => getMapController()).not.toBeNull();
-  await page.getByRole("searchbox", { name: "Find items in chests" }).fill("8");
+  await page.getByRole("searchbox", { name: "Search Items in chests" }).fill("8");
   await expect.poll(() => useChestNavigation.getState().areas.length).toBe(2);
   const controller = getMapController();
   if (controller === null) throw new Error("Map controller was not mounted");
@@ -207,7 +211,7 @@ test("SCCO1's actual Entities table retains all 190 records and renders recorded
   await getDefaultWorldSession().open(new File([bytes], "SCCO1.wld"));
   hydrateLayout(null);
   useLayoutStore.getState().setColumn("chests", "stack", { hidden: false });
-  await render(<EntitiesPanel mode="entities" />);
+  await render(<EntitiesPanel />);
   const table = page.getByRole("grid", { name: "Chests" });
   await expect.element(table).toHaveAttribute("aria-rowcount", "191");
   await expect.element(table.getByRole("row").filter({ hasText: "2655, 1072" })).toMatchTextContent("0/40");

@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { contentColor, liquidColors, terrariaMapPalette, type Rgba } from "@studio/renderer";
 import type { ContentRef } from "@studio/world-model";
 import { useAppStore } from "../store.js";
 import { Table, type Column } from "../ui/Table.js";
+import { ContextMenu, type ContextMenuState } from "../ui/ContextMenu.js";
+import { findContentOnMap } from "../world/search-store.js";
 import { countContentInSlices, type ContentCounts, type CountablePlanes } from "../world/content-counts.js";
 import { contentKey, contentName, LIQUID_NAMES } from "../world/content-names.js";
 import { getDefaultWorldSession } from "../world/world-session.js";
@@ -117,10 +119,14 @@ function sessionContentWorld(): ContentWorld | null {
 }
 
 /**
- * Tiles per content id with its map colour. The count runs in slices between frames, so a large world never blocks
- * input; progress shows in the panel. Later this table is also where a material is picked for painting.
+ * The content rows of a world (the loaded one unless `world` is given), counted once per world in slices between
+ * frames; null while counting, with the progress of the count.
  */
-export function ContentPanel({ world }: { readonly world?: ContentWorld | null }): React.JSX.Element {
+export function useContentRows(world?: ContentWorld | null): {
+  readonly shown: ContentWorld | null;
+  readonly rows: readonly ContentRow[] | null;
+  readonly progress: number;
+} {
   const revision = useBrushStore((state) => state.revision);
   const active = useBrushStore((state) => state.active);
   const summary = useAppStore((state) => state.summary);
@@ -135,9 +141,6 @@ export function ContentPanel({ world }: { readonly world?: ContentWorld | null }
   // Scalar progress tagged with the world's count generation; the planes themselves never enter React state.
   const [progress, setProgress] = useState<{ readonly generation: number; readonly done: number } | null>(null);
   const generation = shown === null ? 0 : generationOf(shown.planes);
-  const [kind, setKind] = useState<ContentKind | "all">("all");
-  const [selected, setSelected] = useState<string | null>(null);
-
   const cached = shown === null ? undefined : countCache.get(shown.planes);
 
   useEffect(() => {
@@ -162,6 +165,19 @@ export function ContentPanel({ world }: { readonly world?: ContentWorld | null }
   }, [shown, revision, active]);
 
   const rows = useMemo(() => (shown === null || cached === undefined ? null : contentRows(shown, cached)), [shown, cached]);
+  return { shown, rows, progress: progress?.generation === generation ? progress.done : 0 };
+}
+
+/**
+ * Tiles per content id with its map colour. A click selects a row; Enter, a double-click or the context menu's
+ * "Find on map" runs the content search for it (highlighted on the map, the rest dimmed, F3 steps through it).
+ */
+export function ContentPanel({ world }: { readonly world?: ContentWorld | null }): React.JSX.Element {
+  const { shown, rows, progress } = useContentRows(world);
+  const [kind, setKind] = useState<ContentKind | "all">("all");
+  const [selected, setSelected] = useState<string | null>(null);
+  const [menu, setMenu] = useState<(ContextMenuState & { readonly row: ContentRow }) | null>(null);
+  const closeMenu = useCallback(() => { setMenu(null); }, []);
   const filtered = useMemo(() => (rows === null || kind === "all" ? rows : rows.filter((row) => row.kind === kind)), [rows, kind]);
 
   if (shown === null) return <p className="panel-empty">Open a world to count its content.</p>;
@@ -169,11 +185,16 @@ export function ContentPanel({ world }: { readonly world?: ContentWorld | null }
     return (
       <div className="panel-progress">
         <span>Counting tiles…</span>
-        <progress aria-label="Counting tiles" max={1} value={progress?.generation === generation ? progress.done : 0} />
+        <progress aria-label="Counting tiles" max={1} value={progress} />
       </div>
     );
   }
+  const find = (row: ContentRow): void => {
+    setSelected(row.key);
+    findContentOnMap(row.name, row.key);
+  };
   return (
+    <>
     <Table
       id="content"
       label="Content"
@@ -186,6 +207,8 @@ export function ContentPanel({ world }: { readonly world?: ContentWorld | null }
       onSelect={(row) => {
         setSelected(row.key);
       }}
+      onActivate={find}
+      onContextMenu={(row, at) => { setMenu({ ...at, row }); }}
       filters={(
         <select aria-label="Kind" className="select" value={kind} onChange={(event) => {
           setKind(event.target.value as ContentKind | "all");
@@ -197,5 +220,19 @@ export function ContentPanel({ world }: { readonly world?: ContentWorld | null }
         </select>
       )}
     />
+    {menu !== null && (
+      <ContextMenu
+        at={menu} label={`${menu.row.name} actions`} onClose={closeMenu}
+        items={[
+          { kind: "action", label: "Find on map", icon: "search", shortcut: "Enter", onSelect: () => { find(menu.row); } },
+          {
+            kind: "action", label: "Copy ID", icon: "copy", detail: menu.row.id, onSelect: () => {
+              void navigator.clipboard.writeText(menu.row.id).catch(() => undefined);
+            },
+          },
+        ]}
+      />
+    )}
+    </>
   );
 }

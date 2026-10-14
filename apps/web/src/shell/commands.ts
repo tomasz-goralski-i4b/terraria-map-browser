@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { stepChest, useChestNavigation } from "../world/chest-navigation.js";
+import { openSearch, stepSearch, useCanStep } from "../world/search-store.js";
 import type { IconName } from "../ui/Icon.js";
 import { getDefaultAssetSession, useAssetStore } from "../assets/asset-session.js";
 import { useAppStore } from "../store.js";
@@ -152,7 +152,7 @@ const THEME_LABELS: Readonly<Record<ThemeChoice, string>> = { system: "Theme: fo
 
 /** The app's commands with their current state. */
 export function useCommands(): Command[] {
-  const chestMatches = useChestNavigation((state) => state.areas.length);
+  const canStep = useCanStep();
   const hasWorld = useAppStore((state) => state.summary !== null);
   const loadingWorld = useAppStore((state) => state.phase === "loading");
   const saving = useSaveStore((state) => state.open);
@@ -193,13 +193,9 @@ export function useCommands(): Command[] {
   const setSpritePreviewOpen = useViewStore((state) => state.setSpritePreviewOpen);
 
   return [
-    { id: "search.chests", group: "View", label: "Find items in chests…", shortcut: "Control+F", enabled: hasWorld, ...noWorld, run: () => {
-      const layout = useLayoutStore.getState();
-      layout.setDockHidden(false); layout.setDockTab("world"); layout.setSectionOpen("search", true);
-      useChestNavigation.setState((state) => ({ searchRequested: state.searchRequested + 1 }));
-    } },
-    { id: "search.nextChest", group: "View", label: "Next matching chest", shortcut: "F3", enabled: chestMatches > 0, run: () => { stepChest(1); } },
-    { id: "search.previousChest", group: "View", label: "Previous matching chest", shortcut: "Shift+F3", enabled: chestMatches > 0, run: () => { stepChest(-1); } },
+    { id: "search.find", group: "Edit", label: "Find…", icon: "search", shortcut: "Control+F", enabled: hasWorld, ...noWorld, run: openSearch },
+    { id: "search.next", group: "Edit", label: "Next match", shortcut: "F3", enabled: canStep, ...(canStep ? {} : { disabledReason: "Nothing found" }), run: () => { stepSearch(1); } },
+    { id: "search.previous", group: "Edit", label: "Previous match", shortcut: "Shift+F3", enabled: canStep, ...(canStep ? {} : { disabledReason: "Nothing found" }), run: () => { stepSearch(-1); } },
     { id: "edit.undo", group: "Edit", label: "Undo", icon: "undo", shortcut: "Control+Z", enabled: canUndo && historyReason === null,
       ...(historyReason !== null ? { disabledReason: historyReason } : !canUndo ? { disabledReason: tool === "ruler" ? "No measurement to undo" : "No stroke to undo" } : {}), run: tool === "ruler" ? undoMeasurement : undoBrush },
     { id: "edit.redo", group: "Edit", label: "Redo", icon: "redo", shortcut: "Control+Shift+Z", enabled: canRedo && historyReason === null,

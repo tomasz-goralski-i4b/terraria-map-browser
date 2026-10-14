@@ -17,24 +17,17 @@ interface ChestNavigation {
   readonly selected: ChestArea | null;
   /** The selected record (index into the world's chest list), with or without a footprint. */
   readonly selectedIndex: number | null;
-  /** Bumped by Find items in chests, so the Search section focuses its field. */
-  readonly searchRequested: number;
-  readonly query: string;
   /** Restricts the results to one item ID of the query's matches; null shows every matching item. */
   readonly itemFilter: number | null;
 }
 
-export const useChestNavigation = create<ChestNavigation>()(() => ({ areas: [], selected: null, selectedIndex: null, searchRequested: 0, query: "", itemFilter: null }));
+export const useChestNavigation = create<ChestNavigation>()(() => ({ areas: [], selected: null, selectedIndex: null, itemFilter: null }));
 
 useAppStore.subscribe((state, previous) => {
   if (state.worldRevision !== previous.worldRevision || (state.summary === null && previous.summary !== null)) {
-    useChestNavigation.setState({ areas: [], selected: null, selectedIndex: null, query: "", itemFilter: null });
+    useChestNavigation.setState({ areas: [], selected: null, selectedIndex: null, itemFilter: null });
   }
 });
-
-export function setChestQuery(query: string): void {
-  useChestNavigation.setState({ query, itemFilter: null, selected: null, selectedIndex: null });
-}
 
 function inWorld(chest: WorldChest, world: ChestWorld): boolean {
   return chest.x >= 0 && chest.y >= 0 && chest.x < world.width && chest.y < world.height;

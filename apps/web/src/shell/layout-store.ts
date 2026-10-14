@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { DEFAULT_RULER, type RulerSettings } from "../world/measurements.js";
 
 /** The dock sections, in display order. */
-export const SECTION_IDS = ["world", "layers", "grid", "measurements", "inspector", "content", "entities", "search", "swatches"] as const;
+export const SECTION_IDS = ["search", "world", "layers", "grid", "measurements", "inspector", "content", "entities", "swatches"] as const;
 export type SectionId = (typeof SECTION_IDS)[number];
 
 /** The dock's tabs: what the world is (properties, content, entities), what is shown (layers) and what is painted. */
