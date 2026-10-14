@@ -12,7 +12,7 @@ import { createBrushStabilizer } from "../world/brush-stabilizer.js";
 import { cancelArea, movePaste, pastePreviewWorld, pasteVisibleBounds, placePaste, selectArea, useAreaStore } from "../world/area-session.js";
 import { useLayoutStore } from "../shell/layout-store.js";
 import { measurementScene, type MeasurementScene } from "../world/measurement-scene.js";
-import { hitMeasurement, type RulerSettings } from "../world/measurements.js";
+import { hitMeasurement, type MeasurementHit, type RulerSettings } from "../world/measurements.js";
 import { useRulerStore, beginMeasurement, moveMeasurement, finishMeasurement } from "../world/ruler-session.js";
 
 const KEY_PAN_PIXELS_PER_MS = 0.384;
@@ -26,6 +26,12 @@ const CLICK_SLOP = 4;
 const CANVAS_STYLE: React.CSSProperties = {
   position: "absolute", inset: 0, width: "100%", height: "100%", touchAction: "none", cursor: "grab",
 };
+/** The selected measurement's handles resize it and its body moves it; everywhere else the Ruler draws. */
+function rulerCursor(hit: MeasurementHit | null): string {
+  if (hit === null) return "crosshair";
+  if (hit.part === "move") return "move";
+  return hit.part === "top-left" || hit.part === "bottom-right" ? "nwse-resize" : hit.part === "top-right" || hit.part === "bottom-left" ? "nesw-resize" : "grab";
+}
 const TOOL_CURSORS: Partial<Record<ToolId, string>> = { inspect: "crosshair", ruler: "crosshair", brush: "crosshair", erase: "crosshair", select: "crosshair" };
 
 // Overlays are positioned inline for the same reason: they must stay above the canvas and clickable.
@@ -582,6 +588,12 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
     return { x: session.camera.x + point.x / session.camera.zoom, y: session.camera.y + point.y / session.camera.zoom };
   };
 
+  const rulerHit = (session: MapSession, point: Point): MeasurementHit | null => {
+    const canvas = canvasRef.current, density = canvas === null || canvas.clientWidth === 0 ? 1 : canvas.width / canvas.clientWidth;
+    const state = useRulerStore.getState();
+    return hitMeasurement(state.items, point, 7 * density / session.camera.zoom, state.selected);
+  };
+
   const onPointerDown = (event: React.PointerEvent<HTMLCanvasElement>): void => {
     withSession((session) => {
       const selected = useViewStore.getState().tool;
@@ -595,10 +607,11 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
         if (point.x >= 0 && point.y >= 0 && point.x <= session.world.width && point.y <= session.world.height) {
           event.preventDefault(); event.currentTarget.focus(); session.animator.cancelMotion(); session.keys.clear();
           const state = useRulerStore.getState(), settings = useLayoutStore.getState().ruler;
-          const density = canvasRef.current === null ? 1 : canvasRef.current.width / canvasRef.current.clientWidth;
-          const hit = hitMeasurement(state.items, point, 7 * density / session.camera.zoom, state.selected);
-          event.currentTarget.style.cursor = hit?.part === "move" ? "move" : "crosshair";
-          beginMeasurement(point, settings.mode, hit);
+          const under = rulerHit(session, point);
+          // Only the selected measurement is edited; a drag anywhere else (even on another one) starts a new one.
+          const hit = under !== null && under.id === state.selected ? under : null;
+          event.currentTarget.style.cursor = rulerCursor(hit);
+          beginMeasurement(point, settings.mode, hit, under?.id ?? null);
           moveMeasurement(point, event.shiftKey);
           rulerPointer.current = { id: event.pointerId, last: local, type: event.pointerType };
           session.hover = local; session.requestFrame();
@@ -687,6 +700,10 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
           finishMeasurement(true, true); rulerPointer.current = null;
         } else moveMeasurement(rulerPoint(session, local), event.shiftKey);
         session.hover = local; session.requestFrame(); return;
+      }
+      if (useViewStore.getState().tool === "ruler" && event.buttons === 0 && event.pointerType !== "touch") {
+        const hit = rulerHit(session, rulerPoint(session, local));
+        event.currentTarget.style.cursor = rulerCursor(hit !== null && hit.id === useRulerStore.getState().selected ? hit : null);
       }
       if (selectionPointer.current?.id === event.pointerId) {
         selectionPointer.current.last = local;

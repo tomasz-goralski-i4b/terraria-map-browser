@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { measurementDimensions, measurementLabels, measurementSegments, measurementBlocks, measurementLength, hitMeasurement, snapBoundary, type Measurement } from "../src/world/measurements.js";
+import { measurementDimensions, measurementLabels, measurementSegments, measurementBlocks, measurementLength, measurementSummary, hitMeasurement, snapBoundary, type Measurement } from "../src/world/measurements.js";
 
 const diagonal: Measurement = { id: 1, name: "Roof slope", kind: "line", start: { x: 120, y: 80 }, end: { x: 123, y: 84 }, visible: true };
 
@@ -13,7 +13,7 @@ test("diagonal line footprints contain whole blocks and count them without an ex
     expect(start.x === end.x || start.y === end.y).toBe(true);
     expect([start.x, start.y, end.x, end.y].every(Number.isInteger)).toBe(true);
   }
-  expect(measurementLabels(roof, { dimensions: true, components: false, angle: false }).map((label) => label.text)).toEqual(["4 blocks"]);
+  expect(measurementLabels(roof, { dimensions: true, components: false, angle: false }).map((label) => label.text)).toEqual(["5 long · 4 blocks"]);
 });
 
 test("boundary distances are geometric block units, with no inclusive tile added", () => {
@@ -22,9 +22,13 @@ test("boundary distances are geometric block units, with no inclusive tile added
   expect(snapBoundary({ x: -2, y: 1200.8 }, { width: 4200, height: 1200 })).toEqual({ x: 0, y: 1200 });
 });
 
-test("labels configure block counts, components and a two-decimal angle", () => {
+test("diagonal labels name the straight length and the blocks on the path; straight lines need neither nor an angle", () => {
   expect(measurementLabels(diagonal, { dimensions: true, components: true, angle: true }).map((label) => label.text))
-    .toEqual(["4 blocks · 53.13°", "ΔX 3 · ΔY 4"]);
+    .toEqual(["5 long · 4 blocks · 53.1°", "ΔX 3 · ΔY 4"]);
+  expect(measurementLabels({ ...diagonal, end: { x: 130, y: 80 } }, { dimensions: true, components: false, angle: true }).map((label) => label.text))
+    .toEqual(["10 blocks"]);
+  expect(measurementSummary(diagonal)).toBe("4 blocks · 5 long");
+  expect(measurementSummary({ ...diagonal, kind: "rectangle" })).toBe("3 × 4 blocks");
   expect(measurementLabels({ ...diagonal, kind: "rectangle" }, { dimensions: true, components: false, angle: false }).map((label) => label.text))
     .toEqual(["3 blocks", "4 blocks"]);
 });

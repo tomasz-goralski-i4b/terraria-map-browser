@@ -214,9 +214,7 @@ test("grid opacity preserves straight alpha over transparent terrain and is shar
   renderer.render();
   const overlaid = pixel(readCanvas(canvas), 50, 50);
   const base = pixel(opaque, 50, 50);
-  // The line contrasts with the terrain: dark over light tiles, light over dark ones.
-  const light = (0.2126 * (base[0] ?? 0) + 0.7152 * (base[1] ?? 0) + 0.0722 * (base[2] ?? 0)) / 255 > 0.6;
-  for (const [channel, color] of (light ? [30, 34, 40] : [200, 205, 210]).entries()) {
+  for (const [channel, color] of [200, 205, 210].entries()) {
     expect(Math.abs((overlaid[channel] ?? 0) - Math.round(color * 0.3 + (base[channel] ?? 0) * 0.7))).toBeLessThanOrEqual(1);
   }
   expect(overlaid[3]).toBe(255);

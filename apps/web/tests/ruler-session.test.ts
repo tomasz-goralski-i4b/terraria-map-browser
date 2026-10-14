@@ -1,5 +1,5 @@
 import { beforeEach, expect, test } from "vitest";
-import { beginMeasurement, moveMeasurement, finishMeasurement, setRulerWorld, useRulerStore, undoMeasurement, redoMeasurement, changeMeasurement } from "../src/world/ruler-session.js";
+import { beginMeasurement, moveMeasurement, finishMeasurement, setRulerWorld, useRulerStore, undoMeasurement, redoMeasurement, changeMeasurement, selectMeasurement } from "../src/world/ruler-session.js";
 
 beforeEach(() => { setRulerWorld({ width: 4200, height: 1200, key: "workshop-layout" }, null); });
 
@@ -39,4 +39,23 @@ test("moving a measurement clamps the whole shape and edits preserve its identit
   expect(useRulerStore.getState().items[0]).toEqual(original);
   changeMeasurement(original.id, { name: "Workshop", visible: false });
   expect(useRulerStore.getState().items[0]).toMatchObject({ name: "Workshop", visible: false });
+});
+
+test("a new measurement is left unselected so the next one can start at its corner; a click selects, Escape-cancel restores", () => {
+  beginMeasurement({ x: 120, y: 80 }, "rectangle"); moveMeasurement({ x: 130, y: 86 }, false); finishMeasurement(true);
+  expect(useRulerStore.getState().selected).toBeNull();
+  // Pressed on the first rectangle's corner without an edit hit: a second rectangle starts there.
+  beginMeasurement({ x: 130, y: 86 }, "rectangle", null, 1); moveMeasurement({ x: 140, y: 90 }, false); finishMeasurement(true);
+  expect(useRulerStore.getState().items.map((item) => [item.start, item.end])).toEqual([
+    [{ x: 120, y: 80 }, { x: 130, y: 86 }], [{ x: 130, y: 86 }, { x: 140, y: 90 }],
+  ]);
+  beginMeasurement({ x: 125, y: 80 }, "rectangle", null, 1); finishMeasurement(true);
+  expect(useRulerStore.getState().selected).toBe(1);
+  expect(useRulerStore.getState().items).toHaveLength(2);
+  beginMeasurement({ x: 200, y: 200 }, "line"); moveMeasurement({ x: 210, y: 200 }, false); finishMeasurement(true, true);
+  expect(useRulerStore.getState().selected).toBe(1);
+  beginMeasurement({ x: 300, y: 300 }, "line"); finishMeasurement(true);
+  expect(useRulerStore.getState().selected).toBeNull();
+  selectMeasurement(2);
+  expect(useRulerStore.getState().selected).toBe(2);
 });

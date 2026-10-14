@@ -16,7 +16,12 @@ interface RulerStorage { getItem(key: string): string | null; setItem(key: strin
 let world: RulerWorld | null = null, storage: RulerStorage | null = null;
 let nextId = 1;
 let past: (readonly Measurement[])[] = [], future: (readonly Measurement[])[] = [];
-let gesture: { readonly origin: TilePoint; readonly original: Measurement | null; readonly hit: MeasurementHit | null; readonly mode: MeasurementKind } | null = null;
+let gesture: {
+  readonly origin: TilePoint; readonly original: Measurement | null; readonly hit: MeasurementHit | null; readonly mode: MeasurementKind;
+  /** The measurement under the press (any, selected or not): a click without a drag selects it. */
+  readonly clicked: number | null;
+  readonly previous: number | null;
+} | null = null;
 const storageKey = (): string => `terraria-map-studio.measurements.v1.${world?.key ?? ""}`;
 function browserStorage(): RulerStorage | null { try { return window.localStorage; } catch { return null; } }
 function publish(items: readonly Measurement[], selected: number | null): void {
@@ -54,12 +59,16 @@ export function setRulerWorld(next: RulerWorld | null, from: RulerStorage | null
   } catch { /* Invalid or inaccessible sidecars start with an empty list. */ }
   useRulerStore.setState((state) => ({ items, selected: null, draft: null, revision: state.revision + 1, canUndo: false, canRedo: false }));
 }
-export function beginMeasurement(point: TilePoint, mode: MeasurementKind, hit: MeasurementHit | null = null): void {
+/**
+ * `hit` edits that measurement (a handle or its body); without it a new one starts, even over another measurement, so
+ * shapes can be drawn from each other's corners. `clicked` is selected if the press ends without a drag.
+ */
+export function beginMeasurement(point: TilePoint, mode: MeasurementKind, hit: MeasurementHit | null = null, clicked: number | null = hit?.id ?? null): void {
   if (world === null || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return;
   const origin = snapBoundary(point, world);
   const original = hit === null ? null : useRulerStore.getState().items.find((item) => item.id === hit.id) ?? null;
   const draft: Measurement = original ?? { id: nextId, name: `${mode === "line" ? "Line" : "Rectangle"} ${String(nextId)}`, kind: mode, start: origin, end: origin, visible: true };
-  gesture = { origin, original, hit, mode };
+  gesture = { origin, original, hit, mode, clicked, previous: useRulerStore.getState().selected };
   useRulerStore.setState((state) => ({ selected: draft.id, draft, revision: state.revision + 1 }));
 }
 export function moveMeasurement(point: TilePoint, shift: boolean): void {
@@ -89,7 +98,8 @@ export function finishMeasurement(keep: boolean, cancel = false): void {
   if (active === null || state.draft === null) return;
   const size = measurementDimensions(state.draft);
   if (cancel || size.length === 0) {
-    useRulerStore.setState({ draft: null, selected: active.original?.id ?? null, revision: state.revision + 1 }); return;
+    const selected = cancel ? active.previous : active.original?.id ?? active.clicked;
+    useRulerStore.setState({ draft: null, selected, revision: state.revision + 1 }); return;
   }
   const kind = size.width === 0 || size.height === 0 ? "line" : state.draft.kind;
   const draft: Measurement = { ...state.draft, kind,
@@ -100,7 +110,8 @@ export function finishMeasurement(keep: boolean, cancel = false): void {
     }
     record(state.items.map((item) => item.id === draft.id ? draft : item), draft.id);
   } else {
-    nextId++; record(keep ? [...state.items, draft] : [draft], draft.id);
+    // Not selected: its corners stay free to start the next measurement from; a click selects it for editing.
+    nextId++; record(keep ? [...state.items, draft] : [draft], null);
   }
 }
 export function selectMeasurement(id: number | null): void { useRulerStore.setState((state) => ({ selected: id, revision: state.revision + 1 })); }

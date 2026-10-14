@@ -61,7 +61,13 @@ test("CAD notes support handles, replacement, visibility, labels and measurement
   const canvas = await openMap();
   pointer(canvas, "pointerdown", 64, 64); pointer(canvas, "pointermove", 224, 160); pointer(canvas, "pointerup", 224, 160);
   getMapController()?.renderNow();
-  await vi.waitFor(() => { expect(document.querySelector(".measurement-label")?.textContent).toContain("30.96°"); }, { timeout: 5000 });
+  await vi.waitFor(() => { expect(document.querySelector(".measurement-label")?.textContent).toContain("31.0°"); }, { timeout: 5000 });
+  // A new measurement is not selected: a drag from its end starts another one, a click selects it for editing.
+  pointer(canvas, "pointerdown", 224, 160); pointer(canvas, "pointermove", 224, 224); pointer(canvas, "pointerup", 224, 224);
+  expect(useRulerStore.getState().items).toHaveLength(2);
+  await userEvent.keyboard("{Control>}z{/Control}");
+  pointer(canvas, "pointerdown", 224, 160); pointer(canvas, "pointerup", 224, 160);
+  expect(useRulerStore.getState().selected).toBe(1);
   pointer(canvas, "pointerdown", 224, 160); pointer(canvas, "pointermove", 256, 160); pointer(canvas, "pointerup", 256, 160);
   expect(useRulerStore.getState().items[0]?.end.x).toBe(1766);
   await page.getByRole("button", { name: "Show Line 1", exact: true }).click();
@@ -70,7 +76,7 @@ test("CAD notes support handles, replacement, visibility, labels and measurement
   await page.getByRole("button", { name: "Keep", exact: true }).click();
   pointer(canvas, "pointerdown", 320, 240); pointer(canvas, "pointermove", 480, 240); pointer(canvas, "pointerup", 480, 240);
   expect(useRulerStore.getState().items).toHaveLength(1);
-  expect(useRulerStore.getState().items[0]?.id).toBe(2);
+  expect(useRulerStore.getState().items[0]?.id).toBe(3);
   await userEvent.keyboard("{Control>}z{/Control}");
   expect(useRulerStore.getState().items[0]?.id).toBe(1);
   await expect.element(page.getByRole("combobox", { name: "Measurement units" })).not.toBeInTheDocument();

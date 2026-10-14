@@ -89,6 +89,13 @@ export function measurementSegments(measurement: Measurement): readonly Measurem
   }
   return segments;
 }
+/** The list's one-line size: rectangles by their sides, lines by the blocks on them (and the length of a diagonal). */
+export function measurementSummary(measurement: Measurement): string {
+  const { width, height } = measurementDimensions(measurement);
+  if (measurement.kind === "rectangle") return `${numberFormat.format(width)} × ${numberFormat.format(height)} blocks`;
+  const blocks = `${numberFormat.format(measurementLength(measurement))} blocks`;
+  return width === 0 || height === 0 ? blocks : `${blocks} · ${numberFormat.format(Math.hypot(width, height))} long`;
+}
 export function measurementLabels(measurement: Measurement, display: MeasurementDisplay): readonly MeasurementLabel[] {
   const { width, height, angle } = measurementDimensions(measurement);
   const length = measurementLength(measurement), unit = "blocks";
@@ -99,7 +106,9 @@ export function measurementLabels(measurement: Measurement, display: Measurement
     { x: Math.min(measurement.start.x, measurement.end.x), y: midY, offsetX: -12, offsetY: 0, text: `${value(height)} ${unit}`, align: "end" },
   ] : [];
   const labels: MeasurementLabel[] = [];
-  const parts = [display.dimensions ? `${value(length)} ${unit}` : "", display.angle ? `${angle.toFixed(2)}°` : ""].filter(Boolean);
+  // A diagonal has two honest sizes: its straight length and the blocks a path along it occupies; name both.
+  const size = width === 0 || height === 0 ? `${value(length)} ${unit}` : `${value(Math.hypot(width, height))} long · ${value(length)} ${unit}`;
+  const parts = [display.dimensions ? size : "", display.angle && width !== 0 && height !== 0 ? `${angle.toFixed(1)}°` : ""].filter(Boolean);
   if (parts.length > 0) labels.push({ x: midX, y: midY, offsetX: 0, offsetY: -16, text: parts.join(" · "), align: "center" });
   if (display.components) labels.push({ x: midX, y: midY, offsetX: 0, offsetY: 14, text: `ΔX ${value(width)} · ΔY ${value(height)}`, align: "center" });
   return labels;

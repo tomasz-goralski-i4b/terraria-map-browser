@@ -27,6 +27,6 @@ export function RulerOptions(): React.JSX.Element {
       pressed={settings.keep} disabled={false} onChange={(keep) => { setRuler({ keep }); }} /></div></div>
     <div className="brush-option-group"><MenuButton label="Labels" items={labels} />
       <IconButton icon="list" label="Show measurements" onClick={showMeasurements} /></div>
-    <span className="tool-options-hint">Drag to measure · Shift: rectangle · Drag handles to resize · Esc: cancel</span>
+    <span className="tool-options-hint">Drag to measure · Shift: rectangle · Click a measurement to move or resize it · Esc: cancel</span>
   </>;
 }

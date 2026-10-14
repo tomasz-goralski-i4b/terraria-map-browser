@@ -1,5 +1,5 @@
 import { useRulerStore, changeMeasurement, deleteMeasurement, clearMeasurements, selectMeasurement } from "../world/ruler-session.js";
-import { measurementDimensions, measurementLength } from "../world/measurements.js";
+import { measurementDimensions, measurementLength, measurementSummary } from "../world/measurements.js";
 import { getMapController } from "../shell/view-store.js";
 import { IconButton } from "../ui/IconButton.js";
 import { PropertyGrid } from "../ui/PropertyGrid.js";
@@ -15,13 +15,12 @@ export function MeasurementsPanel(): React.JSX.Element {
         <IconButton icon="close" label="Clear measurements" onClick={clearMeasurements} /></div>
       <ul className="measurement-list">
         {items.map((item) => {
-          const dimensions = measurementDimensions(item);
           return <li key={item.id} data-selected={selectedId === item.id} data-visible={item.visible}>
             <IconButton icon={item.visible ? "eye" : "eyeOff"} label={`Show ${item.name}`} pressed={item.visible} onClick={() => { changeMeasurement(item.id, { visible: !item.visible }); }} />
             <button type="button" className="measurement-pick" aria-pressed={selectedId === item.id} onClick={() => {
               selectMeasurement(item.id);
               getMapController()?.centerOn((item.start.x + item.end.x) / 2, (item.start.y + item.end.y) / 2);
-            }}><span>{item.name}</span><span className="muted">{item.kind === "rectangle" ? `${String(dimensions.width)} × ${String(dimensions.height)}` : `${String(measurementLength(item))} blocks`}</span></button>
+            }}><span>{item.name}</span><span className="muted">{measurementSummary(item)}</span></button>
             <IconButton icon="close" label={`Delete ${item.name}`} onClick={() => { deleteMeasurement(item.id); }} />
           </li>;
         })}
@@ -33,8 +32,12 @@ export function MeasurementsPanel(): React.JSX.Element {
         onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} /> },
       { kind: "text", label: "Start", value: `${String(selected.start.x)}, ${String(selected.start.y)}` },
       { kind: "text", label: "End", value: `${String(selected.end.x)}, ${String(selected.end.y)}` },
-      { kind: "text", label: selected.kind === "rectangle" ? "Size" : "Length", value: selected.kind === "rectangle" ? `${String(size.width)} × ${String(size.height)} blocks` : `${String(measurementLength(selected))} blocks` },
-      ...(selected.kind === "line" ? [{ kind: "text" as const, label: "Angle", value: `${size.angle.toFixed(2)}°` }] : []),
+      { kind: "text", label: "Size", value: `${String(size.width)} × ${String(size.height)} blocks` },
+      ...(selected.kind === "rectangle" ? [{ kind: "text" as const, label: "Area", value: `${(size.width * size.height).toLocaleString("en-US")} blocks` }] : [
+        { kind: "text" as const, label: "Length", value: `${size.length.toFixed(2)} (straight)` },
+        { kind: "text" as const, label: "Blocks on path", value: String(measurementLength(selected)) },
+        { kind: "text" as const, label: "Angle", value: `${size.angle.toFixed(1)}°` },
+      ]),
     ]} />}
   </div>;
 }
