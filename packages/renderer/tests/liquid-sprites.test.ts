@@ -1,7 +1,7 @@
 // Liquid sprite rules (docs/assets.md, "Liquids"): the sheet of each liquid kind, the fill height of a liquid amount
 // and the sheet row a sprite pixel of a liquid tile reads.
 import { describe, expect, test } from "vitest";
-import { LIQUID_BODY_ROW, LIQUID_SHEETS, LIQUID_SPRITE_ALPHA, liquidFillPixels, liquidHasSurface, liquidSheetRow, shapedTileLiquid } from "../src/index.js";
+import { LIQUID_BODY_ROW, LIQUID_SHEETS, LIQUID_SPRITE_ALPHA, liquidFillPixels, LIQUID_BLEED, liquidBleed, liquidHasSurface, liquidSheetRow, shapedTileLiquid } from "../src/index.js";
 
 describe("liquid sprites", () => {
   test("water, lava and honey draw from Liquid_0, Liquid_1 and Liquid_11; shimmer is drawn flat in its map colour", () => {
@@ -39,6 +39,21 @@ describe("liquid sprites", () => {
     expect(shapedTileLiquid(none, { kind: 1, amount: 127 }, { kind: 2, amount: 200 })).toEqual({ kind: 2, amount: 200, surface: true });
     expect(shapedTileLiquid(none, { kind: 3, amount: 90 }, { kind: 1, amount: 90 })).toEqual({ kind: 3, amount: 90, surface: true });
     expect(shapedTileLiquid(none, none, none)).toBeNull();
+  });
+
+  test("a block beside or below liquid shows it in its edge pixels next to it, under its sprite", () => {
+    const none = { kind: 0, amount: 0 };
+    const water = { kind: 1, amount: 255 };
+    const half = { kind: 2, amount: 127 };
+    expect(LIQUID_BLEED).toBe(1);
+    // Liquid above reaches into the top rows, full.
+    expect(liquidBleed(5, 0, water, none, none)).toEqual({ side: "above", kind: 1, amount: 255 });
+    expect(liquidBleed(5, LIQUID_BLEED, water, none, none)).toBeNull();
+    // Liquid beside reaches into the columns next to it at its own level.
+    expect(liquidBleed(0, 9, none, half, none)).toEqual({ side: "left", kind: 2, amount: 127 });
+    expect(liquidBleed(15, 9, none, none, water)).toEqual({ side: "right", kind: 1, amount: 255 });
+    expect(liquidBleed(LIQUID_BLEED, 9, none, half, none)).toBeNull();
+    expect(liquidBleed(7, 7, water, water, water)).toBeNull();
   });
 
   test("a liquid has its surface unless the tile above holds liquid, its own or flowing into its shape", () => {

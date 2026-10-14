@@ -1,7 +1,7 @@
 // GLSL for the WebGL2 backend. The colour rules mirror `renderChunk` (../chunk/render.ts) and use integer arithmetic so
 // the chunk pass is bit-exact: no tie-breaking can differ because (l*a + c*(255-a)) / 255 never has a .5 fraction.
 import { FILTER_SUBTILE } from "../chunk/box-filter.js";
-import { LIQUID_BODY_ROW, LIQUID_SPRITE_ALPHA } from "../chunk/liquids.js";
+import { LIQUID_BLEED, LIQUID_BODY_ROW, LIQUID_SPRITE_ALPHA } from "../chunk/liquids.js";
 import { BLOCK_CELL_STRIDE } from "../framing/chunk-cells.js";
 import { NO_CELL } from "../framing/frame-block.js";
 import { WALL_CELL_STRIDE, WALL_OVERHANG } from "../framing/frame-wall.js";
@@ -457,6 +457,34 @@ bool liquidSurfaceAt(ivec2 texel) {
   return !hasLiquid(above - ivec2(1, 0)) && !hasLiquid(above - ivec2(0, 1)) && !hasLiquid(above + ivec2(0, 1));
 }
 
+// The liquid a block without liquid of its own shows under its sprite at the screen pixel centred on centre
+// (liquidBleed in ../chunk/liquids.ts): the liquid above in its top LIQUID_BLEED rows, else the fuller one beside it in
+// the LIQUID_BLEED columns next to that side, at the neighbour's level, in both layers; below unchanged otherwise.
+ivec4 bleedLiquid(ivec2 texel, vec2 centre, ivec4 below) {
+  if ((uLayers & 8) == 0) return below;
+  ivec2 p = clamp(ivec2(floor(centre)), ivec2(0), ivec2(${String(SPRITE_TILE_PIXELS - 1)}));
+  // texel is transposed: (y, x).
+  ivec2 above = texel - ivec2(1, 0), left = texel - ivec2(0, 1), right = texel + ivec2(0, 1);
+  ivec2 from;
+  bool full = false;
+  if (p.y < ${String(LIQUID_BLEED)} && hasLiquid(above)) {
+    from = above;
+    full = true;
+  } else {
+    bool fromLeft = p.x < ${String(LIQUID_BLEED)} && hasLiquid(left);
+    bool fromRight = p.x >= ${String(SPRITE_TILE_PIXELS - LIQUID_BLEED)} && hasLiquid(right);
+    if (fromRight && (!fromLeft || plane8(right, ${String(PLANES_8.liquidAmount)}) > plane8(left, ${String(PLANES_8.liquidAmount)}))) from = right;
+    else if (fromLeft) from = left;
+    else return below;
+  }
+  uint kind = plane8(from, ${String(PLANES_8.liquid)});
+  int amount = full ? 255 : int(plane8(from, ${String(PLANES_8.liquidAmount)}));
+  bool surface = !full && liquidSurfaceAt(from);
+  vec2 at = vec2(p) + 0.5;
+  ivec4 back = drawLiquid(kind, amount, surface, at, below, 255);
+  return drawLiquid(kind, amount, surface, at, back, LIQUID_ALPHA[int(kind) - 1]);
+}
+
 // The liquid a tile shows in sprite mode, false for none: its own (kind 1–4, amount, surface where the tile above
 // holds no liquid), else, for a half block or slope, the liquid around it in the part its shape cuts away
 // (shapedTileLiquid in ../chunk/liquids.ts: liquid above fills it, else the fuller side neighbour at its level, with
@@ -724,6 +752,7 @@ ivec4 localColorAt(ivec2 local, vec2 sub) {
     if (hasSprite) {
       // A shaped block's liquid lies under the block: its front layer here.
       if (liquidShown && liquidShaped) color = drawLiquid(liquidKind, liquidAmount, liquidSurface, sub, color, LIQUID_ALPHA[int(liquidKind) - 1]);
+      else if (!liquidShown) color = bleedLiquid(texel, sub, color);
       color = over(sprite, color);
       if (uSpriteWeight < 256) color = (mapped * (256 - uSpriteWeight) + color * uSpriteWeight + 128) / 256;
     }

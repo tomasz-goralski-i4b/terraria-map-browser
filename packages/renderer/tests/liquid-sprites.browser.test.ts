@@ -2,7 +2,7 @@
 // liquid against synthetic Liquid_0/1/11 sheets; what lies behind shows through; the liquids toggle removes exactly
 // the liquid pixels.
 import { afterEach, describe, expect, test } from "vitest";
-import { LIQUID_SHEETS, LIQUID_SPRITE_ALPHA, createMapRenderer, liquidColors, liquidFillPixels, liquidSheetRow, renderChunk } from "../src/index.js";
+import { LIQUID_SHEETS, LIQUID_SPRITE_ALPHA, createMapRenderer, liquidBleed, liquidColors, liquidFillPixels, liquidSheetRow, renderChunk } from "../src/index.js";
 import type { SpriteSheetEntry, ChunkLayers, MapRenderer, RenderableWorld, SpriteAtlasSource } from "../src/index.js";
 
 const created: MapRenderer[] = [];
@@ -208,5 +208,77 @@ describe("liquids in sprite mode", () => {
     const world = liquidWorld();
     const found = differing(drawer(world, syntheticAtlas(false))(ALL), expectedCanvas(world, ALL, false));
     expect(found.slice(0, 8), `${String(found.length)} pixels differ`).toEqual([]);
+  });
+});
+
+describe("liquid at block edges", () => {
+  /** 3 × 3: water at (0, 1) and (1, 0); a framed vanilla tile (21) at (1, 1) whose sheet has transparent pixels. */
+  function edgeWorld(): RenderableWorld {
+    const n = 3, count = n * n;
+    const block = new Uint16Array(count).fill(ABSENT);
+    const frameX = new Int16Array(count).fill(-1);
+    const frameY = new Int16Array(count).fill(-1);
+    const liquid = new Uint8Array(count);
+    const liquidAmount = new Uint8Array(count);
+    const at = (x: number, y: number): number => x * n + y;
+    block[at(1, 1)] = 0;
+    frameX[at(1, 1)] = 0;
+    frameY[at(1, 1)] = 0;
+    for (const [x, y] of [[0, 1], [1, 0]] as const) { liquid[at(x, y)] = WATER; liquidAmount[at(x, y)] = 255; }
+    return {
+      width: n, height: n, surfaceY: 3,
+      planes: { block, wall: new Uint16Array(count).fill(ABSENT), frameX, frameY, liquid, liquidAmount, paint: new Uint8Array(count), wallPaint: new Uint8Array(count) },
+      palette: [{ kind: "vanilla", id: 21 }],
+    };
+  }
+
+  const TILE = { kind: "tile", id: 21, page: 0, x: 4, y: 40, width: 16, height: 16, frameWidth: 16, frameHeight: 16 } as const;
+  /** Every third diagonal of the tile's art transparent. */
+  const tilePixel = (x: number, y: number): Rgba => [(x * 13) % 256, (y * 17) % 256, 200, (x + y) % 3 === 0 ? 0 : 255];
+
+  test("a block's transparent edge pixels show the liquid above and beside it; its other pixels do not", () => {
+    const world = edgeWorld();
+    const page = new Uint8Array(PAGE * PAGE * 4);
+    const water = SHEETS[0];
+    if (water === undefined) throw new Error("no water sheet");
+    for (let y = 0; y < water.height; y++) for (let x = 0; x < water.width; x++) page.set(sheetPixel(0, x, y), ((water.y + y) * PAGE + water.x + x) * 4);
+    for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) page.set(tilePixel(x, y), ((TILE.y + y) * PAGE + TILE.x + x) * 4);
+    const canvas = document.createElement("canvas");
+    canvas.width = 3 * ZOOM;
+    canvas.height = 3 * ZOOM;
+    const renderer = createMapRenderer(canvas);
+    created.push(renderer);
+    renderer.setWorld(world);
+    renderer.setAtlas({ pages: [page], index: { pageSize: PAGE, entries: [water, TILE] } });
+    renderer.setCamera({ x: 0, y: 0, zoom: ZOOM });
+    renderer.setSpriteMode(true);
+    renderer.setLayers(ALL);
+    renderer.render();
+    const pixels = readCanvas(canvas);
+    const background = renderChunk(world as never, 0, 0, { surfaceY: world.surfaceY, layers: { ...ALL, blocks: false, liquids: false } }).pixels;
+    const read = (x: number, y: number): Rgba => {
+      const i = (y * 3 * ZOOM + x) * 4;
+      return [pixels[i] ?? 0, pixels[i + 1] ?? 0, pixels[i + 2] ?? 0, pixels[i + 3] ?? 0];
+    };
+    const bg: Rgba = [background[(1 * 3 + 1) * 4] ?? 0, background[(1 * 3 + 1) * 4 + 1] ?? 0, background[(1 * 3 + 1) * 4 + 2] ?? 0, background[(1 * 3 + 1) * 4 + 3] ?? 0];
+    const waterAt = (sx: number, row: number): Rgba => {
+      const art = sheetPixel(0, sx, row);
+      return over([art[0], art[1], art[2], Math.floor((art[3] * (LIQUID_SPRITE_ALPHA[0] ?? 0) + 127) / 255)], over(art, bg));
+    };
+    for (let sy = 0; sy < 16; sy++) {
+      for (let sx = 0; sx < 16; sx++) {
+        const art = tilePixel(sx, sy);
+        let expected: Rgba = bg;
+        // The water above (1, 0) fills this tile's top rows, under liquid; the water at (0, 1) has air above it: surface.
+        const bleed = liquidBleed(sx, sy, { kind: WATER, amount: 255 }, { kind: WATER, amount: 255 }, { kind: 0, amount: 0 });
+        if (bleed !== null) {
+          const surface = bleed.side === "left";
+          const row = liquidSheetRow(sy, liquidFillPixels(bleed.amount), surface);
+          if (row !== null) expected = waterAt(sx, row);
+        }
+        expected = over(art, expected);
+        expect(read(ZOOM + sx, ZOOM + sy), `(${String(sx)}, ${String(sy)})`).toEqual(expected);
+      }
+    }
   });
 });

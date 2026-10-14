@@ -70,3 +70,26 @@ export function liquidHasSurface(
   if (above.kind !== 0 && above.amount !== 0) return false;
   return aboveShape === 0 || shapedTileLiquid(aboveAbove, aboveLeft, aboveRight) === null;
 }
+
+/**
+ * Sprite pixels a liquid reaches into the block beside or below it (G, the user's comparison with the game: liquid
+ * meets blocks without single pixels of air between them); drawn under the block's sprite, so only its transparent
+ * edge pixels show it.
+ */
+export const LIQUID_BLEED = 1;
+
+/**
+ * The neighbour whose liquid sprite pixel (x, y) (0–15) of a block without liquid of its own shows, under the block:
+ * the liquid above in the top LIQUID_BLEED rows (full, under liquid), else the liquid beside it in the LIQUID_BLEED
+ * columns next to that side (the fuller one where both reach), at the neighbour's own level. Null for none.
+ */
+export function liquidBleed(
+  x: number, y: number, above: TileLiquid, left: TileLiquid, right: TileLiquid,
+): { readonly side: "above" | "left" | "right"; readonly kind: number; readonly amount: number } | null {
+  if (y < LIQUID_BLEED && above.kind !== 0 && above.amount !== 0) return { side: "above", kind: above.kind, amount: 255 };
+  const fromLeft = x < LIQUID_BLEED && left.kind !== 0 && left.amount !== 0;
+  const fromRight = x >= TILE_PIXELS - LIQUID_BLEED && right.kind !== 0 && right.amount !== 0;
+  if (fromRight && (!fromLeft || right.amount > left.amount)) return { side: "right", kind: right.kind, amount: right.amount };
+  if (fromLeft) return { side: "left", kind: left.kind, amount: left.amount };
+  return null;
+}
