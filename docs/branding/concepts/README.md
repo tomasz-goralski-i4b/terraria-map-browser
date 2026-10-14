@@ -1,11 +1,10 @@
 # Left artwork alternatives
 
-Three original concepts generated with the built-in ImageGen tool on 2026-10-14. The user selected B, which is now active in the application. The right illustration was redrawn to match B's style. A and C remain alternate concepts. No tests were run for this revision, at the user's request.
+Three original concepts generated with the built-in ImageGen tool on 2026-10-14. The user selected B, which is now active in the application. The right illustration was redrawn to match B's style. A and C remain alternate concepts.
 
-- [A: Classic world section](a-classic-world.png): balanced surface, caves and Underworld.
+- A: Classic world section (image not retained): balanced surface, caves and Underworld.
 - [B: Hellevator and infrastructure](b-hellevator.png): a planned shaft, landings and an underground base.
-- [C: Surface construction](c-surface-build.png): more room for the surface build, with ordinary caves and a compact Underworld.
-- [Comparison viewer](index.html): dark/light backgrounds and a pairing view with the current right artwork.
+- C: Surface construction (image not retained): more room for the surface build, with ordinary caves and a compact Underworld.
 
 ## Reference material
 

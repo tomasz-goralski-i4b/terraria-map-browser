@@ -2,9 +2,7 @@
 
 Original art generated with the built-in ImageGen tool on 2026-10-14. The left illustration is the style master. The right no longer repeats a house under construction: its cloud island depicts selecting and moving a small terrain parcel. The snowy hillside preserves the user's bare boreal tree reference. Exterior and middle-gap alpha remain transparent.
 
-Master: `world-art-right-selection-master.png`. Runtime: `apps/web/src/brand/world-art-right.webp` (768 × 1152px, WebP quality 88, alpha preserved).
-
-The work is isolated on `feat/branding-world-chooser`, based on freshly fetched `origin/main` at `80086912d1b719289820e121f4ec306a62cfb8a4`. Tests are not run for this revision at the user's request.
+This intermediate master (`world-art-right-selection-master.png`) is not retained; it was redrawn as `world-art-right-matched-b-master.png` ([matched-pair-prompt.md](matched-pair-prompt.md)).
 
 ## Prompt
 

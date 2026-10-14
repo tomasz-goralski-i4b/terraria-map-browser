@@ -6,25 +6,24 @@ These are original AI-generated illustrations, not extracted Terraria assets. Ge
 
 ## Files and usage
 
-- [Original world-section mark](branding/mark-world-section-master.png): active full-resolution transparent source. [Earlier monogram](branding/mark-master.png) is retained as a concept.
+- [Original world-section mark](branding/mark-world-section-master.png): active full-resolution transparent source.
 - [Selected left illustration: concept B](branding/concepts/b-hellevator.png): surface workshop, planned hellevator, ordinary stone caves and open Underworld with lava and an obsidian structure. This is the final pixel-art style reference for the pair.
-- [Matched right illustration](branding/world-art-right-matched-b-master.png): cloud island with a selected terrain parcel and displaced ghost copy, empty air, and a snowy hillside with bare, snow-capped boreal trees. Pixel scale, shading and textures follow concept B. Earlier masters remain as concepts.
-- [Opaque portrait source](branding/world-art-portrait-master.png): retained input to the background-removal edit.
-- [Earlier landscape concept](branding/world-art-master.png): retained source for the previous version.
+- [Matched right illustration](branding/world-art-right-matched-b-master.png): cloud island with a selected terrain parcel and displaced ghost copy, empty air, and a snowy hillside with bare, snow-capped boreal trees. Pixel scale, shading and textures follow concept B.
+- [Final pair preview](branding/final-pair-dark.png) ([light](branding/final-pair-light.png)): both illustrations side by side on each theme background.
 - Runtime illustration and mark: `apps/web/src/brand/`; browser and install icons: `apps/web/public/brand/`.
 - `mark.png`: 256px transparent mark for the toolbar and start title.
 - `favicon-16.png`, `favicon-32.png`: tab icons.
 - `icon-192.png`, `icon-512.png`: transparent PWA icons.
 - `icon-maskable-512.png`: charcoal background with the mark kept within the central mask-safe area.
 - `apple-touch-icon.png`: 180px charcoal-backed iOS icon.
-- `world-art-portrait-transparent.webp`: 768 × 1152px active RGBA derivative of selected concept B on the left of the world chooser. Decorative, with empty alt text. Removed with the start screen when a world is open. Earlier portrait and landscape files are retained as concepts.
+- `world-art-portrait-transparent.webp`: 768 × 1152px active RGBA derivative of selected concept B on the left of the world chooser. Decorative, with empty alt text. Removed with the start screen when a world is open.
 - `world-art-right.webp`: 768 × 1152px RGBA companion on the right, showing terrain selection/movement above a solid snowy hill. The left artwork shows construction; the right shows another editor tool. Hidden on phone widths to keep controls accessible.
 
 The desktop start screen centers the chooser content itself within the map area; the illustrations occupy the available space on either side. Folder worlds and recent worlds use adjacent columns. Populated eight-entry lists are tested at 1280 × 720 in both themes. Shorter or phone layouts retain vertical scrolling when needed rather than clipping controls. The illustrations scale down with the side margins on narrower desktop windows.
 
 The decorative illustrations cannot be dragged or text-selected and do not receive pointer events. This prevents an accidental image drag from reaching the map's world-file drop handler.
 
-PNG derivatives use Lanczos resampling. The illustrations use WebP quality 88 and retain source alpha. Original outputs are retained for future exports. Outside the portrait's silhouette, transparency blends the illustration into both editor themes; cave interiors retain dark shading. Both assets are precached for offline use. No animation or map-renderer changes.
+PNG derivatives use Lanczos resampling. The illustrations use WebP quality 88 and retain source alpha. The active masters are retained for future exports. Superseded masters (the M monogram, the landscape and earlier portrait/right-side versions, concepts A and C) are not kept in the repository to keep it small; they remain in the history of PR #257 (commit `787c563`). Outside the portrait's silhouette, transparency blends the illustration into both editor themes; cave interiors retain dark shading. Both assets are precached for offline use. No animation or map-renderer changes.
 
 
 ### Portrait revision

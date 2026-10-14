@@ -1,6 +1,6 @@
 # Right-side art generation
 
-Generated with the built-in ImageGen tool on 2026-10-14. These prompts describe the earlier right-side concepts. The active master is `world-art-right-selection-master.png`; its prompt is in [selection-art-prompt.md](selection-art-prompt.md). The application derivative is `apps/web/src/brand/world-art-right.webp`. Both use genuine RGBA transparency. The tree correction uses the user's two screenshots of bare boreal trees; those private reference files are not copied into the repository.
+Generated with the built-in ImageGen tool on 2026-10-14. These prompts describe the earlier right-side concepts. Their masters are not retained (see [branding.md](../branding.md)); the active master is `world-art-right-matched-b-master.png`, described in [matched-pair-prompt.md](matched-pair-prompt.md). The application derivative is `apps/web/src/brand/world-art-right.webp`. Both use genuine RGBA transparency. The tree correction uses the user's two screenshots of bare boreal trees; those private reference files are not copied into the repository.
 
 ## Visual references
 
@@ -10,7 +10,7 @@ The references informed silhouettes and biome details, not shipped sprites. Scre
 - [Official Wiki: Snow biome](https://terraria.wiki.gg/wiki/Snow_biome): snow surface and boreal vegetation.
 - [Classic floating-island screenshot](https://steamcommunity.com/sharedfiles/filedetails/?id=2724317960): flat terrain and modest building scale.
 - [Snow-biome screenshot](https://pinion.jp/%E3%82%AC%E3%82%A4%E3%83%89/%E3%83%86%E3%83%A9%E3%83%AA%E3%82%A2-%E5%85%A8%E3%83%90%E3%82%A4%E3%82%AA%E3%83%BC%E3%83%A0%E8%A7%A3%E8%AA%AC/): terrain reference. Its conifer tree type was superseded by the user's explicit bare-boreal-tree reference.
-- `world-art-portrait-transparent-master.png`: definitive left-side style reference for pixel scale, textures, contrast and blueprint rendering.
+- The left-side illustration at the time: style reference for pixel scale, textures, contrast and blueprint rendering.
 
 ## Initial revised composition
 

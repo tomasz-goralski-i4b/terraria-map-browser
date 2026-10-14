@@ -2,7 +2,7 @@
 
 The user supplied two in-game references: long exposed mottled trunks, sparse side branches, bare forked crowns and snow on the upper edges of branches. The final snowy hill uses this bare tree variant, with no needles or leaf clusters. The green tree on the sky island remains leafy. Only the original generated artwork is shipped.
 
-Generated with the built-in ImageGen tool. The tree correction was applied to `world-art-right-v3-master.png` and preserved in the active `world-art-right-selection-master.png`. Runtime derivative: `apps/web/src/brand/world-art-right.webp`, 768 × 1152px, WebP quality 88 with preserved alpha.
+Generated with the built-in ImageGen tool. The tree correction was applied to an intermediate right-side master (not retained) and carried into the active `world-art-right-matched-b-master.png`. Runtime derivative: `apps/web/src/brand/world-art-right.webp`, 768 × 1152px, WebP quality 88 with preserved alpha.
 
 ## Prompt
 
