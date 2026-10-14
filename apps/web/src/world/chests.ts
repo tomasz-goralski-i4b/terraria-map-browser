@@ -31,13 +31,16 @@ export function chestAnchorStatus(chest: WorldChest, world: ChestWorld): ChestAn
   return "valid";
 }
 
-export function chestFootprint(chest: WorldChest, world: ChestWorld): ChestFootprint | null {
-  return chestAnchorStatus(chest, world) === "valid" ? { x: chest.x, y: chest.y, width: footprintWidth(world.tileAt(chest.x, chest.y)), height: 2 } : null;
-}
+/** Why a record has no map target: its anchor, or a footprint shared with another record. */
+export type ChestRecordStatus = ChestAnchorStatus | "ambiguous";
+export interface ChestRecord { readonly status: ChestRecordStatus; readonly footprint: ChestFootprint | null }
 
-/** Validated footprints in record order. Any shared tile makes both objects ambiguous. */
-export function chestFootprints(chests: readonly WorldChest[], world: ChestWorld): readonly (ChestFootprint | null)[] {
-  const footprints = chests.map((chest) => chestFootprint(chest, world));
+/** Each record's anchor status and validated footprint, in record order. Any shared tile makes both objects ambiguous. */
+export function chestRecords(chests: readonly WorldChest[], world: ChestWorld): readonly ChestRecord[] {
+  const statuses = chests.map((chest) => chestAnchorStatus(chest, world));
+  const footprints = chests.map((chest, index): ChestFootprint | null => statuses[index] === "valid"
+    ? { x: chest.x, y: chest.y, width: footprintWidth(world.tileAt(chest.x, chest.y)), height: 2 }
+    : null);
   const owners = new Map<number, number>();
   const ambiguous = new Set<number>();
   for (const [index, area] of footprints.entries()) {
@@ -49,7 +52,9 @@ export function chestFootprints(chests: readonly WorldChest[], world: ChestWorld
       else { ambiguous.add(previous); ambiguous.add(index); }
     }
   }
-  return footprints.map((area, index) => ambiguous.has(index) ? null : area);
+  return footprints.map((footprint, index) => ambiguous.has(index)
+    ? { status: "ambiguous", footprint: null }
+    : { status: statuses[index] ?? "unknown", footprint });
 }
 
 /**
@@ -59,9 +64,9 @@ export function chestFootprints(chests: readonly WorldChest[], world: ChestWorld
  */
 export function createChestLookup(chests: readonly WorldChest[], width: number, height: number, tileAt: (x: number, y: number) => Tile): ChestAt {
   const byTile = new Map<number, WorldChest | null>();
-  const footprints = chestFootprints(chests, { width, height, tileAt });
+  const records = chestRecords(chests, { width, height, tileAt });
   for (const [index, chest] of chests.entries()) {
-    const footprint = footprints[index];
+    const footprint = records[index]?.footprint;
     if (footprint === null || footprint === undefined) continue;
     const right = chest.x + footprint.width;
     const bottom = chest.y + footprint.height;

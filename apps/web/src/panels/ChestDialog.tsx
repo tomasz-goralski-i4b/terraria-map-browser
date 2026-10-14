@@ -44,7 +44,7 @@ export function ChestDialog({ chest, title, onClose }: { readonly chest: WorldCh
   return (
     <dialog ref={ref} className="dialog chest-dialog" aria-labelledby={titleId}>
       <header className="dialog-header">
-        <h2 id={titleId}>{chest.name.length > 0 ? chest.name : `${title}: Unnamed`}</h2>
+        <h2 id={titleId}>{chest.name.length > 0 ? chest.name : title}</h2>
         <span className="chest-dialog-actions">
           <span className="chest-dialog-position">{`${String(chest.x)}, ${String(chest.y)} · ${String(chest.items.length)} of ${String(chest.slotCount)} filled`}</span>
           <IconButton icon="grid" label="Grid view" pressed={view === "grid"} onClick={() => {

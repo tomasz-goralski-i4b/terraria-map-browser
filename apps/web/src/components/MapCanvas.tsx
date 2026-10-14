@@ -494,6 +494,15 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
       zoomTo: (zoom) => {
         zoomBy(zoom / session.animator.target.zoom);
       },
+      goTo: (x, y, minZoom) => {
+        endStroke();
+        if (session.viewport.width === 0 || canvas.clientWidth === 0) return;
+        session.keys.clear();
+        const zoom = Math.max(session.animator.target.zoom, minZoom * canvas.width / canvas.clientWidth);
+        const camera = { x: x - session.viewport.width / 2 / zoom, y: y - session.viewport.height / 2 / zoom, zoom };
+        session.animator.reset(clampCamera(camera, session.viewport, session.world), session.viewport, session.world);
+        applyCamera(session, session.animator.current);
+      },
       jumpTo: (camera) => {
         endStroke();
         if (session.viewport.width === 0) return;

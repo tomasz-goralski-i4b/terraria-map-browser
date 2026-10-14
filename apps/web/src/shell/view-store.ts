@@ -112,6 +112,11 @@ export const useViewStore = create<ViewState>()((set, get) => ({
 export interface MapController {
   /** Glides the camera so the tile is in the centre of the view. */
   readonly centerOn: (x: number, y: number) => void;
+  /**
+   * Moves at once (no glide) so the fractional tile point `x`, `y` is in the centre, zooming in to at least `minZoom`
+   * CSS pixels per tile; a closer zoom is kept. "Go to" for objects too small to see from the overview.
+   */
+  readonly goTo: (x: number, y: number, minZoom: number) => void;
   readonly fitWorld: () => void;
   readonly actualSize: () => void;
   /** Glides to `zoom` backing-store pixels per tile around the centre of the view. */

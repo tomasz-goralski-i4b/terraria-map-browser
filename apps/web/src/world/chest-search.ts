@@ -30,6 +30,8 @@ export async function buildChestItemIndex(chests: readonly WorldChest[], yieldSl
     }
     work++;
   }
+  // Lower-cased once per distinct item, so each keystroke is a scan of names rather than of labels being built.
+  const names = new Map([...byItem.keys()].map((itemId) => [itemId, itemLabel(itemId).toLowerCase()]));
   return { search: (query) => {
     const text = query.trim().toLowerCase();
     const exactId = /^-?\d+$/.test(text) ? Number(text) : null;
@@ -37,7 +39,7 @@ export async function buildChestItemIndex(chests: readonly WorldChest[], yieldSl
     const totals: ChestItemTotal[] = [];
     if (text === "") return { matches: [], totals };
     for (const [itemId, entry] of byItem) {
-      if (exactId === null ? !itemLabel(itemId).toLowerCase().includes(text) : itemId !== exactId) continue;
+      if (exactId === null ? !(names.get(itemId) ?? "").includes(text) : itemId !== exactId) continue;
       totals.push({ itemId, totalStack: entry.totalStack, slotCount: entry.slotCount, chestCount: entry.chests.size });
       for (const [chestIndex, stack] of entry.chests) {
         const chest = chests[chestIndex];
