@@ -35,6 +35,23 @@ export function chestFootprint(chest: WorldChest, world: ChestWorld): ChestFootp
   return chestAnchorStatus(chest, world) === "valid" ? { x: chest.x, y: chest.y, width: footprintWidth(world.tileAt(chest.x, chest.y)), height: 2 } : null;
 }
 
+/** Validated footprints in record order. Any shared tile makes both objects ambiguous. */
+export function chestFootprints(chests: readonly WorldChest[], world: ChestWorld): readonly (ChestFootprint | null)[] {
+  const footprints = chests.map((chest) => chestFootprint(chest, world));
+  const owners = new Map<number, number>();
+  const ambiguous = new Set<number>();
+  for (const [index, area] of footprints.entries()) {
+    if (area === null) continue;
+    for (let dx = 0; dx < area.width; dx++) for (let dy = 0; dy < area.height; dy++) {
+      const key = (area.y + dy) * world.width + area.x + dx;
+      const previous = owners.get(key);
+      if (previous === undefined) owners.set(key, index);
+      else { ambiguous.add(previous); ambiguous.add(index); }
+    }
+  }
+  return footprints.map((area, index) => ambiguous.has(index) ? null : area);
+}
+
 /**
  * Maps every tile of every chest's footprint to its record, built once, so a lookup is a hash probe rather than a
  * scan of all chests. Only complete, consistently framed objects inside the world are indexed. Ambiguous overlaps
@@ -42,9 +59,10 @@ export function chestFootprint(chest: WorldChest, world: ChestWorld): ChestFootp
  */
 export function createChestLookup(chests: readonly WorldChest[], width: number, height: number, tileAt: (x: number, y: number) => Tile): ChestAt {
   const byTile = new Map<number, WorldChest | null>();
-  for (const chest of chests) {
-    const footprint = chestFootprint(chest, { width, height, tileAt });
-    if (footprint === null) continue;
+  const footprints = chestFootprints(chests, { width, height, tileAt });
+  for (const [index, chest] of chests.entries()) {
+    const footprint = footprints[index];
+    if (footprint === null || footprint === undefined) continue;
     const right = chest.x + footprint.width;
     const bottom = chest.y + footprint.height;
     for (let y = chest.y; y < bottom; y++) for (let x = chest.x; x < right; x++) {

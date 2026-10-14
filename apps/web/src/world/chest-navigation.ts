@@ -4,32 +4,29 @@ import type { Tile } from "@studio/world-model";
 import { getMapController, useViewStore } from "../shell/view-store.js";
 import { useLayoutStore } from "../shell/layout-store.js";
 import { useAppStore } from "../store.js";
-import { chestFootprint, type ChestWorld } from "./chests.js";
+import type { ChestWorld } from "./chests.js";
 
-export interface ChestArea { readonly x: number; readonly y: number; readonly width: number; readonly height: number }
-export function chestArea(chest: WorldChest, world: ChestWorld): ChestArea | null {
-  return chestFootprint(chest, world);
-}
+export interface ChestArea { readonly x: number; readonly y: number; readonly width: number; readonly height: number; readonly chestIndex?: number }
 export function chestKind(origin: Tile): string {
   const id = origin.block?.kind === "vanilla" ? origin.block.id : null;
   return id === 88 ? "Dresser" : id === 441 || id === 468 ? "Trapped chest" : id === 21 || id === 467 ? "Chest" : "Unknown";
 }
 
-export const useChestNavigation = create<{ readonly areas: readonly ChestArea[]; readonly selected: ChestArea | null; readonly searchRequested: number; readonly query: string }>()(() => ({ areas: [], selected: null, searchRequested: 0, query: "" }));
+export const useChestNavigation = create<{ readonly areas: readonly ChestArea[]; readonly selected: ChestArea | null; readonly selectedIndex: number | null; readonly searchRequested: number; readonly query: string }>()(() => ({ areas: [], selected: null, selectedIndex: null, searchRequested: 0, query: "" }));
 
 useAppStore.subscribe((state, previous) => {
-  if (state.worldRevision !== previous.worldRevision || (state.summary === null && previous.summary !== null)) useChestNavigation.setState({ areas: [], selected: null, query: "" });
+  if (state.worldRevision !== previous.worldRevision || (state.summary === null && previous.summary !== null)) useChestNavigation.setState({ areas: [], selected: null, selectedIndex: null, query: "" });
 });
 
-export function visitChest(chest: WorldChest, world: ChestWorld, pin: boolean): void {
-  const area = chestArea(chest, world);
+export function visitChest(chest: WorldChest, world: ChestWorld, pin: boolean, chestIndex: number, area: ChestArea | null): void {
   if (area === null) {
-    useChestNavigation.setState({ selected: null });
+    useChestNavigation.setState({ selected: null, selectedIndex: chestIndex });
+    if (pin) useViewStore.getState().setPinnedTile(null);
     if (chest.x >= 0 && chest.y >= 0 && chest.x < world.width && chest.y < world.height) getMapController()?.centerOn(chest.x, chest.y);
     return;
   }
   getMapController()?.centerOn(chest.x + area.width / 2, chest.y + area.height / 2);
-  useChestNavigation.setState({ selected: area });
+  useChestNavigation.setState({ selected: area, selectedIndex: chestIndex });
   if (pin) {
     useViewStore.getState().setPinnedTile({ x: chest.x, y: chest.y });
     useLayoutStore.getState().setSectionOpen("inspector", true);
@@ -37,14 +34,14 @@ export function visitChest(chest: WorldChest, world: ChestWorld, pin: boolean): 
 }
 
 export function stepChest(direction: 1 | -1): void {
-  const { areas, selected } = useChestNavigation.getState();
+  const { areas, selectedIndex } = useChestNavigation.getState();
   if (areas.length === 0) return;
-  const current = selected === null ? -1 : areas.findIndex((area) => area.x === selected.x && area.y === selected.y);
+  const current = selectedIndex === null ? -1 : areas.findIndex((area) => area.chestIndex === selectedIndex);
   const index = current < 0 ? direction === 1 ? 0 : areas.length - 1 : (current + direction + areas.length) % areas.length;
   const area = areas[index];
   if (area === undefined) return;
   getMapController()?.centerOn(area.x + area.width / 2, area.y + area.height / 2);
-  useChestNavigation.setState({ selected: area });
+  useChestNavigation.setState({ selected: area, selectedIndex: area.chestIndex ?? index });
   useViewStore.getState().setPinnedTile({ x: area.x, y: area.y });
   useLayoutStore.getState().setSectionOpen("inspector", true);
 }
