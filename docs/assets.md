@@ -561,13 +561,16 @@ stream:
 
 - **falls** down the side of the next tile facing where it came from while the tile below is open (its 10-pixel
   column 4 pixels back over the edge it leaves);
-- on **flat ground** runs along the top (a film 8 pixels high) in its direction; where the tile ahead has open ground
+- on **flat ground** runs along the top (a film 16 pixels high, its top 8 pixels above the ground: its lower half lies
+  behind the ground's block and shows through the block's transparent pixels, G: water fills the notches of a
+  staircase) in its direction; where the tile ahead has open ground
   below it, it **pours over** the edge (the film and the lip's corner) and falls again; down a step of one tile the
   corner is cut to 16 pixels, reaching the next step's film, and no falling column is drawn (G: the game shows a cap
   of water on each step of a staircase with a short tail to the next);
 - on a **slope** slides along its surface and takes its downhill direction, so on a slope going down towards it the
   stream turns back: falling past the slope's low tip it goes on straight down, its column keeping its mirroring and
-  its edge (G: setup 4), with no film along the slope; falling off a slope's tip going away, the column reaches 8 pixels
+  its edge (G: setup 4), with no film along the slope; where a slope ends against a block level with its low tip, the
+  stream runs on along that block's top (G: a natural staircase of slopes and half blocks); falling off a slope's tip going away, the column reaches 8 pixels
   up to the slide's last film (its lower half above the tile), so the stream has no gap there (G: setup 3);
 - ends on entering **liquid** (it stops at the tile holding it), against a **solid block** ahead, at the world's edge,
   or after **100 steps**, fading out over the last 8 (the long drop fades about 98 tiles below its source).

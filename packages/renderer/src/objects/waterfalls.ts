@@ -159,7 +159,12 @@ export const WATERFALL_SHEETS: readonly number[] = [0, 1, 14, 25];
  */
 const LIP = { sx: 10, sy: 0, width: 22, height: 24 } as const;
 const COLUMN = { sx: 10, sy: 24, width: 10, height: 16 } as const;
-const FILM = { sx: 16, sy: 0, width: 16, height: 8 } as const;
+/**
+ * The film on the ground: the lip's flat part, its top FILM_RISE pixels above the ground and its lower half behind the
+ * ground's block, where it shows through the block's transparent pixels (G: water fills the notches of a staircase).
+ */
+const FILM = { sx: 16, sy: 0, width: 16, height: 16 } as const;
+const FILM_RISE = 8;
 /** The lip's corner: its column part with the 4 pixels of flat part the column reaches back over (x 10–19). */
 const CORNER = { sx: 10, sy: 0, width: 10, height: 24 } as const;
 /** The lip's column part reaches this far past its tile; the column 4 pixels back over it. */
@@ -210,9 +215,9 @@ export function waterfallSprites(world: WaterfallWorld, area: TileArea): ObjectS
         out.push({ ...base, ...LIP, sy: LIP.sy + band, dx: flip ? left : left - LIP_OVERHANG, dy: step.y * TILE });
       } else if (step.piece === "lip") {
         // A ledge's end (G): the film over the ledge, and the corner turning down past its edge.
-        out.push({ ...base, ...FILM, sy: FILM.sy + band, dx: left, dy: ground - FILM.height });
+        out.push({ ...base, ...FILM, sy: FILM.sy + band, dx: left, dy: ground - FILM_RISE });
         const corner = oneTileDrop(index) ? { ...CORNER, height: TILE } : CORNER;
-        out.push({ ...base, ...corner, sy: corner.sy + band, dx: flip ? left + TILE - COLUMN_BACK : left - CORNER.width + COLUMN_BACK, dy: ground - FILM.height });
+        out.push({ ...base, ...corner, sy: corner.sy + band, dx: flip ? left + TILE - COLUMN_BACK : left - CORNER.width + COLUMN_BACK, dy: ground - FILM_RISE });
       } else if (step.piece === "fall" || turnsBack) {
         // The column hugs the edge the stream falls along: 4 pixels over the side it came from (mirrored: right of it).
         const edge = straight?.edge ?? (step.direction === 1 ? left : left + TILE);
@@ -224,12 +229,12 @@ export function waterfallSprites(world: WaterfallWorld, area: TileArea): ObjectS
         }
         out.push({ ...base, ...COLUMN, sy: COLUMN.sy + band, dx, dy: step.y * TILE });
       } else if (step.piece === "run") {
-        out.push({ ...base, ...FILM, sy: FILM.sy + band, dx: left, dy: ground - FILM.height });
+        out.push({ ...base, ...FILM, sy: FILM.sy + band, dx: left, dy: ground - FILM_RISE });
       } else {
         // A slope's surface: down to the right from its top-left (shape 2), down to the left from its top-right (3).
         for (let column = 0; column < TILE / 2; column++) {
           const surface = step.direction === 1 ? 2 * column : TILE - 2 - 2 * column;
-          out.push({ ...base, sx: FILM.sx + 2 * column, sy: band, width: 2, height: FILM.height, dx: left + 2 * column, dy: step.y * TILE + surface - FILM.height });
+          out.push({ ...base, sx: FILM.sx + 2 * column, sy: band, width: 2, height: FILM.height, dx: left + 2 * column, dy: step.y * TILE + surface - FILM_RISE });
         }
       }
     }
@@ -269,6 +274,12 @@ export function waterfallPath(world: WaterfallWorld, source: WaterfallSource): W
       direction = slope;
       if (!push("slide", x, y)) break;
       x += direction;
+      // Against a block level with the slope's low tip the stream runs on along its top (G: a staircase); else it
+      // goes on below the tip.
+      if (reader.solid(x, y + 1) && reader.slope(x, y + 1) === 0) {
+        falling = false;
+        continue;
+      }
       y += 1;
       falling = true;
       continue;

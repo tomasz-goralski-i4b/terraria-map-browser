@@ -112,6 +112,13 @@ describe("waterfall paths (G)", () => {
     expect(steps(w, source)).toEqual(["lip:1,0", "fall:2,1", "slide:2,2", "slide:3,3", "fall:4,4", "run:4,4", "run:5,4"]);
   });
 
+  test("where a slope ends against a block level with its low tip, it runs on along that block (G: a staircase)", () => {
+    const w = world(["~h.....", "#......", "..\\....", "...\\...", "....###", "......."]);
+    const [source] = all(w);
+    if (source === undefined) throw new Error("no source");
+    expect(steps(w, source)).toEqual(["lip:1,0", "fall:2,1", "slide:2,2", "slide:3,3", "run:4,3", "run:5,3", "run:6,3"]);
+  });
+
   test("on a slope going down towards it the stream turns back", () => {
     const w = world(["~h....", "#.....", "......", "../...", "......", "######"]);
     const [source] = all(w);
@@ -165,8 +172,9 @@ describe("waterfall sprites", () => {
       // The column down the side of (3, 1) and (3, 2) facing the source, 4 pixels over the half block's column.
       { ...common, sx: 10, sy: 24, width: 10, height: 16, dx: 3 * 16 - 4, dy: 16 },
       { ...common, sx: 10, sy: 24, width: 10, height: 16, dx: 3 * 16 - 4, dy: 32 },
-      // The run: the lip's flat part, 8 pixels high, on the floor below (3, 2).
-      { ...common, sx: 16, sy: 0, width: 16, height: 8, dx: 3 * 16, dy: 3 * 16 - 8 },
+      // The run: the lip's flat part, 16 pixels high, its top 8 pixels above the floor below (3, 2): its lower half lies
+      // behind the floor's block and shows through its transparent pixels (G: water in the notches of a staircase).
+      { ...common, sx: 16, sy: 0, width: 16, height: 16, dx: 3 * 16, dy: 3 * 16 - 8 },
     ]);
   });
 
@@ -176,7 +184,7 @@ describe("waterfall sprites", () => {
     const common = { kind: "waterfall", id: 0, flip: true, alpha: 255, behind: true, underLiquid: true };
     // Steps: lip (1, 0), fall (2, 1), lip (2, 1) at the one-tile ledge (2, 2), its top at y 32.
     expect(sprites.slice(2, 4)).toEqual([
-      { ...common, sx: 16, sy: 0, width: 16, height: 8, dx: 2 * 16, dy: 2 * 16 - 8 },
+      { ...common, sx: 16, sy: 0, width: 16, height: 16, dx: 2 * 16, dy: 2 * 16 - 8 },
       { ...common, sx: 10, sy: 0, width: 10, height: 24, dx: 3 * 16 - 4, dy: 2 * 16 - 8 },
     ]);
   });
