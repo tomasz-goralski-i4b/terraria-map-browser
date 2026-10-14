@@ -488,6 +488,10 @@ not observable:
   liquid of its own shows, under its block sprite, the liquid above it (full, under liquid), else that of its fuller
   side neighbour (the left on a tie) at that neighbour's level, with the surface (`shapedTileLiquid`). The game's
   `LiquidSlope_<n>` edge pieces are not drawn. Seen in-game for water, lava and shimmer.
+- **Edges (G, the user's comparison with the game):** liquid meets blocks without single pixels of air between them. A
+  block without liquid of its own shows, under its sprite, the liquid above it in its top `LIQUID_BLEED` (1) row and
+  the liquid beside it in the column next to that side (the fuller side where both reach), at that neighbour's level
+  (`liquidBleed`); only the art's transparent edge pixels show it.
 - **Two layers (G):** in-game screenshots of a pool in the Color, White and Retro lighting modes (2026-10-14) show the
   water against the sky as its art's colour (body 11, 63, 193 for the art's 9, 61, 191 over sky 112, 158, 246), while
   plants under it stay visible, darkened. The viewer therefore draws the liquid twice: a **back layer** of its art,
@@ -496,6 +500,41 @@ not observable:
   in front of the background shows through, tinted. In map colours (map mode, and below `SPRITE_MIN_ZOOM` in sprite mode) a liquid keeps
   the map rule, opacity `amount / 255`; from `SPRITE_MIN_ZOOM` to `SPRITE_FULL_ZOOM` its sprite fades in over that
   colour like a block sprite. The liquids layer toggle removes the liquid and nothing else.
+
+### Waterfalls
+
+**Sheets (S).** `Waterfall_<n>` (28 sheets, `WaterfallID` names them: 0 water, 1 lava, 14 honey, 25 shimmer, the
+others biome waters, gemspark waters and rain) are 512 × 40: 16 animation frames of 32 × 40 side by side (atlas kind
+`waterfall`, format 8). A frame's art flows **left**: rows 0–23 are the **lip**, its flat part (x 16–31) lying over the
+tile the stream pours from and its column part (x 10–15) hanging into the next tile; rows 24–39 the 10-pixel
+**column** (x 10–19) the stream falls in. `Waterfall_25` (shimmer) is a grey mask the game colours while drawing.
+
+**Sources (R, [ADR 0003](adr/0003-observe-framing-in-the-game.md), waterfall addendum).** The game's own source
+finder, asked about synthetic tiles (`scripts/waterfalls/observe.ps1`; the opt-in `observe.test.mjs` checks the
+viewer against it, about 1 100 cases): a waterfall starts at a **half block** with liquid of **more than 160**
+(`minWet`) on one side and, on the other, neither a full solid block nor a slope nor any liquid (air, a half block, a
+platform or other framed content are fine); no liquid in the tile above it (any amount stops it), anything below it.
+Liquid inside the half block itself does not matter. It flows away from the liquid, in the liquid's type. A liquid
+film at a ledge's edge is no source. The manager's `maxLength` is 100.
+
+**Path (G: in-game screenshots of the test setups in the user's `fluid3`, 2026-10-14).** From the source's lip the
+stream:
+
+- **falls** down the side of the next tile facing where it came from while the tile below is open (its 10-pixel
+  column 4 pixels back over the edge it leaves);
+- on **flat ground** runs along the top (a film 8 pixels high) in its direction; where the tile ahead has open ground
+  below it, it **pours over** the edge (the film and the lip's corner) and falls again;
+- on a **slope** slides along its surface and takes its downhill direction, so on a slope going down towards it the
+  stream turns back;
+- ends on entering **liquid** (it stops at the tile holding it), against a **solid block** ahead, at the world's edge,
+  or after **100 steps**, fading out over the last 8 (the long drop fades about 98 tiles below its source).
+
+Chosen where the screenshots do not show it: "solid" is a block the world stores no frame for, except vines, cactus
+and trees (furniture, plants and platforms do not stop water; the game's own solidity table is not shipped); a run on
+dry flat ground continues until an edge or a wall (in the screenshots the runs on the walkway stopped in a film of
+real liquid that had leaked from the basins); water is the forest style; frame 0, no animation; shimmer's mask is
+multiplied by shimmer's map colour. The object pass draws waterfalls over the chunk pass, mirrored when they flow
+right; the liquids layer toggle shows and hides them.
 
 ### Worked examples
 
@@ -526,6 +565,7 @@ Expected sheet sizes (consistent with the size arithmetic, confirmed only by the
 | Other variant sheets (`Tiles_2_Beach`, `Tiles_59_2`, …) | — | yes |
 | Wires and actuators | the `WiresNew` piece the four same-colour side neighbours give, red to yellow, the actuator on top, over everything in a wire pass; the colour overlay below `SPRITE_MIN_ZOOM` (#241, "Wires") | animation, the wiring tools' translucency modes, the other `WiresNew` rows |
 | Liquids | water, lava and honey from frame 0 of their `Liquid_<n>` sheet, cut to the fill level, with one surface line at the top of a pool, filling the cut-away part of half blocks and slopes, an opaque back layer over the background and a translucent front layer over what lies in front of it (#240, "Liquids"); shimmer flat in its map colour | animation (waves, lava glow), biome water styles, the slope pieces (`LiquidSlope_<n>`), waterfalls, lighting |
+| Waterfalls | sources by the game's own source finder (R), the path from in-game screenshots (G): lips, falling columns, runs along the ground and films along slopes from frame 0 of `Waterfall_<n>`, in the object pass ("Waterfalls") | animation, waterfalls from liquid films, rain, the biome water styles, the gemspark and rain waterfalls |
 | Paint, actuated/inactive tint, illumination | — | yes |
 
 ## Tile framing
@@ -1326,7 +1366,7 @@ report the same errors, and every candidate library either drags in a framework 
 (frame size 0, the whole sheet: the item catalog carries each inventory frame); liquids drawn per "Liquids", 16 × 16
 frames at a stride of 18) once (names matched
 case-insensitively; `Wall_Outline`, `Tiles_<id>_<n>` variants and everything else are ignored) and packs them into
-square RGBA pages, 4096 × 4096 by default. Format 5 added the tree, cap, wire and actuator sheets; format 6 the item and liquid sheets; format 7 the liquid frame layout. It runs in a Worker (`atlas-worker.ts`) and never
+square RGBA pages, 4096 × 4096 by default. Format 5 added the tree, cap, wire and actuator sheets; format 6 the item and liquid sheets; format 7 the liquid frame layout; format 8 the waterfall sheets. It runs in a Worker (`atlas-worker.ts`) and never
 touches the network; the Worker reports the number of `fetch` calls it saw (always 0).
 
 - **Packing:** shelf packing, tallest sheet first, with 2 transparent pixels of padding around every sheet so
@@ -1447,5 +1487,7 @@ shorter cells retain their native height. Paint remains a corner mark.
    palm rows. Each has a documented choice ("Minecart tracks", "Trees", "Wires").
 7. Liquids (#240): the game's liquid opacity, how it draws a tile under liquid and the shimmer colours are not
    observable without its renderer; the choices are in "Liquids".
+8. Waterfalls: how far a stream runs on dry flat ground, how the game draws the slide along a slope and the turn off
+   its end, the thin streams from liquid films at ledge edges; the choices are in "Waterfalls".
 
 Proposed follow-up issues: [planning/assets-follow-ups.md](planning/assets-follow-ups.md).
