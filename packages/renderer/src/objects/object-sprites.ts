@@ -3,13 +3,15 @@
 // its top-left lands in world sprite pixels (16 per tile); it may reach past its tile into the tiles around it.
 import type { ContentRef } from "@studio/world-model";
 import { terrariaSpriteObjects } from "./terraria-sprite-objects.generated.js";
+import { wrappedFrame } from "../gpu/frame-wrap.js";
+import { DRAWN_TILES, drawVariant } from "./draw-offsets.js";
 import { TRACK_CELL_STRIDE, TRACK_EXTRA_OFFSET, TRACK_TILE, trackExtraCell, trackPiece, type TrackExtra } from "./tracks.js";
 
 /** Pixels per tile of the sprites (the game's art is drawn at twice its resolution). */
 export const SPRITE_PIXELS_PER_TILE = 16;
 
 /** The sheets object sprites come from, as the atlas names them (`SpriteSheetEntry.kind` and id). */
-export type ObjectSheetKind = "tile" | "treeTop" | "treeBranch" | "shroomTop";
+export type ObjectSheetKind = "tile" | "treeTop" | "treeBranch" | "shroomTop" | "waterfall";
 
 export interface ObjectSprite {
   readonly kind: ObjectSheetKind;
@@ -22,6 +24,16 @@ export interface ObjectSprite {
   /** Where the rectangle's top-left lands, in world sprite pixels (tile x · 16 + offset). */
   readonly dx: number;
   readonly dy: number;
+  /** Mirrored left to right (a waterfall flowing right); absent means not. */
+  readonly flip?: boolean;
+  /** Opacity 0–255 the sprite's pixels are scaled by (a fading waterfall); absent means 255. */
+  readonly alpha?: number;
+  /** Multiplied by shimmer's map colour (its waterfall sheet is a grey mask the game colours); absent means not. */
+  readonly tint?: boolean;
+  /** Behind the blocks: drawn only where no block covers the pixel (frame-important tiles); absent means in front. */
+  readonly behind?: boolean;
+  /** With `behind`, also under the liquids: drawn only where no liquid covers the pixel (waterfalls); absent means not. */
+  readonly underLiquid?: boolean;
 }
 
 /**
@@ -226,6 +238,7 @@ function treeTile(
   const ground = groundUnder(reader, trunkX, y, type);
   const block = type === COMMON_TREE ? trunkBlocks.get(ground) ?? 0 : 0;
   out.trunks.push({
+    behind: true,
     kind: "tile", id: type, sx: frameX + block * TRUNK_BLOCK, sy: frameY, width: TRUNK_CELL, height: TRUNK_CELL,
     dx: x * SPRITE_PIXELS_PER_TILE - TRUNK_OFFSET, dy: y * SPRITE_PIXELS_PER_TILE,
   });
@@ -235,6 +248,7 @@ function treeTile(
   const frame = Math.floor((frameY - LEAFY_FRAME_Y) / FRAME_STRIDE) + foliage.frame;
   if (frameX === TOP_FRAME_X) {
     out.tops.push({
+      behind: true,
       kind: "treeTop", id: foliage.style, sx: frame * (foliage.width + FOLIAGE_GAP), sy: 0, width: foliage.width, height: foliage.height,
       dx: x * SPRITE_PIXELS_PER_TILE + SPRITE_PIXELS_PER_TILE / 2 - Math.floor(foliage.width / 2),
       dy: (y + 1) * SPRITE_PIXELS_PER_TILE - foliage.height,
@@ -243,6 +257,7 @@ function treeTile(
   }
   const left = trunkX > x;
   out.branches.push({
+    behind: true,
     kind: "treeBranch", id: foliage.style, sx: left ? 0 : BRANCH_SIZE + FOLIAGE_GAP, sy: frame * (BRANCH_SIZE + FOLIAGE_GAP),
     width: BRANCH_SIZE, height: BRANCH_SIZE,
     dx: left ? (x + 1) * SPRITE_PIXELS_PER_TILE - BRANCH_SIZE : x * SPRITE_PIXELS_PER_TILE, dy: y * SPRITE_PIXELS_PER_TILE - BRANCH_RAISE,
@@ -257,12 +272,14 @@ function palmTile(reader: ObjectReader, x: number, y: number, out: Collected): v
   if (row === undefined || frameX < 0) return;
   const dx = x * SPRITE_PIXELS_PER_TILE + lean;
   out.trunks.push({
+    behind: true,
     kind: "tile", id: PALM_TREE, sx: frameX, sy: row * FRAME_STRIDE, width: TRUNK_CELL, height: TRUNK_CELL, dx: dx - TRUNK_OFFSET,
     dy: y * SPRITE_PIXELS_PER_TILE,
   });
   if (frameX < PALM_TOP_FRAME_X) return;
   const stride = PALM_TOP_SIZE + FOLIAGE_GAP;
   out.tops.push({
+    behind: true,
     kind: "treeTop", id: PALM_TOPS, sx: Math.floor((frameX - PALM_TOP_FRAME_X) / FRAME_STRIDE) * stride, sy: row * stride,
     width: PALM_TOP_SIZE, height: PALM_TOP_SIZE, dx: dx + SPRITE_PIXELS_PER_TILE / 2 - PALM_TOP_SIZE / 2,
     dy: (y + 1) * SPRITE_PIXELS_PER_TILE - PALM_TOP_SIZE,
@@ -275,31 +292,55 @@ function mushroomTile(reader: ObjectReader, x: number, y: number, out: Collected
   const frameY = reader.frameY(x, y);
   if (frameX < 0 || frameY < 0) return;
   out.trunks.push({
+    behind: true,
     kind: "tile", id: GIANT_MUSHROOM, sx: frameX, sy: frameY, width: SPRITE_PIXELS_PER_TILE, height: SHROOM_CELL_HEIGHT,
     dx: x * SPRITE_PIXELS_PER_TILE, dy: y * SPRITE_PIXELS_PER_TILE,
   });
   if (frameX !== SHROOM_TOP_FRAME_X) return;
   out.tops.push({
+    behind: true,
     kind: "shroomTop", id: 0, sx: Math.floor(frameY / SHROOM_CELL_HEIGHT) * (SHROOM_TOP_WIDTH + FOLIAGE_GAP), sy: 0,
     width: SHROOM_TOP_WIDTH, height: SHROOM_TOP_HEIGHT,
     dx: x * SPRITE_PIXELS_PER_TILE + SPRITE_PIXELS_PER_TILE / 2 - SHROOM_TOP_WIDTH / 2, dy: (y + 1) * SPRITE_PIXELS_PER_TILE - SHROOM_TOP_HEIGHT,
   });
 }
 
+/**
+ * A frame-important tile drawn with its observed draw size and top offset (docs/assets.md, "Draw offsets"), centred on
+ * its tile (chosen: the draw data gives no horizontal offset) and mirrored as observed for its column's parity. Styles
+ * past the sheet's edge continue in its next block (wrappedFrame), as in the chunk pass.
+ */
+function drawnTile(reader: ObjectReader, id: number, x: number, y: number, out: ObjectSprite[]): void {
+  const frameX = reader.frameX(x, y);
+  const frameY = reader.frameY(x, y);
+  if (frameX < 0 || frameY < 0) return;
+  const variant = drawVariant(id, frameX, frameY);
+  if (variant === undefined) return;
+  const [width, height, top, evenFlip, oddFlip] = variant;
+  const [sx, sy] = wrappedFrame(id, frameX, frameY);
+  out.push({
+    kind: "tile", id, sx, sy, width, height,
+    dx: x * SPRITE_PIXELS_PER_TILE - (width - SPRITE_PIXELS_PER_TILE) / 2, dy: y * SPRITE_PIXELS_PER_TILE + top,
+    flip: (x % 2 === 0 ? evenFlip : oddFlip) === 1, behind: true,
+  });
+}
+
 /** Sprites by drawing layer: trunk cells and track extras, then branches, then tops and caps. */
 interface Collected {
+  readonly drawn: ObjectSprite[];
   readonly trunks: ObjectSprite[];
   readonly branches: ObjectSprite[];
   readonly tops: ObjectSprite[];
 }
 
 /**
- * The object sprites of the tiles in `area` (clipped to the world), in drawing order: trunk cells (column by column,
- * each from the top) and track extras, then branches, then tops and caps.
+ * The object sprites of the tiles in `area` (clipped to the world), in drawing order: frame-important tiles the game
+ * draws other than as plain cells (docs/assets.md, "Draw offsets"), then trunk cells (column by column, each from the
+ * top) and track extras, then branches, then tops and caps.
  */
 export function objectSprites(world: ObjectWorld, area: TileArea): ObjectSprite[] {
   const reader = new ObjectReader(world);
-  const out: Collected = { trunks: [], branches: [], tops: [] };
+  const out: Collected = { drawn: [], trunks: [], branches: [], tops: [] };
   const right = Math.min(area.right, world.width);
   const bottom = Math.min(area.bottom, world.height);
   for (let x = Math.max(0, area.left); x < right; x++) {
@@ -309,7 +350,8 @@ export function objectSprites(world: ObjectWorld, area: TileArea): ObjectSprite[
       else if (FOLIAGE_TREES.has(id)) treeTile(reader, id, x, y, world.trees, out);
       else if (id === PALM_TREE) palmTile(reader, x, y, out);
       else if (id === GIANT_MUSHROOM) mushroomTile(reader, x, y, out);
+      else if (DRAWN_TILES.has(id)) drawnTile(reader, id, x, y, out.drawn);
     }
   }
-  return [...out.trunks, ...out.branches, ...out.tops];
+  return [...out.drawn, ...out.trunks, ...out.branches, ...out.tops];
 }

@@ -8,10 +8,13 @@ afterEach(() => {
 });
 
 const PAGE = 2048;
-/** Synthetic sheets the size of the install's `Tiles_187` (large piles 2) and `Tiles_93` (lamps). */
+/**
+ * Synthetic sheets of work benches (18: as wide as the install's, wrapping along x) and lanterns (42: wrapping along y;
+ * only its wrapped rows are needed). Both are drawn by the chunk pass (no draw offsets, docs/assets.md "Draw offsets").
+ */
 const SHEETS: readonly SpriteSheetEntry[] = [
-  { kind: "tile", id: 187, page: 0, x: 0, y: 0, width: 1890, height: 72, frameWidth: 16, frameHeight: 16 },
-  { kind: "tile", id: 93, page: 0, x: 1900, y: 0, width: 70, height: 2048, frameWidth: 16, frameHeight: 16 },
+  { kind: "tile", id: 18, page: 0, x: 0, y: 0, width: 2016, height: 40, frameWidth: 16, frameHeight: 16 },
+  { kind: "tile", id: 42, page: 0, x: 0, y: 44, width: 72, height: 40, frameWidth: 16, frameHeight: 16 },
 ];
 
 function sheetPixel(sheet: number, x: number, y: number): readonly [number, number, number, number] {
@@ -31,8 +34,9 @@ function atlas(): SpriteAtlasSource {
 const ZOOM = 16;
 
 test("frame-important tiles whose stored frame lies past the sheet's edge draw the wrapped cell", () => {
-  // (block, frameX, frameY) per tile, left to right: piles inside the sheet and past its width, a lamp past its height.
-  const tiles = [[0, 1872, 18], [0, 1890, 0], [0, 2952, 18], [1, 18, 2574], [1, 0, 36]] as const;
+  // (block, frameX, frameY) per tile, left to right: work benches inside the sheet and past its width, lanterns past
+  // their height and inside it.
+  const tiles = [[0, 1980, 0], [0, 2016, 0], [0, 2034, 0], [1, 18, 2034], [1, 0, 18]] as const;
   const count = tiles.length;
   const world: RenderableWorld = {
     width: count, height: 1, surfaceY: 0,
@@ -42,7 +46,7 @@ test("frame-important tiles whose stored frame lies past the sheet's edge draw t
       liquid: new Uint8Array(count), liquidAmount: new Uint8Array(count), paint: new Uint8Array(count),
       wallPaint: new Uint8Array(count),
     },
-    palette: [{ kind: "vanilla", id: 187 }, { kind: "vanilla", id: 93 }],
+    palette: [{ kind: "vanilla", id: 18 }, { kind: "vanilla", id: 42 }],
   };
   const canvas = document.createElement("canvas");
   canvas.width = count * ZOOM;

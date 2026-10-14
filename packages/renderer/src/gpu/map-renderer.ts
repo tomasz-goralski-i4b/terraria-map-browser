@@ -23,17 +23,19 @@ import type { ChunkCellCache } from "../framing/chunk-cells.js";
 import { createChunkWallCellCache } from "../framing/chunk-wall-cells.js";
 import type { ChunkWallCellCache } from "../framing/chunk-wall-cells.js";
 import type { BlockFraming } from "../framing/frame-block.js";
-import { LIQUID_SHEETS } from "../chunk/liquids.js";
+import { LIQUID_SHEETS, SHIMMER_WATERFALL } from "../chunk/liquids.js";
 import { backgroundColor, contentColor, liquidColors } from "../palette/map-palette.js";
 import type { MapPalette } from "../palette/map-palette.js";
 import {
   CELLS_INSTANCE_BIT, WALLS_INSTANCE_BIT, LAYER_ATTRIBUTE, PAGE_APRON, PLANES_16, PLANES_8, PLANE_COUNT_16, PLANE_COUNT_8, PRESENT, RECT_ATTRIBUTE,
   LIQUID_FLAT, RULE_HEADER_ROWS, RULE_ROW, SPRITE_MIN_ZOOM, SPRITE_SHEET_ROW, SPRITE_SHEET_TEXELS, spriteSampling, SPRITE_STATE, chunkFragmentSource, chunkSpriteFragmentSource, chunkVertexSource, overviewBuildFragmentSource,
   halfAtlasFragmentSource, halfAtlasVertexSource, overviewBuildVertexSource, overviewFragmentSource, overviewVertexSource,
-  OBJECT_DEST_ATTRIBUTE, OBJECT_SOURCE_ATTRIBUTE, objectFragmentSource, objectVertexSource, wireFragmentSource,
+  OBJECT_BEHIND, OBJECT_DEST_ATTRIBUTE, OBJECT_UNDER_LIQUID, OBJECT_FADE_SHIFT, OBJECT_FLIP, OBJECT_SOURCE_ATTRIBUTE, OBJECT_TINT, objectFragmentSource, objectVertexSource, wireFragmentSource,
   WIRE_RUN_ATTRIBUTE, wireVertexSource,
 } from "./shaders.js";
 import { OBJECT_TILES, objectSprites, type ObjectSprite, type TreeSettings } from "../objects/object-sprites.js";
+import { waterfallSprites } from "../objects/waterfalls.js";
+import { DRAWN_TILES } from "../objects/draw-offsets.js";
 
 /** The slice of a world the renderer reads. Planes are column-major (`x * height + y`); never copied by the caller. */
 export interface RenderableWorld {
@@ -69,7 +71,7 @@ export interface RenderableWorld {
 
 /** One sheet of a sprite atlas: where it lies on its page and the size of its frame cells (docs/assets.md, "Atlas"). */
 export interface SpriteSheetEntry {
-  readonly kind: "tile" | "wall" | "treeTop" | "treeBranch" | "shroomTop" | "wire" | "actuator" | "item" | "liquid" | "liquidSlope";
+  readonly kind: "tile" | "wall" | "treeTop" | "treeBranch" | "shroomTop" | "wire" | "actuator" | "item" | "liquid" | "liquidSlope" | "waterfall";
   readonly id: number;
   readonly page: number;
   readonly x: number;
@@ -208,6 +210,8 @@ export interface MapRendererStats {
 interface FrameTarget {
   readonly texture: WebGLTexture;
   readonly framebuffer: WebGLFramebuffer;
+  /** Depth for the sprites behind the blocks (OBJECT_BEHIND). */
+  readonly depth: WebGLRenderbuffer;
   readonly width: number;
   readonly height: number;
 }
@@ -346,6 +350,7 @@ const CHUNK_UNIFORMS = [...CHUNK_PASS_UNIFORMS, ...OVERLAY_UNIFORMS] as const;
 /** The sprite program's own uniforms (chunkSpriteFragmentSource), besides CHUNK_UNIFORMS. */
 const SPRITE_UNIFORMS = [
   "uAtlas", "uAtlasHalf", "uSpriteSheets", "uSpriteSamples", "uSpriteStep", "uSpriteLevel", "uSpriteWeight", "uLiquidSheets",
+  "uLiquidOverlay",
 ] as const;
 const HALF_ATLAS_UNIFORMS = ["uAtlas", "uPage"] as const;
 const SPRITE_CHUNK_UNIFORMS = [...CHUNK_PASS_UNIFORMS, ...SPRITE_UNIFORMS] as const;
@@ -353,6 +358,8 @@ const SPRITE_CHUNK_UNIFORMS = [...CHUNK_PASS_UNIFORMS, ...SPRITE_UNIFORMS] as co
 const OBJECT_UNIFORMS = [
   "uCamera", "uZoom", "uViewport", "uAtlas", "uAtlasHalf", "uSpriteSamples", "uSpriteStep", "uSpriteLevel", "uSpriteWeight",
 ] as const;
+/** The object program's uniforms: the shared sprite pass ones and the tint of shimmer's waterfalls. */
+const OBJECT_PROGRAM_UNIFORMS = [...OBJECT_UNIFORMS, "uTint", "uTintEdge"] as const;
 /** The wire pass's uniforms (wireFragmentSource). */
 const WIRE_UNIFORMS = [
   ...OBJECT_UNIFORMS, "uPlanes16", "uPresent", "uLayers", "uWireColors", "uWireBits", "uWireAlpha", "uWorldSize", "uWireSheet",
@@ -708,7 +715,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   let spriteLinking: Linking | null = null;
   // The object and wire passes of sprite mode: small programs, linked at once on their first use (a frame with an
   // object sprite, or with wires shown), so a renderer that never draws one never compiles it.
-  let objectProgram: Program<(typeof OBJECT_UNIFORMS)[number]> | null = null;
+  let objectProgram: Program<(typeof OBJECT_PROGRAM_UNIFORMS)[number]> | null = null;
   let wireProgram: Program<(typeof WIRE_UNIFORMS)[number]> | null = null;
   const gridUniforms = ["uCamera", "uViewport", "uWorld", "uZoom", "uSpacing", "uOpacity", "uDensity", "uMinor", "uScene"] as const;
   let gridProgram: Program<(typeof gridUniforms)[number]> | null = null;
@@ -786,7 +793,12 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   let actuatorSheet: Int32Array = new Int32Array(4);
   // The object pass's instances by chunk key, for the current world and atlas: computed on the CPU from the world's
   // planes on first draw, dropped by invalidateTiles around changed tiles.
-  const objectCache = new Map<number, Int32Array>();
+  /**
+   * Per chunk key: its object-pass instances, whether any is a sprite behind the blocks that the liquids cover
+   * (OBJECT_BEHIND without OBJECT_UNDER_LIQUID), and whether the chunk holds liquid (both pick the liquid overlay pass's
+   * chunks).
+   */
+  const objectCache = new Map<number, { readonly instances: Int32Array; readonly behind: boolean; readonly liquid: boolean }>();
   let objectData = new Int32Array(OBJECT_INTS * 256);
   // The chunk keys whose instances the object buffer holds, in order, and their instance count: a frame showing the
   // same chunks with none of their lists collected again draws the buffer as it is, without uploading it again.
@@ -946,7 +958,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
         // mushroom are drawn by the object pass ("Trees").
         const state = vanilla === TRACK_TILE
           ? SPRITE_STATE.track
-          : vanilla !== undefined && OBJECT_TILES.has(vanilla) ? SPRITE_STATE.object : SPRITE_STATE.sheet;
+          : vanilla !== undefined && (OBJECT_TILES.has(vanilla) || DRAWN_TILES.has(vanilla)) ? SPRITE_STATE.object : SPRITE_STATE.sheet;
         sheetMirror.set([sheet.page, sheet.x, sheet.y, state, sheet.width, sheet.height, sheet.frameWidth, sheet.frameHeight], at);
       } else {
         sheetMirror.set([0, 0, 0, atlasTexture === null ? SPRITE_STATE.mapColor : SPRITE_STATE.missing, 0, 0, 0, 0], at);
@@ -1480,23 +1492,60 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
    */
   const objectsOf = (source: RenderableWorld, chunk: ChunkCoord, key: number): Int32Array => {
     const cached = objectCache.get(key);
-    if (cached !== undefined) return cached;
+    if (cached !== undefined) return cached.instances;
     const area = {
       left: chunk.x * CHUNK_SIZE, top: chunk.y * CHUNK_SIZE, right: (chunk.x + 1) * CHUNK_SIZE, bottom: (chunk.y + 1) * CHUNK_SIZE,
     };
-    const sprites: readonly ObjectSprite[] = objectSprites(source, area);
+    // Waterfalls belong to the liquids layer (docs/assets.md, "Waterfalls"), the other objects to the blocks layer;
+    // toggling either drops these lists.
+    const sprites: readonly ObjectSprite[] = [
+      ...((layers & 4) !== 0 ? objectSprites(source, area) : []),
+      ...((layers & 8) !== 0 ? waterfallSprites(source, area) : []),
+    ];
     const placed = new Int32Array(sprites.length * OBJECT_INTS);
     let at = 0;
+    let behind = false;
     for (const sprite of sprites) {
       const sheet = sheetsByKey.get(`${sprite.kind}:${String(sprite.id)}`);
       if (sheet === undefined || sprite.sx < 0 || sprite.sy < 0) continue;
       if (sprite.sx + sprite.width > sheet.width || sprite.sy + sprite.height > sheet.height) continue;
-      placed.set([sprite.dx, sprite.dy, sprite.width, sprite.height, sheet.page, sheet.x + sprite.sx, sheet.y + sprite.sy, 0], at);
+      const flags = (sprite.flip === true ? OBJECT_FLIP : 0) | ((255 - (sprite.alpha ?? 255)) << OBJECT_FADE_SHIFT)
+        | (sprite.tint === true ? OBJECT_TINT : 0) | (sprite.behind === true ? OBJECT_BEHIND : 0)
+        | (sprite.underLiquid === true ? OBJECT_UNDER_LIQUID : 0);
+      placed.set([sprite.dx, sprite.dy, sprite.width, sprite.height, sheet.page, sheet.x + sprite.sx, sheet.y + sprite.sy, flags], at);
       at += OBJECT_INTS;
+      if (sprite.behind === true && sprite.underLiquid !== true) behind = true;
+    }
+    let liquid = false;
+    const { liquidAmount } = source.planes;
+    for (let x = area.left; x < Math.min(area.right, source.width) && !liquid; x++) {
+      const column = x * source.height;
+      for (let y = area.top; y < Math.min(area.bottom, source.height); y++) {
+        if ((liquidAmount[column + y] ?? 0) !== 0) {
+          liquid = true;
+          break;
+        }
+      }
     }
     const instances = placed.subarray(0, at);
-    objectCache.set(key, instances);
+    objectCache.set(key, { instances, behind, liquid });
     return instances;
+  };
+
+  /**
+   * The liquid overlay pass's chunks among `items`: those holding liquid with a sprite behind the blocks in them or in
+   * a chunk around them (an object reaches past its own chunk), by the object lists drawObjects just collected.
+   */
+  const overlayChunks = (
+    source: RenderableWorld, items: readonly (readonly [ChunkCoord, number])[],
+  ): (readonly [ChunkCoord, number])[] => {
+    const chunksX = Math.ceil(source.width / CHUNK_SIZE);
+    const behindAt = (x: number, y: number): boolean => x >= 0 && x < chunksX && objectCache.get(y * chunksX + x)?.behind === true;
+    return items.filter(([chunk]) => {
+      if (objectCache.get(chunk.y * chunksX + chunk.x)?.liquid !== true) return false;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (behindAt(chunk.x + dx, chunk.y + dy)) return true;
+      return false;
+    });
   };
 
   /**
@@ -1538,9 +1587,12 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     }
     const instances = objectUploaded?.instances ?? 0;
     if (instances === 0) return 0;
-    objectProgram ??= link(gl, objectVertexSource, objectFragmentSource, OBJECT_UNIFORMS);
+    objectProgram ??= link(gl, objectVertexSource, objectFragmentSource, OBJECT_PROGRAM_UNIFORMS);
     gl.useProgram(objectProgram.program);
     setSpritePassUniforms(objectProgram.uniforms);
+    // Shimmer's waterfall: its core and edge colours (G: measured in an in-game screenshot).
+    gl.uniform3i(objectProgram.uniforms.uTint, ...SHIMMER_WATERFALL[0]);
+    gl.uniform3i(objectProgram.uniforms.uTintEdge, ...SHIMMER_WATERFALL[1]);
     gl.bindVertexArray(resources.objectArray);
     gl.enable(gl.BLEND);
     gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
@@ -1722,6 +1774,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     if (existing?.width === width && existing.height === height) return existing;
     if (existing !== undefined) {
       gl.deleteTexture(existing.texture);
+      gl.deleteRenderbuffer(existing.depth);
       gl.deleteFramebuffer(existing.framebuffer);
     }
     const texture = requireValue(gl.createTexture(), "a texture");
@@ -1730,8 +1783,13 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     const framebuffer = requireValue(gl.createFramebuffer(), "a framebuffer");
     gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+    // Depth for the sprites behind the blocks (OBJECT_BEHIND).
+    const depth = requireValue(gl.createRenderbuffer(), "a renderbuffer");
+    gl.bindRenderbuffer(gl.RENDERBUFFER, depth);
+    gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, width, height);
+    gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, depth);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    const created = { texture, framebuffer, width, height };
+    const created = { texture, framebuffer, depth, width, height };
     frameTargets[index] = created;
     lastFrame = null;
     return created;
@@ -1742,6 +1800,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       // Sparse until both targets were used.
       for (const target of frameTargets.filter((entry): entry is FrameTarget => entry !== undefined)) {
         gl.deleteTexture(target.texture);
+        gl.deleteRenderbuffer(target.depth);
         gl.deleteFramebuffer(target.framebuffer);
       }
     }
@@ -2109,10 +2168,34 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       gl.bindTexture(gl.TEXTURE_2D_ARRAY, atlasHalfTexture);
       gl.activeTexture(gl.TEXTURE0 + UNIT_SPRITE_SHEETS);
       gl.bindTexture(gl.TEXTURE_2D, resources.spriteSheets);
+      // In sprite mode the chunk pass writes depth 0 where a block covers a pixel, for the sprites behind the blocks.
+      if (spriteChunk !== null) {
+        gl.enable(gl.DEPTH_TEST);
+        gl.depthFunc(gl.ALWAYS);
+        gl.depthMask(true);
+      }
       drawCalls += drawInstances(source, ready);
       // Sprite mode draws the objects (trees, track extras) over the chunks, and the wires over everything.
       if (spriteChunk !== null) {
-        if ((layers & 4) !== 0) drawCalls += drawObjects(source, visible);
+        // The objects leave their depth: the sprites behind the blocks OBJECT_BEHIND_DEPTH, where the liquid overlay pass
+        // then draws the liquids' front layer over them (they lie under the liquids, as the blocks do).
+        gl.depthFunc(gl.LEQUAL);
+        const objects = (layers & 12) !== 0 ? drawObjects(source, visible) : 0;
+        drawCalls += objects;
+        const covered = objects > 0 && (layers & 8) !== 0 ? overlayChunks(source, ready) : [];
+        if (covered.length > 0) {
+          gl.useProgram(spriteChunk.program);
+          gl.uniform1i(spriteChunk.uniforms.uLiquidOverlay, 1);
+          gl.depthFunc(gl.EQUAL);
+          gl.depthMask(false);
+          gl.enable(gl.BLEND);
+          gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ZERO, gl.ONE);
+          drawCalls += drawInstances(source, covered);
+          gl.disable(gl.BLEND);
+          gl.uniform1i(spriteChunk.uniforms.uLiquidOverlay, 0);
+          gl.depthMask(true);
+        }
+        gl.disable(gl.DEPTH_TEST);
         if (((layers >> 4) & WIRE_LAYER.all) !== 0 && ((planeSources?.present ?? 0) & PRESENT.flags) !== 0) {
           drawCalls += drawWires(source, ready);
         }
@@ -2158,13 +2241,13 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
         gl.enable(gl.SCISSOR_TEST);
         for (const [x, y, w, h] of strips) {
           gl.scissor(x, y, w, h);
-          gl.clear(gl.COLOR_BUFFER_BIT);
+          gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
           drawChunks();
         }
         gl.disable(gl.SCISSOR_TEST);
         reusedFrames++;
       } else {
-        gl.clear(gl.COLOR_BUFFER_BIT);
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
         drawChunks();
       }
       if (gridVisible) {
@@ -2187,7 +2270,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       lastFrame = null;
       gl.viewport(0, 0, width, height);
       gl.clearColor(0, 0, 0, 0);
-      gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
       if (target === null) drawChunks();
       else drawCalls = drawOverview(source, target);
     }
@@ -2537,6 +2620,11 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     setLayers: (next) => {
       const bits = layerBits(next);
       if (bits !== layers && !gl.isContextLost()) invalidateOverview();
+      // The object lists hold the waterfalls only while liquids are shown, the other objects while blocks are.
+      if (((bits ^ layers) & 12) !== 0) {
+        objectCache.clear();
+        objectUploaded = null;
+      }
       layers = bits;
       frameVersion++;
       schedule();

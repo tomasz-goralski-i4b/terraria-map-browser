@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { OUTPUT, exportObjects, trackTables, treeTables } from "./export.mjs";
+import { OUTPUT, drawOffsetTables, exportObjects, trackTables, treeTables } from "./export.mjs";
 
 const pieces = (count) => Array.from({ length: 40 }, (_, piece) => ({
   piece, rect: [(piece % 8) * 18, Math.floor(piece / 8) * 18, 16, 16], rect1: [0, 0, 0, 0],
@@ -56,6 +56,32 @@ test("foliage columns fold into their shortest period and identical patterns are
 test("a foliage style that depends on the stored variant is refused", () => {
   const varying = ground({ variants: [[1, 0, 0, 80, 80], [1, 0, 6, 80, 80], [1, 0, 0, 80, 80]] });
   assert.throws(() => treeTables({ families: [{ type: 5, grounds: [varying] }] }, []), /depends on its variant/);
+});
+
+/** A draw observation: the grid's 8 × 40 frames at a stride of 18 from a function of (fx, fy). */
+const drawType = (type, rows, columns, variantAt) => ({
+  type, rows, columns, grid: Array.from({ length: 320 }, (_, i) => variantAt((i % 8) * 18, Math.floor(i / 8) * 18)),
+});
+
+test("draw offsets: plain types are left out; others keep their base and the runs that differ from it", () => {
+  const plain = [16, 16, 0, 0, 0], plant = [16, 20, 0, 1, 0], pile = [16, 16, 2, 0, 0], hanging = [16, 18, -2, 0, 0];
+  const tables = drawOffsetTables([
+    drawType(14, [[0, 2400, plain]], [[0, 2400, plain]], () => plain),
+    drawType(3, [[0, 2400, plant]], [[0, 2400, plant]], () => plant),
+    // Rows from 36 on hang; columns from 54 on are piles; the frameY run wins where it differs.
+    drawType(185, [[0, 34, pile], [36, 2400, hanging]], [[0, 52, pile], [54, 2400, plain]], (fx, fy) => (fy >= 36 ? hanging : fx >= 54 ? plain : pile)),
+    // A frame the game cannot draw (null) says nothing about its row.
+    drawType(33, [[0, 570, plant], [594, 2400, plant]], [[0, 2400, plant]], (fx, fy) => (fx === 0 && fy === 576 ? null : plant)),
+  ]);
+  assert.deepEqual(tables.drawVariants, [plant, pile, hanging, plain]);
+  assert.deepEqual(tables.drawTypes, [[3, 0, [], []], [185, 1, [[36, 2400, 2]], [[54, 2400, 3]]], [33, 0, [], []]]);
+  assert.deepEqual(drawOffsetTables([drawType(412, [], [], () => null)]).drawUnobserved, [412]);
+});
+
+test("draw offsets the runs do not reproduce are refused", () => {
+  const a = [16, 16, 2, 0, 0], b = [16, 16, 0, 0, 0];
+  assert.throws(() => drawOffsetTables([drawType(7, [[0, 2400, a]], [[0, 2400, a]], (fx, fy) => (fx === 18 && fy === 18 ? b : a))]), /the runs give/);
+  assert.throws(() => drawOffsetTables([drawType(7, [[0, 2400, "parity"]], [[0, 2400, a]], () => a)]), /more than the frame/);
 });
 
 const assembly = process.env.TERRARIA_ASSEMBLY;

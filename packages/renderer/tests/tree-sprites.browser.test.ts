@@ -152,7 +152,9 @@ function expectedCanvas(world: RenderableWorld): Uint8Array {
       const pixels = tile !== undefined && [TREE, PALM, GEM].includes(tile[2] as never) ? behind : blocks;
       const at = (ty * WIDTH + tx) * 4;
       let color: Rgba = [pixels[at] ?? 0, pixels[at + 1] ?? 0, pixels[at + 2] ?? 0, pixels[at + 3] ?? 0];
-      for (const sprite of sprites) {
+      // Trees lie behind the blocks (docs/assets.md, "Draw offsets"): an (opaque, map-coloured) block hides them.
+      const blocked = tile !== undefined && ![TREE, PALM, GEM].includes(tile[2] as never);
+      for (const sprite of blocked ? [] : sprites) {
         const lx = px - sprite.dx;
         const ly = py - sprite.dy;
         if (lx < 0 || ly < 0 || lx >= sprite.width || ly >= sprite.height) continue;
@@ -167,7 +169,7 @@ function expectedCanvas(world: RenderableWorld): Uint8Array {
 }
 
 describe("trees in sprite mode", () => {
-  test("a forest tree, a gem tree and a palm draw their documented cells and offsets over the wall; the block beside keeps its pixels", () => {
+  test("a forest tree, a gem tree and a palm draw their documented cells and offsets over the wall, behind the block beside them", () => {
     const canvas = document.createElement("canvas");
     canvas.width = WIDTH * ZOOM;
     canvas.height = HEIGHT * ZOOM;

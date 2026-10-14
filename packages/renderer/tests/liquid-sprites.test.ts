@@ -1,7 +1,7 @@
 // Liquid sprite rules (docs/assets.md, "Liquids"): the sheet of each liquid kind, the fill height of a liquid amount
 // and the sheet row a sprite pixel of a liquid tile reads.
 import { describe, expect, test } from "vitest";
-import { LIQUID_BODY_ROW, LIQUID_SHEETS, LIQUID_SPRITE_ALPHA, liquidFillPixels, liquidHasSurface, liquidSheetRow, shapedTileLiquid } from "../src/index.js";
+import { LIQUID_BODY_ROW, LIQUID_SHEETS, LIQUID_SPRITE_ALPHA, liquidFillPixels, LIQUID_BLEED, liquidBleed, shimmerPixel, shimmerSparkle, liquidHasSurface, liquidSheetRow, shapedTileLiquid } from "../src/index.js";
 
 describe("liquid sprites", () => {
   test("water, lava and honey draw from Liquid_0, Liquid_1 and Liquid_11; shimmer is drawn flat in its map colour", () => {
@@ -39,6 +39,48 @@ describe("liquid sprites", () => {
     expect(shapedTileLiquid(none, { kind: 1, amount: 127 }, { kind: 2, amount: 200 })).toEqual({ kind: 2, amount: 200, surface: true });
     expect(shapedTileLiquid(none, { kind: 3, amount: 90 }, { kind: 1, amount: 90 })).toEqual({ kind: 3, amount: 90, surface: true });
     expect(shapedTileLiquid(none, none, none)).toBeNull();
+  });
+
+  test("a block beside or below liquid shows it in its edge pixels next to it, under its sprite", () => {
+    const none = { kind: 0, amount: 0 };
+    const water = { kind: 1, amount: 255 };
+    const half = { kind: 2, amount: 127 };
+    // The block art is transparent up to 2 rows deep at its edges (G: in the game no air shows there).
+    expect(LIQUID_BLEED).toBe(2);
+    // Liquid above reaches into the top rows, full.
+    expect(liquidBleed(5, 0, water, none, none)).toEqual({ side: "above", kind: 1, amount: 255 });
+    expect(liquidBleed(5, LIQUID_BLEED, water, none, none)).toBeNull();
+    // Liquid beside reaches into the columns next to it at its own level.
+    expect(liquidBleed(0, 9, none, half, none)).toEqual({ side: "left", kind: 2, amount: 127 });
+    expect(liquidBleed(15, 9, none, none, water)).toEqual({ side: "right", kind: 1, amount: 255 });
+    expect(liquidBleed(LIQUID_BLEED, 9, none, half, none)).toBeNull();
+    expect(liquidBleed(7, 7, water, water, water)).toBeNull();
+  });
+
+  test("shimmer's surface is a rainbow along x; its body has sparse fixed sparkles (G: in-game screenshot)", () => {
+    // The top row cycles every 64 pixels through 8 measured keyframes: cyan at 0, magenta at 24, peach at 48.
+    expect(shimmerPixel(0, 0, 5)).toEqual([159, 242, 255]);
+    expect(shimmerPixel(0, 24, 5)).toEqual([254, 111, 255]);
+    expect(shimmerPixel(0, 48, 5)).toEqual([255, 212, 240]);
+    expect(shimmerPixel(0, 64, 5)).toEqual(shimmerPixel(0, 0, 5));
+    // Halfway between two keyframes: their mean.
+    expect(shimmerPixel(0, 4, 5)).toEqual([158, 206, 255]);
+    // The second row is the saturated cycle; rows 2 and 3 fade from it to the body in thirds.
+    expect(shimmerPixel(1, 24, 5)).toEqual([252, 114, 255]);
+    expect(shimmerPixel(2, 24, 5)).toEqual([220, 113, 248]);
+    expect(shimmerPixel(3, 24, 5)).toEqual([187, 112, 240]);
+    // Sparkles are coloured by the rainbow too: halfway from the second row's colour at their x to the body.
+    let sparkles = 0;
+    for (let y = 0; y < 61; y++) for (let x = 0; x < 61; x++) {
+      const pixel = shimmerPixel(8, x, y);
+      if (pixel.join() === "155,111,233") continue;
+      expect(pixel).toEqual(shimmerSparkle(x));
+      sparkles++;
+    }
+    expect(shimmerSparkle(0)).toEqual([157, 148, 244]);
+    expect(shimmerSparkle(24)).toEqual([204, 113, 244]);
+    expect(sparkles).toBeGreaterThan(15);
+    expect(sparkles).toBeLessThan(70);
   });
 
   test("a liquid has its surface unless the tile above holds liquid, its own or flowing into its shape", () => {
