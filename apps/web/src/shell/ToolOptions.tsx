@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AreaOptions } from "./AreaOptions.js";
+import { RulerOptions } from "./RulerOptions.js";
+import { Segments } from "../ui/Segments.js";
 import { Toggle } from "./LayerToggles.js";
 import { BRUSH_LAYER, BRUSH_SHAPE, BRUSH_SIZE, type BrushContentLayer } from "@studio/world-model";
 import { MaterialSwatch, paintColor, paintLabel, swatchName } from "../panels/material-swatch.js";
@@ -94,28 +96,6 @@ function PaintWell({ layer, materials, disabled }: { readonly layer: BrushConten
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-function Segments<T extends string>({ label, options, value, disabled, onChange }: {
-  readonly label: string;
-  /** `name` is the accessible name of an option without text; `tooltip` the app's tooltip (never a native title). */
-  readonly options: readonly { readonly id: T; readonly label: React.ReactNode; readonly name?: string; readonly tooltip?: string }[];
-  readonly value: T;
-  readonly disabled: boolean;
-  readonly onChange: (value: T) => void;
-}): React.JSX.Element {
-  return (
-    <div className="brush-segments" role="group" aria-label={label}>
-      {options.map((option) => (
-        <button
-          key={option.id} type="button" aria-pressed={value === option.id} disabled={disabled}
-          {...(option.name === undefined ? {} : { "aria-label": option.name })}
-          {...(option.tooltip === undefined ? {} : { "data-tooltip": option.tooltip, "data-tooltip-side": "bottom" })}
-          onClick={() => { onChange(option.id); }}
-        >{option.label}</button>
-      ))}
     </div>
   );
 }
@@ -234,7 +214,7 @@ export function ToolOptions({ commands: supplied }: { readonly commands?: readon
           <IconButton icon="target" label="Brush outline" pressed={brush.placementPreview} onClick={() => { useBrushStore.setState({ placementPreview: !brush.placementPreview }); }} />
         </div>
         {brush.reason !== null && <span className="tool-options-notice">{brush.reason}</span>}
-      </> : tool === "select" ? <AreaOptions commands={commands} disabled={locked} /> : <span className="tool-options-hint">{definition?.hint}</span>}
+      </> : tool === "select" ? <AreaOptions commands={commands} disabled={locked} /> : tool === "ruler" ? <RulerOptions /> : <span className="tool-options-hint">{definition?.hint}</span>}
       {/* Phones hide the top bar's Undo and Redo; the options bar carries them there. */}
       <div className="tool-options-history" role="group" aria-label="History">
         {(["edit.undo", "edit.redo"] as const).map((id) => {

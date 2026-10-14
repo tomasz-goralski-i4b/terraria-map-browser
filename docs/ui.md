@@ -117,6 +117,21 @@ Code: `apps/web/src/ui/` (primitives), `apps/web/src/shell/` (layout, commands, 
   Terrain still uses cached-pan scissor strips; grid changes require no SVG, DOM geometry, tile/texture uploads
   or invalidation of the cached terrain.
 
+  **Ruler** (`L`) is a local dimension overlay. Drag on block boundaries for a line; hold Shift during the drag
+  for a rectangle, release Shift to return to the line, and release the pointer to keep the current shape.
+  Rectangle also has an explicit option for touch input. Lines outline a one-block-thick raster path in white,
+  with transparent interiors; horizontal and vertical paths count the boundary distance, diagonal paths count
+  blocks along the dominant axis (a 3 × 4 path contains 4 blocks). Angles relative to horizontal use two decimals.
+  Labels can show dimensions, horizontal/vertical components, and angle. All measurements use blocks.
+
+  **Measurements** sits below Grid in the View tab. Keep retains earlier notes; off replaces them on the next
+  completed drag. Selecting a row highlights the note and centers the camera. Drag selected endpoints/corners
+  to resize or the note's body to move it. Notes can be renamed, hidden, deleted or cleared; Escape cancels a
+  drag. Undo/Redo while Ruler is active applies to measurements, independently of world edit history.
+  Notes are remembered locally by world GUID and never enter the `.wld` writer or mark the world modified.
+  Instanced WebGL outlines render after presenting cached terrain; geometry uploads only on note changes.
+  Visible labels use positioned text nodes, with no React update for each camera frame.
+
   Inspector Block and Wall rows show vanilla map-colour swatches. With connected assets and Sprites enabled they
   show the pinned tile's actual framed cell: stored frames for objects, neighbours for self-framed blocks and walls.
   Missing sheets, unavailable framing or disabling Sprites keeps map colours; unknown content remains text only.

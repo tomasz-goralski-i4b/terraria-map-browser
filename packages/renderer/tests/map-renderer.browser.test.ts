@@ -121,6 +121,47 @@ test("GPU grid replaces dashed boundaries with solid intervals, clips to the wor
   expect(readCanvas(canvas).some((value) => value !== 0)).toBe(false);
 });
 
+test("annotation strokes and handles draw at fixed screen width and leave cached terrain reusable", () => {
+  const canvas = makeCanvas(100, 80);
+  const renderer = makeRenderer(canvas, { prefetchChunks: 0 });
+  renderer.setWorld(syntheticWorld(128, 128));
+  renderer.setLayers({ background: false, blocks: false, walls: false, liquids: false });
+  renderer.setCamera({ x: 0, y: 0, zoom: 10 });
+  const data = new Float32Array([1, 2, 8, 2, 0.25, 0.6, 1, 2, 0, 1, 2, 1, 2, 0.25, 0.6, 1, 6, 1]);
+  renderer.setAnnotations({ data, density: 1 });
+  renderer.flushFrame();
+  const before = renderer.stats();
+  const pixels = readCanvas(canvas);
+  expect(pixels[(20 * 100 + 40) * 4 + 3]).toBe(255);
+  expect(pixels[(17 * 100 + 40) * 4 + 3]).toBe(0);
+  expect(pixels[(18 * 100 + 8) * 4 + 3]).toBe(255);
+  renderer.setCamera({ x: 0.1, y: 0, zoom: 10 });
+  renderer.flushFrame();
+  expect(renderer.stats().textureUploads).toBe(before.textureUploads);
+  expect(renderer.stats().reusedFrames).toBe(before.reusedFrames + 1);
+  renderer.setAnnotations(null);
+  renderer.flushFrame();
+  expect(readCanvas(canvas).some((value) => value !== 0)).toBe(false);
+});
+
+test("creating and updating annotations preserves the terrain outside their strokes", () => {
+  const canvas = makeCanvas(100, 80);
+  const renderer = makeRenderer(canvas, { prefetchChunks: 0 });
+  renderer.setWorld(syntheticWorld(128, 128));
+  renderer.setCamera({ x: 0, y: 0, zoom: 10 });
+  renderer.flushFrame();
+  const baseline = readCanvas(canvas).slice(60 * 100 * 4, 61 * 100 * 4);
+  const data = new Float32Array([1, 2, 8, 2, 1, 1, 1, 1.5, 0]);
+  renderer.setAnnotations({ data, density: 1 });
+  renderer.flushFrame();
+  expect(readCanvas(canvas).slice(60 * 100 * 4, 61 * 100 * 4)).toEqual(baseline);
+  renderer.setAnnotations({ data: new Float32Array([1, 3, 8, 3, 1, 1, 1, 1.5, 0]), density: 1 });
+  renderer.flushFrame();
+  expect(readCanvas(canvas).slice(60 * 100 * 4, 61 * 100 * 4)).toEqual(baseline);
+  renderer.render();
+  expect(readCanvas(canvas).slice(60 * 100 * 4, 61 * 100 * 4)).toEqual(baseline);
+});
+
 test("grid pan reuses cached frame pixels without uploading textures and matches a fresh frame", () => {
   const canvas = makeCanvas(100, 80);
   const renderer = makeRenderer(canvas, { prefetchChunks: 0 });

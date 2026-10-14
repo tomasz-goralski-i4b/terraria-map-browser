@@ -4,6 +4,7 @@
 
 import type { ContentRef } from "@studio/world-model";
 import { gridFragmentSource, gridVertexSource } from "./grid-shaders.js";
+import { annotationFragmentSource, annotationVertexSource } from "./annotation-shaders.js";
 import { CHUNK_SIZE, visibleChunks } from "../camera/camera.js";
 import type { Camera, ChunkCoord, Size } from "../camera/camera.js";
 import { filterTilesPerPixel } from "../chunk/box-filter.js";
@@ -80,6 +81,13 @@ export interface SpriteSheetEntry {
 export interface SpriteAtlasSource {
   readonly pages: readonly Uint8Array[];
   readonly index: { readonly pageSize: number; readonly entries: readonly SpriteSheetEntry[] };
+}
+
+export interface MapAnnotations {
+  /** Nine floats per primitive: from x/y, to x/y, RGB (0–1), CSS width, kind (0 stroke, 1 handle, 2 tick).
+   * Replace the array when geometry or styling changes; camera moves never upload it again. */
+  readonly data: Float32Array;
+  readonly density: number;
 }
 
 export interface MapGrid {
@@ -179,6 +187,8 @@ export interface MapRenderer {
   readonly setLayers: (layers: ChunkLayers) => void;
   /** GPU overlay at sprite zoom, composed while presenting the existing frame cache; null disables it. */
   readonly setGrid: (grid: MapGrid | null) => void;
+  /** Vector notes drawn after cached terrain; null disables the pass. */
+  readonly setAnnotations: (annotations: MapAnnotations | null) => void;
   /**
    * The sprite atlas, uploaded at once and kept until replaced; null removes it. Frame-important blocks (a stored
    * frame) whose content ID has a tile sheet are drawn from it in sprite mode. Throws when the GPU cannot hold it.
@@ -645,6 +655,11 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   const gridUniforms = ["uCamera", "uViewport", "uWorld", "uZoom", "uSpacing", "uOpacity", "uDensity", "uScene"] as const;
   let gridProgram: Program<(typeof gridUniforms)[number]> | null = null;
   let grid: MapGrid | null = null;
+  const annotationUniforms = ["uCamera", "uViewport", "uZoom", "uDensity"] as const;
+  let annotations: MapAnnotations | null = null;
+  let annotationProgram: Program<(typeof annotationUniforms)[number]> | null = null;
+  let annotationBuffer: WebGLBuffer | null = null, annotationArray: WebGLVertexArrayObject | null = null;
+  let uploadedAnnotations: Float32Array | null = null;
   let parallelCompile = parallelShaderCompile(gl);
   // The timer that asks whether the background link is done; 0 when none is pending.
   let linkPoll = 0;
@@ -1668,6 +1683,38 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     drawCalls++;
   };
 
+  const drawAnnotations = (): void => {
+    if (annotations === null || annotations.data.length === 0) return;
+    annotationProgram ??= link(gl, annotationVertexSource, annotationFragmentSource, annotationUniforms);
+    if (annotationBuffer === null || annotationArray === null) {
+      annotationBuffer = requireValue(gl.createBuffer(), "an annotation buffer");
+      annotationArray = requireValue(gl.createVertexArray(), "an annotation vertex array");
+      gl.bindVertexArray(annotationArray);
+      gl.bindBuffer(gl.ARRAY_BUFFER, annotationBuffer);
+      for (const [location, count, offset] of [[0, 4, 0], [1, 3, 16], [2, 2, 28]] as const) {
+        gl.enableVertexAttribArray(location);
+        gl.vertexAttribPointer(location, count, gl.FLOAT, false, 36, offset);
+        gl.vertexAttribDivisor(location, 1);
+      }
+    }
+    gl.bindVertexArray(annotationArray);
+    if (uploadedAnnotations !== annotations.data) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, annotationBuffer);
+      gl.bufferData(gl.ARRAY_BUFFER, annotations.data, gl.DYNAMIC_DRAW);
+      uploadedAnnotations = annotations.data;
+    }
+    gl.useProgram(annotationProgram.program);
+    const uniforms = annotationProgram.uniforms;
+    gl.uniform2f(uniforms.uCamera, view.x, view.y);
+    gl.uniform2f(uniforms.uViewport, canvas.width, canvas.height);
+    gl.uniform1f(uniforms.uZoom, view.zoom);
+    gl.uniform1f(uniforms.uDensity, annotations.density);
+    gl.disable(gl.BLEND);
+    gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, annotations.data.length / 9);
+    gl.bindVertexArray(null);
+    drawCalls++;
+  };
+
   /** `uploadBudget` chunks at most, and none after `uploadMilliseconds` once one was uploaded. */
   const drawFrame = (uploadBudget: number, uploadMilliseconds: number, wait: boolean): void => {
     if (disposed || gl.isContextLost()) return;
@@ -1922,6 +1969,9 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       } else {
         gl.bindFramebuffer(gl.READ_FRAMEBUFFER, output.framebuffer);
         gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
+        // A post-blit vector draw must not trigger the browser's lazy default-buffer clear after presentation.
+        // Clear the destination first so the terrain blit and annotation draw share the same live backbuffer.
+        if (annotations !== null && annotations.data.length > 0) gl.clear(gl.COLOR_BUFFER_BIT);
         gl.blitFramebuffer(0, 0, width, height, 0, 0, width, height, gl.COLOR_BUFFER_BIT, gl.NEAREST);
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
       }
@@ -1937,6 +1987,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       if (target === null) drawChunks();
       else drawCalls = drawOverview(source, target);
     }
+    drawAnnotations();
     if (target === null) {
       const drawnKeys = new Set(ready.map(([chunk]) => keyOf(chunk)));
       drawn = visible.filter((chunk) => drawnKeys.has(keyOf(chunk)));
@@ -2075,6 +2126,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     objectProgram = null;
     wireProgram = null;
     gridProgram = null;
+    annotationProgram = null; annotationBuffer = null; annotationArray = null; uploadedAnnotations = null;
     objectUploaded = null;
     // A background link died with the context; the next sprite frame (or atlas) starts another.
     endSpriteLink(parallelCompile !== null);
@@ -2186,6 +2238,13 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       }
       schedule();
     },
+    setAnnotations: (next) => {
+      if (annotations?.data === next?.data && annotations?.density === next?.density) return;
+      if (next !== null && (next.data.length % 9 !== 0 || !next.data.every(Number.isFinite)
+        || !Number.isFinite(next.density) || next.density <= 0)) throw new RangeError("Invalid annotation geometry");
+      annotations = next;
+      schedule();
+    },
     setGrid: (next) => {
       if (next !== null && (!Number.isInteger(next.spacing) || next.spacing < 2
         || !Number.isFinite(next.opacity) || next.opacity < 0 || next.opacity > 1
@@ -2240,6 +2299,9 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
         if (objectProgram !== null) gl.deleteProgram(objectProgram.program);
         if (wireProgram !== null) gl.deleteProgram(wireProgram.program);
         if (gridProgram !== null) gl.deleteProgram(gridProgram.program);
+        if (annotationProgram !== null) gl.deleteProgram(annotationProgram.program);
+        if (annotationBuffer !== null) gl.deleteBuffer(annotationBuffer);
+        if (annotationArray !== null) gl.deleteVertexArray(annotationArray);
         if (halfAtlasProgram !== null) gl.deleteProgram(halfAtlasProgram.program);
         gl.deleteTexture(resources.palette);
         gl.deleteTexture(resources.rules);

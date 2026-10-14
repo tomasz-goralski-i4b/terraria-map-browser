@@ -1,7 +1,8 @@
 import { create } from "zustand";
+import { DEFAULT_RULER, type RulerSettings } from "../world/measurements.js";
 
 /** The dock sections, in display order. */
-export const SECTION_IDS = ["world", "layers", "grid", "inspector", "content", "entities", "swatches"] as const;
+export const SECTION_IDS = ["world", "layers", "grid", "measurements", "inspector", "content", "entities", "swatches"] as const;
 export type SectionId = (typeof SECTION_IDS)[number];
 
 /** The dock's tabs: what the world is (properties, content, entities), what is shown (layers) and what is painted. */
@@ -9,7 +10,7 @@ export const DOCK_TABS = ["world", "view", "swatches"] as const;
 export type DockTab = (typeof DOCK_TABS)[number];
 /** Which tab each section lives in; the Inspector is under the tabs, visible with either. */
 export const SECTION_TAB: Readonly<Record<Exclude<SectionId, "inspector">, DockTab>> = {
-  layers: "view", grid: "view", world: "world", content: "world", entities: "world", swatches: "swatches",
+  layers: "view", grid: "view", measurements: "view", world: "world", content: "world", entities: "world", swatches: "swatches",
 };
 
 export type ThemeChoice = "system" | "dark" | "light";
@@ -41,6 +42,7 @@ export interface ColumnLayout {
 /** Per-browser layout: what the user arranged, never world data. */
 export interface Layout {
   readonly grid: GridSettings;
+  readonly ruler: RulerSettings;
   readonly sections: Readonly<Record<SectionId, boolean>>;
   /** Collapsible groups inside sections, keyed `<section>/<group>`; absent means open. */
   readonly groups: Readonly<Record<string, boolean>>;
@@ -59,8 +61,9 @@ export interface Layout {
 }
 
 export const DEFAULT_LAYOUT = {
-  sections: { world: true, layers: true, grid: true, inspector: true, content: false, entities: false, swatches: true },
+  sections: { world: true, layers: true, grid: true, measurements: true, inspector: true, content: false, entities: false, swatches: true },
   grid: { mode: "off", customSpacing: 10, opacity: 30 },
+  ruler: DEFAULT_RULER,
   groups: {},
   dockWidth: 320,
   dockHidden: false,
@@ -85,6 +88,7 @@ export interface LayoutStorage {
 
 export interface LayoutState extends Layout {
   readonly setGrid: (settings: Partial<GridSettings>) => void;
+  readonly setRuler: (settings: Partial<RulerSettings>) => void;
   readonly setSectionOpen: (id: SectionId, open: boolean) => void;
   readonly setGroupOpen: (key: string, open: boolean) => void;
   /** Opens or closes several groups at once (Expand all / Collapse all). */
@@ -105,6 +109,17 @@ function clampDockWidth(width: number): number {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function parseRuler(value: unknown): RulerSettings {
+  const stored = isRecord(value) ? value : {};
+  return {
+    mode: stored["mode"] === "rectangle" ? "rectangle" : "line",
+    keep: typeof stored["keep"] === "boolean" ? stored["keep"] : DEFAULT_RULER.keep,
+    dimensions: typeof stored["dimensions"] === "boolean" ? stored["dimensions"] : DEFAULT_RULER.dimensions,
+    components: typeof stored["components"] === "boolean" ? stored["components"] : DEFAULT_RULER.components,
+    angle: typeof stored["angle"] === "boolean" ? stored["angle"] : DEFAULT_RULER.angle,
+  };
 }
 
 function booleans(value: unknown): Record<string, boolean> {
@@ -148,6 +163,7 @@ function parseLayout(text: string | null): Layout {
   return {
     sections,
     grid: parseGrid(value["grid"]),
+    ruler: parseRuler(value["ruler"]),
     groups: booleans(value["groups"]),
     dockWidth: typeof dockWidth === "number" && Number.isFinite(dockWidth) ? clampDockWidth(dockWidth) : DEFAULT_LAYOUT.dockWidth,
     dockHidden: typeof dockHidden === "boolean" ? dockHidden : DEFAULT_LAYOUT.dockHidden,
@@ -175,9 +191,9 @@ function browserStorage(): LayoutStorage | null {
 let storage: LayoutStorage | null = null;
 
 function save(layout: Layout): void {
-  const { sections, groups, dockWidth, dockHidden, dockTab, inspectorHeight, columns, theme, inspectorShowAll, chestView, grid } = layout;
+  const { sections, groups, dockWidth, dockHidden, dockTab, inspectorHeight, columns, theme, inspectorShowAll, chestView, grid, ruler } = layout;
   try {
-    storage?.setItem(LAYOUT_STORAGE_KEY, JSON.stringify({ sections, groups, dockWidth, dockHidden, dockTab, inspectorHeight, columns, theme, inspectorShowAll, chestView, grid }));
+    storage?.setItem(LAYOUT_STORAGE_KEY, JSON.stringify({ sections, groups, dockWidth, dockHidden, dockTab, inspectorHeight, columns, theme, inspectorShowAll, chestView, grid, ruler }));
   } catch {
     // Private mode, quota or blocked storage: the layout still works for this visit.
   }
@@ -193,6 +209,7 @@ export const useLayoutStore = create<LayoutState>()((set, get) => {
     setGrid: (settings) => {
       update({ grid: parseGrid({ ...get().grid, ...settings }) });
     },
+    setRuler: (settings) => { update({ ruler: parseRuler({ ...get().ruler, ...settings }) }); },
     setSectionOpen: (id, open) => {
       update({ sections: { ...get().sections, [id]: open } });
     },

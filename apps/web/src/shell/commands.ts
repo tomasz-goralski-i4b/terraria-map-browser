@@ -12,6 +12,7 @@ import { cancelArea, copySelection, placePaste, startPaste, useAreaStore } from 
 import { MAX_AREA_TILES } from "../world/area-clipboard.js";
 import { GRID_MODES, resetLayout, useLayoutStore, type ThemeChoice } from "./layout-store.js";
 import { CUSTOM_GRID_INPUT_ID } from "../panels/GridPanel.js";
+import { useRulerStore, finishMeasurement, undoMeasurement, redoMeasurement, deleteMeasurement, selectMeasurement } from "../world/ruler-session.js";
 import { getMapController, useViewStore, type MapLayers, type ToolId } from "./view-store.js";
 
 export type CommandGroup = "File" | "Edit" | "View" | "Layers" | "Tools" | "Assets" | "Help";
@@ -51,6 +52,7 @@ const EDITING_LATER = "World editing is not available yet";
 export const TOOLS: readonly ToolDefinition[] = [
   { id: "pan", label: "Pan", icon: "pan", shortcut: "H", group: "navigate", available: true, hint: "Drag to pan · Wheel or +/− to zoom · Arrow keys to move" },
   { id: "inspect", label: "Inspect", icon: "inspect", shortcut: "I", group: "navigate", available: true, hint: "Click a tile (or press Enter) to pin it in the Inspector · Hover to preview · Drag to pan" },
+  { id: "ruler", label: "Ruler", icon: "ruler", shortcut: "L", group: "navigate", available: true, hint: "Drag to measure · Hold Shift for a rectangle" },
   { id: "brush", label: "Brush", icon: "brush", shortcut: "B", group: "edit", available: true, hint: "Drag to paint simple blocks or walls" },
   { id: "erase", label: "Erase", icon: "erase", shortcut: "E", group: "edit", available: true, hint: "Drag to erase the selected layer" },
   { id: "fill", label: "Fill", icon: "fill", shortcut: "G", group: "edit", available: false, hint: "" },
@@ -73,7 +75,12 @@ export function toolCommands(tool: ToolId, setTool: (tool: ToolId) => void, edit
     checked: tool === definition.id,
     run: () => {
       finishBrush();
+      finishMeasurement(true, true);
       setTool(definition.id);
+      if (definition.id === "ruler") {
+        const layout = useLayoutStore.getState();
+        layout.setDockHidden(false); layout.setDockTab("view"); layout.setSectionOpen("measurements", true);
+      }
     },
   });
   });
@@ -153,8 +160,11 @@ export function useCommands(): Command[] {
   const saving = useSaveStore((state) => state.open);
   const unsaved = useAppStore((state) => state.unsavedChanges);
   const brushReason = useBrushStore((state) => state.reason);
-  const canUndo = useBrushStore((state) => state.canUndo);
-  const canRedo = useBrushStore((state) => state.canRedo);
+  const brushCanUndo = useBrushStore((state) => state.canUndo);
+  const brushCanRedo = useBrushStore((state) => state.canRedo);
+  const rulerCanUndo = useRulerStore((state) => state.canUndo);
+  const rulerCanRedo = useRulerStore((state) => state.canRedo);
+  const rulerSelected = useRulerStore((state) => state.selected);
   const area = useAreaStore();
   const areaCopyReason = area.pasting ? "Place or cancel the paste first" : area.selection === null ? "Select an area first"
     : area.selection.width * area.selection.height > MAX_AREA_TILES ? `Too large: select up to ${MAX_AREA_TILES.toLocaleString("en-US")} tiles` : null;
@@ -167,6 +177,9 @@ export function useCommands(): Command[] {
   const setGrid = useLayoutStore((state) => state.setGrid);
   const tool = useViewStore((state) => state.tool);
   const setTool = useViewStore((state) => state.setTool);
+  const canUndo = tool === "ruler" ? rulerCanUndo : brushCanUndo;
+  const canRedo = tool === "ruler" ? rulerCanRedo : brushCanRedo;
+  const historyReason = tool === "ruler" ? loadingWorld ? "A world is loading" : null : editReason;
   const statsVisible = useViewStore((state) => state.statsVisible);
   const setStatsVisible = useViewStore((state) => state.setStatsVisible);
   const setHelpOpen = useViewStore((state) => state.setHelpOpen);
@@ -182,10 +195,14 @@ export function useCommands(): Command[] {
   const setSpritePreviewOpen = useViewStore((state) => state.setSpritePreviewOpen);
 
   return [
-    { id: "edit.undo", group: "Edit", label: "Undo", icon: "undo", shortcut: "Control+Z", enabled: canUndo && editReason === null,
-      ...(editReason !== null ? { disabledReason: editReason } : !canUndo ? { disabledReason: "No stroke to undo" } : {}), run: undoBrush },
-    { id: "edit.redo", group: "Edit", label: "Redo", icon: "redo", shortcut: "Control+Shift+Z", enabled: canRedo && editReason === null,
-      ...(editReason !== null ? { disabledReason: editReason } : !canRedo ? { disabledReason: "No stroke to redo" } : {}), run: redoBrush },
+    { id: "edit.undo", group: "Edit", label: "Undo", icon: "undo", shortcut: "Control+Z", enabled: canUndo && historyReason === null,
+      ...(historyReason !== null ? { disabledReason: historyReason } : !canUndo ? { disabledReason: tool === "ruler" ? "No measurement to undo" : "No stroke to undo" } : {}), run: tool === "ruler" ? undoMeasurement : undoBrush },
+    { id: "edit.redo", group: "Edit", label: "Redo", icon: "redo", shortcut: "Control+Shift+Z", enabled: canRedo && historyReason === null,
+      ...(historyReason !== null ? { disabledReason: historyReason } : !canRedo ? { disabledReason: tool === "ruler" ? "No measurement to redo" : "No stroke to redo" } : {}), run: tool === "ruler" ? redoMeasurement : redoBrush },
+    { id: "tool.deleteMeasurement", group: "Tools", label: "Delete measurement", shortcut: "Delete", enabled: tool === "ruler" && rulerSelected !== null,
+      run: () => { const id = useRulerStore.getState().selected; if (id !== null) deleteMeasurement(id); } },
+    { id: "tool.deselectMeasurement", group: "Tools", label: "Deselect measurement", shortcut: "Escape", enabled: tool === "ruler" && rulerSelected !== null,
+      run: () => { finishMeasurement(true, true); selectMeasurement(null); } },
     ...([
       ["edit.copy", "Copy", "Control+C", areaCopyReason === null, areaCopyReason, copySelection],
       ["edit.paste", "Paste", "Control+V", area.hasClipboard, "Copy an area first", startPaste],

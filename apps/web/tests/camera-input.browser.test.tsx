@@ -50,7 +50,7 @@ beforeEach(() => {
   vi.spyOn(window, "matchMedia").mockReturnValue(media);
   renderer = {
     setWorld: vi.fn(), setCamera: vi.fn((camera: Camera) => { drawn = camera; }), setLayers: vi.fn(), setAtlas: vi.fn(),
-    setSpriteMode: vi.fn(), setFraming: vi.fn(), invalidateTiles: vi.fn(), setGrid: vi.fn(),
+    setSpriteMode: vi.fn(), setFraming: vi.fn(), invalidateTiles: vi.fn(), setGrid: vi.fn(), setAnnotations: vi.fn(),
     tileAt: (x, y) => {
       const tile = screenToTile(drawn, x, y);
       return tile.x < 0 || tile.y < 0 || tile.x >= world.width || tile.y >= world.height
