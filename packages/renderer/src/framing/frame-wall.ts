@@ -36,8 +36,10 @@ export interface WallFraming {
   /**
    * The packed cell (column · 64 + row) of a wall of vanilla type `wall` whose counting side neighbours are `sides`
    * (WALL_SIDE bits) at (x, y), with variant `variant` (0–2; default (7x + 11y) mod 3); NO_CELL when `wall` is not a
-   * wall type. Four counting sides take the interior cell of the position (x mod 12, y mod 12); ordinary walls then vary
-   * by the variant map, large-frame walls ignore the variant.
+   * wall type. Every cell depends on the position (x mod 12, y mod 12): four counting sides take the interior cell of
+   * the position and its variants observed there, other sides the side combination's cell of the position, varied by
+   * the variant map. Large-frame walls ignore the variant (the game gives every variant the same cell). A database
+   * without the position tables falls back to the reference position's edges and the variant map.
    */
   readonly wallCell: (wall: number, sides: number, x: number, y: number, variant?: number) => number;
   /** Block types that count as a wall's side neighbour (where an active block of the type stands). */
@@ -74,6 +76,10 @@ interface WallCells {
   readonly bySides: Int16Array;
   /** Position (y mod 12) · 12 + (x mod 12) → packed variant-0 interior cell; −1 when not observed. */
   readonly interior: Int16Array;
+  /** Position · 2 + variant − 1 → packed interior cell of variant 1 or 2; −1 when not observed, null: not recorded. */
+  readonly interiorVariants: Int16Array | null;
+  /** Position · 16 + side bits → packed variant-0 cell; −1 when not observed, null: not recorded. */
+  readonly edges: Int16Array | null;
   /** Packed cell → its variant-1 and variant-2 packed cells (−1 not observed), shared by variant map. */
   readonly variants: Int16Array;
 }
@@ -102,6 +108,10 @@ export function createWallFraming(database: FramingDatabase): WallFraming {
     return table;
   };
 
+  /** A per-position table of `entries` cells per position, packed; null when the database does not record it. */
+  const byPosition = (table: number | null, entries: number): Int16Array | null =>
+    table === null ? null : Int16Array.from({ length: POSITIONS * POSITIONS * entries }, (_, index) => packedAt(table, index));
+
   const cellsOf = (wall: number): WallCells | null => {
     const known = derived.get(wall);
     if (known !== undefined) return known;
@@ -110,6 +120,8 @@ export function createWallFraming(database: FramingDatabase): WallFraming {
       bySides: Int16Array.from(SIDE_CODES, (code) => packedAt(tables.table, code)),
       interior: Int16Array.from({ length: POSITIONS * POSITIONS }, (_, position) =>
         packedAt(tables.interiorByPosition, position * CORNER_CODES + SAME_CORNERS)),
+      interiorVariants: byPosition(tables.interiorVariantsByPosition, 2),
+      edges: byPosition(tables.edgesByPosition, 16),
       variants: variantTable(tables.variants),
     };
     derived.set(wall, cells);
@@ -119,11 +131,21 @@ export function createWallFraming(database: FramingDatabase): WallFraming {
   const wallCell = (wall: number, sides: number, x: number, y: number, variant = modulo(7 * x + 11 * y, 3)): number => {
     const cells = cellsOf(wall);
     if (cells === null) return NO_CELL;
-    const base = sides === ALL_SIDES
-      ? cells.interior[modulo(y, POSITIONS) * POSITIONS + modulo(x, POSITIONS)] ?? -1
-      : cells.bySides[sides & ALL_SIDES] ?? -1;
-    if (base === -1) return NO_CELL;
-    if (variant === 0) return base;
+    const position = modulo(y, POSITIONS) * POSITIONS + modulo(x, POSITIONS);
+    const side = sides & ALL_SIDES;
+    let base: number;
+    if (side === ALL_SIDES) {
+      base = cells.interior[position] ?? -1;
+      if (base === -1) return NO_CELL;
+      if (variant === 0) return base;
+      const observed = cells.interiorVariants?.[position * 2 + variant - 1] ?? -1;
+      if (observed !== -1) return observed;
+    } else {
+      const edge = cells.edges?.[position * 16 + side] ?? -1;
+      base = edge === -1 ? cells.bySides[side] ?? -1 : edge;
+      if (base === -1) return NO_CELL;
+      if (variant === 0) return base;
+    }
     // A variant the database did not observe keeps the variant-0 cell, as for blocks.
     const varied = cells.variants[base * 2 + variant - 1] ?? -1;
     return varied === -1 ? base : varied;

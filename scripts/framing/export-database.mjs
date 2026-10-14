@@ -91,6 +91,8 @@ export function mergeShards(shards) {
     if (shard.walls !== undefined) {
       merged.walls = shard.walls.map((wall) => ({
         ...wall, table: remapTable(wall.table), interiorByPosition: remapTable(wall.interiorByPosition),
+        ...(wall.interiorVariantsByPosition === undefined ? {} : { interiorVariantsByPosition: remapTable(wall.interiorVariantsByPosition) }),
+        ...(wall.edgesByPosition === undefined ? {} : { edgesByPosition: remapTable(wall.edgesByPosition) }),
         variants: (wall.variants ?? []).map((entry) => entry.map(remapCell)),
       }));
       merged.wallNeighbourBlocks = shard.wallNeighbourBlocks;
@@ -145,6 +147,8 @@ export function moduleText(database) {
   for (const wall of database.walls) {
     walls[wall.id] = {
       table: use(wall.table), interiorByPosition: use(wall.interiorByPosition),
+      ...(wall.interiorVariantsByPosition === undefined ? {} : { interiorVariantsByPosition: use(wall.interiorVariantsByPosition) }),
+      ...(wall.edgesByPosition === undefined ? {} : { edgesByPosition: use(wall.edgesByPosition) }),
       variantChangesInterior: wall.variantChangesInterior, variants: variantMap(wall.variants ?? []),
     };
   }

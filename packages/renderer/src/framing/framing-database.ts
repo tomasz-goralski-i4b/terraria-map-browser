@@ -53,6 +53,17 @@ export interface WallFramingData {
    * 81 chars per position.
    */
   readonly interiorByPosition: number;
+  /**
+   * The plain interior's (every neighbour the same wall) variant-1 and variant-2 cells at the same 144 positions, 2
+   * chars per position (index position × 2 + variant − 1). Absent in a database observed before it was recorded.
+   */
+  readonly interiorVariantsByPosition?: number;
+  /**
+   * The variant-0 cell of the 16 side combinations (no corners; index Σ side bit: N 1, E 2, S 4, W 8) at the same 144
+   * positions, 16 chars per position (index position × 16 + sides). Absent in a database observed before it was
+   * recorded.
+   */
+  readonly edgesByPosition?: number;
   readonly variantChangesInterior: boolean;
   /** Index into `variantMaps`. */
   readonly variants: number;
@@ -128,7 +139,10 @@ export interface FramingDatabase {
   readonly ignoresVariant: (centre: number) => boolean;
 
   // Index-based access for the wall framer (frame-wall.ts).
-  /** The tables of `wall`: its 6 561-neighbourhood table, its interior table by position and its variant map. */
+  /**
+   * The tables of `wall`: its 6 561-neighbourhood table, its interior table, interior variants and side combinations by
+   * position, and its variant map.
+   */
   readonly wallTables: (wall: number) => WallTables | null;
   /** The cell index of variant `variant` in variant map `map` of variant-0 cell index `cell`; −1 when not observed. */
   readonly mapVariantCell: (map: number, cell: number, variant: number) => number;
@@ -140,6 +154,10 @@ export interface FramingDatabase {
 export interface WallTables {
   readonly table: number;
   readonly interiorByPosition: number;
+  /** The interior's variants by position (WallFramingData); null when the database does not record them. */
+  readonly interiorVariantsByPosition: number | null;
+  /** The side combinations' cells by position (WallFramingData); null when the database does not record them. */
+  readonly edgesByPosition: number | null;
   /** Index of its variant map. */
   readonly variants: number;
 }
@@ -240,7 +258,11 @@ export async function loadFramingDatabase(data: FramingDatabaseData): Promise<Fr
       const entry = data.walls[String(wall)];
       return entry === undefined
         ? null
-        : { table: entry.table, interiorByPosition: entry.interiorByPosition, variants: entry.variants };
+        : {
+          table: entry.table, interiorByPosition: entry.interiorByPosition,
+          interiorVariantsByPosition: entry.interiorVariantsByPosition ?? null, edgesByPosition: entry.edgesByPosition ?? null,
+          variants: entry.variants,
+        };
     },
     mapVariantCell: (map, cell, variant) => {
       if (variant === 0) return cell;
