@@ -295,10 +295,10 @@ public static class FramingObserver {
     }
 
     /**
-     * The variant-0 wall cell (36-pixel cells, as a cell index) of a wall `wall` at (px, py) in neighbourhood `code`
-     * (digits 0 no wall, 1 the same wall, 2 `other`; order NW, N, NE, W, E, SW, S, SE).
+     * The wall cell (36-pixel cells, as a cell index) of a wall `wall` with variant `variant` at (px, py) in
+     * neighbourhood `code` (digits 0 no wall, 1 the same wall, 2 `other`; order NW, N, NE, W, E, SW, S, SE).
      */
-    static int WallCellOf(int wall, int other, int code, int px, int py) {
+    static int WallCellOf(int wall, int other, int code, int px, int py, int variant = 0) {
         ClearRect(px - 2, py - 2, 5, 5);
         PutWall(px, py, wall, -1);
         int rest = code;
@@ -307,7 +307,7 @@ public static class FramingObserver {
             rest /= 3;
             if (digit != 0) PutWall(px + Around[k][0], py + Around[k][1], digit == 1 ? wall : other, -1);
         }
-        setWallFrameNumber.Invoke(world.GetValue(px, py), new object[] { (byte)0 });
+        setWallFrameNumber.Invoke(world.GetValue(px, py), new object[] { (byte)variant });
         wallFrame.Invoke(null, new object[] { px, py, false });
         object tile = world.GetValue(px, py);
         return CellIndex(Convert.ToInt32(getWallFrameX.Invoke(tile, null)) / 36, Convert.ToInt32(getWallFrameY.Invoke(tile, null)) / 36);
@@ -315,8 +315,10 @@ public static class FramingObserver {
 
     /**
      * Every wall type: its table over all 6 561 neighbourhoods at one position (another wall as `other`), the cells of
-     * the interior neighbourhoods (all four sides the same wall: 81 corner codes) at 24 positions, whether the variant
-     * changes the interior, and which block types beside a wall count as a neighbour. Each distinct table is stored once.
+     * the interior neighbourhoods (all four sides the same wall: 81 corner codes) at 12 × 12 positions, the plain
+     * interior's variant-1 and variant-2 cells and the 16 side combinations' variant-0 cells at the same positions,
+     * whether the variant changes the interior, and which block types beside a wall count as a neighbour. Each distinct
+     * table is stored once.
      */
     static void Walls(StringBuilder json, Func<string, int> intern, int wallCount, int typeCount) {
         int[] sideCodes = new int[81];
@@ -328,6 +330,12 @@ public static class FramingObserver {
             foreach (int d in digits) { code += d * scale; scale *= 3; }
             sideCodes[i] = code;
         }
+        // The 16 side combinations without corners: side bit N 1, E 2, S 4, W 8 → the same wall at N, E, S, W.
+        int[] edgeCodes = new int[16];
+        for (int sides = 0; sides < 16; sides++) {
+            edgeCodes[sides] = CodeOf(0, (sides & 1) != 0 ? 1 : 0, 0, (sides & 8) != 0 ? 1 : 0, (sides & 2) != 0 ? 1 : 0, 0, (sides & 4) != 0 ? 1 : 0, 0);
+        }
+        int plainInterior = CodeOf(1, 1, 1, 1, 1, 1, 1, 1);
         Clear();
         json.Append("[");
         bool first = true;
@@ -341,6 +349,14 @@ public static class FramingObserver {
             for (int py = 0; py < 12; py++) for (int px = 0; px < 12; px++) {
                 for (int i = 0; i < 81; i++) positions.Append((char)WallCellOf(wall, other, sideCodes[i], 36 + px, 36 + py));
             }
+            // At the same positions: the plain interior's variants 1 and 2 (2 per position) and the side combinations'
+            // variant-0 cells (16 per position), so neither the interior variants nor the edges rest on one position.
+            var interiorVariants = new StringBuilder(144 * 2);
+            var edges = new StringBuilder(144 * 16);
+            for (int py = 0; py < 12; py++) for (int px = 0; px < 12; px++) {
+                for (int variant = 1; variant <= 2; variant++) interiorVariants.Append((char)WallCellOf(wall, other, plainInterior, 36 + px, 36 + py, variant));
+                for (int sides = 0; sides < 16; sides++) edges.Append((char)WallCellOf(wall, other, edgeCodes[sides], 36 + px, 36 + py));
+            }
             // The variant: the plain interior with variant 1 against variant 0, at the first position.
             ClearRect(28, 28, 5, 5);
             for (int x = 29; x <= 31; x++) for (int y = 29; y <= 31; y++) PutWall(x, y, wall, -1);
@@ -348,7 +364,7 @@ public static class FramingObserver {
             wallFrame.Invoke(null, new object[] { 30, 30, false });
             object tile = world.GetValue(30, 30);
             int v1 = CellIndex(Convert.ToInt32(getWallFrameX.Invoke(tile, null)) / 36, Convert.ToInt32(getWallFrameY.Invoke(tile, null)) / 36);
-            int v0 = WallCellOf(wall, other, CodeOf(1, 1, 1, 1, 1, 1, 1, 1), 30, 30);
+            int v0 = WallCellOf(wall, other, plainInterior, 30, 30);
             // Variant map: every v0 cell of the table, framed again with variant 1 and 2 where it first appeared.
             var firstSeen = new Dictionary<int, int>();
             string text = table.ToString();
@@ -365,8 +381,8 @@ public static class FramingObserver {
                 }
                 variants.Append(variants.Length == 0 ? "" : ",").AppendFormat("[{0},{1},{2}]", entry.Key, cells[1], cells[2]);
             }
-            json.Append(first ? "" : ",").AppendFormat("{{\"id\":{0},\"table\":{1},\"interiorByPosition\":{2},\"variantChangesInterior\":{3},\"variants\":[{4}]}}",
-                wall, intern(text), intern(positions.ToString()), v0 == v1 ? "false" : "true", variants.ToString());
+            json.Append(first ? "" : ",").AppendFormat("{{\"id\":{0},\"table\":{1},\"interiorByPosition\":{2},\"interiorVariantsByPosition\":{3},\"edgesByPosition\":{4},\"variantChangesInterior\":{5},\"variants\":[{6}]}}",
+                wall, intern(text), intern(positions.ToString()), intern(interiorVariants.ToString()), intern(edges.ToString()), v0 == v1 ? "false" : "true", variants.ToString());
             first = false;
             if (wall % 25 == 0) Console.Error.WriteLine("walls " + wall + "/" + (wallCount - 1));
         }

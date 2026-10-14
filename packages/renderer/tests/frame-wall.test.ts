@@ -1,8 +1,9 @@
+import { deflateRawSync } from "node:zlib";
 import { beforeAll, describe, expect, test } from "vitest";
 import { createWorld, type CanonicalWorld, type ContentRef } from "@studio/world-model";
 import {
   NO_CELL, WALL_SIDE, createWallFraming, loadFramingDatabase, terrariaFramingData, wallSourceRect,
-  type FramingDatabase, type WallFraming,
+  type FramingDatabase, type FramingDatabaseData, type WallFraming,
 } from "../src/index.js";
 
 let database: FramingDatabase;
@@ -245,5 +246,64 @@ describe("wall source rectangles", () => {
   test("worked example 5: a lone stone wall takes cell (9, 3); example 6: four neighbours at x mod 3 = 0, y mod 3 = 1 take (1, 1)", () => {
     expect(walls.wallCell(1, 0, 0, 0, 0)).toBe(9 * 64 + 3);
     expect(walls.wallCell(1, 15, 3, 4, 0)).toBe(1 * 64 + 1);
+  });
+});
+
+describe("wall framing by position (interior variants and edges observed at every position)", () => {
+  // A one-wall database: cell index → (column, row).
+  const CELLS = [[9, 3], [6, 2], [1, 1], [7, 2], [8, 2], [2, 1], [3, 1], [0, 0]] as const;
+  const deflate = (indices: readonly number[]): string =>
+    deflateRawSync(Buffer.from(String.fromCharCode(...indices.map((index) => index + 48)), "latin1")).toString("base64");
+  const deflateText = (text: string): string => deflateRawSync(Buffer.from(text, "latin1")).toString("base64");
+  const fill = (length: number, index: number): number[] => Array.from({ length }, () => index);
+  /** Position (x mod 12, y mod 12) = (1, 0), index b · 12 + a = 1, differs from every other position. */
+  const SPECIAL = 1;
+  const interior = fill(144 * 81, 1);
+  for (let i = 0; i < 81; i++) interior[SPECIAL * 81 + i] = 2;
+  const interiorVariants = Array.from({ length: 144 * 2 }, (_, i): number => (i % 2 === 0 ? 3 : 4));
+  interiorVariants[SPECIAL * 2] = 5;
+  interiorVariants[SPECIAL * 2 + 1] = 6;
+  const edges = fill(144 * 16, 0);
+  edges[SPECIAL * 16 + 0] = 7;
+
+  const data = (byPosition: boolean): FramingDatabaseData => ({
+    gameVersion: "test", cells: CELLS, blockTypes: [], relations: deflateText(""), blocks: {}, wallNeighbourBlocks: [],
+    tables: [deflate(fill(6561, 0)), deflate(interior), deflate(interiorVariants), deflate(edges)],
+    // The variant map as the 6 561-neighbourhood table observes it: the lone cell does not vary, (6, 2) does.
+    variantMaps: [deflate([0, 0, 0, 1, 3, 4])],
+    walls: {
+      "1": {
+        table: 0, interiorByPosition: 1, variantChangesInterior: true, variants: 0,
+        ...(byPosition ? { interiorVariantsByPosition: 2, edgesByPosition: 3 } : {}),
+      },
+    },
+  });
+  const framing = async (byPosition: boolean): Promise<WallFraming> =>
+    createWallFraming(await loadFramingDatabase(data(byPosition)));
+  const at = (column: number, row: number): number => column * 64 + row;
+
+  test("an interior cell takes its own variants at its position, not only the reference interior's", async () => {
+    const byPosition = await framing(true);
+    expect(byPosition.wallCell(1, 15, 1, 0, 0)).toBe(at(1, 1));
+    expect(byPosition.wallCell(1, 15, 1, 0, 1)).toBe(at(2, 1));
+    expect(byPosition.wallCell(1, 15, 1, 0, 2)).toBe(at(3, 1));
+    expect(byPosition.wallCell(1, 15, -11, 12, 2)).toBe(at(3, 1));
+    expect(byPosition.wallCell(1, 15, 0, 0, 1)).toBe(at(7, 2));
+    expect(byPosition.wallCell(1, 15, 0, 0, 2)).toBe(at(8, 2));
+  });
+
+  test("a non-interior cell comes from the edge table of its position", async () => {
+    const byPosition = await framing(true);
+    expect(byPosition.wallCell(1, 0, 1, 0, 0)).toBe(at(0, 0));
+    expect(byPosition.wallCell(1, 0, 13, 24, 0)).toBe(at(0, 0));
+    expect(byPosition.wallCell(1, 0, 0, 0, 0)).toBe(at(9, 3));
+    expect(byPosition.wallCell(1, 5, 1, 0, 0)).toBe(at(9, 3));
+  });
+
+  test("a database without the position tables keeps the reference edges and the variant map", async () => {
+    const reference = await framing(false);
+    expect(reference.wallCell(1, 15, 1, 0, 1)).toBe(at(1, 1));
+    expect(reference.wallCell(1, 15, 0, 0, 1)).toBe(at(7, 2));
+    expect(reference.wallCell(1, 0, 1, 0, 0)).toBe(at(9, 3));
   });
 });
