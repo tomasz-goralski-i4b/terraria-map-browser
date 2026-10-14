@@ -1,7 +1,7 @@
 import { afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import { createWorld, type BlockShape, type CanonicalWorld } from "@studio/world-model";
 import {
-  CHUNK_SIZE, NO_CELL, SPRITE_MIN_ZOOM, createBlockFraming, createChunkCellCache, createChunkWallCellCache,
+  CHUNK_SIZE, LIQUID_SPRITE_ALPHA, NO_CELL, SPRITE_MIN_ZOOM, createBlockFraming, liquidFillPixels, liquidHasSurface, liquidSheetRow, shapedTileLiquid, createChunkCellCache, createChunkWallCellCache,
   createMapRenderer, loadFramingDatabase, renderChunk, shapedColumns, terrariaFramingData,
 } from "../src/index.js";
 import type {
@@ -94,7 +94,10 @@ const SHEETS: readonly SpriteSheetEntry[] = [
   ...[[GRASS, 2, 396], [VINE, 402, 288], [CACTUS, 694, 288]].map(([id = 0, y = 0, height = 0]) => ({
     kind: "tile" as const, id, page: 0, x: 602, y, width: SHEET, height, frameWidth: 16, frameHeight: 16,
   })),
+  // Liquid_0: water (docs/assets.md, "Liquids").
+  { kind: "liquid", id: 0, page: 0, x: 900, y: 2, width: 34, height: 16, frameWidth: 16, frameHeight: 16 },
 ];
+const WATER_SHEET = 8;
 const WALL_SHEET = 4;
 
 function sheetPixel(sheet: number, x: number, y: number): Rgba {
@@ -195,7 +198,89 @@ function draw(world: CanonicalWorld, zoom = ZOOM): { pixels: Uint8Array; rendere
   return { pixels: readCanvas(canvas), renderer };
 }
 
+/** The shader's integer `over` (straight alpha), for liquids over an opaque or transparent pixel. */
+function over(top: Rgba, below: Rgba): Rgba {
+  if (top[3] === 0) return below;
+  if (below[3] === 0 || top[3] === 255) return top;
+  const t = top[3];
+  if (below[3] === 255) {
+    const mix = (k: 0 | 1 | 2): number => Math.floor((2 * (top[k] * t + below[k] * (255 - t)) + 255) / 510);
+    return [mix(0), mix(1), mix(2), 255];
+  }
+  const weight = below[3] * (255 - t);
+  const alpha = t + Math.floor((weight + 127) / 255);
+  const mix = (k: 0 | 1 | 2): number => Math.floor((top[k] * t * 255 + below[k] * weight + Math.floor((alpha * 255) / 2)) / (alpha * 255));
+  return [mix(0), mix(1), mix(2), alpha];
+}
+
+/** The water sprite pixel at (sx, sy) of a tile filled `amount` (its art; `front`: at the water's sprite alpha). */
+function waterPixel(amount: number, surface: boolean, sx: number, sy: number, front: boolean): Rgba {
+  const row = liquidSheetRow(sy, liquidFillPixels(amount), surface);
+  if (row === null) return [0, 0, 0, 0];
+  const art = sheetPixel(WATER_SHEET, sx, row);
+  return front ? [art[0], art[1], art[2], Math.floor((art[3] * (LIQUID_SPRITE_ALPHA[0] ?? 0) + 127) / 255)] : art;
+}
+
 describe("self-framed blocks in sprite mode", () => {
+  test("a half block or slope beside or below water holds the water in its cut-away part, under the block", () => {
+    const world = createWorld(8, 4);
+    stamp(world, 0, 0, ["........", "..H.T.N.", "dHdddd.d", "ssssssss"]);
+    // No walls: the cut-away parts show the background, which the water's back layer hides.
+    for (let x = 0; x < world.width; x++) {
+      for (let y = 0; y < world.height; y++) {
+        const tile = { ...world.tileAt(x, y) };
+        delete tile.wall;
+        world.setTile(x, y, tile);
+      }
+    }
+    const pour = (x: number, y: number, amount: number): void => {
+      world.setTile(x, y, { ...world.tileAt(x, y), liquid: { kind: "water", amount } });
+    };
+    pour(0, 1, 255);
+    pour(1, 1, 255);
+    pour(3, 1, 127);
+    // Water under the slope at (6, 1), which holds the water to its right: no surface line under it.
+    pour(7, 1, 255);
+    pour(6, 2, 255);
+    const { pixels } = draw(world);
+    const base = expectedCanvas(world);
+    const { width, height } = world;
+    const liquidAt = (x: number, y: number): { kind: number; amount: number } =>
+      x < 0 || y < 0 || x >= width ? { kind: 0, amount: 0 } : { kind: world.planes.liquid[x * height + y] ?? 0, amount: world.planes.liquidAmount[x * height + y] ?? 0 };
+    const expected = new Uint8Array(base);
+    for (let py = 0; py < height * ZOOM; py++) {
+      for (let px = 0; px < width * ZOOM; px++) {
+        const tx = Math.floor(px / ZOOM), ty = Math.floor(py / ZOOM), sx = px % ZOOM, sy = py % ZOOM;
+        const at = (py * width * ZOOM + px) * 4;
+        const shape = world.planes.shape[tx * height + ty] ?? 0;
+        const own = liquidAt(tx, ty);
+        // Where the background shows (open air, a shape's cut-away part): the back layer, then the front layer.
+        let liquid: { amount: number; surface: boolean } | null = null;
+        let open = false;
+        if (own.amount !== 0) {
+          const aboveShape = world.planes.shape[tx * height + ty - 1] ?? 0;
+          const surface = liquidHasSurface(liquidAt(tx, ty - 1), ty === 0 ? 0 : aboveShape, liquidAt(tx, ty - 2), liquidAt(tx - 1, ty - 1), liquidAt(tx + 1, ty - 1));
+          liquid = { amount: own.amount, surface };
+          open = true;
+        } else if (shape !== 0) {
+          const column = shapedColumns(shape)[Math.floor(sx / 2)];
+          liquid = shapedTileLiquid(liquidAt(tx, ty - 1), liquidAt(tx - 1, ty), liquidAt(tx + 1, ty));
+          open = column === undefined || sy < column.destY || sy >= column.destY + column.height;
+        }
+        if (liquid !== null && open) {
+          const back = over(waterPixel(liquid.amount, liquid.surface, sx, sy, false), pixelAt(base, at));
+          expected.set(over(waterPixel(liquid.amount, liquid.surface, sx, sy, true), back), at);
+        }
+      }
+    }
+    expectClose(pixels, expected, world.width * ZOOM);
+    // Sanity: the slope at (4, 1) holds the half-full water of its left neighbour; the water under the slope at (6, 1)
+    // shows body rows at its top, not the surface highlight (the expected canvas checks the pixels).
+    const read = (x: number, y: number): Rgba => pixelAt(pixels, (y * width * ZOOM + x) * 4);
+    expect(read(4 * ZOOM + 14, ZOOM + 12)).not.toEqual(pixelAt(base, ((ZOOM + 12) * width * ZOOM + 4 * ZOOM + 14) * 4));
+    expect(liquidHasSurface(liquidAt(6, 1), world.planes.shape[6 * height + 1] ?? 0, liquidAt(6, 0), liquidAt(5, 1), liquidAt(7, 1))).toBe(false);
+  });
+
   test("blocks show their framed cell; half blocks and slopes are cut by the shape table over the wall behind", () => {
     const world = createWorld(10, 6);
     stamp(world, 0, 0, ["..........", "..dHddTN..", ".dddddddd.", ".ssssssss.", ".RddddddL.", ".........."]);

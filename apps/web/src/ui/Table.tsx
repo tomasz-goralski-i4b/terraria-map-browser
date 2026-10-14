@@ -77,6 +77,8 @@ export function Table<R>(props: TableProps<R>): React.JSX.Element {
   const [filter, setFilter] = useState("");
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(400);
+  // Height of the horizontal scrollbar when the columns overflow; a table that fits its rows grows by it.
+  const [scrollbarHeight, setScrollbarHeight] = useState(0);
   const scroller = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -84,6 +86,7 @@ export function Table<R>(props: TableProps<R>): React.JSX.Element {
     if (element === null) return undefined;
     const measure = (): void => {
       setViewportHeight(element.clientHeight || 400);
+      setScrollbarHeight(Math.max(0, element.offsetHeight - element.clientHeight - element.clientTop * 2));
     };
     measure();
     const observer = new ResizeObserver(measure);
@@ -177,7 +180,7 @@ export function Table<R>(props: TableProps<R>): React.JSX.Element {
   }));
 
   return (
-    <div className="table" data-fit-rows={fitRows || undefined} style={{ "--table-columns": template, "--table-min-width": `${String(minWidth)}px`, "--table-rows": shown.length } as React.CSSProperties}>
+    <div className="table" data-fit-rows={fitRows || undefined} style={{ "--table-columns": template, "--table-min-width": `${String(minWidth)}px`, "--table-rows": shown.length, "--table-scrollbar": `${String(scrollbarHeight)}px` } as React.CSSProperties}>
       <div className="table-toolbar">
         {filterText !== undefined && (
           <label className="search-field">
@@ -197,7 +200,7 @@ export function Table<R>(props: TableProps<R>): React.JSX.Element {
         <MenuButton label={`Columns of ${label}`} icon="columns" items={columnItems} align="end" />
       </div>
       <div className="table-count" aria-live="polite">
-        {shown.length === rows.length ? `${rows.length.toLocaleString("en-US")} rows` : `${shown.length.toLocaleString("en-US")} of ${rows.length.toLocaleString("en-US")} rows`}
+        {shown.length === rows.length ? `${rows.length.toLocaleString("en-US")} ${rows.length === 1 ? "row" : "rows"}` : `${shown.length.toLocaleString("en-US")} of ${rows.length.toLocaleString("en-US")} ${rows.length === 1 ? "row" : "rows"}`}
       </div>
       <div
         ref={scroller}
