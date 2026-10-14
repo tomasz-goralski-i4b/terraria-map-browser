@@ -21,23 +21,23 @@ test("entries match by name or key, case-insensitively, and map to palette indic
   expect(selectionOf(entries)).toEqual({ blocks: [1], walls: [1], liquids: [2] });
 });
 
-test("steps visit run starts in column-major order, both ways, wrapping, with ordinals of all matching tiles", async () => {
+test("steps visit vertical runs in column-major order, both ways, wrapping, numbered as stops", async () => {
   const world = planes([
     [5, 0, 5, 0],
     [5, 0, 0, 0],
     [0, 0, 5, 5],
   ]);
   const index = await buildContentStepIndex(world, 4, 3, { blocks: [5], walls: [], liquids: [] });
-  expect(index.total).toBe(5);
+  expect(index.total).toBe(4);
   const first = index.step(null, 1);
   expect(first).toEqual({ x: 0, y: 0, ordinal: 1 });
   // The rest of column 0's run (y 1) is skipped.
   const second = index.step(first, 1);
-  expect(second).toEqual({ x: 2, y: 0, ordinal: 3 });
+  expect(second).toEqual({ x: 2, y: 0, ordinal: 2 });
   const third = index.step(second, 1);
-  expect(third).toEqual({ x: 2, y: 2, ordinal: 4 });
+  expect(third).toEqual({ x: 2, y: 2, ordinal: 3 });
   const fourth = index.step(third, 1);
-  expect(fourth).toEqual({ x: 3, y: 2, ordinal: 5 });
+  expect(fourth).toEqual({ x: 3, y: 2, ordinal: 4 });
   expect(index.step(fourth, 1)).toEqual(first);
   expect(index.step(first, -1)).toEqual(fourth);
   expect(index.step(null, -1)).toEqual(fourth);
@@ -48,7 +48,27 @@ test("building yields between column slices and an empty selection has nothing t
   const world = planes([[1, 1, 1, 1], [1, 1, 1, 1], [1, 1, 1, 1]]);
   const index = await buildContentStepIndex(world, 4, 3, { blocks: [1], walls: [], liquids: [] }, { sliceTiles: 3, yieldControl: () => { slices++; return Promise.resolve(); } });
   expect(slices).toBe(3);
-  expect(index.total).toBe(12);
+  expect(index.total).toBe(4);
   const none = await buildContentStepIndex(world, 4, 3, { blocks: [], walls: [], liquids: [] });
   expect(none.step(null, 1)).toBeNull();
+});
+
+test("indexing a content that covers a Large world never runs 50 ms without yielding", { tags: ["perf"] }, async () => {
+  const width = 8400, height = 2400;
+  // Worst case: every tile matches, and runs break every other tile.
+  const block = new Uint16Array(width * height);
+  for (let index = 1; index < block.length; index += 2) block[index] = 1;
+  const planes = { block, wall: new Uint16Array(width * height).fill(0xffff), liquid: new Uint8Array(width * height) };
+  let longest = 0;
+  let last = performance.now();
+  const index = await buildContentStepIndex(planes, width, height, { blocks: [0, 1], walls: [], liquids: [] }, {
+    yieldControl: () => {
+      const now = performance.now();
+      longest = Math.max(longest, now - last);
+      return new Promise((resolve) => setTimeout(() => { last = performance.now(); resolve(); }, 0));
+    },
+  });
+  longest = Math.max(longest, performance.now() - last);
+  expect(index.total).toBe(width);
+  expect(longest).toBeLessThan(50);
 });

@@ -88,7 +88,7 @@ test("several matching items are listed with totals and choosing one narrows the
   const toolbar = document.querySelector(".search-panel .table-toolbar");
   const columns = toolbar?.querySelector(".menu");
   expect(Math.round(columns?.getBoundingClientRect().right ?? 0)).toBe(Math.round(toolbar?.getBoundingClientRect().right ?? -1));
-  expect(useChestNavigation.getState().areas).toEqual([{ x: 32, y: 18, width: 2, height: 2, chestIndex: 1 }]);
+  await expect.poll(() => useChestNavigation.getState().areas).toEqual([{ x: 32, y: 18, width: 2, height: 2, chestIndex: 1 }]);
   await items.getByRole("button", { name: /Iron Bar/ }).click();
   await expect.element(page.getByText("2 items: 52 in 2 chests")).toBeVisible();
   // Escape in the field clears the search.
@@ -163,7 +163,7 @@ test("duplicate chest anchors keep record selection and totals but have no ambig
   await expect.element(page.getByRole("grid", { name: "Chests" }).getByRole("row").filter({ hasText: "Mining supplies" })).toHaveAttribute("aria-selected", "false");
   await page.getByRole("searchbox", { name: "Search Items in chests" }).fill("8");
   await expect.element(page.getByText("Torch: 65 in 3 chests")).toBeVisible();
-  expect(useChestNavigation.getState().areas).toHaveLength(1);
+  await expect.poll(() => useChestNavigation.getState().areas).toHaveLength(1);
   await userEvent.keyboard("{F3}");
   expect(useViewStore.getState().pinnedTile).toEqual({ x: 32, y: 18 });
 });

@@ -22,6 +22,7 @@ export function matchContent<E extends ContentEntry>(entries: readonly E[], quer
   return entries.filter((entry) => entry.name.toLowerCase().includes(text) || entry.id.toLowerCase().includes(text));
 }
 
+/** The palette indices and liquid kinds of the given entries, per layer. */
 export function selectionOf(entries: readonly ContentEntry[]): ContentSelection {
   const blocks: number[] = [], walls: number[] = [], liquids: number[] = [];
   for (const entry of entries) {
@@ -43,13 +44,20 @@ function matcher(planes: CountablePlanes, selection: ContentSelection): (index: 
 
 export interface ContentStep { readonly x: number; readonly y: number; readonly ordinal: number }
 
+/** Whether two selections highlight the same content. */
+export function sameSelection(a: ContentSelection | null, b: ContentSelection | null): boolean {
+  if (a === null || b === null) return a === b;
+  const same = (x: readonly number[], y: readonly number[]): boolean => x.length === y.length && x.every((value, index) => value === y[index]);
+  return same(a.blocks, b.blocks) && same(a.walls, b.walls) && same(a.liquids, b.liquids);
+}
+
 /**
- * Stepping through a selection's tiles in column-major order (the planes' order). Only per-column counts are kept,
- * so the index of a content covering most of a Large world is one Uint32Array per column, not one entry per tile.
- * A step skips the rest of the vertical run it is in, so a 2 × 2 object is visited once per column, not four times.
+ * Stepping through a selection's matches in column-major order (the planes' order). A match is a vertical run of
+ * matching tiles (a stop), so a 2 × 2 object is two stops, not four. Only per-column stop counts are kept, so the index
+ * of a content covering most of a Large world is one Uint32Array per column, not one entry per tile.
  */
 export interface ContentStepIndex {
-  /** Matching tiles in the world. */
+  /** Stops (vertical runs of matching tiles) in the world; a step's `ordinal` counts these, 1-based. */
   readonly total: number;
   /** The next (1) or previous (-1) run start after `from` (a tile, or null to start at an end), wrapping around. */
   readonly step: (from: { readonly x: number; readonly y: number } | null, direction: 1 | -1) => ContentStep | null;
@@ -69,7 +77,8 @@ export async function buildContentStepIndex(
 ): Promise<ContentStepIndex> {
   const { signal, sliceTiles = 1 << 20, yieldControl = nextTask } = options;
   const matches = matcher(planes, selection);
-  // before[x] = matching tiles in the columns left of x.
+  const isRunStart = (x: number, y: number): boolean => matches(x * height + y) && (y === 0 || !matches(x * height + y - 1));
+  // before[x] = stops in the columns left of x.
   const before = new Uint32Array(width + 1);
   const columnsPerSlice = Math.max(1, Math.floor(sliceTiles / Math.max(1, height)));
   for (let x = 0; x < width; x++) {
@@ -78,17 +87,21 @@ export async function buildContentStepIndex(
       if (signal?.aborted === true) throw new DOMException("Content search aborted", "AbortError");
     }
     let count = 0;
-    for (let index = x * height, end = index + height; index < end; index++) if (matches(index)) count++;
+    let previous = false;
+    for (let index = x * height, end = index + height; index < end; index++) {
+      const match = matches(index);
+      if (match && !previous) count++;
+      previous = match;
+    }
     before[x + 1] = (before[x] ?? 0) + count;
   }
   const total = before[width] ?? 0;
   const columnCount = (x: number): number => (before[x + 1] ?? 0) - (before[x] ?? 0);
   const ordinalOf = (x: number, y: number): number => {
     let ordinal = before[x] ?? 0;
-    for (let index = x * height, end = index + y; index <= end; index++) if (matches(index)) ordinal++;
+    for (let row = 0; row <= y; row++) if (isRunStart(x, row)) ordinal++;
     return ordinal;
   };
-  const isRunStart = (x: number, y: number): boolean => matches(x * height + y) && (y === 0 || !matches(x * height + y - 1));
 
   const forward = (startX: number, startY: number): ContentStep | null => {
     for (let pass = 0; pass <= width; pass++) {

@@ -9,6 +9,8 @@ export interface ChestFootprint { readonly x: number; readonly y: number; readon
 export type ChestAnchorStatus = "valid" | "outOfBounds" | "mismatch" | "unknown";
 
 const DRESSER = 88;
+/** Tiles a chest record can sit on: chests (two sheets), dressers and the two trapped-chest sheets. */
+const CHEST_TILES: ReadonlySet<number> = new Set([21, 467, DRESSER, 441, 468]);
 
 /** Chests are 2 × 2 from their top-left tile; dressers, the one vanilla 3-wide chest object, are 3 × 2. */
 function footprintWidth(origin: Tile): number {
@@ -20,7 +22,7 @@ export function chestAnchorStatus(chest: WorldChest, world: ChestWorld): ChestAn
   if (chest.x < 0 || chest.y < 0 || chest.x >= world.width || chest.y >= world.height) return "outOfBounds";
   const origin = world.tileAt(chest.x, chest.y);
   if (origin.block?.kind !== "vanilla") return origin.block === undefined ? "mismatch" : "unknown";
-  if (![21, 88, 441, 467, 468].includes(origin.block.id)) return "unknown";
+  if (!CHEST_TILES.has(origin.block.id)) return "unknown";
   const width = footprintWidth(origin);
   if (chest.x + width > world.width || chest.y + 2 > world.height) return "outOfBounds";
   if (origin.frameX === undefined || origin.frameY === undefined || origin.frameX < 0 || origin.frameY < 0 || origin.frameX % (width * 18) !== 0 || origin.frameY % 36 !== 0) return "mismatch";

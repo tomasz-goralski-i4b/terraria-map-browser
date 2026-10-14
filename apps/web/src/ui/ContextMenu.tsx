@@ -1,11 +1,10 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { MenuList, type MenuItem } from "./Menu.js";
 
 export interface ContextMenuState { readonly x: number; readonly y: number }
 
-/** Rough size used to keep the popup inside the window; the menu itself is laid out by CSS. */
-const MENU_WIDTH = 240;
-const ITEM_HEIGHT = 30;
+/** Keeps the menu this far from the window's edges. */
+const MARGIN = 4;
 
 /**
  * A menu at a viewport point (right-click, or the Menu key on a focused item). It closes on a pointer down outside,
@@ -33,10 +32,18 @@ export function ContextMenu({ at, label, items, onClose }: {
       document.removeEventListener("scroll", onClose, true);
     };
   }, [onClose]);
-  const left = Math.max(0, Math.min(at.x, window.innerWidth - MENU_WIDTH));
-  const top = Math.max(0, Math.min(at.y, window.innerHeight - 16 - ITEM_HEIGHT * items.length));
+  // Laid out at the point first, then measured and moved inside the window before it is painted.
+  const [place, setPlace] = useState<ContextMenuState>(at);
+  useLayoutEffect(() => {
+    const rect = ref.current?.getBoundingClientRect();
+    if (rect === undefined) return;
+    setPlace({
+      x: Math.max(MARGIN, Math.min(at.x, window.innerWidth - rect.width - MARGIN)),
+      y: Math.max(MARGIN, Math.min(at.y, window.innerHeight - rect.height - MARGIN)),
+    });
+  }, [at]);
   return (
-    <div ref={ref} className="context-menu" style={{ left, top }}>
+    <div ref={ref} className="context-menu" style={{ left: place.x, top: place.y }}>
       <MenuList
         label={label}
         initialFocus="first"

@@ -123,19 +123,25 @@ export function Table<R>(props: TableProps<R>): React.JSX.Element {
   const selectedIndex = selectedKey === null ? -1 : shown.findIndex((row) => rowKey(row) === selectedKey);
   const rowId = (index: number): string => `${domId}-row-${String(index)}`;
 
-  const select = (index: number): void => {
-    const row = shown[index];
-    if (row === undefined) return;
-    onSelect?.(row);
+  /** Keeps a row in view below the sticky header. */
+  const reveal = (index: number): void => {
     const element = scroller.current;
-    if (element === null) return;
-    // Keep the selected row in view below the sticky header.
+    if (element === null || index < 0) return;
     const top = index * TABLE_ROW_HEIGHT;
     const viewTop = element.scrollTop;
     const viewBottom = viewTop + element.clientHeight - TABLE_ROW_HEIGHT * 2;
     if (top < viewTop) element.scrollTop = top;
     else if (top > viewBottom) element.scrollTop = top - element.clientHeight + TABLE_ROW_HEIGHT * 2;
   };
+  const select = (index: number): void => {
+    const row = shown[index];
+    if (row === undefined) return;
+    onSelect?.(row);
+    reveal(index);
+  };
+  // A selection made elsewhere (F3 stepping through results) scrolls its row into view too.
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- only when the selected key changes, not on every scroll
+  useEffect(() => { reveal(selectedIndex); }, [selectedKey]);
 
   const onKeyDown = (event: React.KeyboardEvent): void => {
     if (event.target !== event.currentTarget) return;

@@ -393,7 +393,9 @@ function isTextEntry(target: EventTarget | null): boolean {
 export function useGlobalShortcuts(commands: readonly Command[]): void {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.defaultPrevented || event.repeat || (isTextEntry(event.target) && event.key !== "F3")) return;
+      // Find and its steps also work from a text field (the search box itself included), as in code editors.
+      const findKey = event.key === "F3" || ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "f" && !event.shiftKey && !event.altKey);
+      if (event.defaultPrevented || event.repeat || (isTextEntry(event.target) && !findKey)) return;
       if (event.target instanceof Element && event.target.closest("[role=menu], dialog[open]") !== null) return;
       const matching = commands.filter((candidate) => candidate.shortcut !== undefined && matchesShortcut(event, candidate.shortcut));
       const command = matching.find((candidate) => candidate.enabled) ?? matching[0];
@@ -401,9 +403,10 @@ export function useGlobalShortcuts(commands: readonly Command[]): void {
       if (command.id === "edit.placePaste" && event.target instanceof Element && event.target.closest("button, input, select, [role=button]") !== null) return;
       // Ctrl+C / Ctrl+V stay the browser's for selected page text and whenever there is no area to copy or paste.
       if ((command.id === "edit.copy" || command.id === "edit.paste") && (!command.enabled || window.getSelection()?.isCollapsed === false)) return;
-      // A disabled Ctrl shortcut is still ours: Ctrl+S must not open the browser's "Save page" instead.
+      // A disabled Ctrl shortcut is still ours: Ctrl+S must not open the browser's "Save page" instead, nor F3 its
+      // find bar.
       if (!command.enabled) {
-        if (event.ctrlKey || event.metaKey) event.preventDefault();
+        if (event.ctrlKey || event.metaKey || event.key === "F3") event.preventDefault();
         return;
       }
       event.preventDefault();

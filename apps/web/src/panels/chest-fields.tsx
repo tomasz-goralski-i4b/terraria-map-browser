@@ -32,7 +32,7 @@ export function slotLabel(item: EntityItem): string {
  * The rows of a chest: name, top-left position, style and how many slots are filled. An unnamed chest is explicitly
  * labelled Unnamed. With `onOpen`, the filled-slots row carries an Open button for the slots.
  */
-export function chestProperties(chest: WorldChest, origin: Tile, _showAll: boolean, onOpen?: () => void): Property[] {
+export function chestProperties(chest: WorldChest, origin: Tile, onOpen?: () => void): Property[] {
   const text = (label: string, value: string): Property => ({ kind: "text", label, value });
   const style = chestStyle(origin);
   const filled = `${String(chest.items.length)} of ${String(chest.slotCount)}`;

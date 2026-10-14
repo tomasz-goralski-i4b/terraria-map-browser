@@ -12,5 +12,6 @@ export function ItemSprite({ itemId, fallback = true }: { readonly itemId: numbe
     if (thumbnail === null) return;
     canvas.current?.getContext("2d")?.putImageData(new ImageData(thumbnail.pixels, thumbnail.width, thumbnail.height), 0, 0);
   }, [thumbnail]);
-  return thumbnail === null ? fallback ? <span className="chest-slot-item">{itemLabel(itemId)}</span> : null : <canvas aria-hidden="true" className="chest-item-sprite" ref={canvas} width={thumbnail.width} height={thumbnail.height} />;
+  if (thumbnail === null) return fallback ? <span className="chest-slot-item">{itemLabel(itemId)}</span> : null;
+  return <canvas aria-hidden="true" className="chest-item-sprite" ref={canvas} width={thumbnail.width} height={thumbnail.height} />;
 }

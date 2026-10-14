@@ -1,10 +1,28 @@
 import type { WorldChest } from "@studio/world-codec";
 import { itemLabel } from "./items.js";
 
-export interface ChestItemTotal { readonly itemId: number; readonly totalStack: number; readonly slotCount: number; readonly chestCount: number }
-export interface ChestMatch { readonly chestIndex: number; readonly chest: WorldChest; readonly totalStack: number; readonly items: readonly { readonly itemId: number; readonly stack: number }[] }
+/** One matching item across the world: its stacks added up (every prefix), the slots and the chests holding it. */
+export interface ChestItemTotal {
+  readonly itemId: number;
+  readonly totalStack: number;
+  readonly slotCount: number;
+  readonly chestCount: number;
+}
+
+/** One chest holding matching items, with each item's stack in it. */
+export interface ChestMatch {
+  readonly chestIndex: number;
+  readonly chest: WorldChest;
+  readonly totalStack: number;
+  readonly items: readonly { readonly itemId: number; readonly stack: number }[];
+}
+
 export interface ChestSearchResult { readonly matches: readonly ChestMatch[]; readonly totals: readonly ChestItemTotal[] }
+
+/** Item ID or case-insensitive name search over the chests the index was built from. */
 export interface ChestItemIndex { readonly search: (query: string) => ChestSearchResult }
+
+
 function idleSlice(): Promise<void> {
   return new Promise((resolve) => {
     if (typeof requestIdleCallback === "function") requestIdleCallback(() => { resolve(); }, { timeout: 100 });

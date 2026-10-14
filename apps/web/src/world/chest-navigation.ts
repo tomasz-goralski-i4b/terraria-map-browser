@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { DEFAULT_HIGHLIGHT_COLOR } from "@studio/renderer";
 import type { WorldChest } from "@studio/world-codec";
 import { getMapController, useViewStore } from "../shell/view-store.js";
 import { useLayoutStore } from "../shell/layout-store.js";
@@ -73,20 +74,27 @@ export function stepChest(direction: 1 | -1): void {
   getMapController()?.goTo(area.x + area.width / 2, area.y + area.height / 2, GO_TO_ZOOM);
 }
 
-/** GPU annotation records: four footprint edges and a fixed-pixel point visible at overview zoom. */
-export function chestAnnotations(areas: readonly ChestArea[], selected: ChestArea | null): Float32Array {
+/** Below this many CSS pixels per tile a chest is too small to see, so a fixed-size marker stands in for it. */
+export const CHEST_MARKER_ZOOM = 4;
+const [RED, GREEN, BLUE] = DEFAULT_HIGHLIGHT_COLOR.map((channel) => channel / 255) as [number, number, number];
+
+/**
+ * GPU annotation records: four footprint edges in the search highlight colour (white for the selected chest) and,
+ * with `markers` (zoomed out), a fixed-pixel point so a match stays visible in the overview.
+ */
+export function chestAnnotations(areas: readonly ChestArea[], selected: ChestArea | null, markers = true): Float32Array {
   const all = selected === null ? areas : [...areas.filter((area) => area.x !== selected.x || area.y !== selected.y), selected];
-  const values = new Float32Array(all.length * 5 * 9);
+  const values = new Float32Array(all.length * (markers ? 5 : 4) * 9);
   let offset = 0;
   for (const { x, y, width, height } of all) {
     const active = selected?.x === x && selected.y === y;
     const line = (ax: number, ay: number, bx: number, by: number, size: number, point: number): void => {
-      values.set([ax, ay, bx, by, 1, active ? 1 : 0.7, active ? 1 : 0.2, size, point], offset);
+      values.set([ax, ay, bx, by, active ? 1 : RED, active ? 1 : GREEN, active ? 1 : BLUE, size, point], offset);
       offset += 9;
     };
     line(x, y, x + width, y, 2, 0); line(x + width, y, x + width, y + height, 2, 0);
     line(x + width, y + height, x, y + height, 2, 0); line(x, y + height, x, y, 2, 0);
-    line(x + width / 2, y + height / 2, x + width / 2, y + height / 2, active ? 8 : 6, 1);
+    if (markers) line(x + width / 2, y + height / 2, x + width / 2, y + height / 2, active ? 8 : 6, 1);
   }
   return values;
 }

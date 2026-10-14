@@ -8,7 +8,9 @@ import { hydrateLayout } from "../src/shell/layout-store.js";
 import { getMapController, registerMapController, useViewStore } from "../src/shell/view-store.js";
 import { createWorld } from "@studio/world-model";
 import { MapView } from "../src/components/MapView.js";
-import { clearSearch, useSearchStore } from "../src/world/search-store.js";
+import { clearSearch, findContentOnMap, HIGHLIGHT_DELAY_MS, openSearch, stepSearch, useSearchStore } from "../src/world/search-store.js";
+import { useCommands, useGlobalShortcuts } from "../src/shell/commands.js";
+import { StatusBar } from "../src/shell/StatusBar.js";
 import { GO_TO_ZOOM } from "../src/world/chest-navigation.js";
 import "../src/styles.css";
 
@@ -42,19 +44,23 @@ test("a content query lists matching entries with exact counts, highlights them 
   await box.fill("stone");
   // Stone as block (4 tiles) and as wall (2 tiles).
   await expect.element(page.getByText("2 entries: 6 tiles")).toBeVisible();
-  expect(useSearchStore.getState().highlight).toEqual({ blocks: [0], walls: [0], liquids: [] });
+  // The map follows only once typing rests, so it does not flash per keystroke.
+  expect(useSearchStore.getState().highlight).toBeNull();
+  await expect.poll(() => useSearchStore.getState().highlight).toEqual({ blocks: [0], walls: [0], liquids: [] });
   await page.getByRole("list", { name: "Matching content" }).getByRole("button", { name: /Block/ }).click();
   await expect.element(page.getByText(/^Stone Block: 4 tiles/)).toBeVisible();
   expect(useSearchStore.getState().highlight).toEqual({ blocks: [0], walls: [], liquids: [] });
-  await expect.poll(() => useSearchStore.getState().stepIndex?.total).toBe(4);
+  // Narrowing applies at once. Stops are vertical runs: (0,0)–(0,1), (1,2) and (3,2).
+  expect(useSearchStore.getState().highlight).toEqual({ blocks: [0], walls: [], liquids: [] });
+  await expect.poll(() => useSearchStore.getState().stepIndex?.total).toBe(3);
   await box.click();
   await userEvent.keyboard("{Enter}");
   expect(goTo).toHaveBeenLastCalledWith(0.5, 0.5, GO_TO_ZOOM);
-  await expect.element(page.getByText("Stone Block: 4 tiles · 1 of 4")).toBeVisible();
+  await expect.element(page.getByText("Stone Block: 4 tiles · match 1 of 3")).toBeVisible();
   await userEvent.keyboard("{Enter}");
-  // (0,1) continues the run at (0,0); the next run starts at (1,2), the third stone tile.
+  // (0,1) continues the run at (0,0); the next run starts at (1,2).
   expect(goTo).toHaveBeenLastCalledWith(1.5, 2.5, GO_TO_ZOOM);
-  await expect.element(page.getByText("Stone Block: 4 tiles · 3 of 4")).toBeVisible();
+  await expect.element(page.getByText("Stone Block: 4 tiles · match 2 of 3")).toBeVisible();
   await userEvent.keyboard("{Shift>}{Enter}{/Shift}");
   expect(goTo).toHaveBeenLastCalledWith(0.5, 0.5, GO_TO_ZOOM);
   expect((await axe.run(document.querySelector(".search-panel") ?? document.body)).violations).toEqual([]);
@@ -105,4 +111,55 @@ test("a content search outlines its tiles on the GPU map and dims the rest until
   await userEvent.keyboard("{Escape}");
   await draw();
   expect(pixel(4.5, 12.5)).toEqual(dirt);
+});
+
+function Shortcuts(): null { useGlobalShortcuts(useCommands()); return null; }
+
+test("Enter typed before the matches are shown still goes to the first one, and F3 steps globally with wrap", async () => {
+  await render(<><Shortcuts /><SearchPanel content={world} /><StatusBar world={null} /></>);
+  const box = page.getByRole("searchbox", { name: "Search Content" });
+  await box.fill("dirt block");
+  // Before the highlight delay has passed: the step waits for the index instead of being lost.
+  await userEvent.keyboard("{Enter}");
+  expect(goTo).not.toHaveBeenCalled();
+  await expect.poll(() => goTo.mock.calls.length).toBe(1);
+  expect(goTo).toHaveBeenLastCalledWith(1.5, 0.5, GO_TO_ZOOM);
+  await expect.element(page.getByTestId("search-position")).toHaveTextContent("1 of 2 matches");
+  // Dirt runs: (1,0) and (2,0)–(2,2). F3 from the box, then wrap around.
+  await userEvent.keyboard("{F3}");
+  expect(goTo).toHaveBeenLastCalledWith(2.5, 0.5, GO_TO_ZOOM);
+  await userEvent.keyboard("{F3}");
+  expect(goTo).toHaveBeenLastCalledWith(1.5, 0.5, GO_TO_ZOOM);
+  await userEvent.keyboard("{Shift>}{F3}{/Shift}");
+  expect(goTo).toHaveBeenLastCalledWith(2.5, 0.5, GO_TO_ZOOM);
+});
+
+test("Find focuses the box, while the section mounting again keeps focus, the index and the position", async () => {
+  const { rerender } = await render(<><button type="button">Elsewhere</button><SearchPanel content={world} /></>);
+  openSearch();
+  await expect.element(page.getByRole("searchbox", { name: "Search Content" })).toHaveFocus();
+  await page.getByRole("searchbox", { name: "Search Content" }).fill("stone block");
+  await expect.poll(() => useSearchStore.getState().stepIndex?.total).toBe(3);
+  stepSearch(1); stepSearch(1);
+  const index = useSearchStore.getState().stepIndex;
+  // Collapsing the section unmounts it; the map keeps its highlight and F3 keeps working.
+  await rerender(<><button type="button">Elsewhere</button></>);
+  expect(useSearchStore.getState().highlight).not.toBeNull();
+  await page.getByRole("button", { name: "Elsewhere" }).click();
+  await rerender(<><button type="button">Elsewhere</button><SearchPanel content={world} /></>);
+  await new Promise((resolve) => setTimeout(resolve, HIGHLIGHT_DELAY_MS + 100));
+  await expect.element(page.getByRole("button", { name: "Elsewhere" })).toHaveFocus();
+  expect(useSearchStore.getState().stepIndex).toBe(index);
+  expect(useSearchStore.getState().position).toMatchObject({ ordinal: 2 });
+});
+
+test("Find on map for the same entry again goes back to its first match", async () => {
+  await render(<SearchPanel content={world} />);
+  findContentOnMap("Dirt Block", "block:1");
+  await expect.poll(() => goTo.mock.calls.length).toBe(1);
+  stepSearch(1);
+  expect(goTo).toHaveBeenLastCalledWith(2.5, 0.5, GO_TO_ZOOM);
+  findContentOnMap("Dirt Block", "block:1");
+  expect(goTo).toHaveBeenLastCalledWith(1.5, 0.5, GO_TO_ZOOM);
+  expect(useSearchStore.getState().stepPending).toBe(0);
 });

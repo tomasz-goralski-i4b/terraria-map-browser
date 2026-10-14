@@ -5,6 +5,7 @@ import { useAppStore } from "../store.js";
 import { Table, type Column } from "../ui/Table.js";
 import { ContextMenu, type ContextMenuState } from "../ui/ContextMenu.js";
 import { findContentOnMap } from "../world/search-store.js";
+import { notify } from "../shell/notification-store.js";
 import { countContentInSlices, type ContentCounts, type CountablePlanes } from "../world/content-counts.js";
 import { contentKey, contentName, LIQUID_NAMES } from "../world/content-names.js";
 import { getDefaultWorldSession } from "../world/world-session.js";
@@ -227,7 +228,10 @@ export function ContentPanel({ world }: { readonly world?: ContentWorld | null }
           { kind: "action", label: "Find on map", icon: "search", shortcut: "Enter", onSelect: () => { find(menu.row); } },
           {
             kind: "action", label: "Copy ID", icon: "copy", detail: menu.row.id, onSelect: () => {
-              void navigator.clipboard.writeText(menu.row.id).catch(() => undefined);
+              void navigator.clipboard.writeText(menu.row.id).then(
+                () => { notify({ kind: "success", title: "ID copied", detail: menu.row.id }); },
+                () => { notify({ kind: "error", title: "ID not copied", detail: "The browser refused clipboard access." }); },
+              );
             },
           },
         ]}

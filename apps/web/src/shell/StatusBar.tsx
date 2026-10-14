@@ -55,7 +55,7 @@ function SearchPosition(): React.JSX.Element | null {
   const selected = useChestNavigation((state) => state.selectedIndex);
   let text: string | null = null;
   if (scope === "content" && position !== null && total > 0) {
-    text = `${position.ordinal.toLocaleString("en-US")} of ${total.toLocaleString("en-US")} tiles`;
+    text = `${position.ordinal.toLocaleString("en-US")} of ${total.toLocaleString("en-US")} matches`;
   } else if (scope === "items" && selected !== null) {
     const at = areas.findIndex((area) => area.chestIndex === selected);
     if (at >= 0) text = `${String(at + 1)} of ${String(areas.length)} chests`;

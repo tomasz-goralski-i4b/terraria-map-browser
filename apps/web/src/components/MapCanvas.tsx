@@ -11,7 +11,7 @@ import { beginBrush, finishBrush, moveBrush, pickBrushMaterial, subscribeBrushCh
 import { createBrushStabilizer } from "../world/brush-stabilizer.js";
 import { cancelArea, movePaste, pastePreviewWorld, pasteVisibleBounds, placePaste, selectArea, useAreaStore } from "../world/area-session.js";
 import { useLayoutStore } from "../shell/layout-store.js";
-import { chestAnnotations, useChestNavigation } from "../world/chest-navigation.js";
+import { CHEST_MARKER_ZOOM, chestAnnotations, useChestNavigation } from "../world/chest-navigation.js";
 import { useSearchStore } from "../world/search-store.js";
 import { measurementScene, type MeasurementScene } from "../world/measurement-scene.js";
 import { hitMeasurement, type MeasurementHit, type RulerSettings } from "../world/measurements.js";
@@ -257,7 +257,7 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
     });
   }, []);
 
-  const annotationCache = useRef<{ readonly ruler: Float32Array; readonly chests: ReturnType<typeof useChestNavigation.getState>; readonly data: Float32Array } | null>(null);
+  const annotationCache = useRef<{ readonly ruler: Float32Array; readonly chests: ReturnType<typeof useChestNavigation.getState>; readonly markers: boolean; readonly data: Float32Array } | null>(null);
   const updateRuler = useCallback((session: MapSession): void => {
     const canvas = canvasRef.current, overlay = rulerLabelsRef.current;
     if (canvas === null || overlay === null || canvas.clientWidth === 0) return;
@@ -273,11 +273,12 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
     const density = canvas.width / canvas.clientWidth;
     const chests = useChestNavigation.getState();
     let annotations = annotationCache.current;
-    if (annotations?.ruler !== cached.scene.data || annotations.chests !== chests) {
-      const chestData = chestAnnotations(chests.areas, chests.selected);
+    const markers = session.camera.zoom / density < CHEST_MARKER_ZOOM;
+    if (annotations?.ruler !== cached.scene.data || annotations.chests !== chests || annotations.markers !== markers) {
+      const chestData = chestAnnotations(chests.areas, chests.selected, markers);
       const data = new Float32Array(cached.scene.data.length + chestData.length);
       data.set(cached.scene.data); data.set(chestData, cached.scene.data.length);
-      annotations = { ruler: cached.scene.data, chests, data };
+      annotations = { ruler: cached.scene.data, chests, markers, data };
       annotationCache.current = annotations;
     }
     session.renderer.setAnnotations(annotations.data.length === 0 ? null : { data: annotations.data, density });

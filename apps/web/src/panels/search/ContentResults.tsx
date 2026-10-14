@@ -1,7 +1,8 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { getDefaultWorldSession } from "../../world/world-session.js";
-import { buildContentStepIndex, matchContent, selectionOf } from "../../world/content-search.js";
-import { stepSearch, useSearchStore } from "../../world/search-store.js";
+import { matchContent, selectionOf } from "../../world/content-search.js";
+import { HIGHLIGHT_DELAY_MS, showContentMatches, useSearchStore } from "../../world/search-store.js";
+import { useBrushStore } from "../../world/brush-session.js";
 import { useContentRows, type ContentRow, type ContentWorld } from "../ContentPanel.js";
 import { MaterialSwatch } from "../material-swatch.js";
 
@@ -17,7 +18,8 @@ function loadedSize(): { readonly width: number; readonly height: number } | nul
 
 /**
  * The "Content" scope: blocks, walls and liquids whose name or ID contains the query, with their tile counts. All of
- * them are highlighted on the map (the rest dimmed); choosing one narrows to it. F3 steps through the tiles.
+ * them are highlighted on the map (the rest dimmed); choosing one narrows to it. F3 steps through the matches, one
+ * stop per vertical run of tiles.
  */
 export function ContentResults({ world }: { readonly world?: ContentSearchWorld }): React.JSX.Element {
   const { shown, rows, progress } = useContentRows(world);
@@ -31,28 +33,23 @@ export function ContentResults({ world }: { readonly world?: ContentSearchWorld 
     return entry === undefined ? matches : [entry];
   }, [matches, contentFilter]);
 
-  // The highlight and its step index follow the chosen entries; the index is built in slices and dropped when stale.
+  // The map follows the chosen entries once the query rests, so typing does not flash the whole map; narrowing to
+  // one entry (or an edit) applies at once. The store builds the step index, so collapsing this section keeps it.
+  const revision = useBrushStore((state) => state.revision);
+  const applied = useRef<string | null>(null);
   useEffect(() => {
     const size = world ?? loadedSize();
-    if (shown === null || size === null || chosen.length === 0) {
-      useSearchStore.setState({ highlight: null, stepIndex: null, position: null });
-      return undefined;
-    }
-    const selection = selectionOf(chosen);
-    useSearchStore.setState({ highlight: selection, stepIndex: null, position: null });
-    const controller = new AbortController();
-    buildContentStepIndex(shown.planes, size.width, size.height, selection, { signal: controller.signal }).then((index) => {
-      if (controller.signal.aborted) return;
-      useSearchStore.setState({ stepIndex: index });
-      if (useSearchStore.getState().stepPending) {
-        useSearchStore.setState({ stepPending: false });
-        stepSearch(1);
-      }
-    }, (error: unknown) => {
-      if (!(error instanceof DOMException && error.name === "AbortError")) throw error;
-    });
-    return () => { controller.abort(); };
-  }, [shown, world, chosen]);
+    const apply = (): void => {
+      applied.current = query;
+      showContentMatches(
+        shown === null || size === null || chosen.length === 0 ? null : selectionOf(chosen),
+        shown === null || size === null ? null : { planes: shown.planes, width: size.width, height: size.height, version: revision },
+      );
+    };
+    if (applied.current === query || query.trim() === "") { apply(); return undefined; }
+    const timer = window.setTimeout(apply, HIGHLIGHT_DELAY_MS);
+    return () => { window.clearTimeout(timer); };
+  }, [shown, world, chosen, query, revision]);
 
   if (shown === null) return <p className="panel-empty">Open a world to search its content.</p>;
   if (rows === null) {
@@ -66,7 +63,7 @@ export function ContentResults({ world }: { readonly world?: ContentSearchWorld 
   const searching = query.trim() !== "";
   const tiles = chosen.reduce((sum, entry) => sum + entry.count, 0);
   const what = chosen.length === 1 ? chosen[0]?.name ?? "" : `${String(chosen.length)} entries`;
-  const where = position === null || stepIndex === null ? "" : ` · ${position.ordinal.toLocaleString("en-US")} of ${stepIndex.total.toLocaleString("en-US")}`;
+  const where = position === null || stepIndex === null ? "" : ` · match ${position.ordinal.toLocaleString("en-US")} of ${stepIndex.total.toLocaleString("en-US")}`;
   const summary = !searching ? "Type a block, wall or liquid name, or its ID."
     : matches.length === 0 ? "No content matches."
     : `${what}: ${tiles.toLocaleString("en-US")} ${tiles === 1 ? "tile" : "tiles"}${where}`;

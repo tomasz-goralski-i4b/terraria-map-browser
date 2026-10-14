@@ -62,16 +62,16 @@ test("a chest lists its name, position, style and filled slots; an unnamed chest
   const tiles = world();
   // Frame X 432 on tile 21: 12 chest styles of 36 px (2 tiles × 18 px) to its left, so style 12.
   tiles.setTile(1, 1, { block: { kind: "vanilla", id: 21 }, frameX: 432, frameY: 0, wires: 0, actuator: false });
-  expect(chestProperties(chest, tiles.tileAt(1, 1), false)).toEqual([
+  expect(chestProperties(chest, tiles.tileAt(1, 1))).toEqual([
     { kind: "text", label: "Name", value: "Unnamed" },
     { kind: "text", label: "Chest position", value: "1, 1" },
     { kind: "text", label: "Style", value: "12" },
     { kind: "text", label: "Filled slots", value: "2 of 40" },
   ]);
-  expect(chestProperties(chest, tiles.tileAt(1, 1), true)[0]).toEqual({ kind: "text", label: "Name", value: "Unnamed" });
+  expect(chestProperties(chest, tiles.tileAt(1, 1))[0]).toEqual({ kind: "text", label: "Name", value: "Unnamed" });
   // A dresser's styles are 54 px (3 tiles) wide.
   tiles.setTile(5, 1, { block: { kind: "vanilla", id: 88 }, frameX: 108, frameY: 0, wires: 0, actuator: false });
-  expect(chestProperties(dresser, tiles.tileAt(5, 1), false)).toEqual([
+  expect(chestProperties(dresser, tiles.tileAt(5, 1))).toEqual([
     { kind: "text", label: "Name", value: "Loot" },
     { kind: "text", label: "Chest position", value: "5, 1" },
     { kind: "text", label: "Style", value: "2" },

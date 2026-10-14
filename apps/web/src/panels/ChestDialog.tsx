@@ -20,7 +20,8 @@ export function ChestDialog({ chest, title, onClose }: { readonly chest: WorldCh
   const titleId = useId();
   const view = useLayoutStore((state) => state.chestView);
   const setView = useLayoutStore((state) => state.setChestView);
-  const [preview, setPreview] = useState<EntityItem | null>(chest.items[0] ?? null);
+  // The slot under the pointer or focus; each slot already carries its own label, so the line is not a live region.
+  const [preview, setPreview] = useState<EntityItem | null | undefined>(undefined);
 
   useEffect(() => {
     const dialog = ref.current;
@@ -60,12 +61,20 @@ export function ChestDialog({ chest, title, onClose }: { readonly chest: WorldCh
       <div className="chest-body" style={{ "--rows": Math.max(1, Math.ceil(chest.slotCount / SLOTS_PER_ROW)) } as React.CSSProperties}>
         {view === "grid" ? <SlotGrid slotCount={chest.slotCount} bySlot={bySlot} onPreview={setPreview} /> : <SlotList items={chest.items} onPreview={setPreview} />}
       </div>
-      <footer className="chest-item-detail" aria-live="polite">{preview === null ? "Empty slot" : `${slotLabel(preview)} · Item ID ${String(preview.itemId)}${preview.prefix === 0 ? "" : ` · Prefix ID ${String(preview.prefix)}`}`}</footer>
+      <footer className="chest-item-detail">
+        {preview === undefined ? "Point at or focus a slot for its item and IDs."
+          : preview === null ? "Empty slot"
+          : `${slotLabel(preview)} · Item ID ${String(preview.itemId)}${preview.prefix === 0 ? "" : ` · Prefix ID ${String(preview.prefix)}`}`}
+      </footer>
     </dialog>
   );
 }
 
-function SlotGrid({ slotCount, bySlot, onPreview }: { readonly slotCount: number; readonly bySlot: ReadonlyMap<number, EntityItem>; readonly onPreview: (item: EntityItem | null) => void }): React.JSX.Element {
+function SlotGrid({ slotCount, bySlot, onPreview }: {
+  readonly slotCount: number;
+  readonly bySlot: ReadonlyMap<number, EntityItem>;
+  readonly onPreview: (item: EntityItem | null) => void;
+}): React.JSX.Element {
   return (
     <ol className="chest-grid" onKeyDown={(event) => {
       const current = event.target;
@@ -82,7 +91,11 @@ function SlotGrid({ slotCount, bySlot, onPreview }: { readonly slotCount: number
         const item = bySlot.get(slot);
         const label = `Slot ${String(slot + 1)}: ${item === undefined ? "Empty" : slotLabel(item)}`;
         return (
-          <li key={slot} role="listitem" className="chest-slot" data-slot={slot} data-empty={item === undefined} aria-label={label} title={label} tabIndex={0} onFocus={() => { onPreview(item ?? null); }} onMouseEnter={() => { onPreview(item ?? null); }}>
+          <li
+            key={slot} role="listitem" className="chest-slot" data-slot={slot} data-empty={item === undefined}
+            aria-label={label} title={label} tabIndex={0}
+            onFocus={() => { onPreview(item ?? null); }} onMouseEnter={() => { onPreview(item ?? null); }}
+          >
             {item !== undefined && (
               <>
                 <ItemSprite itemId={item.itemId} />

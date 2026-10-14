@@ -8,6 +8,9 @@ import type { EntitiesSource } from "../chest-list.js";
 import { ChestItemResults } from "./ChestItemResults.js";
 import { ContentResults, type ContentSearchWorld } from "./ContentResults.js";
 
+/** The last Find request a mounted Search section acted on. */
+let handledRequest = 0;
+
 /**
  * The one Search box of the dock: a scope (what is searched) and a query. Enter / F3 and Shift+Enter / Shift+F3 go to
  * the next and previous match; Escape or the clear button drops the query and every highlight.
@@ -20,7 +23,10 @@ export function SearchPanel({ content, chests }: { readonly content?: ContentSea
   const requested = useSearchStore((state) => state.requested);
   const input = useRef<HTMLInputElement>(null);
   useEffect(() => {
-    if (requested > 0) { input.current?.focus(); input.current?.select(); }
+    // Only a new Find focuses the box; the section mounting again (tab switch, expand) leaves focus alone.
+    if (requested === handledRequest) return;
+    handledRequest = requested;
+    input.current?.focus(); input.current?.select();
   }, [requested]);
   if (!hasWorld && content === undefined && chests === undefined) return <p className="panel-empty">Open a world to search it.</p>;
   const info = SEARCH_SCOPES.find((candidate) => candidate.id === scope) ?? SEARCH_SCOPES[0];

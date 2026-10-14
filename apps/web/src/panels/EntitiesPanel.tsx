@@ -1,7 +1,10 @@
 import { useMemo } from "react";
 import { useChestNavigation } from "../world/chest-navigation.js";
 import { Table, type Column } from "../ui/Table.js";
-import { chestName, ChestName, chestPosition, chestRows, NoChests, positionOrder, STATUS_TEXT, useChestActions, useLoadedChestSource, type ChestRow, type EntitiesSource } from "./chest-list.js";
+import {
+  chestName, ChestName, chestPosition, chestRows, NoChests, positionOrder, STATUS_TEXT, useChestActions, useLoadedChestSource,
+  type ChestRow, type EntitiesSource,
+} from "./chest-list.js";
 
 export type { EntitiesSource } from "./chest-list.js";
 
