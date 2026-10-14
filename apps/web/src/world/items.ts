@@ -6,3 +6,9 @@ export function itemLabel(itemId: number): string {
 export function prefixLabel(prefix: number): string {
   return `Prefix ${String(prefix)}`;
 }
+import type { SpriteAtlas } from "@studio/assets";
+import type { Thumbnail } from "../assets/thumbnails.js";
+
+export function itemThumbnail(_atlas: SpriteAtlas, _itemId: number): Thumbnail | null {
+  throw new Error("not implemented");
+}

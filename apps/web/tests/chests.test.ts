@@ -33,8 +33,17 @@ test("a footprint reaching past the world edge stays inside it", () => {
   expect(chestAt(0, 0)).toBeNull();
 });
 
-test("item ids show as placeholders until item names exist", () => {
-  expect(itemLabel(22)).toBe("Item 22");
+test("overlapping records remain visible as data but ambiguous footprint tiles resolve to no chest", () => {
+  const tiles = world();
+  const overlapping = { ...chest, x: 2, name: "Duplicate chest anchor" };
+  const lookup = createChestLookup([chest, overlapping], tiles.width, tiles.height, (x, y) => tiles.tileAt(x, y));
+  expect(lookup(1, 1)).toBe(chest);
+  expect(lookup(2, 1)).toBeNull();
+});
+
+test("item ids resolve catalog names and unknown items retain their numeric identity", () => {
+  expect(itemLabel(22)).toBe("Iron Bar");
+  expect(itemLabel(9001)).toBe("Item 9001");
 });
 
 test("a chest lists its name, position, style and filled slots; an unnamed chest hides its name unless every field is shown", () => {
@@ -65,6 +74,6 @@ test("the section is titled by the object at the chest's position", () => {
 });
 
 test("a slot reads as item, stack and prefix", () => {
-  expect(slotLabel({ slot: 0, itemId: 22, stack: 12, prefix: 0 })).toBe("Item 22 × 12");
-  expect(slotLabel({ slot: 39, itemId: 3507, stack: 1, prefix: 81 })).toBe("Item 3507 × 1, Prefix 81");
+  expect(slotLabel({ slot: 0, itemId: 22, stack: 12, prefix: 0 })).toBe("Iron Bar × 12");
+  expect(slotLabel({ slot: 39, itemId: 9001, stack: 1, prefix: 255 })).toBe("Item 9001 × 1, Prefix 255");
 });
