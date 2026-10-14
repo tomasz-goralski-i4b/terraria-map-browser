@@ -23,7 +23,9 @@ test("item ID and case-insensitive name searches aggregate repeated stacks witho
 
 test("building the index yields between bounded batches instead of one long task", async () => {
   let slices = 0;
-  await buildChestItemIndex(Array.from({ length: 1500 }, (_, chestIndex) => ({ ...chests[0]!, x: chestIndex })), async () => { slices++; });
+  const mining = chests[0];
+  if (mining === undefined) throw new Error("Missing mining inventory fixture");
+  await buildChestItemIndex(Array.from({ length: 1500 }, (_, chestIndex) => ({ ...mining, x: chestIndex })), () => { slices++; return Promise.resolve(); });
   expect(slices).toBeGreaterThan(1);
 });
 

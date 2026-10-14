@@ -156,7 +156,7 @@ test("a tile of a chest also shows the chest, whose slots open over the map as a
   expect(cells()).toHaveLength(40);
   expect(cells()[0]).toBe("Slot 1: Empty");
   expect(cells()[2]).toBe("Slot 3: Copper Ore × 30");
-  expect(cells()[11]).toBe("Slot 12: Light's Bane × 1, Dangerous");
+  expect(cells()[11]).toBe("Slot 12: Light's Bane × 1, Tiny");
   await page.getByRole("listitem", { name: "Slot 3: Copper Ore × 30" }).click();
   await userEvent.keyboard("{ArrowDown}");
   expect(document.activeElement?.getAttribute("aria-label")).toBe("Slot 13: Empty");
@@ -165,7 +165,7 @@ test("a tile of a chest also shows the chest, whose slots open over the map as a
   await page.getByRole("button", { name: "List view" }).click();
   await expect.element(page.getByRole("button", { name: "List view" })).toHaveAttribute("aria-pressed", "true");
   const listRows = [...document.querySelectorAll(".chest-list tbody tr")].map((row) => [...row.querySelectorAll("td")].map((cell) => cell.textContent));
-  expect(listRows).toEqual([["3", "Copper Ore", "30", ""], ["12", "Light's Bane", "1", "Dangerous"]]);
+  expect(listRows).toEqual([["3", "Copper Ore", "30", ""], ["12", "Light's Bane", "1", "Tiny"]]);
   expect(useLayoutStore.getState().chestView).toBe("list");
 
   // Escape closes the slots and keeps the tile pinned.

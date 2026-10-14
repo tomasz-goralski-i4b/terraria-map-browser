@@ -31,7 +31,7 @@ test("Entities lists counts, centres rows, pins on Enter, and finds Torch stacks
   await page.getByRole("textbox", { name: "Items in chests" }).fill("torch");
   await expect.element(page.getByText("Torch: 40 in 2 chests")).toBeVisible();
   await expect.element(page.getByRole("grid", { name: "Matching chests" })).toBeVisible();
-  await page.getByRole("row").filter({ hasText: "Spare lights" }).click();
+  await page.getByRole("grid", { name: "Matching chests" }).getByRole("row").filter({ hasText: "Spare lights" }).click();
   expect(useViewStore.getState().pinnedTile).toEqual({ x: 32, y: 18 });
 });
 
@@ -43,7 +43,7 @@ test("a chest draws connected inventory pixels, labels all slots and passes axe"
   for (let offset = 0; offset < rgba.length; offset += 4) rgba.set([232, 174, 52, 255], offset);
   const atlas = packSheets([{ kind: "item", id: 8, width: frame.width, height: frame.height, rgba }], { pageSize: 256 });
   const result = { atlas, fingerprint: "local-terraria-inventory", missing: [], fromCache: false };
-  const session = createAssetSession({ builder: { build: async () => result, loadCached: async () => null, clearCache: async () => undefined }, remembered: { load: async () => null, save: async () => undefined, forget: async () => undefined }, pickDirectory: null, openFolderInput: () => undefined });
+  const session = createAssetSession({ builder: { build: () => Promise.resolve(result), loadCached: () => Promise.resolve(null), clearCache: () => Promise.resolve() }, remembered: { load: () => Promise.resolve(null), save: () => Promise.resolve(), forget: () => Promise.resolve() }, pickDirectory: null, openFolderInput: () => undefined });
   setDefaultAssetSession(session);
   await session.connectFiles([new File(["Terraria Content"], "Item_8.xnb")]);
   await render(<ChestDialog chest={mining} title="Chest" onClose={() => undefined} />);
