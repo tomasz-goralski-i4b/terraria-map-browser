@@ -1,7 +1,7 @@
 // Liquid sprite rules (docs/assets.md, "Liquids"): the sheet of each liquid kind, the fill height of a liquid amount
 // and the sheet row a sprite pixel of a liquid tile reads.
 import { describe, expect, test } from "vitest";
-import { LIQUID_BODY_ROW, LIQUID_SHEETS, LIQUID_SPRITE_ALPHA, liquidFillPixels, LIQUID_BLEED, liquidBleed, shimmerPixel, liquidHasSurface, liquidSheetRow, shapedTileLiquid } from "../src/index.js";
+import { LIQUID_BODY_ROW, LIQUID_SHEETS, LIQUID_SPRITE_ALPHA, liquidFillPixels, LIQUID_BLEED, liquidBleed, shimmerPixel, shimmerSparkle, liquidHasSurface, liquidSheetRow, shapedTileLiquid } from "../src/index.js";
 
 describe("liquid sprites", () => {
   test("water, lava and honey draw from Liquid_0, Liquid_1 and Liquid_11; shimmer is drawn flat in its map colour", () => {
@@ -65,16 +65,20 @@ describe("liquid sprites", () => {
     expect(shimmerPixel(0, 64, 5)).toEqual(shimmerPixel(0, 0, 5));
     // Halfway between two keyframes: their mean.
     expect(shimmerPixel(0, 4, 5)).toEqual([158, 206, 255]);
-    // The second row is the saturated cycle; rows 2–3 halfway to the body.
+    // The second row is the saturated cycle; rows 2 and 3 fade from it to the body in thirds.
     expect(shimmerPixel(1, 24, 5)).toEqual([252, 114, 255]);
-    expect(shimmerPixel(2, 24, 5)).toEqual([204, 113, 244]);
+    expect(shimmerPixel(2, 24, 5)).toEqual([220, 113, 248]);
+    expect(shimmerPixel(3, 24, 5)).toEqual([187, 112, 240]);
+    // Sparkles are coloured by the rainbow too: halfway from the second row's colour at their x to the body.
     let sparkles = 0;
     for (let y = 0; y < 61; y++) for (let x = 0; x < 61; x++) {
       const pixel = shimmerPixel(8, x, y);
       if (pixel.join() === "155,111,233") continue;
-      expect(pixel).toEqual([222, 178, 255]);
+      expect(pixel).toEqual(shimmerSparkle(x));
       sparkles++;
     }
+    expect(shimmerSparkle(0)).toEqual([157, 148, 244]);
+    expect(shimmerSparkle(24)).toEqual([204, 113, 244]);
     expect(sparkles).toBeGreaterThan(15);
     expect(sparkles).toBeLessThan(70);
   });

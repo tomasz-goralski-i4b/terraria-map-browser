@@ -2,7 +2,7 @@
 // the chunk pass is bit-exact: no tie-breaking can differ because (l*a + c*(255-a)) / 255 never has a .5 fraction.
 import { FILTER_SUBTILE } from "../chunk/box-filter.js";
 import {
-  LIQUID_BLEED, LIQUID_BODY_ROW, LIQUID_SPRITE_ALPHA, SHIMMER_BODY, SHIMMER_CYCLE, SHIMMER_SECOND, SHIMMER_SPARKLE, SHIMMER_SPARKLE_PERIOD,
+  LIQUID_BLEED, LIQUID_BODY_ROW, LIQUID_SPRITE_ALPHA, SHIMMER_BODY, SHIMMER_CYCLE, SHIMMER_SECOND, SHIMMER_SPARKLE_PERIOD,
   SHIMMER_TOP,
 } from "../chunk/liquids.js";
 import { BLOCK_CELL_STRIDE } from "../framing/chunk-cells.js";
@@ -431,13 +431,13 @@ ivec3 shimmerCycle(bool second, int x) {
 
 // Shimmer's colour at frame row row of world sprite pixel p (shimmerPixel in ../chunk/liquids.ts).
 ivec3 shimmerColor(int row, ivec2 p) {
-  if (row < 4) {
-    ivec3 cycle = shimmerCycle(row != 0, p.x);
-    return row < 2 ? cycle : (cycle + ${glslColor(SHIMMER_BODY)} + 1) >> 1;
-  }
+  ivec3 body = ${glslColor(SHIMMER_BODY)};
+  if (row == 0) return shimmerCycle(false, p.x);
+  ivec3 second = shimmerCycle(true, p.x);
+  if (row < 4) return (second * (4 - row) + body * (row - 1) + 1) / 3;
   uint hash = uint(p.x) * 0x9e3779b1u ^ uint(p.y) * 0x85ebca77u;
   hash ^= hash >> 15u;
-  return hash % ${String(SHIMMER_SPARKLE_PERIOD)}u == 0u ? ${glslColor(SHIMMER_SPARKLE)} : ${glslColor(SHIMMER_BODY)};
+  return hash % ${String(SHIMMER_SPARKLE_PERIOD)}u == 0u ? (second + body + 1) >> 1 : body;
 }
 
 // The liquid art pixel at sprite pixel sub of a tile filled fill pixels high (liquidSheetRow in ../chunk/liquids.ts):

@@ -99,8 +99,9 @@ export function liquidBleed(
  * Shimmer's colours in sprite mode (G: measured in in-game screenshots of a shimmer pool, 2026-10-14; its sheet is a grey
  * mask the game colours while drawing, which the viewer does not reproduce). The surface is a rainbow along x: its top
  * row cycles every SHIMMER_CYCLE world pixels through SHIMMER_TOP (cyan, lilac, purple, magenta, pink, peach, pale teal),
- * the second row through the more saturated SHIMMER_SECOND, rows 2–3 halfway from that to the body. The body has light
- * sparkles at about one pixel in SHIMMER_SPARKLE_PERIOD, fixed per world pixel (the game's move).
+ * the second row through the more saturated SHIMMER_SECOND, rows 2 and 3 fade from that to the body in thirds. The body
+ * has sparkles at about one pixel in SHIMMER_SPARKLE_PERIOD, fixed per world pixel (the game's move), coloured by the
+ * rainbow too: halfway from the second row's colour at their x to the body (shimmerSparkle).
  */
 export const SHIMMER_CYCLE = 64;
 export const SHIMMER_TOP: readonly (readonly [number, number, number])[] = [
@@ -110,7 +111,6 @@ export const SHIMMER_SECOND: readonly (readonly [number, number, number])[] = [
   [159, 185, 255], [155, 143, 255], [194, 128, 255], [252, 114, 255], [234, 137, 254], [252, 173, 253], [224, 212, 239], [172, 209, 241],
 ];
 export const SHIMMER_BODY: readonly [number, number, number] = [155, 111, 233];
-export const SHIMMER_SPARKLE: readonly [number, number, number] = [222, 178, 255];
 export const SHIMMER_SPARKLE_PERIOD = 113;
 
 /** Whether world sprite pixel (x, y) (16 per tile) of a shimmer body sparkles: a fixed hash of the position. */
@@ -130,15 +130,24 @@ function cycleAt(keys: readonly (readonly [number, number, number])[], x: number
   return [mix(0), mix(1), mix(2)];
 }
 
+/** The second row's colour at x weighted `weight` thirds against the body's, rounded. */
+function towardsBody(x: number, weight: number): [number, number, number] {
+  const second = cycleAt(SHIMMER_SECOND, x);
+  const mix = (k: 0 | 1 | 2): number => Math.floor((second[k] * weight + SHIMMER_BODY[k] * (3 - weight) + 1) / 3);
+  return [mix(0), mix(1), mix(2)];
+}
+
+/** A sparkle's colour at world x: halfway from the second row's colour there to the body. */
+export function shimmerSparkle(x: number): readonly [number, number, number] {
+  const second = cycleAt(SHIMMER_SECOND, x);
+  return [(second[0] + SHIMMER_BODY[0] + 1) >> 1, (second[1] + SHIMMER_BODY[1] + 1) >> 1, (second[2] + SHIMMER_BODY[2] + 1) >> 1];
+}
+
 /** Shimmer's colour at frame row `row` (liquidSheetRow) of world sprite pixel (x, y). */
 export function shimmerPixel(row: number, x: number, y: number): readonly [number, number, number] {
   if (row === 0) return cycleAt(SHIMMER_TOP, x);
-  if (row === 1) return cycleAt(SHIMMER_SECOND, x);
-  if (row < 4) {
-    const second = cycleAt(SHIMMER_SECOND, x);
-    return [0, 1, 2].map((k) => (second[k as 0] + SHIMMER_BODY[k as 0] + 1) >> 1) as unknown as [number, number, number];
-  }
-  return shimmerSparkles(x, y) ? SHIMMER_SPARKLE : SHIMMER_BODY;
+  if (row < 4) return towardsBody(x, 4 - row);
+  return shimmerSparkles(x, y) ? shimmerSparkle(x) : SHIMMER_BODY;
 }
 
 /** Shimmer's waterfall: its core and its light edge (G: measured in an in-game screenshot of a shimmer waterfall). */
