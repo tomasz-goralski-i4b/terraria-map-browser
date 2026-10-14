@@ -100,6 +100,8 @@ export interface MapGrid {
 }
 
 export interface MapRendererOptions {
+  /** Observes completed draws without scheduling extra work; mode is the path actually drawn. */
+  readonly onFrame?: (frame: MapFrameObservation) => void;
   /**
    * Upper bound of chunks uploaded per scheduled animation frame. Default 256; the time budget below usually ends a
    * frame's uploads first (a chunk upload is one texSubImage3D per plane, about 0.08 ms). Finite values are
@@ -135,6 +137,13 @@ export interface MapRendererOptions {
    * once and this is never called.
    */
   readonly onSpritesPreparing?: (preparing: boolean) => void;
+}
+
+export interface MapFrameObservation {
+  readonly mode: "overview" | "chunks" | "sprites";
+  readonly zoom: number;
+  readonly uploads: number;
+  readonly residentChunks: number;
 }
 
 export interface MapRendererStats {
@@ -2008,6 +2017,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     // While the sprite program links, the poll asks for the next frame once it is done (startSpriteLink).
     if (loading.pending) schedule();
     else if (target === null) schedulePrefetch();
+    options?.onFrame?.({ mode: target !== null ? "overview" : sprites ? "sprites" : "chunks", zoom: view.zoom, uploads, residentChunks: chunks.size });
   };
 
   // The pending idle prefetch step (requestIdleCallback, or a timeout where there is none); 0 when none is pending.

@@ -23,6 +23,8 @@ import { openSaveAs } from "./world/save-world.js";
 import { resetWorldLibrary, startWorldLibrary } from "./world/world-library.js";
 import { getDefaultWorldSession, resetDefaultWorldSession } from "./world/world-session.js";
 import { prewarmThumbnails } from "./assets/thumbnail-session.js";
+import { startDevSources } from "./dev-sources.js";
+import { PerformanceOverlay } from "./components/PerformanceOverlay.js";
 
 /** The sprite-sheet preview, while it is open and an atlas is loaded. */
 function SpritePreview(): React.JSX.Element | null {
@@ -133,7 +135,12 @@ export function App({ layoutStorage }: AppProps = {}): React.JSX.Element {
   }, []);
   // The Content folder of an earlier visit is reconnected without a prompt where the browser still allows it.
   useEffect(() => {
+    if (import.meta.env.DEV) {
+      const stop = startDevSources();
+      if (stop !== null) return stop;
+    }
     void getDefaultAssetSession().restore();
+    return undefined;
   }, []);
   useTheme();
   useUnsavedChangesGuard();
@@ -151,6 +158,7 @@ export function App({ layoutStorage }: AppProps = {}): React.JSX.Element {
       <MapView renderer={RENDERER_PACKAGE} commands={commands} />
       <Dock commands={commands} />
       <StatusBar />
+      <PerformanceOverlay />
       <HelpOverlay commands={commands} />
       <CommandPalette commands={commands} />
       <SpritePreview />
