@@ -524,8 +524,11 @@ the ground below them, and are **mirrored at every even x** (checked at nine col
 frame's rectangle (`wrappedFrame` for styles past the sheet's edge) of the drawn size, its top at the tile's top plus
 the offset, centred on its tile horizontally (chosen: the draw data gives no horizontal offset), mirrored as observed;
 the chunk pass shows what lies behind such a tile. Drawn over the chunk pass, they lie over liquids too (the game draws
-liquid over them; open question). Stalactites (165) are plain when observed alone; their offset probably depends on the
-tile they hang from, which the observer does not place (open question).
+liquid over them; open question). Stalactites and stalagmites (165) are plain in the draw data, alone or with stone
+above or below: the game shifts them elsewhere. In-game screenshots (G) show hanging ones drawn up and standing ones
+drawn down so both touch the stone, as the observed moss plants (184: rows 0–36 down 2, rows 54–108 up 2); the
+viewer draws 165's hanging rows (frameY 0, 18 and 72; in the user's worlds every such tile hangs from the ceiling or
+from the 165 above it) 2 pixels up and its standing rows (36, 54, 90) 2 pixels down (chosen amount).
 
 ### Waterfalls
 
@@ -1517,7 +1520,7 @@ shorter cells retain their native height. Paint remains a corner mark.
    observable without its renderer; the choices are in "Liquids".
 8. Waterfalls: how far a stream runs on dry flat ground, how the game draws the slide along a slope and the turn off
    its end, the thin streams from liquid films at ledge edges; the choices are in "Waterfalls".
-9. Draw offsets: the horizontal offset of frames wider than a tile, offsets that depend on neighbours (stalactites),
-   liquid over object-pass tiles; the choices are in "Draw offsets".
+9. Draw offsets: the horizontal offset of frames wider than a tile, the exact shift of stalactites (165), liquid over
+   object-pass tiles; the choices are in "Draw offsets".
 
 Proposed follow-up issues: [planning/assets-follow-ups.md](planning/assets-follow-ups.md).

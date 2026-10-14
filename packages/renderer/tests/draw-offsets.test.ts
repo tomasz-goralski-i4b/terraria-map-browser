@@ -17,6 +17,14 @@ describe("draw variants (R)", () => {
     expect(drawVariant(21, 36, 0)).toEqual([16, 16, 0, 0, 0]);
   });
 
+  test("stalactites hang 2 pixels higher and stalagmites stand 2 pixels lower (G, as the game's moss plants 184, R)", () => {
+    for (const fy of [0, 18, 72]) expect(drawVariant(165, 54, fy)).toEqual([16, 16, -2, 0, 0]);
+    for (const fy of [36, 54, 90]) expect(drawVariant(165, 54, fy)).toEqual([16, 16, 2, 0, 0]);
+    expect(DRAWN_TILES.has(165)).toBe(true);
+    // Another row is still drawn, as a plain cell: the chunk pass leaves the whole type to the object pass.
+    expect(drawVariant(165, 0, 108)).toEqual([16, 16, 0, 0, 0]);
+  });
+
   test("blocks and plain frame-important tiles have no variant", () => {
     expect(drawVariant(1, 0, 0)).toBeUndefined();
     expect(drawVariant(13, 0, 0)).toBeUndefined();
