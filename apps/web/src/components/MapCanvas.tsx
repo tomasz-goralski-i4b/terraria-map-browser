@@ -12,6 +12,7 @@ import { createBrushStabilizer } from "../world/brush-stabilizer.js";
 import { cancelArea, movePaste, pastePreviewWorld, pasteVisibleBounds, placePaste, selectArea, useAreaStore } from "../world/area-session.js";
 import { useLayoutStore } from "../shell/layout-store.js";
 import { chestAnnotations, useChestNavigation } from "../world/chest-navigation.js";
+import { useSearchStore } from "../world/search-store.js";
 import { measurementScene, type MeasurementScene } from "../world/measurement-scene.js";
 import { hitMeasurement, type MeasurementHit, type RulerSettings } from "../world/measurements.js";
 import { useRulerStore, beginMeasurement, moveMeasurement, finishMeasurement } from "../world/ruler-session.js";
@@ -403,6 +404,14 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
     });
     const unsubscribeRuler = useRulerStore.subscribe(() => { session.requestFrame(); });
     const unsubscribeChests = useChestNavigation.subscribe(() => { session.requestFrame(); });
+    // The content search's matches: highlighted (and the rest dimmed) by the renderer, never by re-uploading chunks.
+    const applyHighlight = (state: ReturnType<typeof useSearchStore.getState>): void => {
+      session.renderer.setHighlight(state.highlight === null ? null : { ...state.highlight, dim: state.dim });
+    };
+    applyHighlight(useSearchStore.getState());
+    const unsubscribeHighlight = useSearchStore.subscribe((state, previous) => {
+      if (state.highlight !== previous.highlight || state.dim !== previous.dim) applyHighlight(state);
+    });
     const unsubscribeArea = useAreaStore.subscribe((state) => {
       if (state.selection === null) selectionPointer.current = null;
       session.requestFrame();
@@ -526,6 +535,7 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
       unsubscribeGrid();
       unsubscribeRuler();
       unsubscribeChests();
+      unsubscribeHighlight();
       annotationCache.current = null;
       rulerCache.current = null; rulerLabelCamera.current = "";
       unsubscribeArea();

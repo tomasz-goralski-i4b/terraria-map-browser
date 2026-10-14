@@ -5,7 +5,9 @@ import axe from "axe-core";
 import { ContentPanel, type ContentWorld } from "../src/panels/ContentPanel.js";
 import { SearchPanel } from "../src/panels/search/SearchPanel.js";
 import { hydrateLayout } from "../src/shell/layout-store.js";
-import { registerMapController, useViewStore } from "../src/shell/view-store.js";
+import { getMapController, registerMapController, useViewStore } from "../src/shell/view-store.js";
+import { createWorld } from "@studio/world-model";
+import { MapView } from "../src/components/MapView.js";
 import { clearSearch, useSearchStore } from "../src/world/search-store.js";
 import { GO_TO_ZOOM } from "../src/world/chest-navigation.js";
 import "../src/styles.css";
@@ -71,4 +73,36 @@ test("Enter on a Content row finds that entry on the map and goes to its first t
   expect(goTo).toHaveBeenLastCalledWith(1.5, 0.5, GO_TO_ZOOM);
   expect(useSearchStore.getState()).toMatchObject({ scope: "content", contentFilter: "block:1", highlight: { blocks: [1], walls: [], liquids: [] } });
   await expect.element(page.getByRole("searchbox", { name: "Search Content" })).toHaveValue("Dirt Block");
+});
+
+test("a content search outlines its tiles on the GPU map and dims the rest until it is cleared", async () => {
+  registerMapController(null);
+  const tiles = createWorld(40, 20);
+  for (let x = 0; x < 40; x++) for (let y = 10; y < 20; y++) tiles.setTile(x, y, { block: { kind: "vanilla", id: x >= 20 && x < 24 && y >= 12 && y < 16 ? 1 : 0 }, wires: 0, actuator: false });
+  const world = { ...tiles, surfaceY: 5 };
+  await render(<><div style={{ position: "relative", width: 640, height: 320 }}><MapView renderer="@studio/renderer" world={world} /></div><SearchPanel content={world} /></>);
+  await expect.poll(() => getMapController()).not.toBeNull();
+  const controller = getMapController();
+  const canvas = document.querySelector<HTMLCanvasElement>('canvas[aria-label="World map"]');
+  const gl = canvas?.getContext("webgl2");
+  if (controller === null || canvas === null || gl === null || gl === undefined) throw new Error("WebGL map is missing");
+  // A tile's pixel (fractions of a tile inside it); world centring can clamp the camera, so it is read back.
+  const pixel = (tileX: number, tileY: number): number[] => {
+    const camera = JSON.parse(canvas.dataset["camera"] ?? "{}") as { x: number; y: number; zoom: number };
+    const x = Math.floor((tileX - camera.x) * camera.zoom), y = Math.floor((tileY - camera.y) * camera.zoom);
+    const rgba = new Uint8Array(4); gl.readPixels(x, canvas.height - y - 1, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, rgba); return [...rgba];
+  };
+  const draw = async (): Promise<void> => { controller.jumpTo({ x: 0, y: 0, zoom: 8 }); await new Promise((resolve) => requestAnimationFrame(resolve)); controller.renderNow(); };
+  await draw();
+  const dirt = pixel(4.5, 12.5);
+  await page.getByRole("searchbox", { name: "Search Content" }).fill("stone block");
+  await expect.poll(() => useSearchStore.getState().highlight).toEqual({ blocks: [expect.any(Number)], walls: [], liquids: [] });
+  await draw();
+  // The stone's left edge is outlined in the highlight colour; dirt away from it is darkened.
+  expect(pixel(20.05, 13.5).slice(0, 3)).toEqual([255, 214, 64]);
+  const dimmed = pixel(4.5, 12.5);
+  expect(dimmed[0] ?? 0).toBeLessThan((dirt[0] ?? 0) * 0.6);
+  await userEvent.keyboard("{Escape}");
+  await draw();
+  expect(pixel(4.5, 12.5)).toEqual(dirt);
 });

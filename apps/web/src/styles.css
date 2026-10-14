@@ -1573,6 +1573,8 @@ kbd {
 .search-controls { display: flex; flex-direction: column; gap: var(--space-1); padding: 0 var(--space-2); }
 .search-controls .brush-segments { align-self: flex-start; }
 .search-box { display: flex; align-items: center; gap: var(--space-1); }
+/* The box has its own clear button, which also drops the highlights; the browser's would only empty the text. */
+.search-box input::-webkit-search-cancel-button { display: none; }
 .search-summary { margin: 0; padding: 0 var(--space-2); color: var(--text-2); font-size: var(--text-small); }
 .search-entries { list-style: none; margin: 0; padding: 0 var(--space-2); max-height: calc(8 * 26px); overflow: auto; }
 .search-entry {
