@@ -1,7 +1,7 @@
-// Waterfalls (docs/assets.md, "Waterfalls"): where the game starts one (observed at runtime, R) and the path it takes
-// (in-game screenshots, G), as sources and pieces over synthetic worlds.
+// Waterfalls (docs/assets.md, "Waterfalls"): where the game starts one and the pieces its stream draws, over synthetic
+// worlds worked out by hand.
 import { describe, expect, test } from "vitest";
-import { CHUNK_SIZE, WATERFALL_FADE_STEPS, WATERFALL_MAX_LENGTH, WATERFALL_SHEETS, waterfallPath, waterfallSources, waterfallSprites } from "../src/index.js";
+import { WATERFALL_SHEETS, waterfallSources, waterfallSprites } from "../src/index.js";
 import type { WaterfallSource, WaterfallWorld } from "../src/index.js";
 
 const ABSENT = 0xffff;
@@ -20,7 +20,6 @@ function world(rows: readonly string[]): WaterfallWorld {
   const width = rows[0]?.length ?? 0;
   const count = width * height;
   const block = new Uint16Array(count).fill(ABSENT);
-  const frameX = new Int16Array(count).fill(-1);
   const shape = new Uint8Array(count);
   const liquid = new Uint8Array(count);
   const liquidAmount = new Uint8Array(count);
@@ -31,7 +30,7 @@ function world(rows: readonly string[]): WaterfallWorld {
       if (char === "h") shape[i] = 1;
       if (char === "\\") shape[i] = 2;
       if (char === "/") shape[i] = 3;
-      if (char === "p") { block[i] = PLATFORM; frameX[i] = 0; }
+      if (char === "p") block[i] = PLATFORM;
       if (char === "r") block[i] = ROPE;
       if (char === "w") block[i] = COBWEB;
       if (char === "~" || char === "l" || char === ",") { liquid[i] = char === "l" ? 2 : 1; liquidAmount[i] = char === "," ? 100 : 255; }
@@ -39,13 +38,13 @@ function world(rows: readonly string[]): WaterfallWorld {
   });
   return {
     width, height, palette: [{ kind: "vanilla", id: 1 }, { kind: "vanilla", id: 19 }, { kind: "vanilla", id: 213 }, { kind: "vanilla", id: 51 }],
-    planes: { block, frameX, shape, liquid, liquidAmount },
+    planes: { block, shape, liquid, liquidAmount },
   };
 }
 
 const all = (w: WaterfallWorld): WaterfallSource[] => waterfallSources(w, { left: 0, top: 0, right: w.width, bottom: w.height });
 
-describe("waterfall sources (R)", () => {
+describe("waterfall sources", () => {
   test("a half block with full liquid on one side and air on the other starts a waterfall flowing away from the liquid", () => {
     expect(all(world(["...", "~h.", "..."]))).toEqual([{ x: 1, y: 1, direction: 1, kind: 1 }]);
     expect(all(world(["...", ".hl", "..."]))).toEqual([{ x: 1, y: 1, direction: -1, kind: 2 }]);
@@ -75,173 +74,47 @@ describe("waterfall sources (R)", () => {
   });
 });
 
-/** The tiles a path's pieces cover, by kind, as "x,y". */
-function steps(w: WaterfallWorld, source: WaterfallSource): string[] {
-  return waterfallPath(w, source).map((step) => `${step.piece}:${String(step.x)},${String(step.y)}`);
+/** A stream's sprites as "sx,sy,width,height@dx,dy" (+ "f" when mirrored, "/alpha" when not opaque). */
+function sprites(w: WaterfallWorld): string[] {
+  return waterfallSprites(w, { left: 0, top: 0, right: w.width, bottom: w.height }).map((sprite) => {
+    const alpha = sprite.alpha === undefined || sprite.alpha === 255 ? "" : `/${String(sprite.alpha)}`;
+    return `${String(sprite.sx)},${String(sprite.sy)},${String(sprite.width)},${String(sprite.height)}@${String(sprite.dx)},${String(sprite.dy)}${sprite.flip === true ? "f" : ""}${alpha}`;
+  });
 }
 
-describe("waterfall paths (G)", () => {
-  test("falls beside the half block to the floor, then runs along it to the world's edge", () => {
-    const w = world(["#~h..", "###..", ".....", ".....", "#####"]);
-    const [source] = all(w);
-    if (source === undefined) throw new Error("no source");
-    expect(steps(w, source)).toEqual(["lip:2,0", "fall:3,1", "fall:3,2", "fall:3,3", "run:3,3", "run:4,3"]);
-  });
-
-  test("lands on a ledge, runs along it and pours over its end", () => {
-    const w = world(["~h.....", "#......", "..##...", ".......", "#######"]);
-    const [source] = all(w);
-    if (source === undefined) throw new Error("no source");
-    expect(steps(w, source)).toEqual(["lip:1,0", "fall:2,1", "run:2,1", "lip:3,1", "fall:4,2", "fall:4,3", "run:4,3", "run:5,3", "run:6,3"]);
-  });
-
-  test("ropes and cobwebs do not stop it: it pours past a rope and falls through it (G: a rope beside a hole)", () => {
-    const ledge = ["lip:1,0", "fall:2,1", "run:2,1", "lip:3,1", "fall:4,2", "fall:4,3", "run:4,3", "run:5,3", "run:6,3"];
-    for (const rows of [["~h.....", "#......", "..##r..", "....r..", "#######"], ["~h.....", "#......", "..##w..", ".......", "#######"]]) {
-      const w = world(rows);
-      const [source] = all(w);
-      if (source === undefined) throw new Error("no source");
-      expect(steps(w, source)).toEqual(ledge);
+describe("waterfall streams", () => {
+  test("a film over the source, the lip where it starts to fall, the column, then the foot and a film along the floor", () => {
+    const w = world(["......", "#~h...", "###...", "......", "######"]);
+    expect(sprites(w).slice(0, 6)).toEqual([
+      "16,0,16,16@32,16f", // over the half block, flowing right
+      "0,0,16,16@48,16f", // the lip over the edge
+      "0,24,32,16@32,32f", // the column
+      "0,24,32,8@32,48f", // its foot on the floor
+      "16,0,16,16@48,56f", // the film along the floor, 8 pixels down
+      "16,0,16,16@64,56f",
+    ]);
+    for (const sprite of waterfallSprites(w, { left: 0, top: 0, right: 6, bottom: 5 })) {
+      expect(sprite).toMatchObject({ kind: "waterfall", id: WATERFALL_SHEETS[0], behind: true });
     }
   });
 
-  test("slides down a slope going away, then falls off its end", () => {
-    const w = world(["~h....", "#.....", "..\\...", "...\\..", "......", "######"]);
-    const [source] = all(w);
-    if (source === undefined) throw new Error("no source");
-    expect(steps(w, source)).toEqual(["lip:1,0", "fall:2,1", "slide:2,2", "slide:3,3", "fall:4,4", "run:4,4", "run:5,4"]);
-  });
-
-  test("where a slope ends against a block level with its low tip, it runs on along that block (G: a staircase)", () => {
-    const w = world(["~h.....", "#......", "..\\....", "...\\...", "....###", "......."]);
-    const [source] = all(w);
-    if (source === undefined) throw new Error("no source");
-    expect(steps(w, source)).toEqual(["lip:1,0", "fall:2,1", "slide:2,2", "slide:3,3", "run:4,3", "run:5,3", "run:6,3"]);
-  });
-
-  test("on a slope going down towards it the stream turns back", () => {
-    const w = world(["~h....", "#.....", "......", "../...", "......", "######"]);
-    const [source] = all(w);
-    if (source === undefined) throw new Error("no source");
-    expect(steps(w, source)).toEqual(["lip:1,0", "fall:2,1", "fall:2,2", "slide:2,3", "fall:1,4", "run:1,4", "run:0,4"]);
-  });
-
-  test("stops at liquid it falls into and against a wall it runs into", () => {
-    const pool = world(["~h...", "#....", ".....", "..~~~", "#####"]);
-    const [into] = all(pool);
-    if (into === undefined) throw new Error("no source");
-    expect(steps(pool, into)).toEqual(["lip:1,0", "fall:2,1", "fall:2,2"]);
-    const walled = world(["~h...", "#....", "..#..", "..#.#", "#####"]);
-    const [blocked] = all(walled);
-    if (blocked === undefined) throw new Error("no source");
-    // A one-tile ledge pours over at once; the stream then lands against a wall and stops there.
-    expect(steps(walled, blocked)).toEqual(["lip:1,0", "fall:2,1", "lip:2,1", "fall:3,2", "fall:3,3", "run:3,3"]);
-  });
-
-  test("flows left when the liquid lies to its right", () => {
-    const w = world(["..h~#", "..###", ".....", "#####"]);
-    const [source] = all(w);
-    if (source === undefined) throw new Error("no source");
-    expect(source.direction).toBe(-1);
-    expect(steps(w, source)).toEqual(["lip:2,0", "fall:1,1", "fall:1,2", "run:1,2", "run:0,2"]);
-  });
-
-  test(`ends after ${String(WATERFALL_MAX_LENGTH)} steps, fading over the last ${String(WATERFALL_FADE_STEPS)}`, () => {
-    const rows = ["~h.", "##.", ...Array.from({ length: 150 }, () => "...")];
-    const w = world(rows);
-    const [source] = all(w);
-    if (source === undefined) throw new Error("no source");
-    const path = waterfallPath(w, source);
-    expect(path.length).toBe(WATERFALL_MAX_LENGTH);
-    expect(path[0]?.alpha).toBe(255);
-    expect(path[WATERFALL_MAX_LENGTH - WATERFALL_FADE_STEPS - 1]?.alpha).toBe(255);
-    const last = path[WATERFALL_MAX_LENGTH - 1]?.alpha ?? 255;
-    expect(last).toBeGreaterThan(0);
-    expect(last).toBeLessThan(64);
-  });
-
-  test("a waterfall stays within the chunks around its source's chunk, which the object pass draws and drops on edits", () => {
-    // Its pieces reach at most one tile past its path, which covers at most WATERFALL_MAX_LENGTH tiles per axis.
-    expect(WATERFALL_MAX_LENGTH + 1).toBeLessThan(CHUNK_SIZE);
-  });
-});
-
-describe("waterfall sprites", () => {
-  test("a lip, its falling column and the run on the floor, mirrored for a waterfall flowing right", () => {
-    const w = world(["#~h..", "###..", ".....", "#####"]);
-    const sprites = waterfallSprites(w, { left: 0, top: 0, right: w.width, bottom: w.height });
-    const common = { kind: "waterfall", id: 0, flip: true, alpha: 255, behind: true, underLiquid: true };
-    expect(sprites.slice(0, 4)).toEqual([
-      // The lip: its flat part over the half block (2, 0), its column part hanging 6 pixels into the tile beside it.
-      { ...common, sx: 10, sy: 0, width: 22, height: 24, dx: 2 * 16, dy: 0 },
-      // The column down the side of (3, 1) and (3, 2) facing the source, 4 pixels over the half block's column.
-      { ...common, sx: 10, sy: 24, width: 10, height: 16, dx: 3 * 16 - 4, dy: 16 },
-      { ...common, sx: 10, sy: 24, width: 10, height: 16, dx: 3 * 16 - 4, dy: 32 },
-      // The run: the lip's flat part, 16 pixels high, its top 8 pixels above the floor below (3, 2): its lower half lies
-      // behind the floor's block and shows through its transparent pixels (G: water in the notches of a staircase).
-      { ...common, sx: 16, sy: 0, width: 16, height: 16, dx: 3 * 16, dy: 3 * 16 - 8 },
+  test("against a wall it turns back once; the second wall ends it", () => {
+    const films = sprites(world(["......", "#~h...", "###...", "......", "######"])).filter((sprite) => sprite.startsWith("16,0,16,16@") && sprite.includes(",56"));
+    // Right to the world's edge (x 3–5), back to the left edge (x 4–0).
+    expect(films.map((sprite) => sprite.slice(sprite.indexOf("@") + 1))).toEqual([
+      "48,56f", "64,56f", "80,56", "64,56", "48,56", "32,56", "16,56", "0,56",
     ]);
   });
 
-  test("at a ledge's end the film runs over the ledge and only the lip's corner hangs past it", () => {
-    const w = world(["~h....", "#.....", "..#...", "......", "######"]);
-    const sprites = waterfallSprites(w, { left: 0, top: 0, right: w.width, bottom: w.height });
-    const common = { kind: "waterfall", id: 0, flip: true, alpha: 255, behind: true, underLiquid: true };
-    // Steps: lip (1, 0), fall (2, 1), lip (2, 1) at the one-tile ledge (2, 2), its top at y 32.
-    expect(sprites.slice(2, 4)).toEqual([
-      { ...common, sx: 16, sy: 0, width: 16, height: 16, dx: 2 * 16, dy: 2 * 16 - 8 },
-      { ...common, sx: 10, sy: 0, width: 10, height: 24, dx: 3 * 16 - 4, dy: 2 * 16 - 8 },
-    ]);
+  test("it ends in the liquid it falls into", () => {
+    const pool = sprites(world(["......", "#~h...", "###...", "...~~~", "######"]));
+    expect(pool).toEqual(["16,0,16,16@32,16f", "0,0,16,16@48,16f", "0,24,32,16@32,32f", "0,24,32,8@32,48f"]);
   });
 
-  test("down a step of one tile the stream shows the film and a 16-pixel corner, no falling column (G)", () => {
-    // A staircase down to the right: the source pours onto the first step, which drops one tile to the second.
-    const w = world(["~h....", "#.....", "..##..", "....##", "......", "######"]);
-    const sprites = waterfallSprites(w, { left: 0, top: 0, right: w.width, bottom: w.height });
-    // Steps: lip (1, 0), fall (2, 1), run (2, 1), lip (3, 1), fall (4, 2), run (4, 2), lip (5, 2)…
-    const corners = sprites.filter((s) => s.sx === 10 && s.sy === 0 && s.width === 10);
-    expect(corners[0]).toMatchObject({ height: 16, dx: 4 * 16 - 4, dy: 2 * 16 - 8 });
-    // No column on the one-tile drop below that corner (4, 2); the source's own drop (2, 1) keeps its column.
-    const columns = sprites.filter((s) => s.sy === 24);
-    expect(columns.map((s) => s.dy / 16)).toEqual([1]);
-  });
-
-  test("off a slope's tip the column reaches 8 pixels up to the slide's last film: no gap between them (G)", () => {
-    const w = world(["~h....", "#.....", "..\\...", "...\\..", "......", "######"]);
-    const sprites = waterfallSprites(w, { left: 0, top: 0, right: w.width, bottom: w.height });
-    // Steps: lip (1, 0), fall (2, 1), slide (2, 2), slide (3, 3), fall (4, 4): the column's lower half above (4, 4).
-    const common = { kind: "waterfall", id: 0, flip: true, alpha: 255, behind: true, underLiquid: true };
-    const columns = sprites.filter((s) => s.sx === 10 && s.sy >= 24);
-    expect(columns).toEqual([
-      { ...common, sx: 10, sy: 24, width: 10, height: 16, dx: 2 * 16 - 4, dy: 16 },
-      { ...common, sx: 10, sy: 32, width: 10, height: 8, dx: 4 * 16 - 4, dy: 4 * 16 - 8 },
-      { ...common, sx: 10, sy: 24, width: 10, height: 16, dx: 4 * 16 - 4, dy: 4 * 16 },
-    ]);
-  });
-
-  test("past a slope going down towards it the column falls straight on: no slide film, no sideways jump (G)", () => {
-    const w = world(["~h....", "#.....", "......", "../...", "......", "######"]);
-    const sprites = waterfallSprites(w, { left: 0, top: 0, right: w.width, bottom: w.height });
-    // Steps: lip (1, 0), fall (2, 1), fall (2, 2), slide (2, 3), fall (1, 4), run…: one column, x 28–38, rows 1–4.
-    const columns = sprites.filter((s) => s.sy === 24);
-    expect(columns.map((s) => [s.dx, s.dy / 16, s.flip])).toEqual([[28, 1, true], [28, 2, true], [28, 3, true], [28, 4, true]]);
-    expect(sprites.filter((s) => s.width === 2)).toEqual([]);
-  });
-
-  test("lava, honey and shimmer draw from Waterfall_1, Waterfall_14 and Waterfall_25; a left-flowing one is not mirrored", () => {
-    expect(WATERFALL_SHEETS).toEqual([0, 1, 14, 25]);
-    const w = world(["..hl#", "..###", ".....", "#####"]);
-    const [lip] = waterfallSprites(w, { left: 0, top: 0, right: w.width, bottom: w.height });
-    expect(lip).toEqual({ kind: "waterfall", id: 1, flip: false, alpha: 255, behind: true, underLiquid: true, sx: 10, sy: 0, width: 22, height: 24, dx: 2 * 16 - 6, dy: 0 });
-  });
-
-  test("a shimmer waterfall's grey sheet is tinted by shimmer's colour; the others are not", () => {
-    const shimmer = world(["...", ".h.", "..."]);
-    shimmer.planes.liquid[0 * 3 + 1] = 4;
-    shimmer.planes.liquidAmount[0 * 3 + 1] = 255;
-    const area = { left: 0, top: 0, right: 3, bottom: 3 };
-    // Its lip from the sheet's edge band (rows 42–81), which the object pass blends from lavender to its cyan edge.
-    expect(waterfallSprites(shimmer, area)[0]).toMatchObject({ id: 25, tint: true, sy: 42 });
-    expect(waterfallSprites(world(["...", "~h.", "..."]), area)[0]?.tint).toBeUndefined();
+  test("lava and honey keep their opacity; water falls at 0.6 below the surface", () => {
+    const lava = world(["......", "#lh...", "###...", "......", "######"]);
+    expect(waterfallSprites(lava, { left: 0, top: 0, right: 6, bottom: 5 })[0]).toMatchObject({ id: WATERFALL_SHEETS[1], alpha: 255 });
+    const deep = { ...world(["......", "#~h...", "###...", "......", "######"]), surfaceY: 0 };
+    expect(sprites(deep)[0]).toBe("16,0,16,16@32,16f/153");
   });
 });

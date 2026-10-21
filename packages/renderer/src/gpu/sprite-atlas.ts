@@ -3,7 +3,7 @@
 /// <reference lib="dom" />
 
 import type { ContentRef } from "@studio/world-model";
-import { LIQUID_SHEETS } from "../chunk/liquids.js";
+import { LIQUID_SHEET_IDS } from "../chunk/liquid-layout.js";
 import { DRAWN_TILES } from "../objects/draw-offsets.js";
 import { OBJECT_TILES } from "../objects/object-sprites.js";
 import { TRACK_TILE } from "../objects/tracks.js";
@@ -17,7 +17,7 @@ import {
 import { PALETTE_ROW } from "./map-colors.js";
 import { halfAtlasFragmentSource, halfAtlasVertexSource } from "./atlas-shaders.js";
 import {
-  LIQUID_FLAT, PAINT_GROUP_LIMIT, SPRITE_SHEET_ROW, SPRITE_SHEET_TEXELS, SPRITE_STATE, spriteSampling,
+  PAINT_GROUP_LIMIT, SPRITE_SHEET_ROW, SPRITE_SHEET_TEXELS, SPRITE_STATE, spriteSampling,
 } from "./shaders.js";
 import type { SpriteAtlasSource, SpriteSheetEntry } from "./types.js";
 
@@ -61,7 +61,10 @@ export interface SpriteAtlas extends GpuPart {
   readonly sheet: (kind: SpriteSheetEntry["kind"], id: number) => SpriteSheetEntry | undefined;
   /** (page, x, y, 1) of the first sheet of `kind`, or zeros without it: the wire pieces, the actuator. */
   readonly place: (kind: SpriteSheetEntry["kind"]) => Int32Array;
-  /** uLiquidSheets: per liquid kind 1–4 the atlas page, x, y of its sheet and 1 when it is drawn from it (LIQUID_FLAT: flat). */
+  /**
+   * uLiquidSheets: per liquid kind 1–4 its water sheet, then its Liquid sheet, then its LiquidSlope sheet
+   * (LIQUID_SHEET_IDS), each (atlas page, x, y, sheet height), zeros without the sheet.
+   */
   readonly liquidSheets: () => Int32Array;
   /** Binds the atlas, its half and the sheet lookup and sets the sampling uniforms for `zoom`. */
   readonly setSampling: (
@@ -83,7 +86,7 @@ export function createSpriteAtlas(gl: WebGL2RenderingContext, unpack: UnpackStat
   let wallSheets = new Map<number, SpriteSheetEntry>();
   // Every sheet of the atlas by kind and id (`${kind}:${id}`), for the object pass and the wire pass.
   let sheetsByKey = new Map<string, SpriteSheetEntry>();
-  let liquidSheets: Int32Array = new Int32Array(16);
+  let liquidSheets: Int32Array = new Int32Array(48);
   let uploads = 0;
 
   const sheetsTex = (): WebGLTexture => {
@@ -204,11 +207,10 @@ export function createSpriteAtlas(gl: WebGL2RenderingContext, unpack: UnpackStat
       tileSheets = new Map(source?.index.entries.filter((entry) => entry.kind === "tile").map((entry) => [entry.id, entry]));
       wallSheets = new Map(source?.index.entries.filter((entry) => entry.kind === "wall").map((entry) => [entry.id, entry]));
       sheetsByKey = new Map(source?.index.entries.map((entry) => [`${entry.kind}:${String(entry.id)}`, entry]));
-      liquidSheets = new Int32Array(LIQUID_SHEETS.flatMap((id) => {
-        if (id === null) return [0, 0, 0, LIQUID_FLAT];
-        const entry = sheetsByKey.get(`liquid:${String(id)}`);
-        return entry === undefined ? [0, 0, 0, 0] : [entry.page, entry.x, entry.y, 1];
-      }));
+      liquidSheets = new Int32Array((["water", "liquid", "liquidSlope"] as const).flatMap((kind) => LIQUID_SHEET_IDS.flatMap((id) => {
+        const entry = sheetsByKey.get(`${kind}:${String(id)}`);
+        return entry === undefined ? [0, 0, 0, 0] : [entry.page, entry.x, entry.y, entry.height];
+      })));
       if (source !== null) uploadAtlas(source);
       uploadSheets(palette, 0, paletteLength);
     },

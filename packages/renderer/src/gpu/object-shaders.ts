@@ -15,11 +15,6 @@ export const OBJECT_TINT = 512;
  * block covers a pixel; such a sprite is drawn only elsewhere.
  */
 export const OBJECT_BEHIND = 1024;
-/**
- * The object pass's source flag of a sprite behind the blocks that also lies under the liquids (bit 11, with
- * OBJECT_BEHIND): the waterfalls. The chunk pass writes depth 0.5 where a tile's own liquid covers a pixel.
- */
-export const OBJECT_UNDER_LIQUID = 2048;
 /** The object pass's source bits 12–19: the paint of the tile the sprite belongs to. */
 export const OBJECT_PAINT_SHIFT = 12;
 /** The object pass's source flag of a sprite of an inactive (actuated) tile (bit 20). */
@@ -44,10 +39,9 @@ void main() {
   vec2 corner = vec2(float(gl_VertexID & 1), float(gl_VertexID >> 1));
   vec2 tile = (vec2(aDest.xy) + corner * vec2(aDest.zw)) / ${String(SPRITE_TILE_PIXELS)}.0;
   vec2 screen = (tile - uCamera) * uZoom;
-  // Sprites under the liquids (OBJECT_UNDER_LIQUID) at depth 0.75: drawn only where the chunk pass left depth 1 (no
-  // block or liquid pixel); behind the blocks (OBJECT_BEHIND) at 0.25: not where it left 0 (a block pixel); the others
-  // at depth 0, over everything.
-  float depth = (aSource.w & ${String(OBJECT_UNDER_LIQUID)}) != 0 ? 0.5 : (aSource.w & ${String(OBJECT_BEHIND)}) != 0 ? -0.5 : -1.0;
+  // Sprites behind the blocks (OBJECT_BEHIND) at depth 0.25: not where the chunk pass left 0 (a block pixel); the
+  // others at depth 0, over everything.
+  float depth = (aSource.w & ${String(OBJECT_BEHIND)}) != 0 ? -0.5 : -1.0;
   gl_Position = vec4(screen.x / uViewport.x * 2.0 - 1.0, 1.0 - screen.y / uViewport.y * 2.0, depth, 1.0);
   vDest = aDest;
   vSource = aSource;

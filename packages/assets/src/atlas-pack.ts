@@ -28,6 +28,8 @@ const METRICS: Readonly<Record<SheetKind, SheetMetrics>> = {
   liquidSlope: { cell: 16, gap: 2 },
   // docs/assets.md, "Waterfalls" (S): 16 animation frames of 32 × 40 side by side; layoutOf carries the height.
   waterfall: { cell: 32, gap: 0 },
+  // docs/assets.md, "Liquids" (S): `Misc/water_<n>`, 16 × 16 pieces side by side, animation frames 80 pixels apart.
+  water: { cell: 16, gap: 0 },
 };
 
 interface SheetLayout {

@@ -21,15 +21,15 @@ none.
 pixels `renderChunk` produces for the same `mapPalette`; from the overview threshold up to one pixel per tile it draws
 exactly the pixels `filterTiles` (below) makes of them. The browser tests assert both for every layer combination.
 
-- **Chunk pages.** Chunks are cached in pages of 32. A page is two array textures, one per plane format, with one
+- **Chunk pages.** Chunks are cached in pages of 25. A page is two array textures, one per plane format, with one
   layer per plane and chunk: layer `slot × planes + plane`, where `slot` is the chunk's place in the page.
-  - `R16UI`, 7 planes: block, wall, flags, frameX, frameY, and the framed block and wall cells of sprite mode
-    (`PLANES_16` in `src/gpu/shaders.ts`). The shader masks the wire and actuator bits of `flags` and sign-extends the
-    frames from their 16-bit pattern.
+  - `R16UI`, 10 planes: block, wall, flags, frameX, frameY, and in sprite mode the framed block and wall cells and the
+    liquid layout's three planes (`PLANES_16` in `src/gpu/shaders.ts`; `liquidLayout` in `src/chunk/liquid-layout.ts`).
+    The shader masks the wire and actuator bits of `flags` and sign-extends the frames from their 16-bit pattern.
   - `R8UI`, 5 planes: liquid kind, liquid amount, block paint, wall paint, block shape (`PLANES_8`).
 
-  32 chunks × 7 planes = 224 layers, within the 256 that WebGL2 guarantees (`MAX_ARRAY_TEXTURE_LAYERS`), with room
-  for one more 16-bit plane. A page is about 9.8 MiB. A layer holds its chunk plus an apron of one tile of each
+  25 chunks × 10 planes = 250 layers, within the 256 that WebGL2 guarantees (`MAX_ARRAY_TEXTURE_LAYERS`). A page is
+  about 10.5 MiB. A layer holds its chunk plus an apron of one tile of each
   neighbouring chunk (130 × 130 texels), stored transposed (texel (s, t) = tile (y, x)), so the box filter below can
   cross chunk edges. Absent optional planes (`flags`, `frameX`, `frameY`) are never uploaded: a uniform (`uPresent`)
   tells the shader to read them as 0. Switching the wire overlay is a uniform change.
@@ -155,9 +155,9 @@ exactly the pixels `filterTiles` (below) makes of them. The browser tests assert
     position to that tile's near edge, so the border never shows the far edge of a tile.
 
   Transparent sprite pixels show the wall, else the background, behind
-  them; paint is not applied to sprites; liquids draw over them — water, lava and honey from their `Liquid_<n>` sheet cut to
-  the fill level, translucent, shimmer and sheetless liquids in their map colours (#240, `src/chunk/liquids.ts`,
-  docs/assets.md "Liquids") — and the wire pass over everything. A half-transparent sprite pixel with
+  them; paint is not applied to sprites; liquids draw over them — the pieces of their water sheets the liquid layout gives,
+  translucent, sheetless liquids in their map colours (`src/chunk/liquid-layout.ts`, docs/assets.md "Liquids") — and
+  the wire pass over everything. A half-transparent sprite pixel with
   nothing behind it is the one partly transparent pixel liquids can land on outside map mode: there they use the
   general straight-alpha rule (`over` in `src/gpu/shaders.ts`, rounded to nearest); map mode stays bit-exact. Everything else, the box filter and
   the overview keep map colours. The mode is a uniform: switching it or crossing the threshold uploads no chunk planes and no atlas (the

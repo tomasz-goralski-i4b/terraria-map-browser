@@ -216,10 +216,12 @@ const CHUNK_PROGRAM: ProgramSource<(typeof CHUNK_PASS_UNIFORMS)[number] | (typeo
 /** The chunk pass in sprite mode (chunkSpriteFragmentSource): sprites and framed cells; the wire pass draws wires. */
 const SPRITE_CHUNK_PROGRAM: ProgramSource<
   (typeof CHUNK_PASS_UNIFORMS)[number] | (typeof SAMPLING_UNIFORMS)[number] | (typeof PAINT_GROUP_UNIFORMS)[number]
-  | "uSpriteSheets" | "uLiquidSheets" | "uLiquidOverlay"
+  | "uSpriteSheets" | "uLiquidSheets" | "uLiquidOverlay" | "uSurfaceY"
 > = {
   vertex: chunkVertexSource, fragment: chunkSpriteFragmentSource,
-  uniforms: [...CHUNK_PASS_UNIFORMS, ...SAMPLING_UNIFORMS, ...PAINT_GROUP_UNIFORMS, "uSpriteSheets", "uLiquidSheets", "uLiquidOverlay"],
+  uniforms: [
+    ...CHUNK_PASS_UNIFORMS, ...SAMPLING_UNIFORMS, ...PAINT_GROUP_UNIFORMS, "uSpriteSheets", "uLiquidSheets", "uLiquidOverlay", "uSurfaceY",
+  ],
 };
 
 /** Throws when the GPU offers fewer texture units or array layers than the map needs. */
@@ -510,6 +512,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       atlas.bindSheets();
       gl.uniform1i(sprite.uSpriteSheets, UNIT.spriteSheets);
       gl.uniform4iv(sprite.uLiquidSheets, atlas.liquidSheets());
+      gl.uniform1i(sprite.uSurfaceY, source.surfaceY);
       setPaintGroups(gl, sprite);
       // In sprite mode the chunk pass writes depth 0 where a block covers a pixel, for the sprites behind the blocks.
       gl.enable(gl.DEPTH_TEST);

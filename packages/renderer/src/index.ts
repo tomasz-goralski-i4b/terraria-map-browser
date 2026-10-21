@@ -8,8 +8,10 @@ export {
   createHighlightMask, highlightLiquids, highlightLookup, highlightMatches, highlightOverlay,
 } from "./chunk/highlight.js";
 export type { HighlightMask, HighlightOptions, HighlightWorld, MapHighlight, MaskRect } from "./chunk/highlight.js";
-export { LIQUID_BODY_ROW, LIQUID_SHEETS, LIQUID_SPRITE_ALPHA, liquidFillPixels, LIQUID_BLEED, SHIMMER_BODY, liquidBleed, shimmerPixel, shimmerSparkle, shimmerSparkles, liquidHasSurface, liquidSheetRow, shapedTileLiquid } from "./chunk/liquids.js";
-export type { TileLiquid } from "./chunk/liquids.js";
+export {
+  BEHIND_OPACITY, LIQUID_FALL_REACH, LIQUID_FRONT_ALPHA, LIQUID_SHEET_IDS, behindPiece, liquidLayout, liquidPiece,
+} from "./chunk/liquid-layout.js";
+export type { LiquidLayout, LiquidLayoutWorld, LiquidRegion } from "./chunk/liquid-layout.js";
 export { FILTER_SUBTILE, MAX_FILTER_TILES, filterTiles, filterTilesPerPixel } from "./chunk/box-filter.js";
 export { backgroundColor, contentColor, liquidColors, mapOption, paintedColor, placeholderColor } from "./palette/map-palette.js";
 export { INACTIVE_SPRITE_SHADE, inactiveSpriteColor, paintGroup, paintGroupOf, spritePaintedColor } from "./palette/sprite-paint.js";
@@ -61,6 +63,6 @@ export type { WireColor, WireNeighbours } from "./objects/wires.js";
 export { OBJECT_TILES, SPRITE_PIXELS_PER_TILE, objectSprites } from "./objects/object-sprites.js";
 export { DRAWN_TILES, drawVariant } from "./objects/draw-offsets.js";
 export type { DrawVariant } from "./objects/draw-offsets.js";
-export { WATERFALL_FADE_STEPS, WATERFALL_MAX_LENGTH, WATERFALL_MIN_WET, WATERFALL_SHEETS, waterfallPath, waterfallSources, waterfallSprites } from "./objects/waterfalls.js";
-export type { WaterfallSource, WaterfallStep, WaterfallWorld } from "./objects/waterfalls.js";
+export { WATERFALL_MAX_LENGTH, WATERFALL_MIN_WET, WATERFALL_SHEETS, waterfallSources, waterfallSprites } from "./objects/waterfalls.js";
+export type { WaterfallSource, WaterfallWorld } from "./objects/waterfalls.js";
 export type { ObjectSheetKind, ObjectSprite, ObjectWorld, TileArea, TreeSettings } from "./objects/object-sprites.js";

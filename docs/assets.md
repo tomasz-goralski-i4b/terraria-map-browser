@@ -459,53 +459,56 @@ The liquid sheets, measured in the art (S, L 1.4.5.8):
 
 | Sheet | Size | Layout | Look |
 |---|---|---|---|
-| `Liquid_0`, `Liquid_2` … `Liquid_10`, `Liquid_12`, `Liquid_13` | 306 × 16 | 17 frames of 16 × 16 at a stride of 18 (animation) | water: forest (`Liquid_0`) and the biome styles |
-| `Liquid_1` | 16 × 16 | one frame | lava |
-| `Liquid_11` | 16 × 16 | one frame | honey |
-| `Liquid_14` | 306 × 72 | two rows of 16 × 34 frames at a stride of 36 (18 across) | a grey mask: shimmer, coloured by the game while drawing |
-| `LiquidSlope_0` … `LiquidSlope_14` | 72 × 16 | four 16 × 16 slope pieces at a stride of 18 | not drawn yet |
+| `Misc/water_0`, `water_1`, `water_11` | 48 × 1360 | 16 animation frames 80 rows apart, each a 3 × 5 grid of 16 × 16 pieces; a surface band at row 1280 | forest water, lava, honey |
+| `Misc/water_14` | 144 × 1360 | the same grid in its first 48 columns (white), sparkle frames to its right | shimmer, coloured while drawing |
+| `Liquid_0`, `Liquid_1`, `Liquid_11` | 306 × 16, 16 × 16 | 16 × 16 frames at a stride of 18; frame 0 is drawn | the liquid behind a block |
+| `Liquid_14` | 306 × 72 | 16 × 34 frames at a stride of 36 | shimmer behind a block (a grey mask) |
+| `LiquidSlope_0`, `_1`, `_11`, `_14` | 72 × 16 | four 16 × 16 slope pieces at a stride of 18, one per slope | the liquid behind a slope |
 
-Every frame is opaque: rows 0–1 are the surface highlight, rows 2–3 its edge and rows 4–15 one flat colour (the body;
-`LIQUID_BODY_ROW`). The body colours of water and lava equal their map colours.
+The atlas holds the four `Misc/water_<n>` sheets the viewer draws (`water` kind), read from the `Misc` folder of
+`Images`. Water is always the forest style (`water_0`, `Liquid_0`): the biome styles depend on where the player stands,
+which a world does not record. Only frame 0 is drawn: no animation.
 
-How the viewer draws them (#240, `packages/renderer/src/chunk/liquids.ts`), all chosen where the game's renderer is
-not observable:
+How the viewer lays them out (`packages/renderer/src/chunk/liquid-layout.ts`, per chunk on the CPU, uploaded with the
+framed cells as three planes):
 
-- **Sheet:** water `Liquid_0` (the forest style: the biome style depends on where the player stands, which a world does
-  not record), lava `Liquid_1`, honey `Liquid_11`, always frame 0 (no animation). Shimmer's sheet is a grey mask the game colours
-  while drawing; the viewer draws shimmer in colours measured in in-game screenshots (G, 2026-10-14): its surface is a
-  rainbow along x, the top row cycling every 64 world pixels through cyan, lilac, purple, magenta, pink, peach and pale
-  teal (`SHIMMER_TOP`), the second row through a more saturated cycle (`SHIMMER_SECOND`), rows 2 and 3 fading from that
-  to the body (155, 111, 233) in thirds; the body has sparkles at about one pixel in 113, fixed per world pixel by a hash,
-  coloured by the rainbow as well: halfway from the second row's colour at their x to the body (`shimmerPixel`,
-  `shimmerSparkle`; in the game both move); cut to its fill and through shapes like the others. Water, lava or honey whose sheet is not
-  in the atlas keeps its map colour.
-- **Fill:** a tile with amount `a` (1–255) is filled `⌈16 · a / 255⌉` sprite pixels from its bottom (127 → 8, 255 →
-  16); above that the liquid draws nothing.
-- **Surface:** a tile whose upper neighbour holds no liquid (any kind; outside the world counts as none) shows the frame
-  from its row 0 at the liquid's top, so the highlight follows the fill level. An upper neighbour that is a half block
-  or slope holding liquid (below) counts as liquid, so a pool along a slope has one surface line, at its top
-  (`liquidHasSurface`; G: lava and water pools, 2026-10-14). That check reads two tiles up; at a chunk's top row the
-  second lies outside the page apron and counts as no liquid. A tile under liquid shows only body rows
-  (`4 + depth mod 12`), so no surface line runs through a pool.
-- **Half blocks and slopes:** the file stores no liquid in a shaped block, but the game fills the part its shape cuts
-  away from the pool around it (G: in-game screenshot of a sand-floored pool, 2026-10-14). A half block or slope without
-  liquid of its own shows, under its block sprite, the liquid above it (full, under liquid), else that of its fuller
-  side neighbour (the left on a tie) at that neighbour's level, with the surface (`shapedTileLiquid`). The game's
-  `LiquidSlope_<n>` edge pieces are not drawn. Seen in-game for water, lava and shimmer.
-- **Edges (G, the user's comparison with the game):** liquid meets blocks without single pixels of air between them. A
-  block without liquid of its own shows, under its sprite, the liquid above it in its top `LIQUID_BLEED` (2) rows and
-  the liquid beside it in the 2 columns next to that side (the fuller side where both reach), at that neighbour's level
-  and in its own colours (`liquidBleed`); only the art's transparent edge pixels show it (block art is transparent up
-  to 2 rows deep at its edges).
-- **Two layers (G):** in-game screenshots of a pool in the Color, White and Retro lighting modes (2026-10-14) show the
-  water against the sky as its art's colour (body 11, 63, 193 for the art's 9, 61, 191 over sky 112, 158, 246), while
-  plants under it stay visible, darkened. The viewer therefore draws the liquid twice: a **back layer** of its art,
-  opaque, over the background (which it hides), under the walls, blocks and objects; and a **front layer** over them,
-  its alpha scaled by `LIQUID_SPRITE_ALPHA` — water 128 (chosen to match), lava 230, honey and shimmer 191 (chosen) — so what lies
-  in front of the background shows through, tinted. In map colours (map mode, and below `SPRITE_MIN_ZOOM` in sprite mode) a liquid keeps
-  the map rule, opacity `amount / 255`; from `SPRITE_MIN_ZOOM` to `SPRITE_FULL_ZOOM` its sprite fades in over that
-  colour like a block sprite. The liquids layer toggle removes the liquid and the waterfalls ("Waterfalls"), nothing else.
+- **Visible level.** A tile shows its own liquid at `amount / 255`. A half block (not a platform) under liquid is full,
+  in the liquid above it. A dry tile between two liquids of one kind, above and below or left and right, neither of them
+  a solid block, shows the mean of the fuller pair. Below a liquid that is not inside a solid block it keeps falling
+  through open tiles: 10 tiles for water and shimmer, 3 for lava, 2 for honey, each one step fainter and lower
+  (`1 − k / (reach + 1)`). Solid blocks and slopes (a block of a type solid and not solid on top only, actuated or not:
+  `solidBlocks` of the sprite-object tables) show none.
+- **Edges and pieces.** A visible liquid's side is an edge where the neighbour there is dry and not solid, or where that
+  neighbour's liquid pushes the side in. The edges pick a piece of the 3 × 5 grid: a top, a top with one or two sides, a
+  column with both sides, the body; on long walls of liquid the side pieces alternate by row. The sides' walls are
+  smoothed with the neighbours along them, a tile above a lone column snaps to a side piece, and a dry corner between
+  two edges takes an inner-corner piece offset by how far the walls reach in. The piece is cut to its walls (never less
+  than a quarter of the tile per side) and drawn at their offset. Except more than 40 tiles above the surface level, a plain top
+  piece draws the surface band instead of the animated top.
+- **Behind blocks.** A solid block (not actuated, not solid on top only) next to liquid draws a piece of its
+  `Liquid_<n>` sheet behind its sprite, which shows where the sprite is transparent: the liquid above it fills its top
+  4 rows (12 for a half block or slope), a deep liquid below (more than 240) its bottom 4 rows, liquid beside it a
+  4-pixel strip on that side (the whole width with liquid on both sides, in a half block or slope), from the height of
+  the fuller side in 2-pixel steps; liquid above and beside, or above and below, fills it. A slope draws its piece of
+  `LiquidSlope_<n>`; sides a slope closes keep no liquid. Its opacity: water 0.5 underground, lava and honey fully; at
+  and above the surface every liquid fully, 0.6 over a wall, 0.9 over glass; none in a half block under liquid with a
+  wall, nor in a slope whose open side is dry and not walled off. A half block under liquid underground fades it in from
+  its top. Bubble blocks show no liquid behind or beside them; no liquid is drawn behind the half block a waterfall
+  starts at.
+- **Two layers.** Under the sky (above the surface level) the liquids are drawn first fully opaque, the pieces behind
+  blocks included, hiding the sky; below the surface the background hides that layer. Walls, objects and blocks come
+  over it, the liquid behind each block under that block's sprite, and every visible piece is drawn once more over
+  everything in its tile: water at 0.6, lava and honey at 0.95, shimmer at 0.75, times its fall's fade. Plants,
+  furniture and waterfalls in a liquid lie under that front layer (the liquid overlay pass draws it over the object
+  pass's sprites behind the blocks).
+- **Shimmer** is its sheets' grey art coloured by a violet that brightens and darkens along a wave across the world
+  (`shimmerBase` in the shader: between (165, 130, 238) and (205, 205, 255), blended between a piece's corners); its
+  sparkles are not drawn.
+- In map colours (map mode, and below `SPRITE_MIN_ZOOM` in sprite mode) a liquid keeps the map rule, opacity
+  `amount / 255`; from `SPRITE_MIN_ZOOM` to `SPRITE_FULL_ZOOM` its sprite fades in over that colour like a block
+  sprite. A kind whose sheets are not in the atlas keeps its map colour. The liquids are sampled once per screen pixel
+  (blocks average several below 16 pixels per tile). The liquids layer toggle removes the liquid and the waterfalls,
+  nothing else.
 
 ### Draw offsets
 
@@ -533,10 +536,9 @@ the chunk pass shows what lies behind such a tile. They lie **behind the blocks*
 a block covers a pixel (its map colour, or a sprite pixel that is not transparent) and these sprites are drawn only
 elsewhere (`OBJECT_BEHIND`). Trees, palms and the giant mushroom (trunks, branches, tops, caps) lie behind the blocks
 too (G: a block's grass covers a trunk's foot), and so do waterfalls (G: the source's half block stays visible under
-the lip); track extras stay in front. They lie **under the liquids** as the blocks do (chosen, the game draws liquid
-over them; its opacity there is not measured): the object pass leaves their depth (0.25), and a liquid overlay pass,
-the chunk program with `uLiquidOverlay` set, then blends the tile's own liquid front layer (water 128 of 255, as over
-blocks) where it finds exactly that depth (coral, cattails, chests and pots under water). Stalactites and stalagmites (165) are plain in the draw data, alone or with stone
+the lip); track extras stay in front. They lie **under the liquids' front layer** ("Liquids"): the object pass leaves
+their depth (0.25), and a liquid overlay pass, the chunk program with `uLiquidOverlay` set, then blends the tile's
+liquid front layer where it finds exactly that depth (coral, cattails, chests and pots under water). Stalactites and stalagmites (165) are plain in the draw data, alone or with stone
 above or below: the game shifts them elsewhere. In-game screenshots (G) show hanging ones drawn up and standing ones
 drawn down so both touch the stone, as the observed moss plants (184: rows 0–36 down 2, rows 54–108 up 2); the
 viewer draws 165's hanging rows (frameY 0, 18 and 72; in the user's worlds every such tile hangs from the ceiling or
@@ -544,52 +546,43 @@ from the 165 above it) 2 pixels up and its standing rows (36, 54, 90) 2 pixels d
 
 ### Waterfalls
 
-**Sheets (S).** `Waterfall_<n>` (28 sheets, `WaterfallID` names them: 0 water, 1 lava, 14 honey, 25 shimmer, the
-others biome waters, gemspark waters and rain) are mostly 512 × 40: 16 animation frames of 32 × 40 side by side
-(shimmer's `Waterfall_25` is 512 × 124, three bands 42 rows apart; 11, 12, 22, 26 and 27 are small 142–144 × 18 sheets
-the viewer does not draw; atlas kind
-`waterfall`, format 8). A frame's art flows **left**: rows 0–23 are the **lip**, its flat part (x 16–31) lying over the
-tile the stream pours from and its column part (x 10–15) hanging into the next tile; rows 24–39 the 10-pixel
-**column** (x 10–19) the stream falls in. `Waterfall_25` (shimmer) is a grey mask the game colours while drawing.
+**Sheets (S).** `Waterfall_<n>` (28 sheets, `WaterfallID` names them: 0 water, 1 lava, 14 honey, 25 shimmer, 2 the
+rainbow stream, 15–21 the gemspark streams, the others biome waters) are mostly 512 × 40: 16 animation frames of
+32 × 40 side by side (shimmer's `Waterfall_25` is 512 × 124, three bands 42 rows apart). 11, 12, 22, 26 and 27 are rain
+and snow: 142–144 × 18 sheets of 16 × 16 drops at a stride of 18. A frame's art flows **left**: rows 0–23 are the
+**lip**, its right half (x 16–31) the flat stream over a tile and its left half the edge where it turns down (art at
+x 10–15); rows 24–39 the **column** the stream falls in (art at x 10–19). `Waterfall_25` (shimmer) is a grey mask the game colours while drawing.
 
-**Sources (R, [ADR 0003](adr/0003-observe-framing-in-the-game.md), waterfall addendum).** The game's own source
-finder, asked about synthetic tiles (`scripts/waterfalls/observe.ps1`; the opt-in `observe.test.mjs` checks the
-viewer against it, about 1 100 cases): a waterfall starts at a **half block** with liquid of **more than 160**
-(`minWet`) on one side and, on the other, neither a full solid block nor a slope nor any liquid (air, a half block, a
-platform or other framed content are fine); no liquid in the tile above it (any amount stops it), anything below it.
-Liquid inside the half block itself does not matter. It flows away from the liquid, in the liquid's type. A liquid
-film at a ledge's edge is no source. The manager's `maxLength` is 100.
+**Sources.** A waterfall starts at a **half block** with no more than a film of liquid above it (less than 16, or a
+solid block there), liquid of **more than 160** (`WATERFALL_MIN_WET`) on one side, and on either side a dry tile that
+is neither a full solid block nor sloped. It pours lava if the tile above or either side holds lava, else honey, else
+shimmer, else water. The opt-in `scripts/waterfalls/observe.test.mjs` checks the finder against the game's.
+A rain cloud (196), snow cloud (460) or the third cloud (717) rains from the open, dry, unsloped tile below it.
 
-**Path (G: in-game screenshots of the test setups in the user's `fluid3`, 2026-10-14).** From the source's lip the
-stream:
+**Path.** From its source the stream moves one tile per step, at most 100 steps (`WATERFALL_MAX_LENGTH`; 40 per 4200
+tiles of world width once it passes a cloud block), and draws pieces of frame 0 of its sheet on the way
+(`waterfallSprites`, `packages/renderer/src/objects/waterfalls.ts`):
 
-- **falls** down the side of the next tile facing where it came from while the tile below is open (its 10-pixel
-  column 4 pixels back over the edge it leaves);
-- on **flat ground** runs along the top (a film 16 pixels high, its top 8 pixels above the ground: its lower half lies
-  behind the ground's block and shows through the block's transparent pixels, G: water fills the notches of a
-  staircase) in its direction; where the tile ahead has open ground
-  below it, it **pours over** the edge (the film and the lip's corner) and falls again; down a step of one tile the
-  corner is cut to 16 pixels, reaching the next step's film, and no falling column is drawn (G: the game shows a cap
-  of water on each step of a staircase with a short tail to the next);
-- on a **slope** slides along its surface and takes its downhill direction, so on a slope going down towards it the
-  stream turns back: falling past the slope's low tip it goes on straight down, its column keeping its mirroring and
-  its edge (G: setup 4), with no film along the slope; where a slope ends against a block level with its low tip, the
-  stream runs on along that block's top (G: a natural staircase of slopes and half blocks); falling off a slope's tip going away, the column reaches 8 pixels
-  up to the slide's last film (its lower half above the tile), so the stream has no gap there (G: setup 3);
-- ends on entering **liquid** (it stops at the tile holding it), against a **solid block** ahead, at the world's edge,
-  or after **100 steps**, fading out over the last 8 (the long drop fades about 98 tiles below its source).
+- it **falls** while the tile below is open (not a full solid block, not a slope's underside; a half block it stands in
+  does not fall): the lip where it starts falling, then the 32-pixel column, centred on the tile's edge it falls along;
+- on a **slope** below it it slides one tile down and along, in the slope's direction, drawing eight 2-pixel strips of
+  the lip along the slope's surface; turning onto a slope going the other way, or off one onto a fall, draws the
+  column's corner;
+- on **flat ground** it runs away from a wall or liquid behind it, else straight on, drawing the lip's flat part 8
+  pixels down (half of it behind the ground's block); landing there draws the column's 8-pixel foot. A wall or liquid
+  ahead turns it back; the second turn ends it, as does a full solid block it enters, liquid it reaches (where it draws
+  nothing more), the world's edge, and stopping on open ground (a last film);
+- types that hide liquid behind them (`hidesLiquidBehind`) halve a film's height; a rainbow brick or gemspark block in
+  or under the stream switches a water stream to the rainbow or that gemspark's sheet.
 
-Chosen where the screenshots do not show it: "solid" is a block the world stores no frame for, except vines, cactus,
-trees, ropes (rope, chain, vine, silk and web rope) and cobwebs (G for the rope: a stream pours past it into a hole; furniture, plants and platforms do not stop water; the game's own solidity table is not shipped); a run on
-dry flat ground continues until an edge or a wall (in the screenshots the runs on the walkway stopped in a film of
-real liquid that had leaked from the basins); water is the forest style; frame 0, no animation; shimmer's mask is
-drawn from its edge band (rows 42–81 of `Waterfall_25`, whose three bands 42 rows apart are the shape, its edge mask
-and a fainter one), blended from the measured core (164, 161, 245) to the light edge (164, 203, 255) by the band's grey
-(G). The object pass draws waterfalls over the chunk pass, mirrored when they flow
-right, behind the blocks ("Draw offsets": the source's half block stays visible under the lip, the basin's blocks
-cover the column's edge) and **under the liquids** (G: the corner pouring off the walkway into setup 5's pool ends at the pool's
-surface): the chunk pass writes depth 0 where a block covers a pixel and 0.5 where only a tile's own liquid does; waterfalls (`OBJECT_UNDER_LIQUID`) are drawn only where it left 1, the other sprites behind the blocks where it did not leave 0, with the liquid overlay pass over them ("Draw offsets"). The liquids layer
-toggle shows and hides them.
+Opacity: lava fully, honey 0.8, shimmer 0.75, water fully under the sky and 0.6 below the surface or over a wall (but
+the echo wall); the last 10 steps fade out. Rain draws a column of drops shifted a pixel left and right by row, 25 drops
+deep (snow 50), at 0.6 over a fainter background layer at 0.3 (the third cloud at 0.9 and 0.4), down to a solid block
+(its last drop included) or liquid deep enough to hide a drop, its last 8 drops fading out. The object pass draws the
+waterfalls **behind the blocks** and **under the liquids' front layer**, as the other sprites behind the blocks
+("Draw offsets"); shimmer's mask is drawn from its edge band (rows 42–81 of `Waterfall_25`), blended from the core
+(164, 161, 245) to the light edge (164, 203, 255) by the band's grey (G). Frame 0 is drawn, no animation. The liquids
+layer toggle shows and hides them.
 
 ### Paint and inactive tiles
 
@@ -674,8 +667,8 @@ Expected sheet sizes (consistent with the size arithmetic, confirmed only by the
 | Trees (5, 583–589, 596, 616, 634), palms (323), the giant mushroom (72) | trunk cells by ground, tops and branches by ground, zone and tree top variation, palm rows and lean, mushroom caps, in an object pass over the chunk pass (#238, "Trees") | wind sway, lighting, the oasis palm rows |
 | Other variant sheets (`Tiles_2_Beach`, `Tiles_59_2`, …) | — | yes |
 | Wires and actuators | the `WiresNew` piece the four same-colour side neighbours give, red to yellow, the actuator on top, over everything in a wire pass; the colour overlay below `SPRITE_MIN_ZOOM` (#241, "Wires") | animation, the wiring tools' translucency modes, the other `WiresNew` rows |
-| Liquids | water, lava and honey from frame 0 of their `Liquid_<n>` sheet, cut to the fill level, with one surface line at the top of a pool, filling the cut-away part of half blocks and slopes, an opaque back layer over the background and a translucent front layer over what lies in front of it, also over the object-pass sprites under it (#240, "Liquids"); shimmer in its measured colours, a rainbow surface with sparkles | animation (waves, lava glow), biome water styles, the slope pieces (`LiquidSlope_<n>`), lighting |
-| Waterfalls | sources by the game's own source finder (R), the path from in-game screenshots (G): lips, falling columns, runs along the ground and films along slopes from frame 0 of `Waterfall_<n>`, in the object pass ("Waterfalls") | animation, waterfalls from liquid films, rain, the biome water styles, the gemspark and rain waterfalls |
+| Liquids | the pieces of frame 0 of their `Misc/water_<n>` sheet by the liquid's visible level and edges, falls below liquid, the liquid behind blocks (`Liquid_<n>`, `LiquidSlope_<n>`), an opaque back layer under the sky and a translucent front layer over everything in the tile, also over the object-pass sprites under it ("Liquids"); shimmer in its wave of violets | animation (waves, lava glow), biome water styles, shimmer's sparkles, lighting |
+| Waterfalls | sources and paths as the game finds and walks them, lips, columns, feet, films and slope strips from frame 0 of `Waterfall_<n>`, the rainbow and gemspark streams, rain and snow under clouds, in the object pass ("Waterfalls") | animation, the biome water styles, shimmer's sparkles |
 | Paint, inactive tiles | every paint on every sprite path, special groups on trees, grass, dirt and mud, inactive tiles at 102/255 (#229, "Paint and inactive tiles") | illumination (lighting), the echo coating's invisibility |
 
 ## Tile framing

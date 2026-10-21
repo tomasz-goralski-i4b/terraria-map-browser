@@ -16,9 +16,15 @@ export async function serveLocal(worldPath, imagesPath, port = 0) {
   for (const entry of await readdir(images, { withFileTypes: true })) {
     if (entry.isFile() && /\.xnb$/i.test(entry.name)) sheets.set(`/content/${encodeURIComponent(entry.name)}`, join(images, entry.name));
   }
+  // The liquids' water sheets live in Images/Misc; they are listed by their own names, which no Images file shares.
+  const misc = join(images, "Misc");
+  const miscEntries = await readdir(misc, { withFileTypes: true }).catch(() => []);
+  for (const entry of miscEntries) {
+    if (entry.isFile() && /^water_\d+\.xnb$/i.test(entry.name)) sheets.set(`/content/${encodeURIComponent(entry.name)}`, join(misc, entry.name));
+  }
   const readableSheet = async (path) => {
     const actual = await realpath(path);
-    return dirname(actual) === images && (await stat(actual)).isFile();
+    return (dirname(actual) === images || dirname(actual) === misc) && (await stat(actual)).isFile();
   };
   const server = createServer((req, res) => {
     void (async () => {

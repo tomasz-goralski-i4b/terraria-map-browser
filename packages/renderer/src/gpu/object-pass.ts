@@ -4,16 +4,15 @@
 
 import { CHUNK_SIZE } from "../camera/camera.js";
 import type { ChunkCoord } from "../camera/camera.js";
-import { SHIMMER_WATERFALL } from "../chunk/liquids.js";
 import { objectSprites, type ObjectSprite } from "../objects/object-sprites.js";
-import { waterfallSprites } from "../objects/waterfalls.js";
+import { SHIMMER_WATERFALL, waterfallSprites } from "../objects/waterfalls.js";
 import { chunkGrid } from "./chunk-grid.js";
 import type { Resident } from "./chunk-store.js";
 import { requireValue, type GpuPart, type ProgramCache, type ProgramSource } from "./gl.js";
 import { PAINT_GROUP_UNIFORMS, SAMPLING_UNIFORMS, setPaintGroups, type SpriteAtlas } from "./sprite-atlas.js";
 import {
   OBJECT_BEHIND, OBJECT_DEST_ATTRIBUTE, OBJECT_FADE_SHIFT, OBJECT_FLIP, OBJECT_GROUP_SHIFT, OBJECT_INACTIVE, OBJECT_PAINT_SHIFT,
-  OBJECT_SOURCE_ATTRIBUTE, OBJECT_TINT, OBJECT_UNDER_LIQUID, objectFragmentSource, objectVertexSource,
+  OBJECT_SOURCE_ATTRIBUTE, OBJECT_TINT, objectFragmentSource, objectVertexSource,
 } from "./object-shaders.js";
 import type { FrameView, RenderableWorld } from "./types.js";
 
@@ -48,7 +47,7 @@ export function setSpritePassUniforms(
 /** One chunk's object list: its instances, and what picks the liquid overlay pass's chunks. */
 interface ChunkObjects {
   readonly instances: Int32Array;
-  /** Whether any is a sprite behind the blocks that the liquids cover (OBJECT_BEHIND without OBJECT_UNDER_LIQUID). */
+  /** Whether any is a sprite behind the blocks, which the liquids cover (OBJECT_BEHIND). */
   readonly behind: boolean;
   /** Whether the chunk holds liquid. */
   readonly liquid: boolean;
@@ -109,11 +108,11 @@ export function createObjectPass(gl: WebGL2RenderingContext, programs: ProgramCa
       if (sprite.sx + sprite.width > sheet.width || sprite.sy + sprite.height > sheet.height) continue;
       const flags = (sprite.flip === true ? OBJECT_FLIP : 0) | ((255 - (sprite.alpha ?? 255)) << OBJECT_FADE_SHIFT)
         | (sprite.tint === true ? OBJECT_TINT : 0) | (sprite.behind === true ? OBJECT_BEHIND : 0)
-        | (sprite.underLiquid === true ? OBJECT_UNDER_LIQUID : 0) | ((sprite.paint ?? 0) << OBJECT_PAINT_SHIFT)
+        | ((sprite.paint ?? 0) << OBJECT_PAINT_SHIFT)
         | (sprite.inactive === true ? OBJECT_INACTIVE : 0) | ((sprite.paintGroup ?? 0) << OBJECT_GROUP_SHIFT);
       placed.set([sprite.dx, sprite.dy, sprite.width, sprite.height, sheet.page, sheet.x + sprite.sx, sheet.y + sprite.sy, flags], at);
       at += OBJECT_INTS;
-      if (sprite.behind === true && sprite.underLiquid !== true) behind = true;
+      if (sprite.behind === true) behind = true;
     }
     let liquid = false;
     const { liquidAmount } = source.planes;
