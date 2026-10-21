@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, describe, expect, test } from "vitest";
+import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { createWorld, type CanonicalWorld, type Tile } from "@studio/world-model";
 import {
   createBlockFraming, createMapRenderer, inactiveSpriteColor, loadFramingDatabase, paintGroup, paintGroupOf, spritePaintedColor,
@@ -11,9 +11,10 @@ beforeAll(async () => {
   framing = createBlockFraming(await loadFramingDatabase(terrariaFramingData));
 });
 
-const created: MapRenderer[] = [];
-afterEach(() => {
-  for (const renderer of created.splice(0)) renderer.dispose();
+// One renderer for every case: the sprite program is linked once (slow on software GL under a parallel run).
+let shared: { readonly canvas: HTMLCanvasElement; readonly renderer: MapRenderer } | null = null;
+afterAll(() => {
+  shared?.renderer.dispose();
 });
 
 const ZOOM = 16;
@@ -64,16 +65,19 @@ function world(bottle: Partial<Tile>, plant: Partial<Tile>, wallPaint: number, g
 
 /** The colours at the centres of the tiles in `columns` of row 1: by default the bottle, the plant and a wall. */
 function draw(source: CanonicalWorld, layers: ChunkLayers = ALL, columns: readonly number[] = [1, 4, 7]): readonly (readonly number[])[] {
-  const canvas = document.createElement("canvas");
-  canvas.width = WIDTH * ZOOM;
-  canvas.height = HEIGHT * ZOOM;
-  const renderer = createMapRenderer(canvas);
-  created.push(renderer);
+  if (shared === null) {
+    const canvas = document.createElement("canvas");
+    canvas.width = WIDTH * ZOOM;
+    canvas.height = HEIGHT * ZOOM;
+    const renderer = createMapRenderer(canvas);
+    renderer.setAtlas(atlas());
+    renderer.setFraming(framing);
+    renderer.setSpriteMode(true);
+    shared = { canvas, renderer };
+  }
+  const { canvas, renderer } = shared;
   renderer.setWorld({ width: source.width, height: source.height, surfaceY: 1, planes: source.planes, palette: source.palette });
   renderer.setLayers(layers);
-  renderer.setAtlas(atlas());
-  renderer.setFraming(framing);
-  renderer.setSpriteMode(true);
   renderer.setCamera({ x: 0, y: 0, zoom: ZOOM });
   renderer.render();
   const gl = canvas.getContext("webgl2");
