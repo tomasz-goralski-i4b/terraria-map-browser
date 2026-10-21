@@ -46,21 +46,22 @@ const TILES: readonly (readonly [number, number, number, number, number])[] = [
   [15, 9, PALM, 66, 0], [15, 8, PALM, 22, 2], [15, 7, PALM, 0, 4], [15, 6, PALM, 88, 6],
 ];
 
-function treeWorld(): RenderableWorld {
-  const count = WIDTH * HEIGHT;
+/** The trees' world; `width` columns, the trees moved `shift` columns right. */
+function treeWorld(width = WIDTH, shift = 0): RenderableWorld {
+  const count = width * HEIGHT;
   const block = new Uint16Array(count).fill(ABSENT);
   const wall = new Uint16Array(count).fill(ABSENT);
   const frameX = new Int16Array(count).fill(-1);
   const frameY = new Int16Array(count).fill(-1);
   // A wall behind the forest tree.
-  for (let x = 7; x <= 11; x++) for (let y = 3; y < GROUND; y++) wall[x * HEIGHT + y] = WALL;
+  for (let x = 7 + shift; x <= 11 + shift; x++) for (let y = 3; y < GROUND; y++) wall[x * HEIGHT + y] = WALL;
   for (const [x, y, index, fx, fy] of TILES) {
-    block[x * HEIGHT + y] = index;
-    frameX[x * HEIGHT + y] = fx;
-    frameY[x * HEIGHT + y] = fy;
+    block[(x + shift) * HEIGHT + y] = index;
+    frameX[(x + shift) * HEIGHT + y] = fx;
+    frameY[(x + shift) * HEIGHT + y] = fy;
   }
   return {
-    width: WIDTH, height: HEIGHT, surfaceY: 3,
+    width, height: HEIGHT, surfaceY: 3,
     planes: {
       block, wall, frameX, frameY, liquid: new Uint8Array(count), liquidAmount: new Uint8Array(count),
       paint: new Uint8Array(count), wallPaint: new Uint8Array(count),
@@ -192,5 +193,38 @@ describe("trees in sprite mode", () => {
       }
     }
     expect(differing.slice(0, 8), `${String(differing.length)} pixels differ`).toEqual([]);
+  });
+
+  test("the object instances are uploaded once per set of drawn chunks, and an edit recollects the chunks within one chunk of it", () => {
+    const canvas = document.createElement("canvas");
+    canvas.width = WIDTH * ZOOM;
+    canvas.height = HEIGHT * ZOOM;
+    const renderer = createMapRenderer(canvas);
+    created.push(renderer);
+    // Five chunks of 128 columns, the trees in chunk 2: the view shows chunk 2 and draws the objects of chunks 1–3.
+    const world = treeWorld(5 * 128, 256);
+    renderer.setWorld(world);
+    renderer.setLayers(LAYERS);
+    renderer.setAtlas(syntheticAtlas());
+    renderer.setSpriteMode(true);
+    renderer.setCamera({ x: 256, y: 0, zoom: ZOOM });
+    renderer.render();
+    const first = renderer.stats();
+    expect(first.objectUploads).toBe(1);
+    expect(first.objectChunksCollected).toBe(3);
+    // The same view, and a pan within chunk 2: nothing is collected or uploaded again.
+    renderer.render();
+    renderer.setCamera({ x: 300, y: 0, zoom: ZOOM });
+    renderer.render();
+    expect(renderer.stats()).toMatchObject({ objectUploads: 1, objectChunksCollected: 3 });
+    // An edit in chunk 0 drops chunks 0 and 1: only chunk 1 is drawn, so only it is collected again.
+    renderer.invalidateTiles([{ x: 5, y: 5 }]);
+    renderer.render();
+    expect(renderer.stats()).toMatchObject({ objectUploads: 2, objectChunksCollected: 4 });
+    // An edit in chunk 2 drops chunks 1–3.
+    renderer.invalidateTiles([{ x: 300, y: 5 }]);
+    renderer.render();
+    expect(renderer.stats()).toMatchObject({ objectUploads: 3, objectChunksCollected: 7 });
+    expect(canvas.getContext("webgl2")?.getError()).toBe(0);
   });
 });

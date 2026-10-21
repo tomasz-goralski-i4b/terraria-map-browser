@@ -421,8 +421,10 @@ over its map colour like any sprite. An **object pass**, drawn after the chunk p
 every visible chunk and the chunks around it as quads at their pixel positions: first the trunk cells (and the track
 extras), then the branches, then the tops and caps, so the foliage covers neighbouring trunks and blocks (chosen; the
 game's layering is not observable). Its sprites are collected on the CPU per chunk from the planes and the header's
-`treeX` and `treeTopVariations` (`toRenderableWorld` passes them as `RenderableWorld.trees`), and collected again for
-the chunks around an edited tile. Liquids and the colour overlay of the chunk pass lie under the object pass; wires are
+`treeX` and `treeTopVariations` (`toRenderableWorld` passes them as `RenderableWorld.trees`), once per chunk (one walk
+down each trunk run for its ground), and collected again for the chunks within one chunk of an edited tile. Their
+instances are uploaded only when a frame draws other chunks than the last upload or one of their lists was collected
+again (#244, `MapRendererStats.objectUploads` and `objectChunksCollected`). Liquids and the colour overlay of the chunk pass lie under the object pass; wires are
 drawn over it ("Wires").
 
 ### Wires
@@ -528,7 +530,9 @@ the ground below them, and are **mirrored at every even x** (checked at nine col
 **How the viewer draws them.** Every tile of those types with a stored frame is an object-pass sprite ("Trees"): the
 frame's rectangle (`wrappedFrame` for styles past the sheet's edge) of the drawn size, its top at the tile's top plus
 the offset, centred on its tile horizontally (chosen: the draw data gives no horizontal offset), mirrored as observed;
-the chunk pass shows what lies behind such a tile. They lie **behind the blocks** around them, as the game draws them
+the chunk pass shows what lies behind such a tile: the wall's framed cell and the overhang of the walls around it,
+else the background, so a sprite's transparent pixels show the wall's art, not its map colour (#230: checked on a
+real world's pots over walls; the game draws walls before every tile). They lie **behind the blocks** around them, as the game draws them
 (G: a block's border covers a stalagmite's base; its transparent pixels show it): the chunk pass writes depth 0 where
 a block covers a pixel (its map colour, or a sprite pixel that is not transparent) and these sprites are drawn only
 elsewhere (`OBJECT_BEHIND`). Trees, palms and the giant mushroom (trunks, branches, tops, caps) lie behind the blocks

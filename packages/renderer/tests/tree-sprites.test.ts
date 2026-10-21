@@ -85,6 +85,10 @@ describe("tree sprites", () => {
     expect(of(objectSprites(world(tree(5, 5, 2), other), ALL), "treeBranch").map((sprite) => sprite.id)).toEqual([8, 8]);
     // Without tree settings every variation is 0.
     expect(topAt(30, { treeX: [], treeTopVariations: [] })).toBe(0);
+    // A negative or out-of-range variation (a damaged header) takes the variation-0 style.
+    for (const value of [-1, -2, 64, 1000]) {
+      expect(topAt(5, { ...trees, treeTopVariations: [value, 1, 5, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0] })).toBe(0);
+    }
   });
 
   test("the ground picks the trunk block and the top: corruption, jungle (116 × 96 tops), hallow (frames by column)", () => {
