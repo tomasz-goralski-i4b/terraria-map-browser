@@ -7,7 +7,6 @@ import type { ChunkCoord } from "../camera/camera.js";
 import { objectSprites, type ObjectSprite } from "../objects/object-sprites.js";
 import { SHIMMER_WATERFALL, waterfallSprites } from "../objects/waterfalls.js";
 import { chunkGrid } from "./chunk-grid.js";
-import type { Resident } from "./chunk-store.js";
 import { requireValue, type GpuPart, type ProgramCache, type ProgramSource } from "./gl.js";
 import { PAINT_GROUP_UNIFORMS, SAMPLING_UNIFORMS, setPaintGroups, type SpriteAtlas } from "./sprite-atlas.js";
 import {
@@ -44,13 +43,9 @@ export function setSpritePassUniforms(
   atlas.setSampling(uniforms, view.zoom);
 }
 
-/** One chunk's object list: its instances, and what picks the liquid overlay pass's chunks. */
+/** One chunk's object list: its instances. */
 interface ChunkObjects {
   readonly instances: Int32Array;
-  /** Whether any is a sprite behind the blocks, which the liquids cover (OBJECT_BEHIND). */
-  readonly behind: boolean;
-  /** Whether the chunk holds liquid. */
-  readonly liquid: boolean;
 }
 
 export interface ObjectPass extends GpuPart {
@@ -59,11 +54,6 @@ export interface ObjectPass extends GpuPart {
    * its own chunk), blended by straight alpha. Returns the number of draw calls.
    */
   readonly draw: (view: FrameView, visible: readonly ChunkCoord[]) => number;
-  /**
-   * The liquid overlay pass's chunks among `items`: those holding liquid with a sprite behind the blocks in them or in
-   * a chunk around them (an object reaches past its own chunk), by the object lists `draw` just collected.
-   */
-  readonly overlayChunks: (source: RenderableWorld, items: readonly Resident[]) => Resident[];
   /** Drops every list: the world, the atlas, or the layers they hold (objects with blocks, waterfalls with liquids) changed. */
   readonly clear: () => void;
   /**
@@ -101,7 +91,6 @@ export function createObjectPass(gl: WebGL2RenderingContext, programs: ProgramCa
     ];
     const placed = new Int32Array(sprites.length * OBJECT_INTS);
     let at = 0;
-    let behind = false;
     for (const sprite of sprites) {
       const sheet = atlas.sheet(sprite.kind, sprite.id);
       if (sheet === undefined || sprite.sx < 0 || sprite.sy < 0) continue;
@@ -110,23 +99,15 @@ export function createObjectPass(gl: WebGL2RenderingContext, programs: ProgramCa
         | (sprite.tint === true ? OBJECT_TINT : 0) | (sprite.behind === true ? OBJECT_BEHIND : 0)
         | ((sprite.paint ?? 0) << OBJECT_PAINT_SHIFT)
         | (sprite.inactive === true ? OBJECT_INACTIVE : 0) | ((sprite.paintGroup ?? 0) << OBJECT_GROUP_SHIFT);
-      placed.set([sprite.dx, sprite.dy, sprite.width, sprite.height, sheet.page, sheet.x + sprite.sx, sheet.y + sprite.sy, flags], at);
+      placed.set([
+        sprite.dx, sprite.dy, sprite.width | (sprite.height << 16),
+        sprite.row !== undefined ? sprite.row + 2 : sprite.afterTiles === true ? 1 : 0,
+        sheet.page, sheet.x + sprite.sx, sheet.y + sprite.sy, flags,
+      ], at);
       at += OBJECT_INTS;
-      if (sprite.behind === true) behind = true;
-    }
-    let liquid = false;
-    const { liquidAmount } = source.planes;
-    for (let x = area.left; x < Math.min(area.right, source.width) && !liquid; x++) {
-      const column = x * source.height;
-      for (let y = area.top; y < Math.min(area.bottom, source.height); y++) {
-        if ((liquidAmount[column + y] ?? 0) !== 0) {
-          liquid = true;
-          break;
-        }
-      }
     }
     const instances = placed.subarray(0, at);
-    cache.set(key, { instances, behind, liquid });
+    cache.set(key, { instances });
     return instances;
   };
 
@@ -197,11 +178,6 @@ export function createObjectPass(gl: WebGL2RenderingContext, programs: ProgramCa
       gl.disable(gl.BLEND);
       gl.bindVertexArray(null);
       return 1;
-    },
-    overlayChunks: (source, items) => {
-      const grid = chunkGrid(source);
-      return items.filter(([chunk]) => cache.get(grid.keyOf(chunk))?.liquid === true
-        && grid.around(chunk).some((key) => cache.get(key)?.behind === true));
     },
     clear: () => {
       cache.clear();

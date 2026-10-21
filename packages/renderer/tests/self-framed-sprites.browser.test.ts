@@ -2,10 +2,10 @@ import { afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import { createWorld, type BlockShape, type CanonicalWorld } from "@studio/world-model";
 import {
   CHUNK_SIZE, NO_CELL, SPRITE_MIN_ZOOM, createBlockFraming, createChunkCellCache, createChunkWallCellCache,
-  createMapRenderer, loadFramingDatabase, renderChunk, shapedColumns, terrariaFramingData,
+  TILE_DRAW_FLAGS, createMapRenderer, loadFramingDatabase, renderChunk, shapedPixel, terrariaFramingData, tileDrawFlags,
 } from "../src/index.js";
 import type {
-  BlockFraming, ChunkLayers, MapRenderer, RenderableWorld, SpriteAtlasSource, SpriteSheetEntry,
+  BlockFraming, ChunkLayers, MapRenderer, RenderableWorld, ShapeContext, SpriteAtlasSource, SpriteSheetEntry,
 } from "../src/index.js";
 import { expectClose, pixelAt, wallLayerPixel, type Rgba } from "./wall-sprites.fixture.js";
 
@@ -142,6 +142,25 @@ function wallLayer(world: CanonicalWorld): (tx: number, ty: number, sx: number, 
   return (tx, ty, sx, sy) => wallLayerPixel(input, tx, ty, sx, sy);
 }
 
+/** What shapedPixel reads around tile (x, y) of `world`. */
+function shapeContext(world: CanonicalWorld, x: number, y: number): ShapeContext {
+  const { block, shape } = world.planes;
+  const at = (tx: number, ty: number): number => tx * world.height + ty;
+  const inside = (tx: number, ty: number): boolean => tx >= 0 && ty >= 0 && tx < world.width && ty < world.height;
+  const flagsAt = (tx: number, ty: number): number => {
+    const ref = inside(tx, ty) ? world.palette[block[at(tx, ty)] ?? 0xffff] : undefined;
+    return ref?.kind === "vanilla" ? tileDrawFlags(ref.id) : 0;
+  };
+  const shapeAt = (tx: number, ty: number): number => (inside(tx, ty) ? shape[at(tx, ty)] ?? 0 : 0);
+  const present = (tx: number, ty: number): boolean => inside(tx, ty) && (block[at(tx, ty)] ?? 0xffff) !== 0xffff;
+  return {
+    shape: shapeAt(x, y), flags: flagsAt(x, y),
+    solidBelow: present(x, y + 1) && (flagsAt(x, y + 1) & TILE_DRAW_FLAGS.solid) !== 0 && shapeAt(x, y + 1) !== 1,
+    halfLeft: shapeAt(x - 1, y) === 1, halfRight: shapeAt(x + 1, y) === 1,
+    joinedAbove: present(x, y - 1) && block[at(x, y - 1)] === block[at(x, y)] && shapeAt(x, y - 1) !== 4 && shapeAt(x, y - 1) !== 5,
+  };
+}
+
 /**
  * The expected canvas at ZOOM pixels per tile (one sprite pixel per canvas pixel): a block with a framed cell shows its
  * sheet's cell, cut by its shape's columns (docs/assets.md, "Slopes and half blocks"), with the wall layer behind it
@@ -168,13 +187,8 @@ function expectedCanvas(world: CanonicalWorld): Uint8Array {
         const block = world.planes.block[tx * height + ty] ?? 0xffff;
         const ref = world.palette[block];
         const sheet = SHEETS.findIndex((entry) => entry.kind === "tile" && ref?.kind === "vanilla" && entry.id === ref.id);
-        const shape = world.planes.shape[tx * height + ty] ?? 0;
-        const column = shapedColumns(shape)[Math.floor(sx / 2)];
-        if (column === undefined) throw new Error("no column");
-        color = behind(tx, ty, sx, sy);
-        if (sy >= column.destY && sy < column.destY + column.height) {
-          color = sheetPixel(sheet, (cell >> 6) * 18 + column.sourceX + sx - column.destX, (cell & 63) * 18 + column.sourceY + sy - column.destY);
-        }
+        const pixel = shapedPixel(shapeContext(world, tx, ty), [(cell >> 6) * 18, (cell & 63) * 18], sx, sy);
+        color = pixel === null ? behind(tx, ty, sx, sy) : sheetPixel(sheet, pixel[0], pixel[1]);
       }
       out.set(color, (py * width * ZOOM + px) * 4);
     }

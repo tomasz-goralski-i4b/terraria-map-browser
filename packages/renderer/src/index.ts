@@ -44,8 +44,10 @@ export type {
 } from "./framing/frame-block.js";
 export { createNonBlockFraming, hangingCell, standingCell, standingExtent } from "./framing/non-block-rules.js";
 export type { HangingGroupRule, HangingRule, NonBlockFraming, StandingRule, TypeAt } from "./framing/non-block-rules.js";
-export { BLOCK_CELL_STRIDE, blockSourceRect, createChunkCellCache, shapedColumns } from "./framing/chunk-cells.js";
-export type { ChunkCellCache, ShapedColumn, SourceRect } from "./framing/chunk-cells.js";
+export { BLOCK_CELL_STRIDE, blockSourceRect, createChunkCellCache, shapedPixel } from "./framing/chunk-cells.js";
+export type { ShapeContext } from "./framing/chunk-cells.js";
+export { TILE_DRAW_FLAGS, tileDrawFlags, wallBlend } from "./objects/tile-draw-flags.js";
+export type { ChunkCellCache, SourceRect } from "./framing/chunk-cells.js";
 export {
   WALL_CELL_PIXELS, WALL_CELL_STRIDE, WALL_OVERHANG, WALL_SIDE, createWallFraming, wallSourceRect,
 } from "./framing/frame-wall.js";

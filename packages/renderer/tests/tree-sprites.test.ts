@@ -52,14 +52,14 @@ describe("tree sprites", () => {
   test("a forest tree: trunk cells 20 × 20 drawn 2 pixels left of their tile, its branches and its top from the forest style", () => {
     const sprites = objectSprites(world(tree(10, 5, 2)), ALL);
     // Trunk cells: Tiles_5 at the stored frame (block 0 on grass), the 20 × 20 cell 2 pixels left of the tile.
-    expect(of(sprites, "tile")).toContainEqual({ kind: "tile", id: 5, sx: 0, sy: 0, width: 20, height: 20, dx: 158, dy: 16 * 16, behind: true });
+    expect(of(sprites, "tile")).toContainEqual({ kind: "tile", id: 5, sx: 0, sy: 0, width: 20, height: 20, dx: 158, dy: 16 * 16, behind: true, row: 16 });
     expect(of(sprites, "tile")).toHaveLength(7);
     // Top: Tree_Tops_0 (variation 0), frame 0, 80 × 80, centred on the tile, its bottom on the tile's bottom.
-    expect(of(sprites, "treeTop")).toEqual([{ kind: "treeTop", id: 0, sx: 0, sy: 0, width: 80, height: 80, dx: 128, dy: 16 * 15 + 16 - 80, behind: true }]);
+    expect(of(sprites, "treeTop")).toEqual([{ kind: "treeTop", id: 0, sx: 0, sy: 0, width: 80, height: 80, dx: 128, dy: 16 * 15 + 16 - 80, behind: true, afterTiles: true }]);
     // Branches: Tree_Branches_0, left column 0 and right column 42, 40 × 40, against the trunk, 12 pixels above the tile.
     expect(of(sprites, "treeBranch")).toEqual([
-      { kind: "treeBranch", id: 0, sx: 0, sy: 0, width: 40, height: 40, dx: 16 * 9 + 16 - 40, dy: 16 * 17 - 12, behind: true },
-      { kind: "treeBranch", id: 0, sx: 42, sy: 0, width: 40, height: 40, dx: 16 * 11, dy: 16 * 17 - 12, behind: true },
+      { kind: "treeBranch", id: 0, sx: 0, sy: 0, width: 40, height: 40, dx: 16 * 9 + 16 - 40, dy: 16 * 17 - 12, behind: true, afterTiles: true },
+      { kind: "treeBranch", id: 0, sx: 42, sy: 0, width: 40, height: 40, dx: 16 * 11, dy: 16 * 17 - 12, behind: true, afterTiles: true },
     ]);
     // Drawing order: the trunk cells, then the branches, then the top.
     const kinds = sprites.map((sprite) => sprite.kind);
@@ -93,7 +93,7 @@ describe("tree sprites", () => {
     expect(of(corrupt, "treeTop")[0]).toMatchObject({ id: 1, width: 80, height: 80 });
     const jungle = objectSprites(world(tree(10, 5, 60)), ALL);
     expect(lowestTrunk(jungle)).toMatchObject({ sx: 6 * 176 });
-    expect(of(jungle, "treeTop")[0]).toEqual({ kind: "treeTop", id: 13, sx: 0, sy: 0, width: 116, height: 96, dx: 160 + 8 - 58, dy: 16 * 15 + 16 - 96, behind: true });
+    expect(of(jungle, "treeTop")[0]).toEqual({ kind: "treeTop", id: 13, sx: 0, sy: 0, width: 116, height: 96, dx: 160 + 8 - 58, dy: 16 * 15 + 16 - 96, behind: true, afterTiles: true });
     // Hallow: Tree_Tops_3, 80 × 140, frame = variant + 3 · (x mod 3), branches by their own column.
     const hallow = objectSprites(world(tree(10, 5, 109, 1)), ALL);
     expect(lowestTrunk(hallow)).toMatchObject({ sx: 3 * 176 });
@@ -104,7 +104,7 @@ describe("tree sprites", () => {
   test("a gem tree draws Tiles_583 trunk cells and the Tree_Tops_22 top", () => {
     const sprites = objectSprites(world(tree(10, 583, 1)), ALL);
     expect(lowestTrunk(sprites)).toMatchObject({ id: 583, sx: 0, sy: 0, width: 20, height: 20, dx: 158 });
-    expect(of(sprites, "treeTop")).toEqual([{ kind: "treeTop", id: 22, sx: 0, sy: 0, width: 116, height: 96, dx: 110, dy: 16 * 15 + 16 - 96, behind: true }]);
+    expect(of(sprites, "treeTop")).toEqual([{ kind: "treeTop", id: 22, sx: 0, sy: 0, width: 116, height: 96, dx: 110, dy: 16 * 15 + 16 - 96, behind: true, afterTiles: true }]);
     expect(of(sprites, "treeBranch").map((sprite) => sprite.id)).toEqual([22, 22]);
   });
 
@@ -117,12 +117,12 @@ describe("tree sprites", () => {
     // Crimsand: row 1 of Tiles_323 and of Tree_Tops_15.
     // Trunk cells are drawn row by row from the top.
     expect(of(sprites, "tile")).toEqual([
-      { kind: "tile", id: 323, sx: 110, sy: 22, width: 20, height: 20, dx: 164, dy: 16 * 16, behind: true },
-      { kind: "tile", id: 323, sx: 0, sy: 22, width: 20, height: 20, dx: 162, dy: 16 * 17, behind: true },
-      { kind: "tile", id: 323, sx: 22, sy: 22, width: 20, height: 20, dx: 160, dy: 16 * 18, behind: true },
-      { kind: "tile", id: 323, sx: 66, sy: 22, width: 20, height: 20, dx: 158, dy: 16 * 19, behind: true },
+      { kind: "tile", id: 323, sx: 110, sy: 22, width: 20, height: 20, dx: 164, dy: 16 * 16, behind: true, row: 16 },
+      { kind: "tile", id: 323, sx: 0, sy: 22, width: 20, height: 20, dx: 162, dy: 16 * 17, behind: true, row: 17 },
+      { kind: "tile", id: 323, sx: 22, sy: 22, width: 20, height: 20, dx: 160, dy: 16 * 18, behind: true, row: 18 },
+      { kind: "tile", id: 323, sx: 66, sy: 22, width: 20, height: 20, dx: 158, dy: 16 * 19, behind: true, row: 19 },
     ]);
-    expect(of(sprites, "treeTop")).toEqual([{ kind: "treeTop", id: 15, sx: 82, sy: 82, width: 80, height: 80, dx: 160 + 8 - 40 + 6, dy: 16 * 16 + 16 - 80, behind: true }]);
+    expect(of(sprites, "treeTop")).toEqual([{ kind: "treeTop", id: 15, sx: 82, sy: 82, width: 80, height: 80, dx: 160 + 8 - 40 + 6, dy: 16 * 16 + 16 - 80, behind: true, afterTiles: true }]);
   });
 
   test("a palm on a ground that names no palm row draws nothing", () => {
@@ -133,8 +133,8 @@ describe("tree sprites", () => {
   test("the giant mushroom: 16 × 18 stem cells and its cap from Shroom_Tops by the top tile's frame", () => {
     const shroom: Placed = [[10, GROUND_Y, 70, -1, -1], [10, GROUND_Y - 1, 72, 0, 18], [10, GROUND_Y - 2, 72, 0, 0], [10, GROUND_Y - 3, 72, 36, 36]];
     const sprites = objectSprites(world(shroom), ALL);
-    expect(of(sprites, "tile")).toContainEqual({ kind: "tile", id: 72, sx: 0, sy: 18, width: 16, height: 18, dx: 160, dy: 16 * 19, behind: true });
-    expect(of(sprites, "shroomTop")).toEqual([{ kind: "shroomTop", id: 0, sx: 2 * 62, sy: 0, width: 60, height: 42, dx: 160 + 8 - 30, dy: 16 * 17 + 16 - 42, behind: true }]);
+    expect(of(sprites, "tile")).toContainEqual({ kind: "tile", id: 72, sx: 0, sy: 18, width: 16, height: 18, dx: 160, dy: 16 * 19, behind: true, row: 19 });
+    expect(of(sprites, "shroomTop")).toEqual([{ kind: "shroomTop", id: 0, sx: 2 * 62, sy: 0, width: 60, height: 42, dx: 160 + 8 - 30, dy: 16 * 17 + 16 - 42, behind: true, row: 17 }]);
   });
 
   test("only the tiles inside the area are collected: a branch's tile left of the trunk, its trunk cell and foliage", () => {

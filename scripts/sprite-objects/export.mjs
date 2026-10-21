@@ -143,8 +143,12 @@ export function drawOffsetTables(drawOffsets) {
 }
 
 /**
- * Which tile types the liquids treat as solid (docs/assets.md, "Liquids"): the solid types that are not solid on top
- * only (platforms and the like), the types solid on top only, and the types that draw no liquid behind themselves.
+ * Which tile types are solid and how they draw (docs/assets.md, "Liquids", "Slopes and half blocks"): the solid types
+ * that are not solid on top only (platforms and the like), the types solid on top only, the types that draw no liquid
+ * behind themselves, the platforms, the types drawn with the solid tiles, and the types with their own drawing beside
+ * half blocks (ignoring them, not really solid, with smooth borders) or without slopes; and the walls that count as
+ * another wall where walls meet ("Walls": [wall, the wall it counts as]); and the plants that sway in the wind ("Draw
+ * order").
  */
 export function solidityTables(solidity) {
   if (solidity === undefined) fail("the observation has no solidity");
@@ -153,6 +157,15 @@ export function solidityTables(solidity) {
     solidBlocks: solidity.solid.filter((type) => !top.has(type)),
     solidTops: solidity.solidTop,
     hidesLiquidBehind: solidity.hidesLiquidBehind,
+    platforms: solidity.platforms ?? fail("the observation has no platforms"),
+    solidLayer: solidity.solidLayer ?? fail("the observation has no solid layer"),
+    ignoresNearbyHalfBricks: solidity.ignoresNearbyHalfBricks ?? fail("the observation has no half-block tables"),
+    notReallySolid: solidity.notReallySolid ?? fail("the observation has no half-block tables"),
+    smoothBorders: solidity.smoothBorders ?? fail("the observation has no half-block tables"),
+    noSlopes: solidity.noSlopes ?? fail("the observation has no slope table"),
+    wallBlends: (solidity.wallBlend ?? fail("the observation has no wall blend table"))
+      .flatMap((blend, wall) => (blend === wall ? [] : [[wall, blend]])),
+    swaysInWind: solidity.swaysInWind ?? fail("the observation has no sway table"),
   };
 }
 

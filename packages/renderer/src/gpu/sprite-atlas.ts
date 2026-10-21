@@ -8,6 +8,7 @@ import { DRAWN_TILES } from "../objects/draw-offsets.js";
 import { OBJECT_TILES } from "../objects/object-sprites.js";
 import { TRACK_TILE } from "../objects/tracks.js";
 import { paintGroupOf } from "../palette/sprite-paint.js";
+import { tileDrawFlags, wallBlend } from "../objects/tile-draw-flags.js";
 import { terrariaPaintGroups } from "../palette/terraria-paint-groups.generated.js";
 import { SPRITE_FRAME_WRAPS } from "./frame-wrap.js";
 import {
@@ -17,7 +18,7 @@ import {
 import { PALETTE_ROW } from "./map-colors.js";
 import { halfAtlasFragmentSource, halfAtlasVertexSource } from "./atlas-shaders.js";
 import {
-  PAINT_GROUP_LIMIT, SPRITE_SHEET_ROW, SPRITE_SHEET_TEXELS, SPRITE_STATE, spriteSampling,
+  PAINT_GROUP_LIMIT, SPRITE_SHEET_ROW, SPRITE_SHEET_TEXELS, SPRITE_STATE, WALL_BLEND_OTHER, spriteSampling,
 } from "./shaders.js";
 import type { SpriteAtlasSource, SpriteSheetEntry } from "./types.js";
 
@@ -131,8 +132,12 @@ export function createSpriteAtlas(gl: WebGL2RenderingContext, unpack: UnpackStat
       sheetMirror.set(wrap === undefined ? [0, 0, 0, 0] : wrap.axis === "x"
         ? [wrap.period, wrap.shift, 0, 0]
         : [0, 0, wrap.period, wrap.shift], at + 16);
-      // The special group its sprites are painted with (grass, dirt, mud).
-      sheetMirror.set([vanilla === undefined ? 0 : paintGroupOf("tile", vanilla), 0, 0, 0], at + 20);
+      // The special group its sprites are painted with (grass, dirt, mud), how it draws beside other tiles, its type
+      // for the order overlapping walls are drawn in (wallOrder) and its wall's blend (wallOutline; other content
+      // blends with itself alone).
+      sheetMirror.set(vanilla === undefined
+        ? [0, 0, 0, WALL_BLEND_OTHER + index]
+        : [paintGroupOf("tile", vanilla), tileDrawFlags(vanilla), vanilla, wallBlend(vanilla)], at + 20);
     }
     const firstRow = Math.floor(from / SPRITE_SHEET_ROW);
     const lastRow = Math.floor((to - 1) / SPRITE_SHEET_ROW);

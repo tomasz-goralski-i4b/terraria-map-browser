@@ -44,4 +44,20 @@ export interface SpriteObjectData {
   readonly solidTops: readonly number[];
   /** Tile types that draw no liquid behind themselves unless sloped (docs/assets.md, "Liquids"). */
   readonly hidesLiquidBehind: readonly number[];
+  /** Platforms. */
+  readonly platforms: readonly number[];
+  /** Tile types drawn with the solid tiles, after the waterfalls and over the other tiles. */
+  readonly solidLayer: readonly number[];
+  /** Tile types drawn whole beside half blocks (docs/assets.md, "Slopes and half blocks"). */
+  readonly ignoresNearbyHalfBricks: readonly number[];
+  /** Solid tile types drawn whole beside half blocks as if they were not solid. */
+  readonly notReallySolid: readonly number[];
+  /** Tile types whose corner beside a half block is 2 pixels wide, not 4. */
+  readonly smoothBorders: readonly number[];
+  /** Tile types drawn unsloped whatever their slope. */
+  readonly noSlopes: readonly number[];
+  /** Walls that count as another wall where walls meet: [wall, the wall it counts as]; every other wall as itself. */
+  readonly wallBlends: readonly (readonly [number, number])[];
+  /** Tile types the game sways in the wind: drawn after the tiles that are not solid ("Draw order"). */
+  readonly swaysInWind: readonly number[];
 }

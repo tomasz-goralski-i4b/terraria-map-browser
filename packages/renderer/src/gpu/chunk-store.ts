@@ -145,6 +145,11 @@ export interface ChunkStore extends GpuPart {
   ) => number;
   /** The page layer of a slot with its CELLS_INSTANCE_BIT and WALLS_INSTANCE_BIT, as the chunk vertex shader reads it. */
   readonly layerOf: (slot: number) => number;
+  /**
+   * The items whose chunks may show liquid in sprite mode: their liquid layout holds any, or they are not framed yet
+   * (their liquid is drawn in map colours). The liquid overlay pass draws these.
+   */
+  readonly liquidItems: (items: readonly Resident[]) => Resident[];
 }
 
 /**
@@ -588,6 +593,7 @@ export function createChunkStore(
       liquidDirty.delete(key);
     },
     isFramed: (slot) => framedSlots.has(slot),
+    liquidItems: (items) => items.filter(([, slot]) => !framedSlots.has(slot) || liquidSlots.has(slot)),
     frame: uploadCells,
     invalidateCells: (tiles) => {
       markLiquids(tiles);

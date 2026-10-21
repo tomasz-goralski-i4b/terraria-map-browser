@@ -50,7 +50,7 @@ const AREA = { left: 0, top: 0, right: 8, bottom: 6 };
 describe("drawn tiles as object sprites", () => {
   test("a plant is drawn 16 × 20 from its tile's top, mirrored only at an even x", () => {
     expect(objectSprites(oneTile(3, 5, 3, 36, 0), AREA)).toEqual([
-      { kind: "tile", id: 3, sx: 36, sy: 0, width: 16, height: 20, dx: 5 * 16, dy: 3 * 16, flip: false, behind: true },
+      { kind: "tile", id: 3, sx: 36, sy: 0, width: 16, height: 20, dx: 5 * 16, dy: 3 * 16, flip: false, behind: true, row: 3 },
     ]);
     expect(objectSprites(oneTile(3, 4, 3, 36, 0), AREA)[0]?.flip).toBe(true);
   });

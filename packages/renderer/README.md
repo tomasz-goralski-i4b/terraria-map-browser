@@ -176,7 +176,7 @@ exactly the pixels `filterTiles` (below) makes of them. The browser tests assert
   chunk, and a chunk whose cells did not fit yet still draws, its self-framed blocks in map colours (its instance
   lacks `CELLS_INSTANCE_BIT`). The CPU keeps 32 KiB of cells per framed resident chunk (16 MiB at the 512-chunk
   baseline). The chunk pass draws cell `(c, r)` from sheet pixels `(18c, 18r)`, cut
-  by the tile's shape (the 8-bit `shape` plane) into the eight 2-pixel columns of `shapedColumns` (docs/assets.md,
+  by the tile's shape (the 8-bit `shape` plane) as `shapedPixel` says (docs/assets.md,
   "Slopes and half blocks"); the cut-away part shows what lies behind. A block without a cell (a falling block with
   nothing below it, which the database marks unstable) keeps its map colour. `invalidateTiles(tiles)` is the editing
   entry point: it recomputes the cached cells of the `(2d + 3)²` area around each tile (`d` the deepest

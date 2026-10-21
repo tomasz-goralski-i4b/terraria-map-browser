@@ -259,8 +259,19 @@ How the viewer applies them (#147; `packages/renderer/src/framing/frame-wall.ts`
 - A database observed before the position tables were recorded falls back to the 6 561-neighbourhood table at the
   reference position for the edges and to the variant map for the interior; a variant the map does not record keeps
   the variant-0 cell, as an unobserved block variant does (chosen).
-- Overlapping overhangs are drawn row by row from the top, left to right within a row, each over the ones before
-  (chosen); blocks are drawn over walls.
+- Overlapping overhangs are drawn in the game's order: first the walls with no block in front of them, then those
+  behind a block; within each by wall paint, then by wall type; walls equal in all three row by row from the top, left
+  to right within a row. So where a dirt wall (2) meets a stone wall (1), the dirt wall's overhang lies over the stone
+  wall's on both sides of the seam. Blocks are drawn over walls.
+- Where a wall's neighbour has a wall that does not blend with it (each wall blends with itself or with the wall the
+  sprite-object tables' `wallBlends` name; content that is not vanilla with itself alone), a 2-pixel band along that
+  side inside the wall's tile is darkened, over the whole wall layer: the `Wall_Outline` art is that band in black at
+  alpha 71 (S), so the viewer draws it without a sheet (`WALL_OUTLINE_PIXELS`, `WALL_OUTLINE_ALPHA`). Bands meeting in a
+  corner darken it twice. Neighbours past the world's edge draw no outline.
+- The starry glass walls (242, 243) are 8 frames of 180 rows (S: 468 × 1440) that twinkle, each tile showing the frame
+  its position picks; still, tile (x, y) shows frame `((11x + 27y) mod 160) div 20`, so a patch of them is a mosaic of
+  frames. Other animated walls draw their frame 0. The rainbow walls (44, 346), which the game tints with a cycling
+  colour, and the shimmer wall's (347) sparkles are left as their plain sheets.
 
 ```text
 source = (x = 36 × column, y = 36 × row, w = 32, h = 32)
@@ -531,18 +542,38 @@ the ground below them, and are **mirrored at every even x** (checked at nine col
 **How the viewer draws them.** Every tile of those types with a stored frame is an object-pass sprite ("Trees"): the
 frame's rectangle (`wrappedFrame` for styles past the sheet's edge) of the drawn size, its top at the tile's top plus
 the offset, centred on its tile horizontally (chosen: the draw data gives no horizontal offset), mirrored as observed;
-the chunk pass shows what lies behind such a tile. They lie **behind the blocks** around them, as the game draws them
-(G: a block's border covers a stalagmite's base; its transparent pixels show it): the chunk pass writes depth 0 where
-a block covers a pixel (its map colour, or a sprite pixel that is not transparent) and these sprites are drawn only
-elsewhere (`OBJECT_BEHIND`). Trees, palms and the giant mushroom (trunks, branches, tops, caps) lie behind the blocks
-too (G: a block's grass covers a trunk's foot), and so do waterfalls (G: the source's half block stays visible under
-the lip); track extras stay in front. They lie **under the liquids' front layer** ("Liquids"): the object pass leaves
-their depth (0.25), and a liquid overlay pass, the chunk program with `uLiquidOverlay` set, then blends the tile's
-liquid front layer where it finds exactly that depth (coral, cattails, chests and pots under water). Stalactites and stalagmites (165) are plain in the draw data, alone or with stone
+the chunk pass shows what lies behind such a tile. They take their place in the game's order ("Draw order"): with the
+tiles that are not solid, row by row, behind the solid blocks and under the liquids' front layer.
+Stalactites and stalagmites (165) are plain in the draw data, alone or with stone
 above or below: the game shifts them elsewhere. In-game screenshots (G) show hanging ones drawn up and standing ones
 drawn down so both touch the stone, as the observed moss plants (184: rows 0–36 down 2, rows 54–108 up 2); the
 viewer draws 165's hanging rows (frameY 0, 18 and 72; in the user's worlds every such tile hangs from the ceiling or
 from the 165 above it) 2 pixels up and its standing rows (36, 54, 90) 2 pixels down (chosen amount).
+
+### Draw order
+
+The viewer draws a world's layers in the game's order, from back to front:
+
+1. the sky colour; above the surface level the liquids' opaque back layer ("Liquids");
+2. below the surface the background colour;
+3. the walls;
+4. the tiles that are not solid (plants, furniture, platforms, torches, …) and their sprites, **row by row** from the
+   top, so a lower row's sprite covers the row above it where they overlap (a plant reaching up over a bottle on a
+   shelf);
+5. tree tops and branches, palm tops (`afterTiles`);
+6. the waterfalls;
+7. the solid tiles, each with the liquid behind it first ("Liquids", behind blocks);
+8. the liquids' front layer, over everything in its tile;
+9. wires, actuators and the other overlays.
+
+The two GPU passes keep that order with the depth buffer. The chunk pass draws the walls and every tile without a
+sprite of its own; it gives a solid tile depth 0 (also a type drawn with the solid tiles, `solidLayer`), a tile that
+is not solid the depth of its row (`rowDepth`: 0.95 − row / 8192, never below 0.3), and an empty tile depth 1. The
+object pass draws the sprites behind the blocks with the depth test: a non-solid tile's sprite half a row in front of
+its row, the tree foliage at 0.275, the waterfalls at 0.25; track extras and the other sprites in front go over
+everything. The chunk pass composes the liquids' front layer over its own pixels and clears their stencil mark; the
+object pass marks the pixels it draws, and the liquid overlay pass draws the front layer once more over
+exactly those, so sprites in a liquid lie under it.
 
 ### Waterfalls
 
@@ -989,23 +1020,27 @@ of a full centre whose sides connect (each side in every shape with a whole face
 are air or a block in every shape: **460 992** for dirt and **5 483 712** for stone with dirt corners, **all
 predicted**. So a shape only matters through the faces of the centre and of its side neighbours.
 
-**Drawing** a shaped tile (how the chosen 16 × 16 cell is cut and moved into the tile) is not framing, and the runtime
-observation does not cover it. It is cited from TEdit's drawing code (A8 5909–5949), which draws each shape as eight
-2-pixel columns `i = 0…7` of the chosen cell. Sprite mode draws it so (`shapedColumns`,
-`packages/renderer/src/framing/chunk-cells.ts`, and the chunk shader). It has **not** been compared with in-game
-renders yet; that comparison is the manual test of #146:
+**Drawing** a shaped tile (how the chosen 16 × 16 cell is cut and moved into the tile) is not framing. Sprite mode
+draws it as the game does (`shapedPixel`, `packages/renderer/src/framing/chunk-cells.ts`, and the same rules in the
+chunk shader), with `c = x >> 1` the 2-pixel column of sprite pixel (x, y):
 
-| Shape | Cut corner | Column `i` draws | Whole faces |
-|---|---|---|---|
-| 1 half | top half | cell rows 0–7, placed in tile rows 8–15 | S (W and E only half) |
-| 2 top-right | NE | cell rows 0 … 15−2i, moved down by 2i | W, S |
-| 3 top-left | NW | cell rows 0 … 2i+1, moved down by 14−2i | E, S |
-| 4 bottom-right | SE | cell rows 2i … 15, placed at the top | W, N |
-| 5 bottom-left | SW | cell rows 0 … 2i+1, placed at the top | E, N |
+| Shape | Sprite pixel (x, y) shows |
+|---|---|
+| 1 half | nothing in rows 0–7; cell row y − 8 in rows 8–15, but rows 12–15 from the sheet's half-block edge at (144, 66) when no solid tile that is not a half block lies below it |
+| 2 top-right | cell rows 14–15 in place; above them cell row y − 2c from row 2c down, nothing above that |
+| 3 top-left | as 2 with the columns mirrored: cell row y − (14 − 2c) from row 14 − 2c down |
+| 4 bottom-right | cell rows 0–1 in place; below them cell row y + 2c down to row 15 − 2c, nothing below that |
+| 5 bottom-left | as 4 with the columns mirrored: cell row y + (14 − 2c) down to row 1 + 2c |
 
-Shapes 2–4 keep the outline of the cell and slide it diagonally, column by column; only shape 5 is a plain per-column
-crop of the 16 × 16 cell. The half block uses only the upper half of the cell. The whole faces agree with the face
-rule (R).
+So each slope is eight 2-pixel columns of its cell slid along the slope, with the cell's 2-row edge strip on the flat
+side drawn in place over them. Platforms keep their sheet's own slope cells and are not slid; a half platform sits in
+the lower half of its tile without the edge. Types that never draw slopes (`noSlopes` of the sprite-object tables)
+draw a slope as a full block. A **full solid block beside half blocks** (not a platform, not a type that ignores
+them) takes the top half of its sides from the sheet's half-block corners: with half blocks on both sides its whole
+top half from (126, 0), or (90, 0) when the same content continues above it unsloped; with one on a side a corner 2
+pixels wide for the types with smooth borders (`smoothBorders`) and 4 wide otherwise, from (144, 0) (its top 2 rows
+from (148, 0) or (142, 0) for the 2-pixel corner). The table flags reach the shader as the atlas's per-type draw
+flags (`tileDrawFlags`).
 
 ### Worked examples
 

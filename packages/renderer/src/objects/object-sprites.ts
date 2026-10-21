@@ -33,6 +33,13 @@ export interface ObjectSprite {
   readonly tint?: boolean;
   /** Behind the blocks: drawn only where no block covers the pixel (frame-important tiles); absent means in front. */
   readonly behind?: boolean;
+  /**
+   * With `behind`, the row of the tile it belongs to: the game draws the tiles that are not solid row by row, so such a
+   * tile in a later row covers it and it covers one in an earlier row. Absent: drawn after them all (waterfalls).
+   */
+  readonly row?: number;
+  /** With `behind` and no row: drawn after the tiles that are not solid but before the waterfalls (tree foliage). */
+  readonly afterTiles?: boolean;
   /** The paint of the tile it belongs to; absent means unpainted. */
   readonly paint?: number;
   /** Of an inactive (actuated) tile: shaded as the game draws one; absent means active. */
@@ -249,7 +256,7 @@ function treeTile(
   const ground = groundUnder(reader, trunkX, y, type);
   const block = type === COMMON_TREE ? trunkBlocks.get(ground) ?? 0 : 0;
   out.trunks.push({
-    behind: true,
+    behind: true, row: y,
     kind: "tile", id: type, sx: frameX + block * TRUNK_BLOCK, sy: frameY, width: TRUNK_CELL, height: TRUNK_CELL,
     dx: x * SPRITE_PIXELS_PER_TILE - TRUNK_OFFSET, dy: y * SPRITE_PIXELS_PER_TILE,
   });
@@ -259,7 +266,7 @@ function treeTile(
   const frame = Math.floor((frameY - LEAFY_FRAME_Y) / FRAME_STRIDE) + foliage.frame;
   if (frameX === TOP_FRAME_X) {
     out.tops.push({
-      behind: true,
+      behind: true, afterTiles: true,
       kind: "treeTop", id: foliage.style, sx: frame * (foliage.width + FOLIAGE_GAP), sy: 0, width: foliage.width, height: foliage.height,
       dx: x * SPRITE_PIXELS_PER_TILE + SPRITE_PIXELS_PER_TILE / 2 - Math.floor(foliage.width / 2),
       dy: (y + 1) * SPRITE_PIXELS_PER_TILE - foliage.height,
@@ -268,7 +275,7 @@ function treeTile(
   }
   const left = trunkX > x;
   out.branches.push({
-    behind: true,
+    behind: true, afterTiles: true,
     kind: "treeBranch", id: foliage.style, sx: left ? 0 : BRANCH_SIZE + FOLIAGE_GAP, sy: frame * (BRANCH_SIZE + FOLIAGE_GAP),
     width: BRANCH_SIZE, height: BRANCH_SIZE,
     dx: left ? (x + 1) * SPRITE_PIXELS_PER_TILE - BRANCH_SIZE : x * SPRITE_PIXELS_PER_TILE, dy: y * SPRITE_PIXELS_PER_TILE - BRANCH_RAISE,
@@ -283,14 +290,14 @@ function palmTile(reader: ObjectReader, x: number, y: number, out: Collected): v
   if (row === undefined || frameX < 0) return;
   const dx = x * SPRITE_PIXELS_PER_TILE + lean;
   out.trunks.push({
-    behind: true,
+    behind: true, row: y,
     kind: "tile", id: PALM_TREE, sx: frameX, sy: row * FRAME_STRIDE, width: TRUNK_CELL, height: TRUNK_CELL, dx: dx - TRUNK_OFFSET,
     dy: y * SPRITE_PIXELS_PER_TILE,
   });
   if (frameX < PALM_TOP_FRAME_X) return;
   const stride = PALM_TOP_SIZE + FOLIAGE_GAP;
   out.tops.push({
-    behind: true,
+    behind: true, afterTiles: true,
     kind: "treeTop", id: PALM_TOPS, sx: Math.floor((frameX - PALM_TOP_FRAME_X) / FRAME_STRIDE) * stride, sy: row * stride,
     width: PALM_TOP_SIZE, height: PALM_TOP_SIZE, dx: dx + SPRITE_PIXELS_PER_TILE / 2 - PALM_TOP_SIZE / 2,
     dy: (y + 1) * SPRITE_PIXELS_PER_TILE - PALM_TOP_SIZE,
@@ -303,13 +310,13 @@ function mushroomTile(reader: ObjectReader, x: number, y: number, out: Collected
   const frameY = reader.frameY(x, y);
   if (frameX < 0 || frameY < 0) return;
   out.trunks.push({
-    behind: true,
+    behind: true, row: y,
     kind: "tile", id: GIANT_MUSHROOM, sx: frameX, sy: frameY, width: SPRITE_PIXELS_PER_TILE, height: SHROOM_CELL_HEIGHT,
     dx: x * SPRITE_PIXELS_PER_TILE, dy: y * SPRITE_PIXELS_PER_TILE,
   });
   if (frameX !== SHROOM_TOP_FRAME_X) return;
   out.tops.push({
-    behind: true,
+    behind: true, row: y,
     kind: "shroomTop", id: 0, sx: Math.floor(frameY / SHROOM_CELL_HEIGHT) * (SHROOM_TOP_WIDTH + FOLIAGE_GAP), sy: 0,
     width: SHROOM_TOP_WIDTH, height: SHROOM_TOP_HEIGHT,
     dx: x * SPRITE_PIXELS_PER_TILE + SPRITE_PIXELS_PER_TILE / 2 - SHROOM_TOP_WIDTH / 2, dy: (y + 1) * SPRITE_PIXELS_PER_TILE - SHROOM_TOP_HEIGHT,
@@ -332,7 +339,7 @@ function drawnTile(reader: ObjectReader, id: number, x: number, y: number, out: 
   out.push({
     kind: "tile", id, sx, sy, width, height,
     dx: x * SPRITE_PIXELS_PER_TILE - (width - SPRITE_PIXELS_PER_TILE) / 2, dy: y * SPRITE_PIXELS_PER_TILE + top,
-    flip: (x % 2 === 0 ? evenFlip : oddFlip) === 1, behind: true,
+    flip: (x % 2 === 0 ? evenFlip : oddFlip) === 1, behind: true, row: y,
   });
 }
 

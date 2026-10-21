@@ -1,7 +1,10 @@
 // GLSL of sprite mode's object pass (object-pass.ts).
-import { SPRITE_TILE_PIXELS, header, spritePaintSource, spritePassInputs } from "./shaders.js";
+import { ROW_DEPTH_SCALE, ROW_DEPTH_TOP, SPRITE_TILE_PIXELS, header, spritePaintSource, spritePassInputs } from "./shaders.js";
 
-/** Per-instance attributes of the object pass: the sprite's rectangle in world sprite pixels and its atlas source. */
+/**
+ * Per-instance attributes of the object pass: the sprite's rectangle in world sprite pixels (x, y, width | height << 16,
+ * its order: its tile row + 2, 1 after the tiles that are not solid, 0 with the waterfalls) and its atlas source.
+ */
 export const OBJECT_DEST_ATTRIBUTE = 0;
 export const OBJECT_SOURCE_ATTRIBUTE = 1;
 /** The object pass's source flags: mirrored left to right, and the shift of 255 minus its opacity. */
@@ -37,13 +40,18 @@ flat out ivec4 vDest;
 flat out ivec4 vSource;
 void main() {
   vec2 corner = vec2(float(gl_VertexID & 1), float(gl_VertexID >> 1));
-  vec2 tile = (vec2(aDest.xy) + corner * vec2(aDest.zw)) / ${String(SPRITE_TILE_PIXELS)}.0;
+  ivec2 size = ivec2(aDest.z & 65535, aDest.z >> 16);
+  vec2 tile = (vec2(aDest.xy) + corner * vec2(size)) / ${String(SPRITE_TILE_PIXELS)}.0;
   vec2 screen = (tile - uCamera) * uZoom;
-  // Sprites behind the blocks (OBJECT_BEHIND) at depth 0.25: not where the chunk pass left 0 (a block pixel); the
-  // others at depth 0, over everything.
-  float depth = (aSource.w & ${String(OBJECT_BEHIND)}) != 0 ? -0.5 : -1.0;
-  gl_Position = vec4(screen.x / uViewport.x * 2.0 - 1.0, 1.0 - screen.y / uViewport.y * 2.0, depth, 1.0);
-  vDest = aDest;
+  // The game's order (docs/assets.md, "Draw order"): the sprites of the tiles that are not solid row by row (half a row
+  // in front of their own row's depth, rowDepth in the chunk pass), so a later row's tile or sprite covers them, then
+  // the tree foliage (0.275), the waterfalls (0.25) and the solid tiles (0); the other sprites over everything (0).
+  float depth = 0.0;
+  if ((aSource.w & ${String(OBJECT_BEHIND)}) != 0) {
+    depth = aDest.w > 1 ? max(0.3, ${ROW_DEPTH_TOP} - (float(aDest.w - 2) + 0.5) * ${ROW_DEPTH_SCALE}) : aDest.w == 1 ? 0.275 : 0.25;
+  }
+  gl_Position = vec4(screen.x / uViewport.x * 2.0 - 1.0, 1.0 - screen.y / uViewport.y * 2.0, 2.0 * depth - 1.0, 1.0);
+  vDest = ivec4(aDest.xy, size);
   vSource = aSource;
 }
 `;

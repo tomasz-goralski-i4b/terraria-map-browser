@@ -7,6 +7,7 @@ import { NO_CELL } from "../framing/frame-block.js";
 import { WALL_CELL_STRIDE, WALL_OVERHANG } from "../framing/frame-wall.js";
 import { TRACK_CELL_STRIDE, trackShaderConstants } from "../objects/tracks.js";
 import { INACTIVE_SPRITE_SHADE } from "../palette/sprite-paint.js";
+import { TILE_DRAW_FLAGS } from "../objects/tile-draw-flags.js";
 
 /** Tiles of neighbouring chunks stored around each chunk's page layer, so the box filter can cross chunk edges. */
 export const PAGE_APRON = 1;
@@ -34,6 +35,14 @@ export const PRESENT = { flags: 1, frameX: 2, frameY: 4, shape: 8, cells: 16 } a
 export const PAINT_LAYER_BIT = 512;
 /** The CWM `flags` bit of an inactive (actuated) tile. */
 export const INACTIVE_FLAG = 32;
+
+/**
+ * The depth of the tiles that are not solid, by row (rowDepth): ROW_DEPTH_TOP − row · ROW_DEPTH_SCALE (1 / 8192), as
+ * GLSL literals, at least 0.3: a later row lies nearer; rows from 5 325 on share it, between the waterfalls' 0.25 and
+ * the empty pixels' 1.
+ */
+export const ROW_DEPTH_TOP = "0.95";
+export const ROW_DEPTH_SCALE = "0.0001220703125";
 
 /** Room for the generated special groups (terraria-paint-groups.generated.ts) in the shaders' uniform arrays. */
 export const PAINT_GROUP_LIMIT = 15;
@@ -100,12 +109,23 @@ export const RULE_ROW = 256;
 export const RULE_HEADER_ROWS = 256;
 
 /**
- * Sprite sheet lookup texture (RGBA32I): five texels per palette index, at (index % 256 × 5 + k, index / 256): the
+ * Sprite sheet lookup texture (RGBA32I): six texels per palette index, at (index % 256 × 6 + k, index / 256): the
  * index's tile sheet in k = 0 (atlas page, x, y, state: SPRITE_STATE) and k = 1 (sheet width, height, frame width,
- * frame height), its wall sheet likewise in k = 2 and 3, and in k = 4 how its stored frames wrap past the sheet's edge
- * (SPRITE_FRAME_WRAPS: period along x, shift along y, period along y, shift along x; 0 for none).
+ * frame height), its wall sheet likewise in k = 2 and 3, in k = 4 how its stored frames wrap past the sheet's edge
+ * (SPRITE_FRAME_WRAPS: period along x, shift along y, period along y, shift along x; 0 for none), and in k = 5 its
+ * paint group, tile draw flags (TILE_DRAW_FLAGS), vanilla type (0 for other content) and wall blend (wallBlend;
+ * WALL_BLEND_OTHER + the palette index for other content).
  */
 export const SPRITE_SHEET_ROW = 256;
+/** The wall blend of content that is not vanilla, plus its palette index: past every vanilla wall. */
+export const WALL_BLEND_OTHER = 0x10000;
+/**
+ * The outline along a side of a wall whose neighbour there has a wall of another blend: a band this wide inside the
+ * wall's tile, black at WALL_OUTLINE_ALPHA (of 255), drawn over the wall layer (docs/assets.md, "Walls"; the art of
+ * Wall_Outline, measured).
+ */
+export const WALL_OUTLINE_PIXELS = 2;
+export const WALL_OUTLINE_ALPHA = 71;
 /** Texels per palette index in the sprite sheet lookup. */
 export const SPRITE_SHEET_TEXELS = 6;
 
@@ -251,6 +271,7 @@ uniform isampler2D uRules;
 uniform int uPaintRow;
 uniform int uPaintCount; // 0 without a map palette: paint is ignored
 uniform int uPaletteLength;
+uniform ivec2 uWorldSize; // the world size in tiles
 uniform int uLayers; // bit 0 background, 1 walls, 2 blocks, 3 liquids; bits 4–8 the wire mask (ChunkLayers.wires)
 #ifndef SPRITES
 // Wire overlay colours in priority order (yellow, green, blue, red, actuator) and their flag bits; see WIRE_COLORS.
@@ -359,11 +380,64 @@ ivec2 samplePixel(vec2 centre, int x, int y) {
   return uSpriteLevel == 1 ? sub & ivec2(~1) : sub;
 }
 
-// The atlas pixel of a self-framed block at sprite pixel sub: its framed cell (the cell plane), cut by its shape into
-// eight 2-pixel columns as shapedColumns() (../framing/chunk-cells.ts) gives them; transparent where the shape cuts
-// it away. False without framed cells or a cell (a falling block with nothing below it, or not self-framed), for
-// content sprite mode leaves in map colours, or past the sheet's edge.
-bool cellPixel(ivec4 place, ivec2 at, ivec2 texel, ivec2 sub, out ivec4 color) {
+// Draw flags of a palette index's tile (TILE_DRAW_FLAGS), from the sprite sheet lookup.
+int tileFlags(uint index) {
+  return index == ABSENT ? 0 : texelFetch(uSpriteSheets, sheetAt(index) + ivec2(5, 0), 0).y;
+}
+
+// The shape plane at texel (0 without the plane).
+int shapeAt(ivec2 texel) {
+  return (uPresent & ${String(PRESENT.shape)}) != 0 ? int(plane8(texel, ${String(PLANES_8.shape)})) : 0;
+}
+
+// The sheet pixel a block of palette index index at texel shows at sprite pixel sub, its cell's top-left at origin on
+// the sheet (shapedPixel in ../framing/chunk-cells.ts): a slope as eight 2-pixel columns of
+// the cell slid along it and a 2-row strip of the cell in place, over them; a half block as the cell's upper half in
+// the tile's lower half, ending in the sheet's half-block edge (x 144, y 66) without a solid block under it; a full solid
+// block beside half blocks with the top half of its side or sides from the sheet's half-block corners. (-1, -1) where
+// the shape cuts the tile away.
+ivec2 shapedPixel(uint index, ivec2 texel, ivec2 origin, ivec2 sub) {
+  int flags = tileFlags(index);
+  int shape = shapeAt(texel);
+  if (shape >= 2 && (flags & ${String(TILE_DRAW_FLAGS.noSlopes)}) != 0) shape = 0;
+  int column = sub.x >> 1;
+  if (shape == 1) {
+    if (sub.y < 8) return ivec2(-1);
+    uint below = plane16(texel + ivec2(1, 0), ${String(PLANES_16.block)});
+    bool edge = (flags & ${String(TILE_DRAW_FLAGS.platform)}) == 0
+      && (below == ABSENT || (tileFlags(below) & ${String(TILE_DRAW_FLAGS.solid)}) == 0 || shapeAt(texel + ivec2(1, 0)) == 1);
+    return edge && sub.y >= 12 ? ivec2(144 + sub.x, 66 + sub.y - 12) : origin + sub - ivec2(0, 8);
+  }
+  if (shape >= 2 && shape <= 5 && (flags & ${String(TILE_DRAW_FLAGS.platform)}) == 0) {
+    if (shape <= 3) {
+      if (sub.y >= 14) return origin + sub;
+      int down = shape == 2 ? 2 * column : 14 - 2 * column;
+      return sub.y < down ? ivec2(-1) : origin + sub - ivec2(0, down);
+    }
+    if (sub.y < 2) return origin + sub;
+    int up = shape == 4 ? 2 * column : 14 - 2 * column;
+    return sub.y >= 16 - up ? ivec2(-1) : origin + sub + ivec2(0, up);
+  }
+  if (shape == 0 && sub.y < 8 && (flags & (${String(TILE_DRAW_FLAGS.solid)} | ${String(TILE_DRAW_FLAGS.platform)} | ${String(TILE_DRAW_FLAGS.ignoresHalf)} | ${String(TILE_DRAW_FLAGS.notReallySolid)})) == ${String(TILE_DRAW_FLAGS.solid)}) {
+    bool left = shapeAt(texel - ivec2(0, 1)) == 1, right = shapeAt(texel + ivec2(0, 1)) == 1;
+    if (left && right) {
+      ivec2 above = texel - ivec2(1, 0);
+      uint aboveIndex = plane16(above, ${String(PLANES_16.block)});
+      int aboveShape = shapeAt(above);
+      bool joined = aboveIndex == index && aboveShape != 4 && aboveShape != 5;
+      return ivec2(joined ? 90 : 126, 0) + sub;
+    }
+    int corner = (flags & ${String(TILE_DRAW_FLAGS.smoothBorders)}) != 0 ? 2 : 4;
+    if (left && sub.x < corner) return ivec2(corner == 2 && sub.y < 2 ? 148 : 144, 0) + sub;
+    if (right && sub.x >= 16 - corner) return ivec2(corner == 2 && sub.y < 2 && sub.x >= 14 ? 142 : 144, 0) + sub;
+  }
+  return origin + sub;
+}
+
+// The atlas pixel of a self-framed block at sprite pixel sub: its framed cell (the cell plane) drawn by its shape
+// (shapedPixel); transparent where the shape cuts it away. False without framed cells or a cell (a falling block with
+// nothing below it, or not self-framed), for content sprite mode leaves in map colours, or past the sheet's edge.
+bool cellPixel(uint index, ivec4 place, ivec2 at, ivec2 texel, ivec2 sub, out ivec4 color) {
   if ((uPresent & ${String(PRESENT.cells)}) == 0 || (vCells & 1) == 0) return false;
   uint cell = plane16(texel, ${String(PLANES_16.cell)});
   if (cell == ${String(NO_CELL)}u || place.w == ${String(SPRITE_STATE.mapColor)}) return false;
@@ -371,22 +445,12 @@ bool cellPixel(ivec4 place, ivec2 at, ivec2 texel, ivec2 sub, out ivec4 color) {
     color = missingPixel(sub);
     return true;
   }
-  int shape = (uPresent & ${String(PRESENT.shape)}) != 0 ? int(plane8(texel, ${String(PLANES_8.shape)})) : 0;
-  int column = sub.x / 2;
-  // Column (sourceY, destY, height) per shape: half, slopes cut at NE, NW, SE, SW; anything else is full.
-  ivec3 rows = ivec3(0, 0, 16);
-  if (shape == 1) rows = ivec3(0, 8, 8);
-  else if (shape == 2) rows = ivec3(0, 2 * column, 16 - 2 * column);
-  else if (shape == 3) rows = ivec3(0, 14 - 2 * column, 2 * column + 2);
-  else if (shape == 4) rows = ivec3(2 * column, 0, 16 - 2 * column);
-  else if (shape == 5) rows = ivec3(0, 0, 2 * column + 2);
-  if (sub.y < rows.y || sub.y >= rows.y + rows.z) {
+  ivec2 pixel = shapedPixel(index, texel, ivec2(int(cell >> 6u), int(cell & 63u)) * ${String(BLOCK_CELL_STRIDE)}, sub);
+  if (pixel.x < 0) {
     color = ivec4(0);
     return true;
   }
   ivec4 size = texelFetch(uSpriteSheets, at + ivec2(1, 0), 0);
-  ivec2 origin = ivec2(int(cell >> 6u), int(cell & 63u)) * ${String(BLOCK_CELL_STRIDE)};
-  ivec2 pixel = origin + ivec2(sub.x, rows.x + sub.y - rows.y);
   if (any(greaterThanEqual(pixel, size.xy))) return false;
   color = ivec4(round(atlasTexel(place.yz, place.yz + pixel, place.x) * 255.0));
   return true;
@@ -426,7 +490,7 @@ bool spritePixel(uint index, ivec2 texel, ivec2 sub, out ivec4 color) {
   ivec2 stored = frames
     ? ivec2(frame(texel, ${String(PLANES_16.frameX)}, ${String(PRESENT.frameX)}), frame(texel, ${String(PLANES_16.frameY)}, ${String(PRESENT.frameY)}))
     : ivec2(-1);
-  if (stored.x < 0 || stored.y < 0) return cellPixel(place, at, texel, sub, color);
+  if (stored.x < 0 || stored.y < 0) return cellPixel(index, place, at, texel, sub, color);
   // Styles past the sheet's edge continue in its next block (wrappedFrame in frame-wrap.ts).
   ivec4 wrap = texelFetch(uSpriteSheets, at + ivec2(4, 0), 0);
   if (wrap.x > 0) {
@@ -443,7 +507,12 @@ bool spritePixel(uint index, ivec2 texel, ivec2 sub, out ivec4 color) {
     return true;
   }
   ivec4 size = texelFetch(uSpriteSheets, at + ivec2(1, 0), 0);
-  ivec2 pixel = stored + sub * size.zw / ${String(SPRITE_TILE_PIXELS)};
+  // A stored frame of a 16 × 16 cell takes the tile's shape as a framed cell does; larger frames are scaled in whole.
+  ivec2 pixel = size.zw == ivec2(${String(SPRITE_TILE_PIXELS)}) ? shapedPixel(index, texel, stored, sub) : stored + sub * size.zw / ${String(SPRITE_TILE_PIXELS)};
+  if (pixel.x < 0) {
+    color = ivec4(0);
+    return true;
+  }
   if (any(greaterThanEqual(pixel, size.xy))) return false;
   color = ivec4(round(atlasTexel(place.yz, place.yz + pixel, place.x) * 255.0));
   return true;
@@ -563,40 +632,69 @@ const int WALL_SHEET = 1;
 const int WALL_MAPPED = 2;
 const int WALL_MISSING = 3;
 ivec4 wallNWA;
-ivec3 wallNWB;
+ivec4 wallNWB;
 ivec4 wallNA;
-ivec3 wallNB;
+ivec4 wallNB;
 ivec4 wallNEA;
-ivec3 wallNEB;
+ivec4 wallNEB;
 ivec4 wallWA;
-ivec3 wallWB;
+ivec4 wallWB;
 ivec4 wallCA;
-ivec3 wallCB;
+ivec4 wallCB;
 ivec4 wallEA;
-ivec3 wallEB;
+ivec4 wallEB;
 ivec4 wallSWA;
-ivec3 wallSWB;
+ivec4 wallSWB;
 ivec4 wallSA;
-ivec3 wallSB;
+ivec4 wallSB;
 ivec4 wallSEA;
-ivec3 wallSEB;
-// B = (the end of its sheet in the atlas, its wall paint).
+ivec4 wallSEB;
+// B = (the end of its sheet in the atlas, its wall paint, its drawing order: wallOrder).
 // The map colour of the tile's own wall, premultiplied (zero without one).
 vec4 wallOwn;
 
-void loadWall(ivec2 texel, bool own, out ivec4 a, out ivec3 b) {
+// The order the game draws overlapping walls in: those without a block in front of them first, then by wall paint,
+// then by wall type (0 when not vanilla content); wallSample breaks ties row by row.
+int wallOrder(ivec2 texel, uint wall, int paint) {
+  int fronted = plane16(texel, ${String(PLANES_16.block)}) == ABSENT ? 0 : 1;
+  return (fronted << 21) | (paint << 16) | texelFetch(uSpriteSheets, sheetAt(wall) + ivec2(5, 0), 0).z;
+}
+
+// The blend of the wall at texel (WALL_BLEND_OTHER and up for content that is not vanilla), −1 without one or past
+// the world's edges.
+int wallBlendAt(ivec2 texel) {
+  ivec2 tile = vRect.xy + texel.yx - ${String(PAGE_APRON)};
+  if (any(lessThan(tile, ivec2(0))) || any(greaterThanEqual(tile, uWorldSize))) return -1;
+  uint wall = plane16(texel, ${String(PLANES_16.wall)});
+  return wall == ABSENT ? -1 : texelFetch(uSpriteSheets, sheetAt(wall) + ivec2(5, 0), 0).w;
+}
+
+void loadWall(ivec2 texel, bool own, out ivec4 a, out ivec4 b) {
   a = ivec4(0);
-  b = ivec3(0);
+  b = ivec4(0);
   uint cell = plane16(texel, ${String(PLANES_16.wallCell)});
+  uint wall = plane16(texel, ${String(PLANES_16.wall)});
+  int paint = int(plane8(texel, ${String(PLANES_8.wallPaint)}));
   if (cell == ${String(NO_CELL)}u) {
-    if (own && wallOwn.a > 0.0) a.w = WALL_MAPPED;
+    if (own && wallOwn.a > 0.0) {
+      a.w = WALL_MAPPED;
+      b.w = wall == ABSENT ? 0 : wallOrder(texel, wall, paint);
+    }
     return;
   }
-  ivec2 sheet = sheetAt(plane16(texel, ${String(PLANES_16.wall)})) + ivec2(2, 0);
+  ivec2 sheet = sheetAt(wall) + ivec2(2, 0);
   ivec4 place = texelFetch(uSpriteSheets, sheet, 0);
+  b.w = wallOrder(texel, wall, paint);
   if (place.w == ${String(SPRITE_STATE.sheet)}) {
     a = ivec4(place.yz + ivec2(int(cell >> 6u), int(cell & 63u)) * ${String(WALL_CELL_STRIDE)}, place.x, WALL_SHEET);
-    b = ivec3(place.yz + texelFetch(uSpriteSheets, sheet + ivec2(1, 0), 0).xy, int(plane8(texel, ${String(PLANES_8.wallPaint)})));
+    // The starry glass walls (242, 243) twinkle through 8 frames of 180 rows, each tile from a frame its position picks:
+    // the still frame shows ((11x + 27y) mod 160) div 20 (docs/assets.md, "Walls").
+    int type = texelFetch(uSpriteSheets, sheetAt(wall) + ivec2(5, 0), 0).z;
+    if (type == 242 || type == 243) {
+      ivec2 tile = vRect.xy + texel.yx - ${String(PAGE_APRON)};
+      a.y += 180 * ((11 * tile.x + 27 * tile.y) % 160 / 20);
+    }
+    b.xyz = ivec3(place.yz + texelFetch(uSpriteSheets, sheet + ivec2(1, 0), 0).xy, paint);
   } else if (own) {
     a.w = place.w == ${String(SPRITE_STATE.missing)} ? WALL_MISSING : WALL_MAPPED;
   }
@@ -608,14 +706,14 @@ ivec4 wallA(int dx, int dy) {
   return dx < 0 ? wallSWA : dx == 0 ? wallSA : wallSEA;
 }
 
-ivec3 wallB(int dx, int dy) {
+ivec4 wallB(int dx, int dy) {
   if (dy < 0) return dx < 0 ? wallNWB : dx == 0 ? wallNB : wallNEB;
   if (dy == 0) return dx < 0 ? wallWB : dx == 0 ? wallCB : wallEB;
   return dx < 0 ? wallSWB : dx == 0 ? wallSB : wallSEB;
 }
 
 // Stores the wall at (dx, dy) loaded by wallSample into its variable.
-void storeWall(int dx, int dy, ivec4 a, ivec3 b) {
+void storeWall(int dx, int dy, ivec4 a, ivec4 b) {
   if (dx == -1 && dy == -1) { wallNWA = a; wallNWB = b; }
   else if (dx == 0 && dy == -1) { wallNA = a; wallNB = b; }
   else if (dx == 1 && dy == -1) { wallNEA = a; wallNEB = b; }
@@ -635,7 +733,7 @@ vec4 drawWall(vec4 below, int dx, int dy, ivec2 sub) {
   vec4 top;
   if (a.w == WALL_SHEET) {
     ivec2 pixel = a.xy + sub + ${String(WALL_OVERHANG)} - ${String(SPRITE_TILE_PIXELS)} * ivec2(dx, dy);
-    ivec3 b = wallB(dx, dy);
+    ivec4 b = wallB(dx, dy);
     if (any(greaterThanEqual(pixel, b.xy))) return below;
     vec4 sampled = atlasTexel(a.xy, pixel, a.z);
     if (b.z != 0) sampled.rgb = vec3(spritePainted(ivec3(round(sampled.rgb * 255.0)), b.z, true, 0)) / 255.0;
@@ -665,28 +763,28 @@ ivec4 wallSample(ivec2 texel, vec2 centre, ivec4 ownMapped) {
   bool north = low.y < ${String(SPRITE_TILE_PIXELS / 2)};
   bool south = high.y >= ${String(SPRITE_TILE_PIXELS / 2)};
   wallNWA = ivec4(0);
-  wallNWB = ivec3(0);
+  wallNWB = ivec4(0);
   wallNA = ivec4(0);
-  wallNB = ivec3(0);
+  wallNB = ivec4(0);
   wallNEA = ivec4(0);
-  wallNEB = ivec3(0);
+  wallNEB = ivec4(0);
   wallWA = ivec4(0);
-  wallWB = ivec3(0);
+  wallWB = ivec4(0);
   wallCA = ivec4(0);
-  wallCB = ivec3(0);
+  wallCB = ivec4(0);
   wallEA = ivec4(0);
-  wallEB = ivec3(0);
+  wallEB = ivec4(0);
   wallSWA = ivec4(0);
-  wallSWB = ivec3(0);
+  wallSWB = ivec4(0);
   wallSA = ivec4(0);
-  wallSB = ivec3(0);
+  wallSB = ivec4(0);
   wallSEA = ivec4(0);
-  wallSEB = ivec3(0);
+  wallSEB = ivec4(0);
   // Runtime bounds: one copy of loadWall, not one per neighbour.
   for (int dy = north ? -1 : 0; dy <= (south ? 1 : 0); dy++) {
     for (int dx = west ? -1 : 0; dx <= (east ? 1 : 0); dx++) {
       ivec4 a;
-      ivec3 b;
+      ivec4 b;
       loadWall(texel + ivec2(dy, dx), dx == 0 && dy == 0, a, b);
       storeWall(dx, dy, a, b);
     }
@@ -695,16 +793,40 @@ ivec4 wallSample(ivec2 texel, vec2 centre, ivec4 ownMapped) {
   if ((wallNWA.w | wallNA.w | wallNEA.w | wallWA.w | wallCA.w | wallEA.w | wallSWA.w | wallSA.w | wallSEA.w) == WALL_NONE) {
     return ivec4(0);
   }
+  // The sides outlined against a neighbour's wall of another blend (west, east, north, south), when the samples reach
+  // their bands.
+  ivec4 outlined = ivec4(0);
+  int band = ${String(WALL_OUTLINE_PIXELS)};
+  if (wallCA.w != WALL_NONE && (low.x < band || low.y < band || high.x >= ${String(SPRITE_TILE_PIXELS)} - band || high.y >= ${String(SPRITE_TILE_PIXELS)} - band)) {
+    int own = wallBlendAt(texel);
+    ivec4 next = ivec4(wallBlendAt(texel + ivec2(0, -1)), wallBlendAt(texel + ivec2(0, 1)), wallBlendAt(texel + ivec2(-1, 0)), wallBlendAt(texel + ivec2(1, 0)));
+    outlined = ivec4(greaterThanEqual(next, ivec4(0))) * ivec4(notEqual(next, ivec4(own)));
+  }
   vec4 sum = vec4(0.0);
   // Runtime bounds (uSpriteSamples is at most MAX_SPRITE_SAMPLES): the loops stay loops, so the shader stays small.
   for (int y = 0; y < count; y++) {
     for (int x = 0; x < count; x++) {
       ivec2 sub = samplePixel(centre, x, y);
-      // The four walls covering the sample, in drawing order: the upper row, then the lower, each left to right.
+      // The four walls covering the sample (k: the upper row, then the lower, each left to right), sorted by
+      // wallOrder · 4 + k, so equal orders keep that order.
       int left = sub.x < ${String(SPRITE_TILE_PIXELS / 2)} ? -1 : 0;
       int upper = sub.y < ${String(SPRITE_TILE_PIXELS / 2)} ? -1 : 0;
+      ivec4 order = ivec4(wallB(left, upper).w, wallB(left + 1, upper).w, wallB(left, upper + 1).w, wallB(left + 1, upper + 1).w)
+        * 4 + ivec4(0, 1, 2, 3);
+      ivec4 low = min(order.xzxy, order.ywzw);
+      ivec4 high = max(order.xzxy, order.ywzw);
+      order = ivec4(low.x, high.x, low.y, high.y);
+      low = min(order.xyxy, order.zwzw);
+      high = max(order.xyxy, order.zwzw);
+      order = ivec4(low.x, min(low.y, high.x), max(low.y, high.x), high.y);
       vec4 layer = vec4(0.0);
-      for (int k = 0; k < 4; k++) layer = drawWall(layer, left + (k & 1), upper + (k >> 1), sub);
+      for (int k = 0; k < 4; k++) layer = drawWall(layer, left + (order[k] & 1), upper + ((order[k] >> 1) & 1), sub);
+      int outlines = outlined.x * int(sub.x < band) + outlined.y * int(sub.x >= ${String(SPRITE_TILE_PIXELS)} - band)
+        + outlined.z * int(sub.y < band) + outlined.w * int(sub.y >= ${String(SPRITE_TILE_PIXELS)} - band);
+      if (outlines > 0) {
+        float keep = pow(1.0 - ${String(WALL_OUTLINE_ALPHA)}.0 / 255.0, float(outlines));
+        layer = vec4(layer.rgb * keep, 1.0 - (1.0 - layer.a) * keep);
+      }
       sum += layer;
     }
   }
@@ -728,14 +850,21 @@ bool paletteColor(uint index, int xOffset, out ivec3 color) {
 // uSpriteWeight. With framed cells the wall layer is the walls' sprites (wallSample) over the background, faded in over
 // the walls' map colours likewise.
 #ifdef SPRITES
-// The depth the sprite program writes for the sprites behind the blocks (OBJECT_BEHIND in the object pass): 0 where a
-// block covers the pixel (its map colour, or a sprite pixel that is not transparent), 1 elsewhere. Set by localColorAt.
+// The depth the sprite program writes for the sprites behind the blocks (OBJECT_BEHIND in the object pass), in the
+// game's order: 0 where a solid tile covers the pixel (its map colour, or a sprite pixel that is not transparent), its
+// row's depth (rowDepth) where a tile that is not solid does, 1 elsewhere. Set by localColorAt.
 float blockDepth = 1.0;
-// The liquid overlay pass (uLiquidOverlay, after the object pass): the tile's liquid front layer alone, drawn over
-// the sprites behind the blocks (OBJECT_BEHIND_DEPTH), which lie under the liquids as the blocks do. Set by localColorAt.
+// The liquid overlay pass (uLiquidOverlay, after the object pass): the tile's liquid front layer alone, drawn again
+// over the object pass's sprites (where it left the stencil bit), as the game draws its liquids after every tile. Set by
+// localColorAt.
 uniform int uLiquidOverlay;
 ivec4 liquidOverlay = ivec4(0);
 #endif
+
+// The depth of the tiles of row y that are not solid: a later row lies nearer (ROW_DEPTH_TOP, ROW_DEPTH_SCALE).
+float rowDepth(int y) {
+  return max(0.3, ${ROW_DEPTH_TOP} - float(y) * ${ROW_DEPTH_SCALE});
+}
 
 ivec4 localColorAt(ivec2 local, vec2 sub) {
   ivec2 texel = ivec2(local.y + ${String(PAGE_APRON)}, local.x + ${String(PAGE_APRON)});
@@ -825,7 +954,8 @@ ivec4 localColorAt(ivec2 local, vec2 sub) {
       // The liquid behind a block lies under its sprite.
       color = over(sprite, over(behindSolid, color));
       if (uSpriteWeight < 256) color = (mapped * (256 - uSpriteWeight) + color * uSpriteWeight + 128) / 256;
-      if (sprite.a > 0) blockDepth = 0.0;
+      // The solid tiles are drawn over the sprites behind the blocks, the others row by row with them.
+      if (sprite.a > 0) blockDepth = (tileFlags(block) & ${String(TILE_DRAW_FLAGS.solidLayer)}) != 0 ? 0.0 : rowDepth(tileY);
     }
 #endif
   }
@@ -835,21 +965,17 @@ ivec4 localColorAt(ivec2 local, vec2 sub) {
     int amount = int(plane8(texel, ${String(PLANES_8.liquidAmount)}));
     bool own = liquid >= 1u && liquid <= 4u && amount != 0;
     ivec4 plainFront = own ? ivec4(uLiquids[liquid - 1u], amount) : ivec4(0);
-    ivec4 mappedLiquid = over(plainFront, color);
 #ifdef SPRITES
+    // The front layer: the tile's liquid piece at its kind's opacity, faded in over the map colour of the tile's own
+    // liquid like a block sprite; a kind without its sheets (or before the layout is uploaded) its map colour.
+    liquidOverlay = plainFront;
     if (liquidLayout && (own ? uLiquidSheets[liquid - 1u].w != 0 : pieceKind != 0)) {
-      // The front layer: the tile's liquid piece over everything in it, at its kind's opacity; faded in over the map
-      // colour of the tile's own liquid like a block sprite.
       ivec4 front = pieceKind != 0 ? withOpacity(piece, (2 * LIQUID_FRONT_ALPHA[pieceKind - 1] * pieceShown + pieceSteps) / (2 * pieceSteps)) : ivec4(0);
-      ivec4 drawn = over(front, color);
-      color = uSpriteWeight < 256 ? (mappedLiquid * (256 - uSpriteWeight) + drawn * uSpriteWeight + 128) / 256 : drawn;
       liquidOverlay = uSpriteWeight < 256 ? (plainFront * (256 - uSpriteWeight) + front * uSpriteWeight + 128) / 256 : front;
-    } else if (own) {
-      color = mappedLiquid;
-      liquidOverlay = plainFront;
     }
+    color = over(liquidOverlay, color);
 #else
-    if (own) color = mappedLiquid;
+    if (own) color = over(plainFront, color);
 #endif
   }
 
@@ -896,11 +1022,6 @@ void main() {
 }
 `;
 
-/**
- * The window depth of the sprites behind the blocks (OBJECT_BEHIND; NDC -0.5), as a GLSL
- * literal: the liquid overlay pass draws the liquids' front layer where the object pass left exactly it.
- */
-const OBJECT_BEHIND_DEPTH = "0.25";
 
 /**
  * Chunk pass fragment. At one pixel per tile and above (uFilter 0) a pixel is the one tile under it, bit-exact with
@@ -914,9 +1035,8 @@ uniform vec2 uCamera;
 uniform float uZoom;
 uniform vec2 uViewport;
 uniform int uFilter;
-// Tiles per pixel of the box filter (filterTilesPerPixel) and the world size in tiles.
+// Tiles per pixel of the box filter (filterTilesPerPixel); the world size in tiles is uWorldSize.
 uniform float uStep;
-uniform ivec2 uWorldSize;
 out vec4 outColor;
 ${tileColorSource}
 const int SUBTILE = ${String(FILTER_SUBTILE)};
@@ -974,7 +1094,6 @@ void main() {
   if (uLiquidOverlay != 0) {
     if (uFilter != 0 || liquidOverlay.a == 0) discard;
     outColor = vec4(liquidOverlay) / 255.0;
-    gl_FragDepth = ${OBJECT_BEHIND_DEPTH};
     return;
   }
 #endif
