@@ -164,8 +164,9 @@ function shapeContext(world: CanonicalWorld, x: number, y: number): ShapeContext
 /**
  * The expected canvas at ZOOM pixels per tile (one sprite pixel per canvas pixel): a block with a framed cell shows its
  * sheet's cell, cut by its shape's columns (docs/assets.md, "Slopes and half blocks"), with the wall layer behind it
- * where the shape cuts it away; a block without one its map colour; every other tile the wall layer. The cells come from
- * the CPU chunk cell caches.
+ * where the shape cuts it away; a block without one its map colour; every other tile the wall layer. A hanging vine is
+ * drawn 2 pixels up ("Draw order"): its tile shows its cell's rows 2–15, then the top 2 rows of the vine below it (none
+ * at the strip's end). The cells come from the CPU chunk cell caches.
  */
 function expectedCanvas(world: CanonicalWorld): Uint8Array {
   const map = mapColors(world, ALL);
@@ -182,6 +183,18 @@ function expectedCanvas(world: CanonicalWorld): Uint8Array {
       const sy = py % ZOOM;
       const hasBlock = (world.planes.block[tx * height + ty] ?? 0xffff) !== 0xffff;
       let color = hasBlock ? pixelAt(map, tile) : behind(tx, ty, sx, sy);
+      const idAt = (x: number, y: number): number => {
+        const ref = world.palette[world.planes.block[x * height + y] ?? 0xffff];
+        return ref?.kind === "vanilla" && y < height ? ref.id : -1;
+      };
+      if (idAt(tx, ty) === VINE) {
+        const below = sy >= 14;
+        const cell = below ? (idAt(tx, ty + 1) === VINE ? cache.cellAt(tx, ty + 1) : NO_CELL) : cache.cellAt(tx, ty);
+        const sheet = SHEETS.findIndex((entry) => entry.kind === "tile" && entry.id === VINE);
+        color = cell === NO_CELL ? behind(tx, ty, sx, sy) : sheetPixel(sheet, (cell >> 6) * 18 + sx, (cell & 63) * 18 + (below ? sy - 14 : sy + 2));
+        out.set(color, (py * width * ZOOM + px) * 4);
+        continue;
+      }
       const cell = cache.cellAt(tx, ty);
       if (cell !== NO_CELL) {
         const block = world.planes.block[tx * height + ty] ?? 0xffff;
@@ -264,10 +277,10 @@ describe("vines and cactus in sprite mode", () => {
     expectClose(pixels, expectedCanvas(world), world.width * ZOOM);
     const cache = createChunkCellCache(world, framing);
     const at = (x: number, y: number): Rgba => pixelAt(pixels, (y * world.width * ZOOM + x) * 4);
-    /** Tile (tx, ty) shows sheet `sheet`'s cell (column, row) at every pixel. */
-    const shows = (tx: number, ty: number, sheet: number, column: number, row: number): void => {
-      for (let sy = 0; sy < ZOOM; sy++) for (let sx = 0; sx < ZOOM; sx++) {
-        expect(at(tx * ZOOM + sx, ty * ZOOM + sy)).toEqual(sheetPixel(sheet, column * 18 + sx, row * 18 + sy));
+    /** Tile (tx, ty) shows sheet `sheet`'s cell (column, row) at every pixel (its rows 2–15 drawn 2 pixels up). */
+    const shows = (tx: number, ty: number, sheet: number, column: number, row: number, lift = 0): void => {
+      for (let sy = 0; sy < ZOOM - lift; sy++) for (let sx = 0; sx < ZOOM; sx++) {
+        expect(at(tx * ZOOM + sx, ty * ZOOM + sy)).toEqual(sheetPixel(sheet, column * 18 + sx, row * 18 + sy + lift));
       }
     };
     const vineSheet = SHEETS.findIndex((entry) => entry.id === VINE && entry.kind === "tile");
@@ -275,10 +288,12 @@ describe("vines and cactus in sprite mode", () => {
     // The vine: under grass, going on, with a vine east of it (columns 0, 2, 4 of row 3); under itself going on
     // (column 5) and ending (columns 6–8 of row 3); the short vine under grass with a vine west of it (column 12).
     const variant = (x: number, y: number): number => (7 * x + 11 * y) % 3;
-    shows(1, 1, vineSheet, 2 * variant(1, 1), 3);
-    shows(1, 2, vineSheet, 5, variant(1, 2));
-    shows(1, 3, vineSheet, 6 + variant(1, 3), 3);
-    shows(2, 1, vineSheet, 12, variant(2, 1));
+    shows(1, 1, vineSheet, 2 * variant(1, 1), 3, 2);
+    shows(1, 2, vineSheet, 5, variant(1, 2), 2);
+    shows(1, 3, vineSheet, 6 + variant(1, 3), 3, 2);
+    shows(2, 1, vineSheet, 12, variant(2, 1), 2);
+    // Vines hang 2 pixels higher: the vine below's top rows fill a vine's last 2 rows.
+    expect(at(ZOOM + 3, ZOOM + 14)).toEqual(sheetPixel(vineSheet, 5 * 18 + 3, variant(1, 2) * 18));
     // The cactus: trunk in column 6 on sand, a west branch from its second tile, an east arm on its third.
     shows(6, 1, cactusSheet, 0, 0);
     shows(6, 2, cactusSheet, 4, 2);

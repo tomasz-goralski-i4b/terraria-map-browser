@@ -5,13 +5,13 @@
 import { CHUNK_SIZE } from "../camera/camera.js";
 import type { ChunkCoord } from "../camera/camera.js";
 import { objectSprites, type ObjectSprite } from "../objects/object-sprites.js";
-import { SHIMMER_WATERFALL, waterfallSprites } from "../objects/waterfalls.js";
+import { waterfallSprites } from "../objects/waterfalls.js";
 import { chunkGrid } from "./chunk-grid.js";
 import { requireValue, type GpuPart, type ProgramCache, type ProgramSource } from "./gl.js";
 import { PAINT_GROUP_UNIFORMS, SAMPLING_UNIFORMS, setPaintGroups, type SpriteAtlas } from "./sprite-atlas.js";
 import {
   OBJECT_BEHIND, OBJECT_DEST_ATTRIBUTE, OBJECT_FADE_SHIFT, OBJECT_FLIP, OBJECT_GROUP_SHIFT, OBJECT_INACTIVE, OBJECT_PAINT_SHIFT,
-  OBJECT_SOURCE_ATTRIBUTE, OBJECT_TINT, objectFragmentSource, objectOrder, objectVertexSource,
+  OBJECT_COLORS, OBJECT_COLOR_SHIFT, OBJECT_SOURCE_ATTRIBUTE, objectFragmentSource, objectOrder, objectVertexSource,
 } from "./object-shaders.js";
 import type { FrameView, RenderableWorld } from "./types.js";
 
@@ -27,9 +27,9 @@ export const SPRITE_PASS_UNIFORMS: readonly ["uCamera", "uZoom", "uViewport", ..
   "uCamera", "uZoom", "uViewport", ...SAMPLING_UNIFORMS,
 ];
 
-const OBJECT_PROGRAM: ProgramSource<(typeof SPRITE_PASS_UNIFORMS)[number] | (typeof PAINT_GROUP_UNIFORMS)[number] | "uTint" | "uTintEdge" | "uLayers"> = {
+const OBJECT_PROGRAM: ProgramSource<(typeof SPRITE_PASS_UNIFORMS)[number] | (typeof PAINT_GROUP_UNIFORMS)[number] | "uLayers"> = {
   vertex: objectVertexSource, fragment: objectFragmentSource,
-  uniforms: [...SPRITE_PASS_UNIFORMS, ...PAINT_GROUP_UNIFORMS, "uTint", "uTintEdge", "uLayers"],
+  uniforms: [...SPRITE_PASS_UNIFORMS, ...PAINT_GROUP_UNIFORMS, "uLayers"],
 };
 
 /** Sets the camera and sprite sampling uniforms of a sprite pass. */
@@ -96,7 +96,7 @@ export function createObjectPass(gl: WebGL2RenderingContext, programs: ProgramCa
       if (sheet === undefined || sprite.sx < 0 || sprite.sy < 0) continue;
       if (sprite.sx + sprite.width > sheet.width || sprite.sy + sprite.height > sheet.height) continue;
       const flags = (sprite.flip === true ? OBJECT_FLIP : 0) | ((255 - (sprite.alpha ?? 255)) << OBJECT_FADE_SHIFT)
-        | (sprite.tint === true ? OBJECT_TINT : 0) | (sprite.behind === true ? OBJECT_BEHIND : 0)
+        | ((sprite.color === undefined ? 0 : OBJECT_COLORS[sprite.color]) << OBJECT_COLOR_SHIFT) | (sprite.behind === true ? OBJECT_BEHIND : 0)
         | ((sprite.paint ?? 0) << OBJECT_PAINT_SHIFT)
         | (sprite.inactive === true ? OBJECT_INACTIVE : 0) | ((sprite.paintGroup ?? 0) << OBJECT_GROUP_SHIFT);
       placed.set([
@@ -166,14 +166,12 @@ export function createObjectPass(gl: WebGL2RenderingContext, programs: ProgramCa
       const { program, uniforms } = programs.get(OBJECT_PROGRAM);
       gl.useProgram(program);
       setSpritePassUniforms(gl, atlas, uniforms, view);
-      // Shimmer's waterfall: its core and edge colours (G: measured in an in-game screenshot).
-      gl.uniform3i(uniforms.uTint, ...SHIMMER_WATERFALL[0]);
-      gl.uniform3i(uniforms.uTintEdge, ...SHIMMER_WATERFALL[1]);
       gl.uniform1i(uniforms.uLayers, layers);
       setPaintGroups(gl, uniforms);
       gl.bindVertexArray(vao);
       gl.enable(gl.BLEND);
-      gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+      // Premultiplied: glitter adds its colour (writeAdded).
+      gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
       gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, instances);
       gl.disable(gl.BLEND);
       gl.bindVertexArray(null);

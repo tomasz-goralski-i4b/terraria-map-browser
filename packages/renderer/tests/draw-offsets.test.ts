@@ -93,8 +93,87 @@ describe("drawn tiles as object sprites", () => {
     expect(drawVariant(42, 0, 0)).toEqual([16, 16, 0, 0, 0]);
   });
 
+  test("a sunflower draws its glow, the sheet's rows 74 lower, over each of its tiles", () => {
+    const sprites = objectSprites(oneTile(27, 2, 2, 18, 36), AREA);
+    expect(sprites.map(({ sx, sy, dx, dy, stage }) => [sx, sy, dx, dy, stage])).toEqual([
+      [18, 36, 32, 32, DRAW_STAGE.swaying], [18, 36 + 74, 32, 32, DRAW_STAGE.swaying],
+    ]);
+  });
+
+  test("a lily pad floats on the water in its tile: 3 pixels down on a dry tile, higher the fuller it is", () => {
+    const pad = (amount: number, above = false): number | undefined => {
+      const world = oneTile(518, 3, 3, 0, 0);
+      const liquidAmount = new Uint8Array(8 * 6);
+      liquidAmount[3 * 6 + 3] = amount;
+      if (above) world.planes.block[3 * 6 + 2] = 1;
+      const palette = [{ kind: "vanilla" as const, id: 518 }, { kind: "vanilla" as const, id: 1 }];
+      return objectSprites({ ...world, palette, planes: { ...world.planes, liquidAmount } }, AREA).find((sprite) => sprite.id === 518)?.dy;
+    };
+    expect(pad(0)).toBe(3 * 16 + 3);
+    expect(pad(255)).toBe(3 * 16 - 12);
+    // Under a solid block it rises at most 8 pixels.
+    expect(pad(255, true)).toBe(3 * 16 - 8);
+  });
+
+  test("a golf flag's top is mirrored and shifted 6 pixels as the still wind leaves it", () => {
+    const flag = objectSprites(oneTile(493, 3, 3, 0, 0), AREA)[0];
+    const plain = drawVariant(493, 0, 0);
+    expect(flag?.flip).toBe(!(plain?.[4] === 1));
+    expect(flag?.dx).toBe(3 * 16 + (flag?.flip === true ? 6 : -6));
+  });
+
+  test("a swaying multi-tile plant is ordered by its top row within its stage", () => {
+    expect(objectSprites(oneTile(27, 3, 4, 0, 36), AREA)[0]).toMatchObject({ row: 2, stage: DRAW_STAGE.swaying });
+  });
+
   test("a tile without a stored frame, or of a plain type, is not an object sprite", () => {
     expect(objectSprites(oneTile(3, 2, 2, -1, -1), AREA)).toEqual([]);
     expect(objectSprites(oneTile(13, 2, 2, 0, 0), AREA)).toEqual([]);
+  });
+});
+
+/** A world from rows of characters: `p` a platform (19, frameY 36), `/` a platform of shape 2 (its stair piece goes
+ * toward the block below and right of it), `\` one of shape 3 (toward below and left), `d` dirt, `g` glass (blocks
+ * stairs), `r` a rope (213). */
+function grid(rows: readonly string[]): ObjectWorld {
+  const width = rows[0]?.length ?? 0, height = rows.length, count = width * height;
+  const block = new Uint16Array(count).fill(0xffff);
+  const frameX = new Int16Array(count).fill(-1);
+  const frameY = new Int16Array(count).fill(-1);
+  const shape = new Uint8Array(count);
+  const legend: Record<string, [number, number]> = { p: [0, 0], "/": [0, 2], "\\": [0, 3], d: [1, 0], g: [2, 0], r: [3, 0] };
+  rows.forEach((line, y) => { Array.from(line).forEach((char, x) => {
+    const entry = legend[char];
+    if (entry === undefined) return;
+    const index = x * height + y;
+    block[index] = entry[0];
+    shape[index] = entry[1];
+    if (entry[0] === 0) { frameX[index] = 0; frameY[index] = 36; }
+  }); });
+  return {
+    width, height, planes: { block, frameX, frameY, shape },
+    palette: [{ kind: "vanilla", id: 19 }, { kind: "vanilla", id: 0 }, { kind: "vanilla", id: 54 }, { kind: "vanilla", id: 213 }],
+  };
+}
+
+const full = (world: ObjectWorld) => objectSprites(world, { left: 0, top: 0, right: world.width, bottom: world.height });
+
+describe("pieces drawn with the solid tiles, behind them", () => {
+  test("a sloped platform draws its stair piece into the tile below, toward the block it climbs from", () => {
+    // `\` at (1, 0) and `/` at (2, 0), with dirt below and left of the first and below and right of the second.
+    expect(full(grid([".\\/.", "d..d"])).filter((sprite) => sprite.dy === 16)).toEqual([
+      { kind: "tile", id: 19, sx: 162, sy: 36, width: 16, height: 16, dx: 16, dy: 16, behind: true, solidLayer: true },
+      { kind: "tile", id: 19, sx: 198, sy: 36, width: 16, height: 16, dx: 32, dy: 16, behind: true, solidLayer: true },
+    ]);
+    // Toward a flat platform it draws the platform's stair end; over glass below it draws none.
+    expect(full(grid(["/.", ".p"])).map(({ sx }) => sx)).toEqual([324]);
+    expect(full(grid(["/.", "gd"]))).toEqual([]);
+  });
+
+  test("a platform between ropes above and below draws a rope behind it", () => {
+    expect(full(grid(["r", "p", "r"]))).toEqual([
+      { kind: "tile", id: 213, sx: 90, sy: 18, width: 16, height: 16, dx: 0, dy: 16, behind: true, solidLayer: true },
+    ]);
+    expect(full(grid(["r", "p", "."]))).toEqual([]);
   });
 });

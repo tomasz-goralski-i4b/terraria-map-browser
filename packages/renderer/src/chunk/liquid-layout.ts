@@ -531,3 +531,31 @@ export function behindPiece(behind: number): {
     : { x: mode === MODE.right ? 12 : 0, y: step, width: mode === MODE.across ? 16 : 4, height: 16 - step };
   return { kind, dest, sourceY: mode <= MODE.below ? 4 : sheetTop ? 0 : 4, opacity: plain, gradient };
 }
+
+/** The game's white noise of a position, in 32-bit unsigned arithmetic. */
+function whiteNoise(x: number, y: number): number {
+  const nx = (Math.imul(36469, x & 0xffff) + (x >>> 16)) >>> 0;
+  const ny = (Math.imul(18012, y & 0xffff) + (y >>> 16)) >>> 0;
+  return ((nx << 16) + ny) >>> 0;
+}
+
+/**
+ * The opacity (0–255) of the glitter on a shimmer body piece at tile corner (x, y), still (docs/assets.md, "Liquids"):
+ * the shimmer wave sin(((x + y / 6) / 10) · 2π) remapped from −0.5…1 to 0…0.35, times sin(noise / 10) of the corner's
+ * white noise, remapped from 0…0.5 to 0…1, clamped. Computed here because the noise term needs the exact 32-bit
+ * float steps, which a shader cannot reproduce.
+ */
+export function shimmerGlitter(x: number, y: number): number {
+  const f = Math.fround;
+  const wave = Math.sin(f(f(x + f(y / 6)) / 10) * 6.2831854820251465);
+  const low = Math.min(1, Math.max(0, (wave + 0.5) / 1.5)) * 0.35;
+  const noise = Math.sin(f(f(whiteNoise(x, y)) / 10));
+  return Math.round(Math.min(1, Math.max(0, (f(low) * f(noise)) / 0.5)) * 255);
+}
+
+/** shimmerGlitter at the corners of `width` × `height` tiles from (left, top), column-major ((x − left) · height + y − top). */
+export function shimmerGlitterPlane(left: number, top: number, width: number, height: number): Uint8Array {
+  const out = new Uint8Array(width * height);
+  for (let x = 0; x < width; x++) for (let y = 0; y < height; y++) out[x * height + y] = shimmerGlitter(left + x, top + y);
+  return out;
+}

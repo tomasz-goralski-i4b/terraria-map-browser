@@ -41,10 +41,10 @@ const ECHO_WALL = 318;
 /** The `Waterfall_<n>` sheet of CWM liquid kinds 1–4: forest water, lava, honey, shimmer. */
 export const WATERFALL_SHEETS: readonly number[] = [0, 1, 14, 25];
 
-/** Shimmer's waterfall: its core and its light edge (G: measured in an in-game screenshot of a shimmer waterfall). */
-export const SHIMMER_WATERFALL: readonly [readonly [number, number, number], readonly [number, number, number]] = [[164, 161, 245], [164, 203, 255]];
-/** The first row of shimmer's edge band in Waterfall_25 (measured, S). */
-const SHIMMER_EDGE_BAND = 42;
+/** Shimmer's and the rainbow stream's sheets, and the rows below a shimmer frame its glitter band starts at. */
+const SHIMMER_STREAM = 25;
+const RAINBOW_STREAM = 2;
+const SHIMMER_GLITTER_BAND = 42;
 
 const solidBlocks = new Set(terrariaSpriteObjects.solidBlocks);
 const hidesLiquid = new Set(terrariaSpriteObjects.hidesLiquidBehind);
@@ -387,12 +387,14 @@ export function waterfallSprites(world: WaterfallWorld, area: TileArea): ObjectS
       if (rain !== undefined) pieces.push(...rainPieces(reader, x, y, rain));
     }
   }
-  return pieces.map((piece) => {
-    const shimmer = piece.type === 25;
-    return {
-      kind: "waterfall" as const, id: piece.type, sx: piece.sx, sy: piece.sy + (shimmer ? SHIMMER_EDGE_BAND : 0),
-      width: piece.width, height: piece.height, dx: piece.dx, dy: piece.dy, flip: piece.flip,
-      alpha: Math.round(255 * Math.min(1, Math.max(0, piece.alpha))), behind: true, ...(shimmer ? { tint: true } : {}),
+  return pieces.flatMap((piece): ObjectSprite[] => {
+    const sprite: ObjectSprite = {
+      kind: "waterfall", id: piece.type, sx: piece.sx, sy: piece.sy, width: piece.width, height: piece.height,
+      dx: piece.dx, dy: piece.dy, flip: piece.flip, alpha: Math.round(255 * Math.min(1, Math.max(0, piece.alpha))), behind: true,
     };
+    if (piece.type === RAINBOW_STREAM) return [{ ...sprite, color: "disco" }];
+    // Shimmer's stream: its grey core coloured by shimmer's base colour, and its glitter band added over it.
+    if (piece.type === SHIMMER_STREAM) return [{ ...sprite, color: "shimmer" }, { ...sprite, sy: piece.sy + SHIMMER_GLITTER_BAND, color: "glitter" }];
+    return [sprite];
   });
 }

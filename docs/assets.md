@@ -270,8 +270,12 @@ How the viewer applies them (#147; `packages/renderer/src/framing/frame-wall.ts`
   corner darken it twice. Neighbours past the world's edge draw no outline.
 - The starry glass walls (242, 243) are 8 frames of 180 rows (S: 468 × 1440) that twinkle, each tile showing the frame
   its position picks; still, tile (x, y) shows frame `((11x + 27y) mod 160) div 20`, so a patch of them is a mosaic of
-  frames. Other animated walls draw their frame 0. The rainbow walls (44, 346), which the game tints with a cycling
-  colour, and the shimmer wall's (347) sparkles are left as their plain sheets.
+  frames. Other animated walls draw their frame 0.
+- The rainbow walls (44, 346) are tinted by the game's cycling disco colour, as the rainbow brick tiles (160, 692) and
+  the rainbow waterfall are; still, at time 0, it is pure red (`DISCO_COLOR`).
+- The shimmer wall (347) adds its glow (`Glow_361`, laid out as its wall sheet; the atlas's `wallGlow`) over its cell:
+  the glow's pixel in shimmer's glitter colours ("Liquids") at 0.5 · 0.7, blended between the wall's tile corners
+  across its 32 × 32 cell.
 
 ```text
 source = (x = 36 × column, y = 36 × row, w = 32, h = 32)
@@ -513,8 +517,15 @@ framed cells as three planes):
   furniture and waterfalls in a liquid lie under that front layer (the liquid overlay pass draws it over the object
   pass's sprites behind the blocks).
 - **Shimmer** is its sheets' grey art coloured by a violet that brightens and darkens along a wave across the world
-  (`shimmerBase` in the shader: between (165, 130, 238) and (205, 205, 255), blended between a piece's corners); its
-  sparkles are not drawn.
+  (`shimmerBase` in the shader: between (165, 130, 238) and (205, 205, 255), blended between a piece's corners). Over
+  each shimmer piece, in both layers, the game **adds** its glitter: the same piece 48 columns to the right on
+  `water_14` (its sparkle columns), in frame `int((x + 0.5 + (y + 0.5) / 6) / 10) mod 16` of tile (x, y), lit by a hue
+  that runs across the world (`hsl(((x + y / 6) / 6) mod 1, 1, 0.5)` at each corner, blended across the piece) times
+  the glitter's opacity and the piece's fall fade (not the front layer's opacity). Edge and surface pieces glitter at
+  0.5; body pieces only where x + y is even, at an opacity from the shimmer wave and the corner's white noise, which
+  the CPU computes (`shimmerGlitter`, uploaded as the 8-bit `glitter` plane of a chunk holding shimmer) because the
+  shader cannot reproduce its 32-bit float steps. Over sprites in shimmer the overlay pass folds the glitter into the
+  front layer's colour.
 - In map colours (map mode, and below `SPRITE_MIN_ZOOM` in sprite mode) a liquid keeps the map rule, opacity
   `amount / 255`; from `SPRITE_MIN_ZOOM` to `SPRITE_FULL_ZOOM` its sprite fades in over that colour like a block
   sprite. A kind whose sheets are not in the atlas keeps its map colour. The liquids are sampled once per screen pixel
@@ -538,6 +549,10 @@ What it shows: plants (3, 24, 61, 110, …) are 16 × 20 frames drawn from their
 the ground below them, and are **mirrored at every even x** (checked at nine columns); tall plants (73, 74) are
 16 × 32 drawn 12 pixels up; torches 20 × 20; candles 16 × 20 drawn 4 pixels up; 183 types (piles, cages, …) are drawn
 2 pixels down; the bottom row of chests, tables and other furniture is 16 × 18, reaching 2 pixels into the floor.
+
+The observation holds a lily pad (518) alone on a dry tile: 3 pixels down. The game floats it on its tile's water,
+`a / 16 − 3` pixels up for liquid amount a (whole steps; at most 8 under a solid block), and on a dry tile over a half
+block `max(8, its liquid / 16) − 16` up, over a slope cut at its top 4 lower (`lilyPadRise` in `object-sprites.ts`).
 
 **How the viewer draws them.** Every tile of those types with a stored frame is an object-pass sprite ("Trees"): the
 frame's rectangle (`wrappedFrame` for styles past the sheet's edge) of the drawn size, its top at the tile's top plus
@@ -566,11 +581,16 @@ The viewer draws a world's layers in the game's order, from back to front:
    wide (465, 591 and 592: two tiles) and hangs from a platform that is neither half nor sloped, and 698 also 10 pixels
    left, ordered by their top row; the **swaying multi-tile plants** (sunflowers, cattails, …), drawn at their tile
    without centring; the **plants that sway** (`swaysInWind` of the sprite-object tables, but the still dye plants);
-   the **moss plants** (184); the **tree foliage** (tree tops and branches, palm tops). Types in these stages without
-   draw data of their own are drawn by the object pass as plain cells; types whose draw data was not observed stay in
-   the chunk pass. With no wind, nothing sways;
+   the **moss plants** (184); the **tree foliage** (tree tops and branches, palm tops); the **hanging vines** (52, 62,
+   115, 205, 382, 528, 636, 638), drawn **2 pixels up**, so each vine's tile ends in the top 2 rows of the vine below it
+   and the tile holding the strip shows the first vine's top 2 rows under its own sprite; the **rising vines** (549),
+   2 pixels down likewise. The vines stay in the chunk pass (`vinePixel`) at their stage's depth. Types in these stages
+   without draw data of their own are drawn by the object pass as plain cells; types whose draw data was not observed
+   stay in the chunk pass. With no wind, nothing sways: a golf flag's top (493) is then mirrored and shifted 6 pixels
+   the way it points, and a sunflower draws its glow (its sheet's rows 74 lower) over each of its tiles;
 6. the waterfalls;
-7. the solid tiles, each with the liquid behind it first ("Liquids", behind blocks);
+7. the solid tiles, each with the liquid behind it first ("Liquids", behind blocks), and the pieces drawn with them
+   behind their sprites: a sloped platform's stair piece and the rope behind a platform ("Slopes and half blocks");
 8. the liquids' front layer, over everything in its tile;
 9. wires, actuators and the other overlays.
 
@@ -578,7 +598,8 @@ The two GPU passes keep that order with the depth buffer. The chunk pass draws t
 sprite of its own; it gives a solid tile depth 0 (also a type drawn with the solid tiles, `solidLayer`), a tile that
 is not solid the depth of its row (`rowDepth`: 0.95 − row / 8192, never below 0.3), and an empty tile depth 1. The
 object pass draws the sprites behind the blocks with the depth test: a non-solid tile's sprite half a row in front of
-its row, a sprite of the later stages at 0.299 − (stage · 4096 + row) / 2²⁰ (`objectOrder`), the waterfalls at 0.25; track extras and the other sprites in front go over
+its row, a sprite of the later stages at 0.299 − (stage · 4096 + row) / 2²⁰ (`objectOrder`, `stageDepth`), the
+waterfalls at 0.25, the pieces drawn with the solid tiles at 0.001; track extras and the other sprites in front go over
 everything. The chunk pass composes the liquids' front layer over its own pixels and clears their stencil mark; the
 object pass marks the pixels it draws, and the liquid overlay pass draws the front layer once more over
 exactly those, so sprites in a liquid lie under it.
@@ -619,9 +640,11 @@ the echo wall); the last 10 steps fade out. Rain draws a column of drops shifted
 deep (snow 50), at 0.6 over a fainter background layer at 0.3 (the third cloud at 0.9 and 0.4), down to a solid block
 (its last drop included) or liquid deep enough to hide a drop, its last 8 drops fading out. The object pass draws the
 waterfalls **behind the blocks** and **under the liquids' front layer**, as the other sprites behind the blocks
-("Draw offsets"); shimmer's mask is drawn from its edge band (rows 42–81 of `Waterfall_25`), blended from the core
-(164, 161, 245) to the light edge (164, 203, 255) by the band's grey (G). Frame 0 is drawn, no animation. The liquids
-layer toggle shows and hides them.
+("Draw offsets"). Shimmer's stream is its grey art coloured by shimmer's base colour ("Liquids") at the corners of the
+tile under the piece's centre, with its glitter band (42 rows lower in `Waterfall_25`) **added** over it in the glitter
+colours at 0.5; the rainbow stream is tinted by the disco colour ("Walls"). The object pass blends premultiplied, so
+an added sprite writes its colour with alpha 0. Frame 0 is drawn, no animation. The liquids layer toggle shows and
+hides them.
 
 ### Paint and inactive tiles
 
@@ -1049,6 +1072,14 @@ top half from (126, 0), or (90, 0) when the same content continues above it unsl
 pixels wide for the types with smooth borders (`smoothBorders`) and 4 wide otherwise, from (144, 0) (its top 2 rows
 from (148, 0) or (142, 0) for the 2-pixel corner). The table flags reach the shader as the atlas's per-type draw
 flags (`tileDrawFlags`).
+
+A **sloped platform** also draws a stair piece into the tile below it, with the solid tiles but behind them, when the
+tile diagonally below on its low side (right of shape 2, left of shape 3) is solid and neither a half block nor sloped
+against it, and the tile below is empty, sloped otherwise or does not block stairs (`blocksStairs` of the sprite-object
+tables): the platform's frame row at x 198 (shape 2) or 162 (shape 3), or the platform end at 324 or 306 when that
+tile is a flat platform. A **platform or planter box** threaded on a rope (a rope within 5 tiles above it, through
+unbroken tiles, and another below) draws the top rope's cell (90, ((x + y) mod 3) · 18) behind it (`platformPieces`
+in `object-sprites.ts`; `ropes` of the tables).
 
 ### Worked examples
 
@@ -1507,7 +1538,8 @@ report the same errors, and every candidate library either drags in a framework 
 
 `buildSpriteAtlas(contentDir)` (`packages/assets`) decodes every `Images/Tiles_<id>.xnb`, `Images/Wall_<id>.xnb`,
 `Images/Tree_Tops_<n>.xnb` and `Images/Tree_Branches_<n>.xnb` (kinds `tile`, `wall`, `treeTop`, `treeBranch`), and
-`Shroom_Tops`, `WiresNew` and `Actuator` (kinds `shroomTop`, `wire`, `actuator`, each id 0), and `Item_<n>`,
+`Shroom_Tops`, `WiresNew`, `Actuator` and `Glow_361` (kinds `shroomTop`, `wire`, `actuator`, `wallGlow`: the shimmer
+wall's glow, laid out as a wall sheet; each id 0), and `Item_<n>`,
 `Liquid_<n>` and `LiquidSlope_<n>` (kinds `item`, `liquid`, `liquidSlope`: items for chest contents, with no frame grid
 (frame size 0, the whole sheet: the item catalog carries each inventory frame); liquids drawn per "Liquids", 16 × 16
 frames at a stride of 18) once (names matched

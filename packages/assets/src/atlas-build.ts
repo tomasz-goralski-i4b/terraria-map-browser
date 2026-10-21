@@ -73,6 +73,8 @@ const MISC = "Misc";
 /** The single sheets the atlas holds by name, each as id 0 of its kind (docs/assets.md, "Atlas"). */
 const NAMED_SHEETS: ReadonlyMap<string, SheetKind> = new Map([
   ["shroom_tops.xnb", "shroomTop"], ["wiresnew.xnb", "wire"], ["actuator.xnb", "actuator"],
+  // The shimmer wall's glow (docs/assets.md, "Walls").
+  ["glow_361.xnb", "wallGlow"],
 ]);
 const NUMBERED_KINDS: ReadonlyMap<string, SheetKind> = new Map([
   ["tiles", "tile"], ["wall", "wall"], ["tree_tops", "treeTop"], ["tree_branches", "treeBranch"],

@@ -7,6 +7,7 @@ import { NO_CELL } from "../framing/frame-block.js";
 import { WALL_CELL_STRIDE, WALL_OVERHANG } from "../framing/frame-wall.js";
 import { TRACK_CELL_STRIDE, trackShaderConstants } from "../objects/tracks.js";
 import { INACTIVE_SPRITE_SHADE } from "../palette/sprite-paint.js";
+import { DISCO_COLOR, DISCO_TILES, DISCO_WALLS, DRAW_STAGE, HANGING_VINES, RISING_VINES } from "../objects/draw-offsets.js";
 import { TILE_DRAW_FLAGS } from "../objects/tile-draw-flags.js";
 
 /** Tiles of neighbouring chunks stored around each chunk's page layer, so the box filter can cross chunk edges. */
@@ -20,7 +21,7 @@ export const PAGE_APRON = 1;
 export const PLANES_16 = {
   block: 0, wall: 1, flags: 2, frameX: 3, frameY: 4, cell: 5, wallCell: 6, liquidCell: 7, liquidRect: 8, liquidBehind: 9,
 } as const;
-export const PLANES_8 = { liquid: 0, liquidAmount: 1, paint: 2, wallPaint: 3, shape: 4 } as const;
+export const PLANES_8 = { liquid: 0, liquidAmount: 1, paint: 2, wallPaint: 3, shape: 4, glitter: 5 } as const;
 export const PLANE_COUNT_16: number = Object.keys(PLANES_16).length;
 export const PLANE_COUNT_8: number = Object.keys(PLANES_8).length;
 
@@ -43,6 +44,13 @@ export const INACTIVE_FLAG = 32;
  */
 export const ROW_DEPTH_TOP = "0.95";
 export const ROW_DEPTH_SCALE = "0.0001220703125";
+/**
+ * The depth of the stages after the tiles that are not solid (DRAW_STAGE; stageDepth): STAGE_DEPTH_TOP − (stage ·
+ * STAGE_ROWS + row) · STAGE_DEPTH_SCALE (1 / 2²⁰), as GLSL literals: nearer than every row, farther than the waterfalls.
+ */
+export const STAGE_ROWS = 4096;
+export const STAGE_DEPTH_TOP = "0.299";
+export const STAGE_DEPTH_SCALE = "0.00000095367431640625";
 
 /** Room for the generated special groups (terraria-paint-groups.generated.ts) in the shaders' uniform arrays. */
 export const PAINT_GROUP_LIMIT = 15;
@@ -224,6 +232,38 @@ vec4 atlasTexel(ivec2 origin, ivec2 at, int page) {
 }
 `;
 
+/**
+ * Shimmer's colours, as the game shows them at time 0 (docs/assets.md, "Liquids"): its base colour and its glitter's,
+ * by tile corner; shared by the chunk pass and the object pass. The disco colour (DISCO_COLOR) tints rainbow content.
+ */
+// eslint-disable-next-line @typescript-eslint/no-inferrable-types -- an interpolated template needs it under isolatedDeclarations
+export const shimmerColorSource: string = `
+// Shimmer's colour at tile position at (corners at whole tiles; the game colours a piece's corners and blends between
+// them), as the game shows it at time 0: a violet that brightens and darkens along a wave across the world.
+vec3 shimmerBase(vec2 at) {
+  float wave = sin((at.x + at.y / 6.0) / 10.0 * 6.2831855);
+  return mix(vec3(165.0, 130.0, 238.0) / 255.0, vec3(205.0, 205.0, 255.0) / 255.0, 0.1 + wave * 0.4);
+}
+
+// One channel of the game's HSL colour at full saturation and half lightness.
+float hueChannel(float c) {
+  if (c < 0.0) c += 1.0;
+  if (c > 1.0) c -= 1.0;
+  if (6.0 * c < 1.0) return 6.0 * c;
+  if (2.0 * c < 1.0) return 1.0;
+  if (3.0 * c < 2.0) return (2.0 / 3.0 - c) * 6.0;
+  return 0.0;
+}
+
+// The glitter colour at tile corner (x, y) (0–1): a hue running across the world, at opacity glitter (0–1).
+vec3 glitterColor(ivec2 corner, float glitter) {
+  float hue = fract((float(corner.x) + float(corner.y) / 6.0) / 6.0);
+  return round(vec3(hueChannel(hue + 1.0 / 3.0), hueChannel(hue), hueChannel(hue - 1.0 / 3.0)) * 255.0) / 255.0 * glitter;
+}
+
+const vec3 DISCO = vec3(${DISCO_COLOR.map((value) => (value / 255).toFixed(6)).join(", ")});
+`;
+
 export const header = `#version 300 es
 precision highp float;
 precision highp int;
@@ -296,6 +336,8 @@ uniform int uSpriteWeight;
 // Per CWM liquid kind 1–4 (docs/assets.md, "Liquids"): its water sheet in entries 0–3, its Liquid sheet in 4–7 and its
 // LiquidSlope sheet in 8–11, each (atlas page, x, y, sheet height), height 0 without the sheet (LIQUID_SHEET_IDS).
 uniform ivec4 uLiquidSheets[12];
+// The shimmer wall's glow sheet (atlas page, x, y, 1; zeros without it), laid out as the wall's sheet.
+uniform ivec4 uWallGlow;
 // The world's surface level: above it the liquids' back layer hides the sky; below it the background hides that layer.
 uniform int uSurfaceY;
 // The front layer's opacity by kind, and the steps of a fall's fade (its reach + 1).
@@ -475,6 +517,58 @@ bool trackPixel(ivec4 place, ivec2 texel, ivec2 sub, out ivec4 color) {
   return true;
 }
 
+// 1 for a hanging vine, 2 for a rising one, 0 for other content (HANGING_VINES, RISING_VINES).
+int vineKind(uint index) {
+  if (index == ABSENT) return 0;
+  int id = texelFetch(uSpriteSheets, sheetAt(index) + ivec2(5, 0), 0).z;
+  if (${HANGING_VINES.map((id) => `id == ${String(id)}`).join(" || ")}) return 1;
+  return ${RISING_VINES.map((id) => `id == ${String(id)}`).join(" || ")} ? 2 : 0;
+}
+
+// The pixel of a vine at sprite pixel sub of its tile (docs/assets.md, "Draw order"): the game draws hanging vines 2
+// pixels up and rising ones 2 pixels down, so a vine's tile shows the next vine of its strip past its own rows, and
+// nothing past the strip's end.
+bool vinePixel(uint index, ivec2 texel, ivec2 sub, int vine, out ivec4 color) {
+  ivec2 s = sub + ivec2(0, vine == 1 ? 2 : -2);
+  ivec2 t = texel;
+  uint i = index;
+  if (s.y >= ${String(SPRITE_TILE_PIXELS)} || s.y < 0) {
+    int dy = s.y < 0 ? -1 : 1;
+    s.y -= dy * ${String(SPRITE_TILE_PIXELS)};
+    ivec2 next = texel + ivec2(dy, 0);
+    uint nextIndex = plane16(next, ${String(PLANES_16.block)});
+    if (vineKind(nextIndex) != vine) {
+      color = ivec4(0);
+      return true;
+    }
+    // shortcut: block cells are uploaded without the apron, so at the chunk's top or bottom row the next vine's rows
+    // come from this tile's own cell; upload the cell apron to draw them exactly.
+    bool edge = dy < 0 ? texel.x == ${String(PAGE_APRON)} : texel.x == ${String(PAGE_APRON)} + vRect.w - 1;
+    if (!edge) {
+      t = next;
+      i = nextIndex;
+    }
+  }
+  ivec2 at = sheetAt(i);
+  return cellPixel(i, texelFetch(uSpriteSheets, at, 0), at, t, s, color);
+}
+
+// The vine the game draws into the tile at texel from the strip it holds (a hanging vine's top 2 rows above its root,
+// a rising vine's bottom 2 rows below its root), at sprite pixel sub; transparent elsewhere. Lies under the tile's own
+// sprite.
+ivec4 vineInto(ivec2 texel, ivec2 sub) {
+  int dy = sub.y >= ${String(SPRITE_TILE_PIXELS - 2)} ? 1 : sub.y < 2 ? -1 : 0;
+  // The cells of the tiles past the chunk's top and bottom rows are not uploaded (see vinePixel).
+  if (dy == 0 || (dy < 0 ? texel.x == ${String(PAGE_APRON)} : texel.x == ${String(PAGE_APRON)} + vRect.w - 1)) return ivec4(0);
+  ivec2 next = texel + ivec2(dy, 0);
+  uint index = plane16(next, ${String(PLANES_16.block)});
+  if (vineKind(index) != (dy > 0 ? 1 : 2)) return ivec4(0);
+  ivec2 at = sheetAt(index);
+  ivec4 color;
+  if (!cellPixel(index, texelFetch(uSpriteSheets, at, 0), at, next, sub - ivec2(0, dy * (${String(SPRITE_TILE_PIXELS - 2)})), color)) return ivec4(0);
+  return color;
+}
+
 // The atlas pixel of a block at sprite pixel sub (0–15 per axis) of its tile. A stored frame selects its cell, scaled
 // into the tile, or the missing-texture checkerboard for content without a sheet; a block without one (frames of -1)
 // shows its framed cell (cellPixel). False for content sprite mode leaves in map colours, or past the sheet's edge.
@@ -482,6 +576,8 @@ bool spritePixel(uint index, ivec2 texel, ivec2 sub, out ivec4 color) {
   ivec2 at = sheetAt(index);
   ivec4 place = texelFetch(uSpriteSheets, at, 0);
   if (place.w == ${String(SPRITE_STATE.track)}) return trackPixel(place, texel, sub, color);
+  int vine = vineKind(index);
+  if (vine != 0) return vinePixel(index, texel, sub, vine, color);
   if (place.w == ${String(SPRITE_STATE.object)}) {
     color = ivec4(0);
     return true;
@@ -546,13 +642,7 @@ bool spriteSample(uint index, ivec2 texel, vec2 centre, out ivec4 color) {
   return true;
 }
 
-// Shimmer's colour at tile position at (corners at whole tiles; the game colours a piece's corners and blends between
-// them), as the game shows it at time 0: a violet that brightens and darkens along a wave across the world.
-vec3 shimmerBase(vec2 at) {
-  float wave = sin((at.x + at.y / 6.0) / 10.0 * 6.2831855);
-  return mix(vec3(165.0, 130.0, 238.0) / 255.0, vec3(205.0, 205.0, 255.0) / 255.0, 0.1 + wave * 0.4);
-}
-
+${shimmerColorSource}
 // A shimmer piece's grey art at position uv (0–1) across its piece in tile tile, coloured by the base colour of the
 // tile's corners.
 ivec3 shimmerTint(ivec3 grey, ivec2 tile, vec2 uv) {
@@ -605,16 +695,54 @@ ivec4 behindArt(uint behind, int shape, ivec2 p, ivec2 tile) {
   return art.a == 0 ? ivec4(0) : art;
 }
 
+// The glitter the game adds over a shimmer piece (docs/assets.md, "Liquids"), at sprite pixel p of tile tile (texel
+// in the page), as colour (0–255) to add before the piece's fade: the piece's twin among the sheet's sparkle columns
+// (48 to the right), in a frame its position picks, lit by the corners' glitter colours blended across the piece; on
+// edge and surface pieces at 0.5, on body pieces where x + y is even at the glitter plane's opacity, elsewhere none.
+vec3 shimmerGlitter(ivec2 texel, uint cell, uint rect, ivec2 p, ivec2 tile) {
+  ivec2 offset = ivec2(int(rect >> 12u) & 15, int(rect >> 8u) & 15);
+  ivec2 size = ivec2(int(rect >> 4u) & 15, int(rect) & 15) + 1;
+  ivec2 d = p - offset;
+  if (any(lessThan(d, ivec2(0))) || any(greaterThanEqual(d, size))) return vec3(0.0);
+  ivec2 source = ivec2(int(cell >> 6u) & 63, int(cell) & 63);
+  // A surface piece is a top piece of the grid's first row.
+  if (source.y == ${String(SURFACE_SOURCE_Y)}) source.y = 0;
+  bool top = source != ivec2(16, 48);
+  if (!top && ((tile.x + tile.y) & 1) != 0) return vec3(0.0);
+  vec2 at = vec2(tile) + 0.5;
+  float wave = (at.x + at.y / 6.0) / 10.0 + (top ? 0.0 : at.x + at.y);
+  int frame = (int(wave) % 16 + 16) % 16;
+  ivec4 sheet = uLiquidSheets[3];
+  vec4 art = atlasTexel(sheet.yz, sheet.yz + source + ivec2(48, 80 * frame) + d, sheet.x);
+  vec2 uv = (vec2(d) + 0.5) / vec2(size);
+  vec3 corners[4];
+  for (int k = 0; k < 4; k++) {
+    ivec2 corner = ivec2(k & 1, k >> 1);
+    float glitter = top ? 0.5 : float(plane8(texel + corner.yx, ${String(PLANES_8.glitter)})) / 255.0;
+    corners[k] = glitterColor(tile + corner, glitter);
+  }
+  vec3 light = mix(mix(corners[0], corners[1], uv.x), mix(corners[2], corners[3], uv.x), uv.y);
+  return art.rgb * art.a * light * 255.0;
+}
+
 // The liquid layers of the tile at texel (world tile tile) at the sprite pixel under position centre, without their
 // opacities: piece, the tile's liquid piece (kind 0: none); behind, the liquid behind its block (a slope's from the
-// LiquidSlope sheet). One sample, also where blocks average several: liquid art is mostly flat, and the shader
-// compilers of some drivers are slow on every further loop.
-void liquidSamples(ivec2 texel, ivec2 tile, vec2 centre, int kind, int shape, out ivec4 piece, out ivec4 behind) {
+// LiquidSlope sheet); glitter, shimmer's glitter to add over its piece (shimmerGlitter). One sample, also where blocks
+// average several: liquid art is mostly flat, and the shader compilers of some drivers are slow on every further loop.
+void liquidSamples(ivec2 texel, ivec2 tile, vec2 centre, int kind, int shape, out ivec4 piece, out ivec4 behind, out vec3 glitter) {
   ivec2 p = samplePixel(centre, 0, 0);
-  piece = kind != 0
-    ? liquidPieceArt(plane16(texel, ${String(PLANES_16.liquidCell)}), plane16(texel, ${String(PLANES_16.liquidRect)}), kind, p, tile)
-    : ivec4(0);
+  uint cell = plane16(texel, ${String(PLANES_16.liquidCell)});
+  uint rect = plane16(texel, ${String(PLANES_16.liquidRect)});
+  piece = kind != 0 ? liquidPieceArt(cell, rect, kind, p, tile) : ivec4(0);
+  glitter = kind == 4 ? shimmerGlitter(texel, cell, rect, p, tile) : vec3(0.0);
   behind = behindArt(plane16(texel, ${String(PLANES_16.liquidBehind)}), shape, p, tile);
+}
+
+// Colour c (straight alpha) with glitter folded into its colour, so that drawing it over anything adds the glitter too
+// (up to where its colour saturates).
+ivec4 withGlitter(ivec4 c, vec3 glitter) {
+  if (c.a == 0 || glitter == vec3(0.0)) return c;
+  return ivec4(min(vec3(255.0), vec3(c.rgb) + glitter * 255.0 / float(c.a)), c.a);
 }
 
 // Straight-alpha colour c with its alpha scaled by a / 255, rounded.
@@ -725,6 +853,24 @@ void storeWall(int dx, int dy, ivec4 a, ivec4 b) {
   else if (dx == 1 && dy == 1) { wallSEA = a; wallSEB = b; }
 }
 
+// The page texel and world tile of the tile wallSample draws (shimmer's wall glow reads the walls around it).
+ivec2 wallTexel;
+ivec2 wallTile;
+
+// The glow the game adds over the shimmer wall (347) at pixel cellPixel of its cell, at (dx, dy) from the tile drawn
+// (premultiplied colour, 0–1): its glow sheet's same pixel in shimmer's glitter colours at 0.5 · 0.7, blended between
+// the wall's tile corners across its 32 × 32 cell.
+vec3 shimmerWallGlow(int dx, int dy, ivec2 cellPixel) {
+  uint cell = plane16(wallTexel + ivec2(dy, dx), ${String(PLANES_16.wallCell)});
+  ivec2 at = ivec2(int(cell >> 6u), int(cell & 63u)) * ${String(WALL_CELL_STRIDE)} + cellPixel;
+  vec4 glow = atlasTexel(uWallGlow.yz, uWallGlow.yz + at, uWallGlow.x);
+  ivec2 tile = wallTile + ivec2(dx, dy);
+  vec2 uv = (vec2(cellPixel) + 0.5) / ${String(WALL_CELL_STRIDE - 4)}.0;
+  vec3 top = mix(glitterColor(tile, 0.35), glitterColor(tile + ivec2(1, 0), 0.35), uv.x);
+  vec3 bottom = mix(glitterColor(tile + ivec2(0, 1), 0.35), glitterColor(tile + ivec2(1, 1), 0.35), uv.x);
+  return glow.rgb * glow.a * mix(top, bottom, uv.y);
+}
+
 // The wall at (dx, dy) from the tile drawn over below (premultiplied) at sprite pixel sub of the tile, which its cell
 // covers: the cell's top-left lies WALL_OVERHANG pixels up and left of its own tile's.
 vec4 drawWall(vec4 below, int dx, int dy, ivec2 sub) {
@@ -737,7 +883,15 @@ vec4 drawWall(vec4 below, int dx, int dy, ivec2 sub) {
     if (any(greaterThanEqual(pixel, b.xy))) return below;
     vec4 sampled = atlasTexel(a.xy, pixel, a.z);
     if (b.z != 0) sampled.rgb = vec3(spritePainted(ivec3(round(sampled.rgb * 255.0)), b.z, true, 0)) / 255.0;
+    // The rainbow walls are tinted by the disco colour (DISCO_WALLS); b.w's low bits are the wall's type (wallOrder).
+    int type = b.w & 65535;
+    if (${DISCO_WALLS.map((id) => `type == ${String(id)}`).join(" || ")}) sampled.rgb *= DISCO;
     top = vec4(sampled.rgb * sampled.a, sampled.a);
+    if (type == 347 && uWallGlow.w != 0) {
+      vec4 layered = top + below * (1.0 - top.a);
+      layered.rgb = min(layered.rgb + shimmerWallGlow(dx, dy, sub + ${String(WALL_OVERHANG)} - ${String(SPRITE_TILE_PIXELS)} * ivec2(dx, dy)), vec3(layered.a));
+      return layered;
+    }
   } else {
     top = a.w == WALL_MISSING ? vec4(vec3(missingPixel(sub).rgb) / 255.0, 1.0) : wallOwn;
   }
@@ -753,6 +907,8 @@ vec4 drawWall(vec4 below, int dx, int dy, ivec2 sub) {
 // premultiplied floats, which needs no division, within one unit of exact integer compositing.
 ivec4 wallSample(ivec2 texel, vec2 centre, ivec4 ownMapped) {
   int count = uSpriteSamples;
+  wallTexel = texel;
+  wallTile = vRect.xy + texel.yx - ${String(PAGE_APRON)};
   wallOwn = ownMapped.a == 0 ? vec4(0.0) : vec4(vec3(ownMapped.rgb) / 255.0, 1.0);
   // The outermost samples lie this far from the centre; the margin only widens the walls looked up.
   vec2 reach = vec2(0.5 * uSpriteStep * (1.0 - 1.0 / float(count)) + 0.01);
@@ -866,6 +1022,11 @@ float rowDepth(int y) {
   return max(0.3, ${ROW_DEPTH_TOP} - float(y) * ${ROW_DEPTH_SCALE});
 }
 
+// The depth of row y of a stage after the tiles that are not solid (STAGE_DEPTH_TOP, STAGE_DEPTH_SCALE).
+float stageDepth(int stage, int y) {
+  return ${STAGE_DEPTH_TOP} - float(stage * ${String(STAGE_ROWS)} + min(y, ${String(STAGE_ROWS - 1)})) * ${STAGE_DEPTH_SCALE};
+}
+
 ivec4 localColorAt(ivec2 local, vec2 sub) {
   ivec2 texel = ivec2(local.y + ${String(PAGE_APRON)}, local.x + ${String(PAGE_APRON)});
 #ifdef SPRITES
@@ -885,10 +1046,11 @@ ivec4 localColorAt(ivec2 local, vec2 sub) {
   if (pieceKind != 0 && uLiquidSheets[pieceKind - 1].w == 0) pieceKind = 0;
   int liquidShape = (uPresent & ${String(PRESENT.shape)}) != 0 ? int(plane8(texel, ${String(PLANES_8.shape)})) : 0;
   ivec4 piece = ivec4(0), behindBack = ivec4(0), behindSolid = ivec4(0), behind = ivec4(0);
+  vec3 glitter = vec3(0.0);
   // A fall's piece fades by one step of LIQUID_FALL_STEPS per tile below its liquid: pieceShown of pieceSteps remain.
   int pieceShown = 0, pieceSteps = 1;
   if (liquidLayout) {
-    liquidSamples(texel, vRect.xy + local, sub, pieceKind, liquidShape, piece, behind);
+    liquidSamples(texel, vRect.xy + local, sub, pieceKind, liquidShape, piece, behind, glitter);
     uint behindBits = plane16(texel, ${String(PLANES_16.liquidBehind)});
     int behindCode = int(behindBits >> 7u) & 7;
     int behindKind = (int(behindBits >> 10u) & 3) + 1;
@@ -898,12 +1060,15 @@ ivec4 localColorAt(ivec2 local, vec2 sub) {
     if (pieceKind != 0) {
       pieceSteps = LIQUID_FALL_STEPS[pieceKind - 1];
       pieceShown = pieceSteps - (int(behindBits >> 12u) & 15);
+      // The glitter fades with its piece's fall, but not by the front layer's opacity.
+      glitter *= float(pieceShown) / float(pieceSteps);
     }
   }
   // The back layer: under the sky the liquids are drawn once opaque behind everything (the background hides them
   // below the surface). Faded in like a sprite.
   if (liquidLayout && tileY < uSurfaceY && (piece.a != 0 || behindBack.a != 0)) {
     ivec4 back = over(withOpacity(piece, (510 * pieceShown + pieceSteps) / (2 * pieceSteps)), over(behindBack, color));
+    back.rgb = min(ivec3(255), back.rgb + ivec3(round(glitter)));
     color = uSpriteWeight < 256 ? (color * (256 - uSpriteWeight) + back * uSpriteWeight + 128) / 256 : back;
   }
 #endif
@@ -916,8 +1081,10 @@ ivec4 localColorAt(ivec2 local, vec2 sub) {
 #ifdef SPRITES
   hasSprite = blockShown && spriteSample(block, texel, sub, sprite);
   if (hasSprite) {
-    sprite.rgb = spritePainted(sprite.rgb, int(plane8(texel, ${String(PLANES_8.paint)})), false,
-      texelFetch(uSpriteSheets, sheetAt(block) + ivec2(5, 0), 0).x);
+    ivec4 drawInfo = texelFetch(uSpriteSheets, sheetAt(block) + ivec2(5, 0), 0);
+    sprite.rgb = spritePainted(sprite.rgb, int(plane8(texel, ${String(PLANES_8.paint)})), false, drawInfo.x);
+    // The rainbow bricks are drawn in the disco colour (DISCO_TILES).
+    if (${DISCO_TILES.map((id) => `drawInfo.z == ${String(id)}`).join(" || ")}) sprite.rgb = ivec3(round(vec3(sprite.rgb) * DISCO));
     if ((uPresent & ${String(PRESENT.flags)}) != 0 && (plane16(texel, ${String(PLANES_16.flags)}) & ${String(INACTIVE_FLAG)}u) != 0u) {
       sprite.rgb = inactiveShade(sprite.rgb);
     }
@@ -951,11 +1118,17 @@ ivec4 localColorAt(ivec2 local, vec2 sub) {
     // A sprite (painted, shaded when inactive) over what lies behind it.
 #ifdef SPRITES
     if (hasSprite) {
-      // The liquid behind a block lies under its sprite.
-      color = over(sprite, over(behindSolid, color));
+      // The liquid behind a block lies under its sprite, and so does the end of a vine strip it holds.
+      ivec4 vine = vineKind(block) == 0 && uSpriteSamples == 1 ? vineInto(texel, ivec2(sub)) : ivec4(0);
+      color = over(sprite, over(behindSolid, over(vine, color)));
       if (uSpriteWeight < 256) color = (mapped * (256 - uSpriteWeight) + color * uSpriteWeight + 128) / 256;
-      // The solid tiles are drawn over the sprites behind the blocks, the others row by row with them.
-      if (sprite.a > 0) blockDepth = (tileFlags(block) & ${String(TILE_DRAW_FLAGS.solidLayer)}) != 0 ? 0.0 : rowDepth(tileY);
+      // The solid tiles are drawn over the sprites behind the blocks, the others row by row with them, the vines in
+      // their stages after them.
+      int vineStage = vineKind(block);
+      if (sprite.a > 0) {
+        blockDepth = (tileFlags(block) & ${String(TILE_DRAW_FLAGS.solidLayer)}) != 0 ? 0.0
+          : vineStage != 0 ? stageDepth(vineStage == 1 ? ${String(DRAW_STAGE.vines)} : ${String(DRAW_STAGE.risingVines)}, tileY) : rowDepth(tileY);
+      }
     }
 #endif
   }
@@ -972,8 +1145,14 @@ ivec4 localColorAt(ivec2 local, vec2 sub) {
     if (liquidLayout && (own ? uLiquidSheets[liquid - 1u].w != 0 : pieceKind != 0)) {
       ivec4 front = pieceKind != 0 ? withOpacity(piece, (2 * LIQUID_FRONT_ALPHA[pieceKind - 1] * pieceShown + pieceSteps) / (2 * pieceSteps)) : ivec4(0);
       liquidOverlay = uSpriteWeight < 256 ? (plainFront * (256 - uSpriteWeight) + front * uSpriteWeight + 128) / 256 : front;
+      glitter *= min(1.0, float(uSpriteWeight) / 256.0);
+    } else {
+      glitter = vec3(0.0);
     }
     color = over(liquidOverlay, color);
+    color.rgb = min(ivec3(255), color.rgb + ivec3(round(glitter)));
+    // The overlay pass draws the front layer over sprites in one blend: the glitter folded into it.
+    liquidOverlay = withGlitter(liquidOverlay, glitter);
 #else
     if (own) color = over(plainFront, color);
 #endif
@@ -1141,11 +1320,18 @@ ivec2 samplePixelIn(vec2 centre, ivec2 size, int x, int y) {
   return uSpriteLevel == 1 ? sub & ivec2(~1) : sub;
 }
 
-// A straight-alpha colour (0–255) faded in by uSpriteWeight, for the blending of the passes drawn over the chunk pass
-// (source alpha, one minus source alpha); nothing is written where it is transparent.
+// A straight-alpha colour (0–255) faded in by uSpriteWeight, written premultiplied for the blending of the passes drawn
+// over the chunk pass (one, one minus source alpha); nothing is written where it is transparent.
 void writeFaded(ivec4 color) {
   float alpha = float(color.a) / 255.0 * float(uSpriteWeight) / 256.0;
   if (alpha <= 0.0) discard;
-  outColor = vec4(vec3(color.rgb) / 255.0, alpha);
+  outColor = vec4(vec3(color.rgb) / 255.0 * alpha, alpha);
+}
+
+// Colour (0–255) added over what lies below, faded in like writeFaded (premultiplied output, alpha 0).
+void writeAdded(vec3 color) {
+  vec3 added = color / 255.0 * float(uSpriteWeight) / 256.0;
+  if (all(lessThanEqual(added, vec3(0.0)))) discard;
+  outColor = vec4(added, 0.0);
 }
 `;

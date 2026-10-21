@@ -5,7 +5,7 @@
 import { CHUNK_SIZE } from "../camera/camera.js";
 import type { ChunkCoord } from "../camera/camera.js";
 import { NO_CELL } from "../framing/cells.js";
-import { liquidLayout, LIQUID_LAYOUT_REACH, type LiquidLayout, type LiquidRegion } from "../chunk/liquid-layout.js";
+import { liquidLayout, LIQUID_LAYOUT_REACH, shimmerGlitterPlane, type LiquidLayout, type LiquidRegion } from "../chunk/liquid-layout.js";
 import { createChunkCellCache, type ChunkCellCache } from "../framing/chunk-cells.js";
 import { createChunkWallCellCache, type ChunkWallCellCache } from "../framing/chunk-wall-cells.js";
 import type { BlockFraming } from "../framing/frame-block.js";
@@ -199,6 +199,8 @@ export function createChunkStore(
   // slots whose liquid layers hold any liquid (an edit there may remove it).
   const liquidDirty = new Map<number, Area>();
   const liquidSlots = new Set<number>();
+  // The slots whose glitter layer holds their chunk's shimmer glitter (uploaded once a shimmer piece shows there).
+  const glitterSlots = new Set<number>();
   // Self-framed blocks and walls: the framing, the framed cells of the current world's resident chunks, and the slots
   // whose cell layers hold their chunk's current cells. Tiles framed by caches already let go are kept in the
   // framed…Before counts.
@@ -228,6 +230,7 @@ export function createChunkStore(
     framedSlots.clear();
     wallSlots.clear();
     liquidSlots.clear();
+    glitterSlots.clear();
     liquidDirty.clear();
     staleInstances();
   };
@@ -371,6 +374,20 @@ export function createChunkStore(
     }
     if (layout.cell.some((value) => value !== 0) || layout.behind.some((value) => value !== 0)) liquidSlots.add(slot);
     else if (area === undefined) liquidSlots.delete(slot);
+    if (!glitterSlots.has(slot) && layout.cell.some((value) => value >> 12 === SHIMMER_KIND)) {
+      // The glitter of every tile corner of the page layer, apron included (it reads the corners past its tiles).
+      const page = pageOf(slot);
+      bindTexture(gl, UNIT.planes8, gl.TEXTURE_2D_ARRAY, page.planes8);
+      gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+      gl.texSubImage3D(
+        gl.TEXTURE_2D_ARRAY, 0, 0, 0, (slot % CHUNKS_PER_PAGE) * PLANE_COUNT_8 + PLANES_8.glitter, PAGE_SIZE, PAGE_SIZE, 1,
+        gl.RED_INTEGER, gl.UNSIGNED_BYTE,
+        shimmerGlitterPlane(originX - PAGE_APRON, originY - PAGE_APRON, PAGE_SIZE, PAGE_SIZE),
+      );
+      gl.pixelStorei(gl.UNPACK_ALIGNMENT, 2);
+      bindTexture(gl, UNIT.planes16, gl.TEXTURE_2D_ARRAY, page.planes16);
+      glitterSlots.add(slot);
+    }
   };
 
   /**
@@ -538,6 +555,7 @@ export function createChunkStore(
         dirty.delete(key);
         liquidDirty.delete(key);
         liquidSlots.delete(slot);
+        glitterSlots.delete(slot);
         cellCache?.drop(coordOf(key));
         wallCache?.drop(coordOf(key));
         // Its slot is filled again: no instance buffer drawn before may be drawn again.
@@ -553,6 +571,7 @@ export function createChunkStore(
         dirty.delete(key);
         liquidDirty.delete(key);
         liquidSlots.delete(slot);
+        glitterSlots.delete(slot);
         cellCache?.drop(coordOf(key));
         wallCache?.drop(coordOf(key));
         // Its slot is filled again: no instance buffer drawn before may be drawn again.
@@ -670,6 +689,9 @@ export function createChunkStore(
 }
 
 /** The liquid layout of `region` (liquidLayout), with no liquid behind the half blocks waterfalls start at. */
+/** The liquid kind of shimmer in the liquid layout's cells (kind << 12). */
+const SHIMMER_KIND = 4;
+
 function regionLiquidLayout(source: RenderableWorld, region: LiquidRegion): LiquidLayout {
   const { left, top, width, height } = region;
   const starts = new Set(waterfallSources(source, { left, top, right: left + width, bottom: top + height })

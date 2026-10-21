@@ -5,7 +5,7 @@
  */
 export type SheetKind =
   "tile" | "wall" | "treeTop" | "treeBranch" | "shroomTop" | "wire" | "actuator" | "item" | "liquid" | "liquidSlope" | "waterfall"
-  | "water";
+  | "water" | "wallGlow";
 
 /** Frame and gutter metrics of a family (docs/assets.md, "Sprite layout"). */
 export interface SheetMetrics {

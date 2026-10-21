@@ -1,7 +1,7 @@
 // The liquid layout of sprite mode (docs/assets.md, "Liquids"): which piece of its water sheet a liquid tile draws
 // and where, and the liquid piece behind a solid block, on small synthetic worlds worked out by hand.
 import { describe, expect, test } from "vitest";
-import { BEHIND_OPACITY, behindPiece, liquidLayout, liquidPiece } from "../src/chunk/liquid-layout.js";
+import { BEHIND_OPACITY, behindPiece, liquidLayout, liquidPiece, shimmerGlitter, shimmerGlitterPlane } from "../src/chunk/liquid-layout.js";
 import type { LiquidLayoutWorld } from "../src/chunk/liquid-layout.js";
 
 const ABSENT = 0xffff;
@@ -126,5 +126,22 @@ describe("liquid behind blocks", () => {
       kind: SHIMMER, dest: { x: 0, y: 0, width: 16, height: 4 }, sourceY: 4, opacity: BEHIND_OPACITY.shimmer, gradient: false,
     });
     expect(layoutOf(world(4, 5).stone(2, 2)).behind(2, 2)).toBeNull();
+  });
+});
+
+describe("shimmer glitter (docs/assets.md, \"Liquids\")", () => {
+  test("the body's glitter opacity is 0 where the shimmer wave is low or the noise vanishes, and 0–255 elsewhere", () => {
+    // At x = 7, y = 0 the wave is sin(0.7 · 2π) < −0.5: no glitter; at the origin the noise is 0.
+    expect(shimmerGlitter(7, 0)).toBe(0);
+    expect(shimmerGlitter(0, 0)).toBe(0);
+    const values = Array.from({ length: 400 }, (_, i) => shimmerGlitter(i % 20, Math.floor(i / 20)));
+    expect(values.every((value) => Number.isInteger(value) && value >= 0 && value <= 255)).toBe(true);
+    expect(new Set(values).size).toBeGreaterThan(20);
+  });
+
+  test("the plane holds the glitter of every corner of an area, column-major", () => {
+    const plane = shimmerGlitterPlane(10, 20, 3, 4);
+    expect(plane).toHaveLength(12);
+    expect(plane[1 * 4 + 2]).toBe(shimmerGlitter(11, 22));
   });
 });

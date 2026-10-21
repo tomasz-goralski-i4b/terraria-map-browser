@@ -29,10 +29,22 @@ const PLAIN: DrawVariant = [16, 16, 0, 0, 0];
 
 /**
  * The stages the game draws after all the tiles that are not solid, in this order (docs/assets.md, "Draw order"): the
- * hanging objects (chandeliers, lanterns, banners), the swaying multi-tile plants, the plants that sway, the moss plants
- * and the tree foliage. Within a stage, row by row from the top.
+ * hanging objects (chandeliers, lanterns, banners), the swaying multi-tile plants, the plants that sway, the moss plants,
+ * the tree foliage, the hanging vines and the rising vines. Within a stage, row by row from the top.
  */
-export const DRAW_STAGE = { hanging: 0, swaying: 1, plants: 2, moss: 3, foliage: 4 } as const;
+export const DRAW_STAGE = { hanging: 0, swaying: 1, plants: 2, moss: 3, foliage: 4, vines: 5, risingVines: 6 } as const;
+
+/** The vines that hang (drawn 2 pixels up) and those that rise (2 pixels down), in the chunk pass ("Draw order"). */
+export const HANGING_VINES: readonly number[] = [52, 62, 115, 205, 382, 528, 636, 638];
+export const RISING_VINES: readonly number[] = [549];
+
+/**
+ * The colour the game tints rainbow content with (the rainbow brick tiles and walls, the rainbow waterfall): it cycles
+ * through the hues; still, at time 0, it is pure red.
+ */
+export const DISCO_COLOR: readonly [number, number, number] = [255, 0, 0];
+export const DISCO_TILES: readonly number[] = [160, 692];
+export const DISCO_WALLS: readonly number[] = [44, 346];
 
 /** The hanging objects: type → [width, height] in tiles; their tiles are drawn 2 pixels up from their top tile. */
 export const HANGING_OBJECTS: ReadonlyMap<number, readonly [number, number]> = new Map([

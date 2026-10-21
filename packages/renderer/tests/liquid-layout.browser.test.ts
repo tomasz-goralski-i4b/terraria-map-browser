@@ -36,18 +36,21 @@ const SHEETS: readonly SpriteSheetEntry[] = [
   { kind: "tile", id: STONE, page: 0, x: 260, y: 2, width: 288, height: 288, frameWidth: 16, frameHeight: 16 },
 ];
 
-/** Distinct opaque pixels per water sheet; shimmer's base pieces white, as the game's; the stone transparent. */
-function sheetPixel(sheet: number, x: number, y: number): Rgba {
+/**
+ * Distinct opaque pixels per water sheet; shimmer's base pieces white, as the game's, its sparkle columns black (adding
+ * nothing) or, with `sparkles`, white; the stone transparent.
+ */
+function sheetPixel(sheet: number, x: number, y: number, sparkles = false): Rgba {
   if (sheet === 3) return [0, 0, 0, 0];
-  if (sheet === 1) return x < 48 ? [255, 255, 255, 255] : [0, 0, 0, 255];
+  if (sheet === 1) return x < 48 || sparkles ? [255, 255, 255, 255] : [0, 0, 0, 255];
   return [(x * 5 + sheet * 70) % 256, (y * 3 + 20) % 256, (x * y + sheet * 40) % 256, 255];
 }
 
-function syntheticAtlas(): SpriteAtlasSource {
+function syntheticAtlas(sparkles = false): SpriteAtlasSource {
   const page = new Uint8Array(PAGE * PAGE * 4);
   SHEETS.forEach((sheet, index) => {
     for (let y = 0; y < sheet.height; y++) {
-      for (let x = 0; x < sheet.width; x++) page.set(sheetPixel(index, x, y), ((sheet.y + y) * PAGE + sheet.x + x) * 4);
+      for (let x = 0; x < sheet.width; x++) page.set(sheetPixel(index, x, y, sparkles), ((sheet.y + y) * PAGE + sheet.x + x) * 4);
     }
   });
   return { pages: [page], index: { pageSize: PAGE, entries: SHEETS } };
@@ -102,7 +105,7 @@ function renderable(world: CanonicalWorld, surfaceY: number): RenderableWorld {
   return { width: world.width, height: world.height, surfaceY, planes: world.planes, palette: world.palette };
 }
 
-function draw(world: RenderableWorld): {
+function draw(world: RenderableWorld, sparkles = false): {
   pixel: (tx: number, ty: number, sx: number, sy: number) => Rgba; renderer: MapRenderer; read: () => void;
 } {
   const canvas = document.createElement("canvas");
@@ -112,7 +115,7 @@ function draw(world: RenderableWorld): {
   created.push(renderer);
   renderer.setWorld(world);
   renderer.setLayers(ALL);
-  renderer.setAtlas(syntheticAtlas());
+  renderer.setAtlas(syntheticAtlas(sparkles));
   renderer.setFraming(framing);
   renderer.setSpriteMode(true);
   renderer.setCamera({ x: 0, y: 0, zoom: ZOOM });
@@ -201,5 +204,15 @@ describe("liquids drawn as the game draws them", () => {
     // A violet: blue strongest, red over green.
     expect(shimmer[2]).toBeGreaterThan(shimmer[0]);
     expect(shimmer[0]).toBeGreaterThan(shimmer[1]);
+  });
+
+  test("shimmer's glitter adds the sheet's sparkle art, coloured by a hue across the world, over its pieces", () => {
+    const world = renderable(liquidWorld(), 0);
+    const plain = draw(world).pixel(11, 2, 8, 8);
+    const lit = draw(world, true).pixel(11, 2, 8, 8);
+    // The lone shimmer tile is an edge piece: its glitter at 0.5, added twice under the sky (back and front layers).
+    const added = [0, 1, 2].map((k) => (lit[k] ?? 0) - (plain[k] ?? 0));
+    expect(Math.max(...added)).toBeGreaterThan(60);
+    expect(added.every((value) => value >= 0)).toBe(true);
   });
 });

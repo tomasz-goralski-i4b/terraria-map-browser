@@ -45,6 +45,9 @@ const DIRT_WALL = 2;
 const LARGE_WALL = 185;
 /** A starry glass wall: eight frames of 180 rows, each tile drawing one by its position. */
 const STARRY_WALL = 242;
+/** The rainbow brick wall, tinted by the disco colour, and the shimmer wall, with its glow. */
+const RAINBOW_WALL = 44;
+const SHIMMER_WALL = 347;
 /** A wall the synthetic atlas has no sheet for: drawn as the missing-texture checkerboard. */
 const UNSHEETED_WALL = 7;
 const MOD_BLOCK: ContentRef = { kind: "mod", mod: "Example", internalName: "Crate" };
@@ -81,6 +84,9 @@ const SHEETS: readonly SpriteSheetEntry[] = [
     kind: "wall" as const, id, page: 0, x: 4, y: 4 + index * 220, width: 468, height: 216, frameWidth: 32, frameHeight: 32,
   })),
   { kind: "wall", id: STARRY_WALL, page: 0, x: 480, y: 4, width: 468, height: 1440, frameWidth: 32, frameHeight: 32 },
+  { kind: "wall", id: RAINBOW_WALL, page: 0, x: 960, y: 4, width: 468, height: 216, frameWidth: 32, frameHeight: 32 },
+  { kind: "wall", id: SHIMMER_WALL, page: 0, x: 960, y: 230, width: 468, height: 216, frameWidth: 32, frameHeight: 32 },
+  { kind: "wallGlow", id: 0, page: 0, x: 960, y: 460, width: 468, height: 216, frameWidth: 32, frameHeight: 32 },
 ];
 
 /**
@@ -301,6 +307,28 @@ describe("walls in sprite mode", () => {
     const at = (x: number, y: number): Rgba => pixelAt(pixels, (y * world.width * ZOOM + x) * 4);
     const cell = createChunkWallCellCache(world, framing.walls).cellAt(3, 2);
     expect(at(3 * ZOOM + 7, 2 * ZOOM + 7)).toEqual(sheetPixel(3, (cell >> 6) * 36 + 15, (cell & 63) * 36 + 15 + 4 * 180));
+  });
+
+  test("a rainbow wall is tinted by the disco colour; a shimmer wall adds its glow in shimmer's glitter colours", () => {
+    const world = createWorld(4, 4);
+    world.setTile(1, 1, { wall: { kind: "vanilla", id: RAINBOW_WALL }, wires: 0, actuator: false });
+    world.setTile(2, 2, { wall: { kind: "vanilla", id: SHIMMER_WALL }, wires: 0, actuator: false });
+    const pixels = readCanvas(draw(world).canvas);
+    const at = (x: number, y: number): Rgba => pixelAt(pixels, (y * world.width * ZOOM + x) * 4);
+    const cells = createChunkWallCellCache(world, framing.walls);
+    // Sprite pixel (7, 7) of a lone wall's tile: its own cell's opaque middle (16 + 7 − 8 = 15 into the cell).
+    const cellPixel = (sheet: number, x: number, y: number): Rgba => {
+      const cell = cells.cellAt(x, y);
+      return sheetPixel(sheet, (cell >> 6) * 36 + 15, (cell & 63) * 36 + 15);
+    };
+    const rainbow = cellPixel(4, 1, 1);
+    expect(at(ZOOM + 7, ZOOM + 7)).toEqual([rainbow[0], 0, 0, 255]);
+    // The glow (opaque in its middle) only adds to the shimmer wall's pixel: in the channels its hue lights.
+    const plain = cellPixel(5, 2, 2);
+    const lit = at(2 * ZOOM + 7, 2 * ZOOM + 7);
+    const added = [0, 1, 2].map((k) => (lit[k] ?? 0) - (plain[k] ?? 0));
+    expect(added.every((value) => value >= 0)).toBe(true);
+    expect(Math.max(...added)).toBeGreaterThan(5);
   });
 
   test("invalidating one changed wall recomputes exactly its 3 × 3 area and redraws it", () => {
