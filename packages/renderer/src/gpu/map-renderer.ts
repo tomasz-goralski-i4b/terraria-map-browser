@@ -26,11 +26,13 @@ import type { BlockFraming } from "../framing/frame-block.js";
 import { LIQUID_SHEETS, SHIMMER_WATERFALL } from "../chunk/liquids.js";
 import { backgroundColor, contentColor, liquidColors } from "../palette/map-palette.js";
 import type { MapPalette } from "../palette/map-palette.js";
+import { paintGroupOf } from "../palette/sprite-paint.js";
+import { terrariaPaintGroups } from "../palette/terraria-paint-groups.generated.js";
 import {
   CELLS_INSTANCE_BIT, WALLS_INSTANCE_BIT, LAYER_ATTRIBUTE, PAGE_APRON, PLANES_16, PLANES_8, PLANE_COUNT_16, PLANE_COUNT_8, PRESENT, RECT_ATTRIBUTE,
   LIQUID_FLAT, RULE_HEADER_ROWS, RULE_ROW, SPRITE_MIN_ZOOM, SPRITE_SHEET_ROW, SPRITE_SHEET_TEXELS, spriteSampling, SPRITE_STATE, chunkFragmentSource, chunkSpriteFragmentSource, chunkVertexSource, overviewBuildFragmentSource,
   halfAtlasFragmentSource, halfAtlasVertexSource, overviewBuildVertexSource, overviewFragmentSource, overviewVertexSource,
-  OBJECT_BEHIND, OBJECT_DEST_ATTRIBUTE, OBJECT_UNDER_LIQUID, OBJECT_FADE_SHIFT, OBJECT_FLIP, OBJECT_SOURCE_ATTRIBUTE, OBJECT_TINT, objectFragmentSource, objectVertexSource, wireFragmentSource,
+  OBJECT_BEHIND, OBJECT_DEST_ATTRIBUTE, OBJECT_GROUP_SHIFT, OBJECT_INACTIVE, OBJECT_PAINT_SHIFT, PAINT_GROUP_LIMIT, OBJECT_UNDER_LIQUID, PAINT_LAYER_BIT, OBJECT_FADE_SHIFT, OBJECT_FLIP, OBJECT_SOURCE_ATTRIBUTE, OBJECT_TINT, objectFragmentSource, objectVertexSource, wireFragmentSource,
   WIRE_RUN_ATTRIBUTE, wireVertexSource,
 } from "./shaders.js";
 import { OBJECT_TILES, objectSprites, type ObjectSprite, type TreeSettings } from "../objects/object-sprites.js";
@@ -336,7 +338,7 @@ const HIGHLIGHT_CHUNK_UNIFORMS = [
   "uColor", "uDimAlpha", "uTintAlpha", "uOutline",
 ] as const;
 const HIGHLIGHT_MASK_UNIFORMS = ["uCamera", "uZoom", "uViewport", "uWorld", "uExtent", "uMask", "uColor", "uDimAlpha"] as const;
-/** Texels per row of the sprite sheet lookup: five per palette index (SPRITE_SHEET_ROW in shaders.ts). */
+/** Texels per row of the sprite sheet lookup: six per palette index (SPRITE_SHEET_ROW in shaders.ts). */
 const SPRITE_SHEET_WIDTH = SPRITE_SHEET_ROW * SPRITE_SHEET_TEXELS;
 
 const TILE_UNIFORMS = [
@@ -350,7 +352,7 @@ const CHUNK_UNIFORMS = [...CHUNK_PASS_UNIFORMS, ...OVERLAY_UNIFORMS] as const;
 /** The sprite program's own uniforms (chunkSpriteFragmentSource), besides CHUNK_UNIFORMS. */
 const SPRITE_UNIFORMS = [
   "uAtlas", "uAtlasHalf", "uSpriteSheets", "uSpriteSamples", "uSpriteStep", "uSpriteLevel", "uSpriteWeight", "uLiquidSheets",
-  "uLiquidOverlay",
+  "uLiquidOverlay", "uPaintGroupRanges", "uPaintGroupModes",
 ] as const;
 const HALF_ATLAS_UNIFORMS = ["uAtlas", "uPage"] as const;
 const SPRITE_CHUNK_UNIFORMS = [...CHUNK_PASS_UNIFORMS, ...SPRITE_UNIFORMS] as const;
@@ -359,7 +361,7 @@ const OBJECT_UNIFORMS = [
   "uCamera", "uZoom", "uViewport", "uAtlas", "uAtlasHalf", "uSpriteSamples", "uSpriteStep", "uSpriteLevel", "uSpriteWeight",
 ] as const;
 /** The object program's uniforms: the shared sprite pass ones and the tint of shimmer's waterfalls. */
-const OBJECT_PROGRAM_UNIFORMS = [...OBJECT_UNIFORMS, "uTint", "uTintEdge"] as const;
+const OBJECT_PROGRAM_UNIFORMS = [...OBJECT_UNIFORMS, "uTint", "uTintEdge", "uLayers", "uPaintGroupRanges", "uPaintGroupModes"] as const;
 /** The wire pass's uniforms (wireFragmentSource). */
 const WIRE_UNIFORMS = [
   ...OBJECT_UNIFORMS, "uPlanes16", "uPresent", "uLayers", "uWireColors", "uWireBits", "uWireAlpha", "uWorldSize", "uWireSheet",
@@ -678,8 +680,21 @@ function createResources(gl: WebGL2RenderingContext, rules: RuleTable): GpuResou
 
 function layerBits(layers: ChunkLayers): number {
   return (layers.background ? 1 : 0) | (layers.walls ? 2 : 0) | (layers.blocks ? 4 : 0) | (layers.liquids ? 8 : 0)
-    | (((layers.wires ?? 0) & WIRE_LAYER.all) << 4);
+    | (((layers.wires ?? 0) & WIRE_LAYER.all) << 4) | (layers.paint === false ? 0 : PAINT_LAYER_BIT);
 }
+
+// The special groups paint is applied with (shaders' uPaintGroupRanges and uPaintGroupModes).
+if (terrariaPaintGroups.groups.length > PAINT_GROUP_LIMIT) throw new Error("More special paint groups than the shaders hold");
+const paintGroupRanges = new Float32Array(PAINT_GROUP_LIMIT * 4);
+const paintGroupModes = new Float32Array(PAINT_GROUP_LIMIT * 2);
+terrariaPaintGroups.groups.forEach(([minHue, maxHue, minSaturation, maxSaturation, offset, invert], index) => {
+  paintGroupRanges.set([minHue, maxHue, minSaturation, maxSaturation], index * 4);
+  paintGroupModes.set([offset, invert], index * 2);
+});
+const setPaintGroups = (gl: WebGL2RenderingContext, ranges: WebGLUniformLocation, modes: WebGLUniformLocation): void => {
+  gl.uniform4fv(ranges, paintGroupRanges);
+  gl.uniform2fv(modes, paintGroupModes);
+};
 
 const wireColorUniform = new Int32Array(WIRE_COLORS.flatMap(([, color]) => [...color]));
 const wireBitUniform = new Int32Array(WIRE_COLORS.map(([bit]) => bit));
@@ -977,6 +992,8 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       sheetMirror.set(wrap === undefined ? [0, 0, 0, 0] : wrap.axis === "x"
         ? [wrap.period, wrap.shift, 0, 0]
         : [0, 0, wrap.period, wrap.shift], at + 16);
+      // The special group its sprites are painted with (grass, dirt, mud).
+      sheetMirror.set([vanilla === undefined ? 0 : paintGroupOf("tile", vanilla), 0, 0, 0], at + 20);
     }
     const firstRow = Math.floor(from / SPRITE_SHEET_ROW);
     const lastRow = Math.floor((to - 1) / SPRITE_SHEET_ROW);
@@ -1438,6 +1455,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     gl.uniform1i(sprites.uSpriteLevel, sampling.level);
     gl.uniform1i(sprites.uSpriteWeight, sampling.weight);
     gl.uniform4iv(sprites.uLiquidSheets, liquidSheets);
+    setPaintGroups(gl, sprites.uPaintGroupRanges, sprites.uPaintGroupModes);
   };
 
   /**
@@ -1511,7 +1529,8 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       if (sprite.sx + sprite.width > sheet.width || sprite.sy + sprite.height > sheet.height) continue;
       const flags = (sprite.flip === true ? OBJECT_FLIP : 0) | ((255 - (sprite.alpha ?? 255)) << OBJECT_FADE_SHIFT)
         | (sprite.tint === true ? OBJECT_TINT : 0) | (sprite.behind === true ? OBJECT_BEHIND : 0)
-        | (sprite.underLiquid === true ? OBJECT_UNDER_LIQUID : 0);
+        | (sprite.underLiquid === true ? OBJECT_UNDER_LIQUID : 0) | ((sprite.paint ?? 0) << OBJECT_PAINT_SHIFT)
+        | (sprite.inactive === true ? OBJECT_INACTIVE : 0) | ((sprite.paintGroup ?? 0) << OBJECT_GROUP_SHIFT);
       placed.set([sprite.dx, sprite.dy, sprite.width, sprite.height, sheet.page, sheet.x + sprite.sx, sheet.y + sprite.sy, flags], at);
       at += OBJECT_INTS;
       if (sprite.behind === true && sprite.underLiquid !== true) behind = true;
@@ -1593,6 +1612,8 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     // Shimmer's waterfall: its core and edge colours (G: measured in an in-game screenshot).
     gl.uniform3i(objectProgram.uniforms.uTint, ...SHIMMER_WATERFALL[0]);
     gl.uniform3i(objectProgram.uniforms.uTintEdge, ...SHIMMER_WATERFALL[1]);
+    gl.uniform1i(objectProgram.uniforms.uLayers, layers);
+    setPaintGroups(gl, objectProgram.uniforms.uPaintGroupRanges, objectProgram.uniforms.uPaintGroupModes);
     gl.bindVertexArray(resources.objectArray);
     gl.enable(gl.BLEND);
     gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);

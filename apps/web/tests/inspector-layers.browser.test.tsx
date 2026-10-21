@@ -365,7 +365,7 @@ test("hiding and showing the wires group restores the wire colours chosen inside
   await expect.poll(() => shownLayers()["wires"]).toBe(WIRE_LAYER.all & ~WIRE_LAYER.blue);
 });
 
-test("Alt+2 … Alt+6 toggle the layers (Alt+1 is Sprites, the top row)", async () => {
+test("Alt+2 … Alt+7 toggle the layers (Alt+1 is Sprites, the top row)", async () => {
   await render(<LayersHarness world={renderable(600, 300)} />);
   await vi.waitFor(() => {
     expect(getMapController()).not.toBeNull();
@@ -374,7 +374,10 @@ test("Alt+2 … Alt+6 toggle the layers (Alt+1 is Sprites, the top row)", async 
     await userEvent.keyboard(`{Alt>}${digit}{/Alt}`);
     await expect.poll(() => shownLayers()[key]).toBe(false);
   }
+  await expect.poll(() => shownLayers()["paint"]).toBe(true);
   await userEvent.keyboard("{Alt>}6{/Alt}");
+  await expect.poll(() => shownLayers()["paint"]).toBe(false);
+  await userEvent.keyboard("{Alt>}7{/Alt}");
   await expect.poll(() => shownLayers()["wires"]).toBe(0);
 });
 

@@ -2,7 +2,7 @@
 // documented rules are written out here, so the test pins them rather than the generated table.
 import { describe, expect, test } from "vitest";
 import type { ContentRef } from "@studio/world-model";
-import { objectSprites } from "../src/index.js";
+import { objectSprites, paintGroupOf } from "../src/index.js";
 import type { ObjectSprite, ObjectWorld, TreeSettings } from "../src/index.js";
 
 const ABSENT = 0xffff;
@@ -141,5 +141,20 @@ describe("tree sprites", () => {
     const placed = world(tree(10, 5, 2));
     expect(objectSprites(placed, { left: 0, top: 0, right: 10, bottom: HEIGHT }).map((sprite) => sprite.kind)).toEqual(["tile", "treeBranch"]);
     expect(objectSprites(placed, { left: 11, top: 0, right: WIDTH, bottom: HEIGHT }).map((sprite) => sprite.kind)).toEqual(["tile", "treeBranch"]);
+  });
+
+  test("a painted tree's trunks, tops and branches carry the special group paint is applied with: by biome, foliage sheet and palm row", () => {
+    const painted = (tiles: Placed): ObjectWorld => {
+      const base = world(tiles);
+      return { ...base, planes: { ...base.planes, paint: new Uint8Array(WIDTH * HEIGHT).fill(1) } };
+    };
+    expect(of(objectSprites(world(tree(10, 5, 2)), ALL), "tile").every((sprite) => sprite.paintGroup === undefined)).toBe(true);
+    const forest = objectSprites(painted(tree(10, 5, 2)), ALL);
+    expect(new Set(of(forest, "tile").map((sprite) => sprite.paintGroup))).toEqual(new Set([paintGroupOf("tile", 5, -1)]));
+    expect(of(forest, "treeTop")[0]?.paintGroup).toBe(paintGroupOf("foliage", 0));
+    expect(of(forest, "treeBranch")[0]?.paintGroup).toBe(paintGroupOf("foliage", 0));
+    expect(lowestTrunk(objectSprites(painted(tree(10, 5, 23)), ALL))?.paintGroup).toBe(paintGroupOf("tile", 5, 0));
+    const palm = objectSprites(painted([[10, GROUND_Y, 112, -1, -1], [10, GROUND_Y - 1, 323, 88, 0]]), ALL);
+    expect(palm.map((sprite) => sprite.paintGroup)).toEqual([paintGroupOf("tile", 323, 3), paintGroupOf("foliage", 15, 3)]);
   });
 });

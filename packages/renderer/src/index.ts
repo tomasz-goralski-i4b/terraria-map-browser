@@ -12,6 +12,8 @@ export { LIQUID_BODY_ROW, LIQUID_SHEETS, LIQUID_SPRITE_ALPHA, liquidFillPixels, 
 export type { TileLiquid } from "./chunk/liquids.js";
 export { FILTER_SUBTILE, MAX_FILTER_TILES, filterTiles, filterTilesPerPixel } from "./chunk/box-filter.js";
 export { backgroundColor, contentColor, liquidColors, mapOption, paintedColor, placeholderColor } from "./palette/map-palette.js";
+export { INACTIVE_SPRITE_SHADE, inactiveSpriteColor, paintGroup, paintGroupOf, spritePaintedColor } from "./palette/sprite-paint.js";
+export type { PaintGroup, PaintGroupData } from "./palette/sprite-paint.js";
 export type { ContentNameMetadata, ContentNameSource, MapBackground, MapColor, MapContentMetadata, MapContentNames, MapOptionRule, MapPalette, Rgba, WorldDepth } from "./palette/map-palette.js";
 export { terrariaMapMetadata, terrariaMapNames, terrariaMapPalette } from "./palette/terraria-map-palette.generated.js";
 export {

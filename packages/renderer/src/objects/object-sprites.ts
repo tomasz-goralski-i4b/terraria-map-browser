@@ -4,6 +4,7 @@
 import type { ContentRef } from "@studio/world-model";
 import { terrariaSpriteObjects } from "./terraria-sprite-objects.generated.js";
 import { wrappedFrame } from "../gpu/frame-wrap.js";
+import { paintGroupOf } from "../palette/sprite-paint.js";
 import { DRAWN_TILES, drawVariant } from "./draw-offsets.js";
 import { TRACK_CELL_STRIDE, TRACK_EXTRA_OFFSET, TRACK_TILE, trackExtraCell, trackPiece, type TrackExtra } from "./tracks.js";
 
@@ -34,6 +35,12 @@ export interface ObjectSprite {
   readonly behind?: boolean;
   /** With `behind`, also under the liquids: drawn only where no liquid covers the pixel (waterfalls); absent means not. */
   readonly underLiquid?: boolean;
+  /** The paint of the tile it belongs to; absent means unpainted. */
+  readonly paint?: number;
+  /** Of an inactive (actuated) tile: shaded as the game draws one; absent means active. */
+  readonly inactive?: boolean;
+  /** With `paint`, the special group (1-based, paintGroupOf) it is applied with; absent means none. */
+  readonly paintGroup?: number;
 }
 
 /**
@@ -55,6 +62,10 @@ export interface ObjectWorld {
     readonly frameY?: Int16Array;
     /** Block shapes (0 full, 1 half, 2–5 slopes); absent means all full. */
     readonly shape?: Uint8Array;
+    /** Block paint; absent means unpainted. */
+    readonly paint?: Uint8Array;
+    /** CWM flags; only the inactive bit (5) is read. Absent means all active. */
+    readonly flags?: Uint16Array;
   };
   readonly palette: readonly ContentRef[];
   /** The world's tree settings; without them every variation is 0. */
@@ -70,6 +81,8 @@ export interface TileArea {
 }
 
 const ABSENT = 0xffff;
+/** The CWM `flags` bit of an inactive (actuated) tile. */
+const INACTIVE_FLAG = 32;
 
 /** The vanilla tile id of every palette index, -1 for anything else. */
 function vanillaIds(palette: readonly ContentRef[]): Int32Array {
@@ -325,6 +338,21 @@ function drawnTile(reader: ObjectReader, id: number, x: number, y: number, out: 
   });
 }
 
+/**
+ * The special group a sprite's paint is applied with (docs/assets.md, "Paint and inactive tiles"): by tile type, for the
+ * common tree by its biome (trunk block − 1) and for palms by their row; by foliage sheet, for palm tops by their row.
+ */
+function spritePaintGroup(sprite: ObjectSprite): number {
+  if (sprite.kind === "tile") {
+    const style = sprite.id === COMMON_TREE ? Math.floor(sprite.sx / TRUNK_BLOCK) - 1 : sprite.id === PALM_TREE ? sprite.sy / FRAME_STRIDE : -1;
+    return paintGroupOf("tile", sprite.id, style);
+  }
+  if (sprite.kind === "treeTop" || sprite.kind === "treeBranch") {
+    return paintGroupOf("foliage", sprite.id, sprite.id === PALM_TOPS ? sprite.sy / (PALM_TOP_SIZE + FOLIAGE_GAP) : -1);
+  }
+  return 0;
+}
+
 /** Sprites by drawing layer: trunk cells and track extras, then branches, then tops and caps. */
 interface Collected {
   readonly drawn: ObjectSprite[];
@@ -346,11 +374,25 @@ export function objectSprites(world: ObjectWorld, area: TileArea): ObjectSprite[
   for (let x = Math.max(0, area.left); x < right; x++) {
     for (let y = Math.max(0, area.top); y < bottom; y++) {
       const id = reader.id(x, y);
+      const lengths = [out.drawn.length, out.trunks.length, out.branches.length, out.tops.length];
       if (id === TRACK_TILE) trackExtras(reader, x, y, out.trunks);
       else if (FOLIAGE_TREES.has(id)) treeTile(reader, id, x, y, world.trees, out);
       else if (id === PALM_TREE) palmTile(reader, x, y, out);
       else if (id === GIANT_MUSHROOM) mushroomTile(reader, x, y, out);
       else if (DRAWN_TILES.has(id)) drawnTile(reader, id, x, y, out.drawn);
+      // The tile's paint and inactive shade on every sprite it added.
+      const index = x * world.height + y;
+      const paint = world.planes.paint?.[index] ?? 0;
+      const inactive = ((world.planes.flags?.[index] ?? 0) & INACTIVE_FLAG) !== 0;
+      if (paint === 0 && !inactive) continue;
+      [out.drawn, out.trunks, out.branches, out.tops].forEach((list, layer) => {
+        for (let i = lengths[layer] ?? list.length; i < list.length; i++) {
+          const sprite = list[i];
+          if (sprite === undefined) continue;
+          const paintGroup = paint === 0 ? 0 : spritePaintGroup(sprite);
+          list[i] = { ...sprite, ...(paint !== 0 ? { paint } : {}), ...(inactive ? { inactive } : {}), ...(paintGroup !== 0 ? { paintGroup } : {}) };
+        }
+      });
     }
   }
   return [...out.drawn, ...out.trunks, ...out.branches, ...out.tops];

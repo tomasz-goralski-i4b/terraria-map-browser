@@ -14,6 +14,8 @@ if runs_part web; then
   run_logged framing-tests node --test scripts/framing/observe.test.mjs scripts/framing/export-database.test.mjs || rc=1
   echo "== sprite object exporter (observer opt-in: TERRARIA_ASSEMBLY)"
   run_logged sprite-object-tests node --test scripts/sprite-objects/export.test.mjs || rc=1
+  echo "== sprite paint group exporter"
+  run_logged sprite-paint-tests node --test scripts/sprite-paint/export.test.mjs || rc=1
   echo "== waterfall source observer (opt-in: TERRARIA_ASSEMBLY)"
   run_logged waterfall-tests node --test scripts/waterfalls/observe.test.mjs || rc=1
   echo "== item catalog and sprite exporter"
