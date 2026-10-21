@@ -637,8 +637,49 @@ public static class SpriteObjectObserver {
         json.Append("]");
     }
 
+    // --- Solidity of tile types ------------------------------------------------------------------------------------
+
+    /** The ids whose entry in a per-type flag table is set. */
+    static string SetIds(bool[] flags) {
+        var ids = new List<string>();
+        for (int type = 0; type < flags.Length; type++) if (flags[type]) ids.Add(type.ToString(CultureInfo.InvariantCulture));
+        return "[" + string.Join(",", ids.ToArray()) + "]";
+    }
+
+    /** The game's per-type solidity and drawing tables after its tile data is set up: solid, solid on top only, the
+     *  types that draw no liquid behind themselves, the platforms, the types drawn with the solid tiles, and the types
+     *  that draw beside half blocks, their slopes or their slices in their own ways; per wall the wall it counts as
+     *  where walls meet; the plants that sway in the wind; the ropes and the types that block a platform's stair. */
+    static void Solidity(StringBuilder json) {
+        Type sets = game.GetType("Terraria.ID.TileID+Sets", true);
+        bool[] solid = (bool[])Field(mainType, "tileSolid").GetValue(null);
+        json.Append("{\"solid\":").Append(SetIds(solid));
+        json.Append(",\"solidTop\":").Append(SetIds((bool[])Field(mainType, "tileSolidTop").GetValue(null)));
+        json.Append(",\"hidesLiquidBehind\":").Append(SetIds((bool[])Field(sets, "BlocksWaterDrawingBehindSelf").GetValue(null)));
+        json.Append(",\"platforms\":").Append(SetIds((bool[])Field(sets, "Platforms").GetValue(null)));
+        Array inSolidLayer = (Array)Field(sets, "DrawTileInSolidLayer").GetValue(null);
+        var solidLayer = new bool[solid.Length];
+        for (int type = 0; type < solid.Length; type++) {
+            object value = inSolidLayer.GetValue(type);
+            solidLayer[type] = value != null ? (bool)value : solid[type];
+        }
+        json.Append(",\"solidLayer\":").Append(SetIds(solidLayer));
+        json.Append(",\"ignoresNearbyHalfBricks\":").Append(SetIds((bool[])Field(sets, "IgnoresNearbyHalfbricksWhenDrawn").GetValue(null)));
+        json.Append(",\"notReallySolid\":").Append(SetIds((bool[])Field(sets, "NotReallySolid").GetValue(null)));
+        json.Append(",\"smoothBorders\":").Append(SetIds((bool[])Field(sets, "AllBlocksWithSmoothBordersToResolveHalfBlockIssue").GetValue(null)));
+        json.Append(",\"noSlopes\":").Append(SetIds((bool[])Field(sets, "DontDrawTileSlopes").GetValue(null)));
+        json.Append(",\"swaysInWind\":").Append(SetIds((bool[])Field(sets, "SwaysInWindBasic").GetValue(null)));
+        json.Append(",\"ropes\":").Append(SetIds((bool[])Field(mainType, "tileRope").GetValue(null)));
+        json.Append(",\"blocksStairs\":").Append(SetIds((bool[])Field(sets, "BlocksStairs").GetValue(null)));
+        int[] wallBlend = (int[])Field(mainType, "wallBlend").GetValue(null);
+        json.Append(",\"wallBlend\":[").Append(string.Join(",", Array.ConvertAll(wallBlend, b => b.ToString(CultureInfo.InvariantCulture)))).Append("]");
+        json.Append("}");
+    }
+
     public static string Observe(string path) {
         Initialize(path);
+        var solidity = new StringBuilder();
+        Solidity(solidity);
         var json = new StringBuilder("{\"gameVersion\":\"");
         json.Append(Convert.ToString(Field(mainType, "versionNumber").GetValue(null), CultureInfo.InvariantCulture)).Append("\"");
         json.Append(",\"tracks\":");
@@ -651,6 +692,7 @@ public static class SpriteObjectObserver {
         Palms(json);
         json.Append(",\"drawOffsets\":");
         DrawOffsets(json);
+        json.Append(",\"solidity\":").Append(solidity);
         return json.Append(",\"complete\":true}").ToString();
     }
 }

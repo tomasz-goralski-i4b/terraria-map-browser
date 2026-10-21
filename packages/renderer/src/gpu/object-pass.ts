@@ -4,16 +4,14 @@
 
 import { CHUNK_SIZE } from "../camera/camera.js";
 import type { ChunkCoord } from "../camera/camera.js";
-import { SHIMMER_WATERFALL } from "../chunk/liquids.js";
 import { objectSprites, type ObjectSprite } from "../objects/object-sprites.js";
 import { waterfallSprites } from "../objects/waterfalls.js";
 import { chunkGrid } from "./chunk-grid.js";
-import type { Resident } from "./chunk-store.js";
 import { requireValue, type GpuPart, type ProgramCache, type ProgramSource } from "./gl.js";
 import { PAINT_GROUP_UNIFORMS, SAMPLING_UNIFORMS, setPaintGroups, type SpriteAtlas } from "./sprite-atlas.js";
 import {
   OBJECT_BEHIND, OBJECT_DEST_ATTRIBUTE, OBJECT_FADE_SHIFT, OBJECT_FLIP, OBJECT_GROUP_SHIFT, OBJECT_INACTIVE, OBJECT_PAINT_SHIFT,
-  OBJECT_SOURCE_ATTRIBUTE, OBJECT_TINT, OBJECT_UNDER_LIQUID, objectFragmentSource, objectVertexSource,
+  OBJECT_COLORS, OBJECT_COLOR_SHIFT, OBJECT_SOURCE_ATTRIBUTE, objectFragmentSource, objectOrder, objectVertexSource,
 } from "./object-shaders.js";
 import type { FrameView, RenderableWorld } from "./types.js";
 
@@ -29,9 +27,9 @@ export const SPRITE_PASS_UNIFORMS: readonly ["uCamera", "uZoom", "uViewport", ..
   "uCamera", "uZoom", "uViewport", ...SAMPLING_UNIFORMS,
 ];
 
-const OBJECT_PROGRAM: ProgramSource<(typeof SPRITE_PASS_UNIFORMS)[number] | (typeof PAINT_GROUP_UNIFORMS)[number] | "uTint" | "uTintEdge" | "uLayers"> = {
+const OBJECT_PROGRAM: ProgramSource<(typeof SPRITE_PASS_UNIFORMS)[number] | (typeof PAINT_GROUP_UNIFORMS)[number] | "uLayers"> = {
   vertex: objectVertexSource, fragment: objectFragmentSource,
-  uniforms: [...SPRITE_PASS_UNIFORMS, ...PAINT_GROUP_UNIFORMS, "uTint", "uTintEdge", "uLayers"],
+  uniforms: [...SPRITE_PASS_UNIFORMS, ...PAINT_GROUP_UNIFORMS, "uLayers"],
 };
 
 /** Sets the camera and sprite sampling uniforms of a sprite pass. */
@@ -45,13 +43,9 @@ export function setSpritePassUniforms(
   atlas.setSampling(uniforms, view.zoom);
 }
 
-/** One chunk's object list: its instances, and what picks the liquid overlay pass's chunks. */
+/** One chunk's object list: its instances. */
 interface ChunkObjects {
   readonly instances: Int32Array;
-  /** Whether any is a sprite behind the blocks that the liquids cover (OBJECT_BEHIND without OBJECT_UNDER_LIQUID). */
-  readonly behind: boolean;
-  /** Whether the chunk holds liquid. */
-  readonly liquid: boolean;
 }
 
 export interface ObjectPass extends GpuPart {
@@ -60,11 +54,6 @@ export interface ObjectPass extends GpuPart {
    * its own chunk), blended by straight alpha. Returns the number of draw calls.
    */
   readonly draw: (view: FrameView, visible: readonly ChunkCoord[]) => number;
-  /**
-   * The liquid overlay pass's chunks among `items`: those holding liquid with a sprite behind the blocks in them or in
-   * a chunk around them (an object reaches past its own chunk), by the object lists `draw` just collected.
-   */
-  readonly overlayChunks: (source: RenderableWorld, items: readonly Resident[]) => Resident[];
   /** Drops every list: the world, the atlas, or the layers they hold (objects with blocks, waterfalls with liquids) changed. */
   readonly clear: () => void;
   /**
@@ -109,32 +98,23 @@ export function createObjectPass(gl: WebGL2RenderingContext, programs: ProgramCa
     ];
     const placed = new Int32Array(sprites.length * OBJECT_INTS);
     let at = 0;
-    let behind = false;
     for (const sprite of sprites) {
       const sheet = atlas.sheet(sprite.kind, sprite.id);
       if (sheet === undefined || sprite.sx < 0 || sprite.sy < 0) continue;
       if (sprite.sx + sprite.width > sheet.width || sprite.sy + sprite.height > sheet.height) continue;
       const flags = (sprite.flip === true ? OBJECT_FLIP : 0) | ((255 - (sprite.alpha ?? 255)) << OBJECT_FADE_SHIFT)
-        | (sprite.tint === true ? OBJECT_TINT : 0) | (sprite.behind === true ? OBJECT_BEHIND : 0)
-        | (sprite.underLiquid === true ? OBJECT_UNDER_LIQUID : 0) | ((sprite.paint ?? 0) << OBJECT_PAINT_SHIFT)
+        | ((sprite.color === undefined ? 0 : OBJECT_COLORS[sprite.color]) << OBJECT_COLOR_SHIFT) | (sprite.behind === true ? OBJECT_BEHIND : 0)
+        | ((sprite.paint ?? 0) << OBJECT_PAINT_SHIFT)
         | (sprite.inactive === true ? OBJECT_INACTIVE : 0) | ((sprite.paintGroup ?? 0) << OBJECT_GROUP_SHIFT);
-      placed.set([sprite.dx, sprite.dy, sprite.width, sprite.height, sheet.page, sheet.x + sprite.sx, sheet.y + sprite.sy, flags], at);
+      placed.set([
+        sprite.dx, sprite.dy, sprite.width | (sprite.height << 16),
+        objectOrder(sprite),
+        sheet.page, sheet.x + sprite.sx, sheet.y + sprite.sy, flags,
+      ], at);
       at += OBJECT_INTS;
-      if (sprite.behind === true && sprite.underLiquid !== true) behind = true;
-    }
-    let liquid = false;
-    const { liquidAmount } = source.planes;
-    for (let x = area.left; x < Math.min(area.right, source.width) && !liquid; x++) {
-      const column = x * source.height;
-      for (let y = area.top; y < Math.min(area.bottom, source.height); y++) {
-        if ((liquidAmount[column + y] ?? 0) !== 0) {
-          liquid = true;
-          break;
-        }
-      }
     }
     const instances = placed.subarray(0, at);
-    cache.set(key, { instances, behind, liquid });
+    cache.set(key, { instances });
     return instances;
   };
 
@@ -194,23 +174,16 @@ export function createObjectPass(gl: WebGL2RenderingContext, programs: ProgramCa
       const { program, uniforms } = programs.get(OBJECT_PROGRAM);
       gl.useProgram(program);
       setSpritePassUniforms(gl, atlas, uniforms, view);
-      // Shimmer's waterfall: its core and edge colours (G: measured in an in-game screenshot).
-      gl.uniform3i(uniforms.uTint, ...SHIMMER_WATERFALL[0]);
-      gl.uniform3i(uniforms.uTintEdge, ...SHIMMER_WATERFALL[1]);
       gl.uniform1i(uniforms.uLayers, layers);
       setPaintGroups(gl, uniforms);
       gl.bindVertexArray(vao);
       gl.enable(gl.BLEND);
-      gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+      // Premultiplied: glitter adds its colour (writeAdded).
+      gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
       gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, instances);
       gl.disable(gl.BLEND);
       gl.bindVertexArray(null);
       return 1;
-    },
-    overlayChunks: (source, items) => {
-      const grid = chunkGrid(source);
-      return items.filter(([chunk]) => cache.get(grid.keyOf(chunk))?.liquid === true
-        && grid.around(chunk).some((key) => cache.get(key)?.behind === true));
     },
     clear: () => {
       cache.clear();

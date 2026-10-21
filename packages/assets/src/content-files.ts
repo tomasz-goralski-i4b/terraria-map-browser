@@ -23,11 +23,13 @@ function depth(file: PickedFile): number {
 /**
  * The fallback where `showDirectoryPicker` is missing: files picked from a folder, seen as the `Images` directory the
  * atlas build reads. When the `Content` folder was picked, those are the files directly inside its `Images` folder;
- * when `Images` itself was picked, its top-level files. Sub-folders are never listed.
+ * when `Images` itself was picked, its top-level files; either way with the files of its `Misc` folder. Other
+ * sub-folders are never listed.
  */
 export function filesToContentDirectory(files: readonly PickedFile[]): ContentDirectory {
-  const inImages = files.filter((file) => depth(file) === 3 && parentName(file).toLowerCase() === "images");
-  const listed = inImages.length > 0 ? inImages : files.filter((file) => depth(file) <= 2);
+  const inFolder = (file: PickedFile, folder: string, at: number): boolean => depth(file) === at && parentName(file).toLowerCase() === folder;
+  const inImages = files.filter((file) => inFolder(file, "images", 3) || (inFolder(file, "misc", 4) && file.webkitRelativePath.toLowerCase().includes("/images/misc/")));
+  const listed = inImages.length > 0 ? inImages : files.filter((file) => depth(file) <= 2 || inFolder(file, "misc", 3));
   return {
     getDirectoryHandle: (name) => Promise.reject(new DOMException(`no directory ${name}`, "NotFoundError")),
     entries: async function* (): AsyncGenerator<[string, ContentEntry]> {

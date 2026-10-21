@@ -1,6 +1,7 @@
 // Turns the sprite object observation (observe.ps1, ADR 0003) into the tables the renderer reads:
 //   node scripts/sprite-objects/export.mjs local-renders/sprite-objects.json
-// Minecart track pieces (#239) and tree trunk blocks, palm rows and foliage styles (#238). Only numbers are written,
+// Minecart track pieces (#239), tree trunk blocks, palm rows and foliage styles (#238), draw offsets and the solidity
+// of tile types. Only numbers are written,
 // no texture and no code. The output, packages/renderer/src/objects/terraria-sprite-objects.generated.ts, is
 // regenerated, never edited by hand.
 import { readFileSync, writeFileSync } from "node:fs";
@@ -141,6 +142,35 @@ export function drawOffsetTables(drawOffsets) {
   return { drawVariants: variants, drawTypes: types, drawUnobserved: unobserved };
 }
 
+/**
+ * Which tile types are solid and how they draw (docs/assets.md, "Liquids", "Slopes and half blocks"): the solid types
+ * that are not solid on top only (platforms and the like), the types solid on top only, the types that draw no liquid
+ * behind themselves, the platforms, the types drawn with the solid tiles, and the types with their own drawing beside
+ * half blocks (ignoring them, not really solid, with smooth borders) or without slopes; and the walls that count as
+ * another wall where walls meet ("Walls": [wall, the wall it counts as]); the plants that sway in the wind ("Draw
+ * order"); the ropes, and the types a sloped platform's stair piece is not drawn over ("Slopes and half blocks").
+ */
+export function solidityTables(solidity) {
+  if (solidity === undefined) fail("the observation has no solidity");
+  const top = new Set(solidity.solidTop);
+  return {
+    solidBlocks: solidity.solid.filter((type) => !top.has(type)),
+    solidTops: solidity.solidTop,
+    hidesLiquidBehind: solidity.hidesLiquidBehind,
+    platforms: solidity.platforms ?? fail("the observation has no platforms"),
+    solidLayer: solidity.solidLayer ?? fail("the observation has no solid layer"),
+    ignoresNearbyHalfBricks: solidity.ignoresNearbyHalfBricks ?? fail("the observation has no half-block tables"),
+    notReallySolid: solidity.notReallySolid ?? fail("the observation has no half-block tables"),
+    smoothBorders: solidity.smoothBorders ?? fail("the observation has no half-block tables"),
+    noSlopes: solidity.noSlopes ?? fail("the observation has no slope table"),
+    wallBlends: (solidity.wallBlend ?? fail("the observation has no wall blend table"))
+      .flatMap((blend, wall) => (blend === wall ? [] : [[wall, blend]])),
+    swaysInWind: solidity.swaysInWind ?? fail("the observation has no sway table"),
+    ropes: solidity.ropes ?? fail("the observation has no rope table"),
+    blocksStairs: solidity.blocksStairs ?? fail("the observation has no stair table"),
+  };
+}
+
 export function exportObjects(observed) {
   if (observed.complete !== true) fail("the observation is incomplete");
   if (!Array.isArray(observed.drawOffsets)) fail("the observation has no draw offsets");
@@ -149,6 +179,7 @@ export function exportObjects(observed) {
     ...(() => { const { pieces, extras } = trackTables(observed.tracks); return { trackPieces: pieces, trackExtras: extras }; })(),
     ...treeTables(observed.treeStyles, observed.palms),
     ...drawOffsetTables(observed.drawOffsets),
+    ...solidityTables(observed.solidity),
   };
 }
 

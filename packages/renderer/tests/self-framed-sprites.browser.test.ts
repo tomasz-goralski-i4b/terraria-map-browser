@@ -1,11 +1,11 @@
 import { afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import { createWorld, type BlockShape, type CanonicalWorld } from "@studio/world-model";
 import {
-  CHUNK_SIZE, LIQUID_SPRITE_ALPHA, NO_CELL, SPRITE_MIN_ZOOM, createBlockFraming, liquidFillPixels, liquidHasSurface, liquidSheetRow, shapedTileLiquid, createChunkCellCache, createChunkWallCellCache,
-  createMapRenderer, loadFramingDatabase, renderChunk, shapedColumns, terrariaFramingData,
+  CHUNK_SIZE, NO_CELL, SPRITE_MIN_ZOOM, createBlockFraming, createChunkCellCache, createChunkWallCellCache,
+  TILE_DRAW_FLAGS, createMapRenderer, loadFramingDatabase, renderChunk, shapedPixel, terrariaFramingData, tileDrawFlags,
 } from "../src/index.js";
 import type {
-  BlockFraming, ChunkLayers, MapRenderer, RenderableWorld, SpriteAtlasSource, SpriteSheetEntry,
+  BlockFraming, ChunkLayers, MapRenderer, RenderableWorld, ShapeContext, SpriteAtlasSource, SpriteSheetEntry,
 } from "../src/index.js";
 import { expectClose, pixelAt, wallLayerPixel, type Rgba } from "./wall-sprites.fixture.js";
 
@@ -94,10 +94,7 @@ const SHEETS: readonly SpriteSheetEntry[] = [
   ...[[GRASS, 2, 396], [VINE, 402, 288], [CACTUS, 694, 288]].map(([id = 0, y = 0, height = 0]) => ({
     kind: "tile" as const, id, page: 0, x: 602, y, width: SHEET, height, frameWidth: 16, frameHeight: 16,
   })),
-  // Liquid_0: water (docs/assets.md, "Liquids").
-  { kind: "liquid", id: 0, page: 0, x: 900, y: 2, width: 34, height: 16, frameWidth: 16, frameHeight: 16 },
 ];
-const WATER_SHEET = 8;
 const WALL_SHEET = 4;
 
 function sheetPixel(sheet: number, x: number, y: number): Rgba {
@@ -145,11 +142,31 @@ function wallLayer(world: CanonicalWorld): (tx: number, ty: number, sx: number, 
   return (tx, ty, sx, sy) => wallLayerPixel(input, tx, ty, sx, sy);
 }
 
+/** What shapedPixel reads around tile (x, y) of `world`. */
+function shapeContext(world: CanonicalWorld, x: number, y: number): ShapeContext {
+  const { block, shape } = world.planes;
+  const at = (tx: number, ty: number): number => tx * world.height + ty;
+  const inside = (tx: number, ty: number): boolean => tx >= 0 && ty >= 0 && tx < world.width && ty < world.height;
+  const flagsAt = (tx: number, ty: number): number => {
+    const ref = inside(tx, ty) ? world.palette[block[at(tx, ty)] ?? 0xffff] : undefined;
+    return ref?.kind === "vanilla" ? tileDrawFlags(ref.id) : 0;
+  };
+  const shapeAt = (tx: number, ty: number): number => (inside(tx, ty) ? shape[at(tx, ty)] ?? 0 : 0);
+  const present = (tx: number, ty: number): boolean => inside(tx, ty) && (block[at(tx, ty)] ?? 0xffff) !== 0xffff;
+  return {
+    shape: shapeAt(x, y), flags: flagsAt(x, y),
+    solidBelow: present(x, y + 1) && (flagsAt(x, y + 1) & TILE_DRAW_FLAGS.solid) !== 0 && shapeAt(x, y + 1) !== 1,
+    halfLeft: shapeAt(x - 1, y) === 1, halfRight: shapeAt(x + 1, y) === 1,
+    joinedAbove: present(x, y - 1) && block[at(x, y - 1)] === block[at(x, y)] && shapeAt(x, y - 1) !== 4 && shapeAt(x, y - 1) !== 5,
+  };
+}
+
 /**
  * The expected canvas at ZOOM pixels per tile (one sprite pixel per canvas pixel): a block with a framed cell shows its
  * sheet's cell, cut by its shape's columns (docs/assets.md, "Slopes and half blocks"), with the wall layer behind it
- * where the shape cuts it away; a block without one its map colour; every other tile the wall layer. The cells come from
- * the CPU chunk cell caches.
+ * where the shape cuts it away; a block without one its map colour; every other tile the wall layer. A hanging vine is
+ * drawn 2 pixels up ("Draw order"): its tile shows its cell's rows 2–15, then the top 2 rows of the vine below it (none
+ * at the strip's end). The cells come from the CPU chunk cell caches.
  */
 function expectedCanvas(world: CanonicalWorld): Uint8Array {
   const map = mapColors(world, ALL);
@@ -166,18 +183,25 @@ function expectedCanvas(world: CanonicalWorld): Uint8Array {
       const sy = py % ZOOM;
       const hasBlock = (world.planes.block[tx * height + ty] ?? 0xffff) !== 0xffff;
       let color = hasBlock ? pixelAt(map, tile) : behind(tx, ty, sx, sy);
+      const idAt = (x: number, y: number): number => {
+        const ref = world.palette[world.planes.block[x * height + y] ?? 0xffff];
+        return ref?.kind === "vanilla" && y < height ? ref.id : -1;
+      };
+      if (idAt(tx, ty) === VINE) {
+        const below = sy >= 14;
+        const cell = below ? (idAt(tx, ty + 1) === VINE ? cache.cellAt(tx, ty + 1) : NO_CELL) : cache.cellAt(tx, ty);
+        const sheet = SHEETS.findIndex((entry) => entry.kind === "tile" && entry.id === VINE);
+        color = cell === NO_CELL ? behind(tx, ty, sx, sy) : sheetPixel(sheet, (cell >> 6) * 18 + sx, (cell & 63) * 18 + (below ? sy - 14 : sy + 2));
+        out.set(color, (py * width * ZOOM + px) * 4);
+        continue;
+      }
       const cell = cache.cellAt(tx, ty);
       if (cell !== NO_CELL) {
         const block = world.planes.block[tx * height + ty] ?? 0xffff;
         const ref = world.palette[block];
         const sheet = SHEETS.findIndex((entry) => entry.kind === "tile" && ref?.kind === "vanilla" && entry.id === ref.id);
-        const shape = world.planes.shape[tx * height + ty] ?? 0;
-        const column = shapedColumns(shape)[Math.floor(sx / 2)];
-        if (column === undefined) throw new Error("no column");
-        color = behind(tx, ty, sx, sy);
-        if (sy >= column.destY && sy < column.destY + column.height) {
-          color = sheetPixel(sheet, (cell >> 6) * 18 + column.sourceX + sx - column.destX, (cell & 63) * 18 + column.sourceY + sy - column.destY);
-        }
+        const pixel = shapedPixel(shapeContext(world, tx, ty), [(cell >> 6) * 18, (cell & 63) * 18], sx, sy);
+        color = pixel === null ? behind(tx, ty, sx, sy) : sheetPixel(sheet, pixel[0], pixel[1]);
       }
       out.set(color, (py * width * ZOOM + px) * 4);
     }
@@ -198,89 +222,7 @@ function draw(world: CanonicalWorld, zoom = ZOOM): { pixels: Uint8Array; rendere
   return { pixels: readCanvas(canvas), renderer };
 }
 
-/** The shader's integer `over` (straight alpha), for liquids over an opaque or transparent pixel. */
-function over(top: Rgba, below: Rgba): Rgba {
-  if (top[3] === 0) return below;
-  if (below[3] === 0 || top[3] === 255) return top;
-  const t = top[3];
-  if (below[3] === 255) {
-    const mix = (k: 0 | 1 | 2): number => Math.floor((2 * (top[k] * t + below[k] * (255 - t)) + 255) / 510);
-    return [mix(0), mix(1), mix(2), 255];
-  }
-  const weight = below[3] * (255 - t);
-  const alpha = t + Math.floor((weight + 127) / 255);
-  const mix = (k: 0 | 1 | 2): number => Math.floor((top[k] * t * 255 + below[k] * weight + Math.floor((alpha * 255) / 2)) / (alpha * 255));
-  return [mix(0), mix(1), mix(2), alpha];
-}
-
-/** The water sprite pixel at (sx, sy) of a tile filled `amount` (its art; `front`: at the water's sprite alpha). */
-function waterPixel(amount: number, surface: boolean, sx: number, sy: number, front: boolean): Rgba {
-  const row = liquidSheetRow(sy, liquidFillPixels(amount), surface);
-  if (row === null) return [0, 0, 0, 0];
-  const art = sheetPixel(WATER_SHEET, sx, row);
-  return front ? [art[0], art[1], art[2], Math.floor((art[3] * (LIQUID_SPRITE_ALPHA[0] ?? 0) + 127) / 255)] : art;
-}
-
 describe("self-framed blocks in sprite mode", () => {
-  test("a half block or slope beside or below water holds the water in its cut-away part, under the block", () => {
-    const world = createWorld(8, 4);
-    stamp(world, 0, 0, ["........", "..H.T.N.", "dHdddd.d", "ssssssss"]);
-    // No walls: the cut-away parts show the background, which the water's back layer hides.
-    for (let x = 0; x < world.width; x++) {
-      for (let y = 0; y < world.height; y++) {
-        const tile = { ...world.tileAt(x, y) };
-        delete tile.wall;
-        world.setTile(x, y, tile);
-      }
-    }
-    const pour = (x: number, y: number, amount: number): void => {
-      world.setTile(x, y, { ...world.tileAt(x, y), liquid: { kind: "water", amount } });
-    };
-    pour(0, 1, 255);
-    pour(1, 1, 255);
-    pour(3, 1, 127);
-    // Water under the slope at (6, 1), which holds the water to its right: no surface line under it.
-    pour(7, 1, 255);
-    pour(6, 2, 255);
-    const { pixels } = draw(world);
-    const base = expectedCanvas(world);
-    const { width, height } = world;
-    const liquidAt = (x: number, y: number): { kind: number; amount: number } =>
-      x < 0 || y < 0 || x >= width ? { kind: 0, amount: 0 } : { kind: world.planes.liquid[x * height + y] ?? 0, amount: world.planes.liquidAmount[x * height + y] ?? 0 };
-    const expected = new Uint8Array(base);
-    for (let py = 0; py < height * ZOOM; py++) {
-      for (let px = 0; px < width * ZOOM; px++) {
-        const tx = Math.floor(px / ZOOM), ty = Math.floor(py / ZOOM), sx = px % ZOOM, sy = py % ZOOM;
-        const at = (py * width * ZOOM + px) * 4;
-        const shape = world.planes.shape[tx * height + ty] ?? 0;
-        const own = liquidAt(tx, ty);
-        // Where the background shows (open air, a shape's cut-away part): the back layer, then the front layer.
-        let liquid: { amount: number; surface: boolean } | null = null;
-        let open = false;
-        if (own.amount !== 0) {
-          const aboveShape = world.planes.shape[tx * height + ty - 1] ?? 0;
-          const surface = liquidHasSurface(liquidAt(tx, ty - 1), ty === 0 ? 0 : aboveShape, liquidAt(tx, ty - 2), liquidAt(tx - 1, ty - 1), liquidAt(tx + 1, ty - 1));
-          liquid = { amount: own.amount, surface };
-          open = true;
-        } else if (shape !== 0) {
-          const column = shapedColumns(shape)[Math.floor(sx / 2)];
-          liquid = shapedTileLiquid(liquidAt(tx, ty - 1), liquidAt(tx - 1, ty), liquidAt(tx + 1, ty));
-          open = column === undefined || sy < column.destY || sy >= column.destY + column.height;
-        }
-        if (liquid !== null && open) {
-          const back = over(waterPixel(liquid.amount, liquid.surface, sx, sy, false), pixelAt(base, at));
-          expected.set(over(waterPixel(liquid.amount, liquid.surface, sx, sy, true), back), at);
-        }
-      }
-    }
-    expectClose(pixels, expected, world.width * ZOOM);
-    // Sanity: the slope at (4, 1) holds the half-full water of its left neighbour; the water under the slope at (6, 1)
-    // shows body rows at its top, not the surface highlight (the expected canvas checks the pixels).
-    const read = (x: number, y: number): Rgba => pixelAt(pixels, (y * width * ZOOM + x) * 4);
-    expect(read(4 * ZOOM + 14, ZOOM + 12)).not.toEqual(pixelAt(base, ((ZOOM + 12) * width * ZOOM + 4 * ZOOM + 14) * 4));
-    expect(liquidHasSurface(liquidAt(6, 1), world.planes.shape[6 * height + 1] ?? 0, liquidAt(6, 0), liquidAt(5, 1), liquidAt(7, 1))).toBe(false);
-  });
-
   test("blocks show their framed cell; half blocks and slopes are cut by the shape table over the wall behind", () => {
     const world = createWorld(10, 6);
     stamp(world, 0, 0, ["..........", "..dHddTN..", ".dddddddd.", ".ssssssss.", ".RddddddL.", ".........."]);
@@ -335,10 +277,10 @@ describe("vines and cactus in sprite mode", () => {
     expectClose(pixels, expectedCanvas(world), world.width * ZOOM);
     const cache = createChunkCellCache(world, framing);
     const at = (x: number, y: number): Rgba => pixelAt(pixels, (y * world.width * ZOOM + x) * 4);
-    /** Tile (tx, ty) shows sheet `sheet`'s cell (column, row) at every pixel. */
-    const shows = (tx: number, ty: number, sheet: number, column: number, row: number): void => {
-      for (let sy = 0; sy < ZOOM; sy++) for (let sx = 0; sx < ZOOM; sx++) {
-        expect(at(tx * ZOOM + sx, ty * ZOOM + sy)).toEqual(sheetPixel(sheet, column * 18 + sx, row * 18 + sy));
+    /** Tile (tx, ty) shows sheet `sheet`'s cell (column, row) at every pixel (its rows 2–15 drawn 2 pixels up). */
+    const shows = (tx: number, ty: number, sheet: number, column: number, row: number, lift = 0): void => {
+      for (let sy = 0; sy < ZOOM - lift; sy++) for (let sx = 0; sx < ZOOM; sx++) {
+        expect(at(tx * ZOOM + sx, ty * ZOOM + sy)).toEqual(sheetPixel(sheet, column * 18 + sx, row * 18 + sy + lift));
       }
     };
     const vineSheet = SHEETS.findIndex((entry) => entry.id === VINE && entry.kind === "tile");
@@ -346,10 +288,12 @@ describe("vines and cactus in sprite mode", () => {
     // The vine: under grass, going on, with a vine east of it (columns 0, 2, 4 of row 3); under itself going on
     // (column 5) and ending (columns 6–8 of row 3); the short vine under grass with a vine west of it (column 12).
     const variant = (x: number, y: number): number => (7 * x + 11 * y) % 3;
-    shows(1, 1, vineSheet, 2 * variant(1, 1), 3);
-    shows(1, 2, vineSheet, 5, variant(1, 2));
-    shows(1, 3, vineSheet, 6 + variant(1, 3), 3);
-    shows(2, 1, vineSheet, 12, variant(2, 1));
+    shows(1, 1, vineSheet, 2 * variant(1, 1), 3, 2);
+    shows(1, 2, vineSheet, 5, variant(1, 2), 2);
+    shows(1, 3, vineSheet, 6 + variant(1, 3), 3, 2);
+    shows(2, 1, vineSheet, 12, variant(2, 1), 2);
+    // Vines hang 2 pixels higher: the vine below's top rows fill a vine's last 2 rows.
+    expect(at(ZOOM + 3, ZOOM + 14)).toEqual(sheetPixel(vineSheet, 5 * 18 + 3, variant(1, 2) * 18));
     // The cactus: trunk in column 6 on sand, a west branch from its second tile, an east arm on its third.
     shows(6, 1, cactusSheet, 0, 0);
     shows(6, 2, cactusSheet, 4, 2);

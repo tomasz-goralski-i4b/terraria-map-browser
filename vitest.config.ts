@@ -78,6 +78,8 @@ const browserProjects = [
     test: {
       name: "@studio/renderer/browser",
       include: ["tests/**/*.browser.test.{ts,tsx}"],
+      // SwiftShader runs the sprite program on the CPU: a test drawing a few full canvases in sprite mode takes 15–20 s.
+      testTimeout: 60_000,
       browser: {
         enabled: true,
         headless: true,

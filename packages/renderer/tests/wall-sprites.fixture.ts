@@ -2,12 +2,15 @@
 // the browser tests that read sprite-mode pixels back (docs/assets.md, "Walls" and "Atlas").
 import { expect } from "vitest";
 import type { CanonicalWorld } from "@studio/world-model";
-import { MISSING_SPRITE_COLORS, NO_CELL, spriteSampling, type SpriteSheetEntry } from "../src/index.js";
+import { MISSING_SPRITE_COLORS, NO_CELL, spriteSampling, wallBlend, type SpriteSheetEntry } from "../src/index.js";
 
 // docs/assets.md, "Walls": a 32 × 32 cell with a 4-pixel gutter (stride 36), drawn centred on the 16 × 16 tile, so it
 // reaches 8 pixels past the tile on every side. Written out here rather than imported, so the tests pin them.
 const STRIDE = 36;
 const OVERHANG = 8;
+// "Walls": the outline along a side whose neighbour has a wall of another blend, 2 pixels wide, black at alpha 71.
+const OUTLINE = 2;
+const OUTLINE_ALPHA = 71;
 
 export type Rgba = readonly [number, number, number, number];
 
@@ -134,45 +137,76 @@ export interface WallLayerInput {
 
 /**
  * The wall sprites at sprite pixel (sx, sy) of tile (tx, ty), premultiplied: the 32 × 32 cells of the tile's wall and
- * of the neighbours whose 8-pixel overhang reaches the pixel, drawn row by row from the top and left to right within a
- * row, each over the ones before. A wall without a cell (not vanilla) shows its map colour on its own tile; a wall
- * without a sheet the missing-texture checkerboard there.
+ * of the neighbours whose 8-pixel overhang reaches the pixel, each over the ones before, in the game's order: walls
+ * without a block in front of them first, then by wall paint, then by wall type (0 when not vanilla); walls equal in
+ * all three row by row from the top and left to right within a row. A wall without a cell (not vanilla) shows its
+ * map colour on its own tile; a wall without a sheet the missing-texture checkerboard there. Over them the tile's own
+ * wall is outlined along each side whose neighbour has a wall of another blend (wallBlend; content that is not vanilla
+ * blends with itself alone).
  */
 export function wallSprites(input: WallLayerInput, tx: number, ty: number, sx: number, sy: number, level = 0): Premultiplied {
   const { world, sheets } = input;
   const { width, height } = world;
   const dx = sx < 8 ? -1 : 1;
   const dy = sy < 8 ? -1 : 1;
-  let color: Premultiplied = [0, 0, 0, 0];
+  const order: { readonly ox: number; readonly oy: number; readonly key: number }[] = [];
   for (const oy of [Math.min(0, dy), Math.max(0, dy)]) {
     for (const ox of [Math.min(0, dx), Math.max(0, dx)]) {
       const x = tx + ox;
       const y = ty + oy;
       if (x < 0 || y < 0 || x >= width || y >= height) continue;
-      const own = ox === 0 && oy === 0;
-      const wall = input.world.planes.wall[x * height + y] ?? 0xffff;
+      const wall = world.planes.wall[x * height + y] ?? 0xffff;
       if (wall === 0xffff) continue;
-      const cell = input.cellAt(x, y);
-      if (cell === NO_CELL) {
-        if (own) color = onTop(premultiply(pixelAt(input.mapWalls, (y * width + x) * 4)), color);
-        continue;
-      }
       const ref = world.palette[wall];
-      const sheet = sheets.findIndex((entry) => entry.kind === "wall" && ref?.kind === "vanilla" && entry.id === ref.id);
-      const entry = sheets[sheet];
-      if (entry === undefined) {
-        if (own) color = onTop(premultiply(missingPixel(sx, sy)), color);
-        continue;
-      }
-      const px = (cell >> 6) * STRIDE + sx + OVERHANG - 16 * ox;
-      const py = (cell & 63) * STRIDE + sy + OVERHANG - 16 * oy;
-      if (px >= entry.width || py >= entry.height) continue;
-      const pixel = level === 1
-        ? halfTexel((x, y) => input.sheetPixel(sheet, x, y), px, py)
-        : input.sheetPixel(sheet, px, py);
-      color = onTop(premultiply(pixel), color);
+      const block = (world.planes.block[x * height + y] ?? 0xffff) !== 0xffff ? 1 : 0;
+      const paint = world.planes.wallPaint[x * height + y] ?? 0;
+      order.push({ ox, oy, key: block * 2 ** 21 + paint * 2 ** 16 + (ref?.kind === "vanilla" ? ref.id : 0) });
     }
   }
+  order.sort((a, b) => a.key - b.key);
+  let color: Premultiplied = [0, 0, 0, 0];
+  for (const { ox, oy } of order) {
+    const x = tx + ox;
+    const y = ty + oy;
+    const own = ox === 0 && oy === 0;
+    const wall = input.world.planes.wall[x * height + y] ?? 0xffff;
+    const cell = input.cellAt(x, y);
+    if (cell === NO_CELL) {
+      if (own) color = onTop(premultiply(pixelAt(input.mapWalls, (y * width + x) * 4)), color);
+      continue;
+    }
+    const ref = world.palette[wall];
+    const sheet = sheets.findIndex((entry) => entry.kind === "wall" && ref?.kind === "vanilla" && entry.id === ref.id);
+    const entry = sheets[sheet];
+    if (entry === undefined) {
+      if (own) color = onTop(premultiply(missingPixel(sx, sy)), color);
+      continue;
+    }
+    const px = (cell >> 6) * STRIDE + sx + OVERHANG - 16 * ox;
+    // "Walls": the starry glass walls draw frame ((11x + 27y) mod 160) div 20 of their 8 frames of 180 rows.
+    const frame = ref?.kind === "vanilla" && (ref.id === 242 || ref.id === 243) ? Math.floor(((11 * x + 27 * y) % 160) / 20) : 0;
+    const py = (cell & 63) * STRIDE + sy + OVERHANG - 16 * oy + frame * 180;
+    if (px >= entry.width || py >= entry.height) continue;
+    const pixel = level === 1
+      ? halfTexel((x, y) => input.sheetPixel(sheet, x, y), px, py)
+      : input.sheetPixel(sheet, px, py);
+    color = onTop(premultiply(pixel), color);
+  }
+  const blendAt = (x: number, y: number): number | undefined => {
+    if (x < 0 || y < 0 || x >= width || y >= height) return undefined;
+    const wall = world.planes.wall[x * height + y] ?? 0xffff;
+    if (wall === 0xffff) return undefined;
+    const ref = world.palette[wall];
+    return ref?.kind === "vanilla" ? wallBlend(ref.id) : -1 - wall;
+  };
+  const own = blendAt(tx, ty);
+  if (own === undefined) return color;
+  const differs = (x: number, y: number): boolean => { const blend = blendAt(x, y); return blend !== undefined && blend !== own; };
+  const sides = [
+    sx < OUTLINE && differs(tx - 1, ty), sx >= 16 - OUTLINE && differs(tx + 1, ty),
+    sy < OUTLINE && differs(tx, ty - 1), sy >= 16 - OUTLINE && differs(tx, ty + 1),
+  ].filter(Boolean).length;
+  for (let k = 0; k < sides; k++) color = onTop([0, 0, 0, OUTLINE_ALPHA / 255], color);
   return color;
 }
 

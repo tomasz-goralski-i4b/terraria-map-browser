@@ -223,10 +223,13 @@ const CHUNK_PROGRAM: ProgramSource<(typeof CHUNK_PASS_UNIFORMS)[number] | (typeo
 /** The chunk pass in sprite mode (chunkSpriteFragmentSource): sprites and framed cells; the wire pass draws wires. */
 const SPRITE_CHUNK_PROGRAM: ProgramSource<
   (typeof CHUNK_PASS_UNIFORMS)[number] | (typeof SAMPLING_UNIFORMS)[number] | (typeof PAINT_GROUP_UNIFORMS)[number]
-  | "uSpriteSheets" | "uLiquidSheets" | "uLiquidOverlay"
+  | "uSpriteSheets" | "uLiquidSheets" | "uLiquidOverlay" | "uSurfaceY" | "uWallGlow"
 > = {
   vertex: chunkVertexSource, fragment: chunkSpriteFragmentSource,
-  uniforms: [...CHUNK_PASS_UNIFORMS, ...SAMPLING_UNIFORMS, ...PAINT_GROUP_UNIFORMS, "uSpriteSheets", "uLiquidSheets", "uLiquidOverlay"],
+  uniforms: [
+    ...CHUNK_PASS_UNIFORMS, ...SAMPLING_UNIFORMS, ...PAINT_GROUP_UNIFORMS, "uSpriteSheets", "uLiquidSheets", "uLiquidOverlay", "uSurfaceY",
+    "uWallGlow",
+  ],
 };
 
 /** Throws when the GPU offers fewer texture units or array layers than the map needs. */
@@ -250,7 +253,8 @@ function layerBits(layers: ChunkLayers): number {
 export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRendererOptions): MapRenderer {
   // Straight (non-premultiplied) alpha: the shader writes the same RGBA that `renderChunk` produces. No multisampling:
   // it would blend a pixel the edge of a chunk quad crosses (the world's edge at a sub-tile camera) by coverage.
-  const context = canvas.getContext("webgl2", { premultipliedAlpha: false, antialias: false });
+  // A stencil bit marks the object pass's pixels for the liquid overlay pass (sprite mode).
+  const context = canvas.getContext("webgl2", { premultipliedAlpha: false, antialias: false, stencil: true });
   if (context === null) throw new WebGl2UnavailableError();
   const gl: WebGL2RenderingContext = context;
   const maxCachedChunks = Math.max(1, options?.maxCachedChunks ?? DEFAULT_MAX_CACHED_CHUNKS);
@@ -517,32 +521,39 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       atlas.bindSheets();
       gl.uniform1i(sprite.uSpriteSheets, UNIT.spriteSheets);
       gl.uniform4iv(sprite.uLiquidSheets, atlas.liquidSheets());
+      gl.uniform4iv(sprite.uWallGlow, atlas.place("wallGlow"));
+      gl.uniform1i(sprite.uSurfaceY, source.surfaceY);
       setPaintGroups(gl, sprite);
-      // In sprite mode the chunk pass writes depth 0 where a block covers a pixel, for the sprites behind the blocks.
+      // In sprite mode the chunk pass writes the depth of the game's order (blockDepth in the shader) for the sprites
+      // behind the blocks, and clears the stencil bit.
       gl.enable(gl.DEPTH_TEST);
       gl.depthFunc(gl.ALWAYS);
       gl.depthMask(true);
+      gl.enable(gl.STENCIL_TEST);
+      gl.stencilFunc(gl.ALWAYS, 0, 1);
+      gl.stencilOp(gl.REPLACE, gl.REPLACE, gl.REPLACE);
       drawCalls += store.draw(ready);
-      // The objects (trees, track extras) over the chunks, and the wires over everything. The objects leave their
-      // depth: the sprites behind the blocks OBJECT_BEHIND_DEPTH, where the liquid overlay pass then draws the liquids'
-      // front layer over them (they lie under the liquids, as the blocks do).
+      // The objects (trees, track extras, waterfalls) over the chunks in that order, setting the stencil bit where they
+      // draw; there the liquid overlay pass draws the liquids' front layer again (the game draws its liquids after every
+      // tile); the wires over everything.
       gl.depthFunc(gl.LEQUAL);
-      const drawnObjects = (layers & OBJECT_LAYERS) !== 0 ? objects.draw(frameView, visible) : 0;
-      drawCalls += drawnObjects;
-      covered ??= drawnObjects > 0 && (layers & LIQUIDS_LAYER) !== 0 ? objects.overlayChunks(source, ready) : [];
+      gl.stencilFunc(gl.ALWAYS, 1, 1);
+      gl.stencilOp(gl.KEEP, gl.KEEP, gl.REPLACE);
+      drawCalls += (layers & OBJECT_LAYERS) !== 0 ? objects.draw(frameView, visible) : 0;
+      gl.disable(gl.DEPTH_TEST);
+      covered ??= (layers & LIQUIDS_LAYER) !== 0 ? store.liquidItems(ready) : [];
       if (covered.length > 0) {
         gl.useProgram(spriteChunk.program);
         gl.uniform1i(sprite.uLiquidOverlay, 1);
-        gl.depthFunc(gl.EQUAL);
-        gl.depthMask(false);
+        gl.stencilFunc(gl.EQUAL, 1, 1);
+        gl.stencilOp(gl.KEEP, gl.KEEP, gl.KEEP);
         gl.enable(gl.BLEND);
         gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ZERO, gl.ONE);
         drawCalls += store.draw(covered);
         gl.disable(gl.BLEND);
         gl.uniform1i(sprite.uLiquidOverlay, 0);
-        gl.depthMask(true);
       }
-      gl.disable(gl.DEPTH_TEST);
+      gl.disable(gl.STENCIL_TEST);
       drawCalls += wires.draw(frameView, ready, present);
     };
 

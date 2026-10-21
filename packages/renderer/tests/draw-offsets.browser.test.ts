@@ -1,7 +1,8 @@
-// Frame-important tiles with draw offsets lie behind the blocks (docs/assets.md, "Draw offsets"): where a plant reaches
-// into the tile below it, that tile's opaque sprite pixels cover it and its transparent ones show it.
+// Frame-important tiles with draw offsets (docs/assets.md, "Draw offsets") in the game's order ("Draw order"): a plant
+// that sways is drawn after the other tiles that are not solid, so where it reaches into the tile below it covers that
+// tile's sprite.
 import { afterEach, beforeAll, expect, test } from "vitest";
-import { LIQUID_SPRITE_ALPHA, createBlockFraming, createMapRenderer, loadFramingDatabase, terrariaFramingData } from "../src/index.js";
+import { LIQUID_FRONT_ALPHA, createBlockFraming, createMapRenderer, loadFramingDatabase, terrariaFramingData } from "../src/index.js";
 import type { BlockFraming, MapRenderer, RenderableWorld, SpriteAtlasSource, SpriteSheetEntry } from "../src/index.js";
 
 let framing: BlockFraming;
@@ -49,13 +50,13 @@ function world(
   };
 }
 
-const PAGE = 512;
+const PAGE = 1400;
 const SHEETS: readonly SpriteSheetEntry[] = [
   { kind: "tile", id: 3, page: 0, x: 2, y: 2, width: 16, height: 20, frameWidth: 16, frameHeight: 20 },
   { kind: "tile", id: 13, page: 0, x: 22, y: 2, width: 16, height: 16, frameWidth: 16, frameHeight: 16 },
-  { kind: "liquid", id: 0, page: 0, x: 2, y: 26, width: 34, height: 16, frameWidth: 16, frameHeight: 16 },
+  { kind: "water", id: 0, page: 0, x: 40, y: 2, width: 48, height: 1360, frameWidth: 16, frameHeight: 16 },
   // Stone wall: 13 × 6 cells of 32 × 32 at a stride of 36 (docs/assets.md, "Walls").
-  { kind: "wall", id: 1, page: 0, x: 2, y: 48, width: 468, height: 216, frameWidth: 32, frameHeight: 32 },
+  { kind: "wall", id: 1, page: 0, x: 90, y: 2, width: 468, height: 216, frameWidth: 32, frameHeight: 32 },
 ];
 /** The water sheet: one opaque colour. */
 const WATER: Rgba = [10, 60, 200, 255];
@@ -103,14 +104,15 @@ function draw(w: RenderableWorld): (x: number, y: number) => Rgba {
   };
 }
 
-test("a plant reaching into the tile below lies behind that tile's opaque pixels and shows through its transparent ones", () => {
+test("a swaying plant reaching into the tile below covers that tile's sprite, opaque pixels too", () => {
   const at = draw(world());
   const wrong: string[] = [];
   // The overlap: the bottle's top 4 rows, where the plant's rows 16–19 reach (x = 1 is odd: the plant is not mirrored).
   for (let sy = 0; sy < 4; sy++) {
     for (let sx = 0; sx < 16; sx++) {
       const bottle = sheetPixel(1, sx, sy);
-      const expected = bottle[3] === 255 ? bottle : sheetPixel(0, sx, 16 + sy);
+      const plant = sheetPixel(0, sx, 16 + sy);
+      const expected = plant[3] === 255 ? plant : bottle;
       const actual = at(ZOOM + sx, ZOOM + sy);
       if (actual.join() !== expected.join()) wrong.push(`(${String(sx)}, ${String(sy)}): ${actual.join()} ≠ ${expected.join()}`);
     }
@@ -120,12 +122,12 @@ test("a plant reaching into the tile below lies behind that tile's opaque pixels
   expect(at(ZOOM + 5, 5)).toEqual(sheetPixel(0, 5, 5));
 });
 
-test("a plant under water lies under the water's front layer, as blocks do (water at 128 of 255)", () => {
+test("a plant under water lies under the water's front layer (water at 0.6)", () => {
   const at = draw(world([[1, 0]]));
   const plant = sheetPixel(0, 5, 5);
   const actual = at(ZOOM + 5, 5);
   for (let k = 0; k < 3; k++) {
-    const [p, w, alpha] = [plant[k] ?? 0, WATER[k] ?? 0, LIQUID_SPRITE_ALPHA[0] ?? 0];
+    const [p, w, alpha] = [plant[k] ?? 0, WATER[k] ?? 0, LIQUID_FRONT_ALPHA[0] ?? 0];
     const expected = p + ((w - p) * alpha) / 255;
     expect(Math.abs((actual[k] ?? 0) - expected), `channel ${String(k)}: ${actual.join()}`).toBeLessThanOrEqual(1.5);
   }
@@ -138,7 +140,7 @@ test("the water's front layer stays on the tiles holding it: a dry plant beside 
   expect(at(5, 5)).toEqual(sheetPixel(0, 15 - 5, 5));
 });
 
-test("liquid does not bleed into a tile drawn as an object sprite: its transparent pixels show what lies behind", () => {
+test("no liquid is drawn behind a tile drawn as an object sprite: its transparent pixels show what lies behind", () => {
   // Water right of the plant at (1, 0); the plant's right 2 columns are transparent above row 16.
   const wet = draw(world([[2, 0]]));
   const dry = draw(world());

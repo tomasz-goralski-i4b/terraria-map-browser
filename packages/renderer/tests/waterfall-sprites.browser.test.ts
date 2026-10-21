@@ -24,11 +24,11 @@ function readCanvas(canvas: HTMLCanvasElement): Uint8Array {
 
 const ABSENT = 0xffff;
 const WIDTH = 6;
-const HEIGHT = 5;
+const HEIGHT = 6;
 const ZOOM = 16;
 
-/** A basin of stone at the left with water and its half block at (2, 0); the stream falls in column 3 to the floor. */
-function basinWorld(rows: readonly string[] = ["#~h...", "###...", "......", "......", "######"]): RenderableWorld {
+/** A basin of stone at the left with water and its half block at (2, 1); the stream falls in column 3 to the floor. */
+function basinWorld(rows: readonly string[] = ["......", "#~h...", "###...", "......", "......", "######"]): RenderableWorld {
   const count = WIDTH * HEIGHT;
   const block = new Uint16Array(count).fill(ABSENT);
   const shape = new Uint8Array(count);
@@ -39,13 +39,13 @@ function basinWorld(rows: readonly string[] = ["#~h...", "###...", "......", "..
       const i = x * HEIGHT + y;
       if (char === "#" || char === "h") block[i] = 0;
       if (char === "h") shape[i] = 1;
-      if (char === "~") { liquid[i] = 1; liquidAmount[i] = 255; }
+      if (char === "~" || char === ",") { liquid[i] = 1; liquidAmount[i] = char === "~" ? 255 : 128; }
     });
   });
   return {
-    width: WIDTH, height: HEIGHT, surfaceY: 4,
+    width: WIDTH, height: HEIGHT, surfaceY: HEIGHT,
     planes: { block, wall: new Uint16Array(count).fill(ABSENT), liquid, liquidAmount, paint: new Uint8Array(count), wallPaint: new Uint8Array(count), shape },
-    palette: [{ kind: "mod", mod: "Example", internalName: "Stone" }],
+    palette: [{ kind: "vanilla", id: 1 }],
   };
 }
 
@@ -99,7 +99,7 @@ describe("waterfalls in sprite mode", () => {
     for (let py = 0; py < HEIGHT * ZOOM; py++) {
       for (let px = 0; px < WIDTH * ZOOM; px++) {
         const covering = sprites.filter((s) => px >= s.dx && px < s.dx + s.width && py >= s.dy && py < s.dy + s.height).at(-1);
-        // Waterfalls lie behind the blocks (G): the basin's map-coloured stone covers them.
+        // Waterfalls lie behind the blocks: the basin's stone (the missing-texture pattern: no sheet here) covers them.
         if (covering === undefined || world.planes.block[Math.floor(px / ZOOM) * HEIGHT + Math.floor(py / ZOOM)] !== ABSENT) continue;
         const ox = px - covering.dx;
         const sx = covering.sx + (covering.flip === true ? covering.width - 1 - ox : ox);
@@ -110,28 +110,29 @@ describe("waterfalls in sprite mode", () => {
     }
     expect(checked).toBeGreaterThan(500);
     const hidden = draw({ ...ALL, liquids: false });
-    const column = sprites[1];
+    const column = sprites.find((sprite) => sprite.sy === 24 && sprite.height === 16);
     if (column === undefined) throw new Error("no column sprite");
-    // A pixel of the column in the air beside the wall (its first 4 pixels lie behind the wall).
-    expect(at(hidden, column.dx + 6, column.dy + 4)).not.toEqual(at(shown, column.dx + 6, column.dy + 4));
+    // A pixel of the column in the air beside the basin's wall (its left half lies behind the wall).
+    expect(at(hidden, column.dx + 18, column.dy + 4)).not.toEqual(at(shown, column.dx + 18, column.dy + 4));
     // Waterfalls belong to the liquids layer: hiding the blocks keeps them.
     const blocksHidden = draw({ ...ALL, blocks: false });
-    expect(at(blocksHidden, column.dx + 6, column.dy + 4)).toEqual(at(shown, column.dx + 6, column.dy + 4));
+    expect(at(blocksHidden, column.dx + 18, column.dy + 4)).toEqual(at(shown, column.dx + 18, column.dy + 4));
   });
 
-  test("liquid covers the waterfall: the corner pouring off a ledge into a pool is hidden under the pool's water", () => {
-    // The stream lands on the block at (3, 3), pours off it to the right into the pool at (4, 3); its corner hangs down
-    // into the pool's tile.
-    const rows = ["#~h...", "###...", "......", "...#~~", "######"];
+  test("the liquid it pours into lies over the waterfall: the stream shows through the pool's front layer", () => {
+    // The stream falls into the pool at (3, 4), half full: without the liquid sheets the map colour at half opacity.
+    const rows = ["......", "#~h...", "###...", "......", "...,,,", "######"];
     const sprites = waterfallSprites(basinWorld(rows), { left: 0, top: 0, right: WIDTH, bottom: HEIGHT });
-    const pool = { left: 4 * ZOOM, top: 3 * ZOOM };
-    const hanging = sprites.filter((s) => s.dx + s.width > pool.left && s.dy + s.height > pool.top && s.dx < pool.left + ZOOM);
-    expect(hanging.length).toBeGreaterThan(0);
+    const pool = { left: 3 * ZOOM, top: 4 * ZOOM };
+    const inPool = sprites.find((s) => s.dy >= pool.top && s.dy < pool.top + ZOOM);
+    if (inPool === undefined) throw new Error("no sprite in the pool");
     // The same world without its source (a full block instead of the half block): no waterfall at all.
     const shown = drawer(basinWorld(rows))(ALL);
-    const without = drawer(basinWorld(["#~#...", ...rows.slice(1)]))(ALL);
-    for (let py = pool.top; py < pool.top + ZOOM; py++) {
-      for (let px = pool.left; px < pool.left + ZOOM; px++) expect(at(shown, px, py), `(${String(px)}, ${String(py)})`).toEqual(at(without, px, py));
-    }
+    const without = drawer(basinWorld(["......", "#~#...", ...rows.slice(2)]))(ALL);
+    // A pixel of it inside the pool's first tile.
+    const px = pool.left + 4, py = inPool.dy + 2;
+    const flipped = inPool.flip === true ? inPool.width - 1 - (px - inPool.dx) : px - inPool.dx;
+    expect(at(shown, px, py)).not.toEqual(at(without, px, py));
+    expect(at(shown, px, py)).not.toEqual(sheetPixel(inPool.sx + flipped, inPool.sy + 2));
   });
 });

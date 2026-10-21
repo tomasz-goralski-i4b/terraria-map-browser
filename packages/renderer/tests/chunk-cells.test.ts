@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, test } from "vitest";
 import { createWorld, type BlockShape, type CanonicalWorld } from "@studio/world-model";
 import {
   NO_CELL, blockSourceRect, createBlockFraming, createChunkCellCache, loadFramingDatabase, neighbourhoodCode,
-  shapedColumns, terrariaFramingData, type BlockFraming, type FramingDatabase,
+  TILE_DRAW_FLAGS, shapedPixel, terrariaFramingData, type BlockFraming, type FramingDatabase,
 } from "../src/index.js";
 
 let database: FramingDatabase;
@@ -327,29 +327,57 @@ describe("source rectangles", () => {
     expect(blockSourceRect(NO_CELL)).toBeNull();
   });
 
-  // docs/assets.md, "Slopes and half blocks": eight 2-pixel columns i = 0…7 of the cell per shape.
-  test("a half block (shape 1) draws cell rows 0–7 in tile rows 8–15, in every column", () => {
-    expect(shapedColumns(1)).toEqual(Array.from({ length: 8 }, (_, i) => ({
-      sourceX: 2 * i, sourceY: 0, destX: 2 * i, destY: 8, width: 2, height: 8,
-    })));
+  // docs/assets.md, "Slopes and half blocks": the sheet pixel each sprite pixel of a shaped tile shows.
+  const flat = { shape: 0, flags: TILE_DRAW_FLAGS.solid | TILE_DRAW_FLAGS.solidLayer, solidBelow: true, halfLeft: false, halfRight: false, joinedAbove: false };
+  const origin = [18, 36] as const;
+
+  test("a half block draws cell rows 0–7 in tile rows 8–15; without a solid tile under it the sheet's edge ends it", () => {
+    const half = { ...flat, shape: 1 };
+    expect(shapedPixel(half, origin, 5, 7)).toBeNull();
+    expect(shapedPixel(half, origin, 5, 8)).toEqual([23, 36]);
+    expect(shapedPixel(half, origin, 5, 15)).toEqual([23, 43]);
+    const open = { ...half, solidBelow: false };
+    expect(shapedPixel(open, origin, 5, 11)).toEqual([23, 39]);
+    expect(shapedPixel(open, origin, 5, 12)).toEqual([149, 66]);
+    expect(shapedPixel(open, origin, 5, 15)).toEqual([149, 69]);
+    // A platform's half keeps its own rows.
+    expect(shapedPixel({ ...open, flags: TILE_DRAW_FLAGS.platform }, origin, 5, 15)).toEqual([23, 43]);
   });
 
-  test("a slope cut at its NE corner (shape 2) draws cell rows 0 … 15 − 2i of column i, moved down by 2i", () => {
-    expect(shapedColumns(2)).toEqual(Array.from({ length: 8 }, (_, i) => ({
-      sourceX: 2 * i, sourceY: 0, destX: 2 * i, destY: 2 * i, width: 2, height: 16 - 2 * i,
-    })));
+  test("slopes draw 2-pixel columns slid along them and a 2-row strip of the cell in place", () => {
+    // Cut at NE (2): column c from row 2c, rows 14–15 in place.
+    expect(shapedPixel({ ...flat, shape: 2 }, origin, 6, 5)).toBeNull();
+    expect(shapedPixel({ ...flat, shape: 2 }, origin, 6, 6)).toEqual([24, 36]);
+    expect(shapedPixel({ ...flat, shape: 2 }, origin, 6, 14)).toEqual([24, 50]);
+    // Cut at NW (3): column c from row 14 − 2c.
+    expect(shapedPixel({ ...flat, shape: 3 }, origin, 2, 11)).toBeNull();
+    expect(shapedPixel({ ...flat, shape: 3 }, origin, 2, 12)).toEqual([20, 36]);
+    // Cut at SE (4): column c lifted by 2c, rows 0–1 in place over it.
+    expect(shapedPixel({ ...flat, shape: 4 }, origin, 6, 2)).toEqual([24, 44]);
+    expect(shapedPixel({ ...flat, shape: 4 }, origin, 6, 1)).toEqual([24, 37]);
+    expect(shapedPixel({ ...flat, shape: 4 }, origin, 6, 10)).toBeNull();
+    // Cut at SW (5): column c lifted by 14 − 2c.
+    expect(shapedPixel({ ...flat, shape: 5 }, origin, 2, 2)).toEqual([20, 50]);
+    expect(shapedPixel({ ...flat, shape: 5 }, origin, 2, 4)).toBeNull();
+    // A platform's slope is its own frame.
+    expect(shapedPixel({ ...flat, shape: 2, flags: TILE_DRAW_FLAGS.platform }, origin, 6, 2)).toEqual([24, 38]);
   });
 
-  test("slopes 3–5 and the full block follow the shape table", () => {
-    /** Column i of every shape: (sourceY, destY, height). */
-    const table = (column: (i: number) => readonly [number, number, number]): object[] =>
-      Array.from({ length: 8 }, (_, i) => {
-        const [sourceY, destY, height] = column(i);
-        return { sourceX: 2 * i, sourceY, destX: 2 * i, destY, width: 2, height };
-      });
-    expect(shapedColumns(0)).toEqual(table(() => [0, 0, 16]));
-    expect(shapedColumns(3)).toEqual(table((i) => [0, 14 - 2 * i, 2 * i + 2]));
-    expect(shapedColumns(4)).toEqual(table((i) => [2 * i, 0, 16 - 2 * i]));
-    expect(shapedColumns(5)).toEqual(table((i) => [0, 0, 2 * i + 2]));
+  test("a full solid block beside half blocks takes the top half of its sides from the sheet's half-block corners", () => {
+    const both = { ...flat, halfLeft: true, halfRight: true };
+    expect(shapedPixel(both, origin, 7, 3)).toEqual([133, 3]);
+    expect(shapedPixel({ ...both, joinedAbove: true }, origin, 7, 3)).toEqual([97, 3]);
+    expect(shapedPixel(both, origin, 7, 8)).toEqual([25, 44]);
+    expect(shapedPixel({ ...flat, halfLeft: true }, origin, 3, 3)).toEqual([147, 3]);
+    expect(shapedPixel({ ...flat, halfLeft: true }, origin, 4, 3)).toEqual([22, 39]);
+    expect(shapedPixel({ ...flat, halfRight: true }, origin, 12, 3)).toEqual([156, 3]);
+    const smooth = { ...flat, flags: flat.flags | TILE_DRAW_FLAGS.smoothBorders };
+    expect(shapedPixel({ ...smooth, halfLeft: true }, origin, 1, 1)).toEqual([149, 1]);
+    expect(shapedPixel({ ...smooth, halfLeft: true }, origin, 2, 1)).toEqual([20, 37]);
+    expect(shapedPixel({ ...smooth, halfRight: true }, origin, 15, 1)).toEqual([157, 1]);
+    expect(shapedPixel({ ...smooth, halfRight: true }, origin, 15, 5)).toEqual([159, 5]);
+    // Types drawn whole beside half blocks.
+    expect(shapedPixel({ ...flat, flags: flat.flags | TILE_DRAW_FLAGS.notReallySolid, halfLeft: true }, origin, 1, 1)).toEqual([19, 37]);
   });
+
 });

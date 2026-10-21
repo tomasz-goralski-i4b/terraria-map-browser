@@ -5,7 +5,8 @@ import type { ContentRef } from "@studio/world-model";
 import { terrariaSpriteObjects } from "./terraria-sprite-objects.generated.js";
 import { wrappedFrame } from "../gpu/frame-wrap.js";
 import { paintGroupOf } from "../palette/sprite-paint.js";
-import { DRAWN_TILES, drawVariant } from "./draw-offsets.js";
+import { DRAW_STAGE, DRAWN_TILES, HANGING_OBJECTS, drawStage, drawVariant } from "./draw-offsets.js";
+import { TILE_DRAW_FLAGS, tileDrawFlags } from "./tile-draw-flags.js";
 import { TRACK_CELL_STRIDE, TRACK_EXTRA_OFFSET, TRACK_TILE, trackExtraCell, trackPiece, type TrackExtra } from "./tracks.js";
 
 /** Pixels per tile of the sprites (the game's art is drawn at twice its resolution). */
@@ -29,12 +30,26 @@ export interface ObjectSprite {
   readonly flip?: boolean;
   /** Opacity 0–255 the sprite's pixels are scaled by (a fading waterfall); absent means 255. */
   readonly alpha?: number;
-  /** Multiplied by shimmer's map colour (its waterfall sheet is a grey mask the game colours); absent means not. */
-  readonly tint?: boolean;
+  /**
+   * How the game colours its grey or white art (docs/assets.md, "Waterfalls"): "shimmer", by shimmer's base colour at
+   * its tile's corners; "glitter", added over what lies below in shimmer's glitter colours; "disco", tinted by
+   * DISCO_COLOR. Absent: as drawn.
+   */
+  readonly color?: "shimmer" | "glitter" | "disco";
   /** Behind the blocks: drawn only where no block covers the pixel (frame-important tiles); absent means in front. */
   readonly behind?: boolean;
-  /** With `behind`, also under the liquids: drawn only where no liquid covers the pixel (waterfalls); absent means not. */
-  readonly underLiquid?: boolean;
+  /**
+   * With `behind`, the row of the tile it belongs to: the game draws the tiles that are not solid row by row, so such a
+   * tile in a later row covers it and it covers one in an earlier row. Absent: drawn after them all (waterfalls).
+   */
+  readonly row?: number;
+  /**
+   * With `behind` and `row`, the stage after all the tiles that are not solid it is drawn in (DRAW_STAGE), row by row
+   * within it; absent: drawn with those tiles.
+   */
+  readonly stage?: number;
+  /** With `behind` and no row: drawn with the solid tiles, behind their sprites (a platform's stair piece, a rope). */
+  readonly solidLayer?: boolean;
   /** The paint of the tile it belongs to; absent means unpainted. */
   readonly paint?: number;
   /** Of an inactive (actuated) tile: shaded as the game draws one; absent means active. */
@@ -66,6 +81,8 @@ export interface ObjectWorld {
     readonly paint?: Uint8Array;
     /** CWM flags; only the inactive bit (5) is read. Absent means all active. */
     readonly flags?: Uint16Array;
+    /** Liquid amounts (0–255); absent means dry. */
+    readonly liquidAmount?: Uint8Array;
   };
   readonly palette: readonly ContentRef[];
   /** The world's tree settings; without them every variation is 0. */
@@ -133,6 +150,25 @@ export class ObjectReader {
 
   frameY(x: number, y: number): number {
     return this.#world.planes.frameY?.[x * this.#world.height + y] ?? -1;
+  }
+
+  /** The liquid amount (0–255) at (x, y); 0 outside the world. */
+  liquid(x: number, y: number): number {
+    const { width, height, planes } = this.#world;
+    if (x < 0 || y < 0 || x >= width || y >= height) return 0;
+    return planes.liquidAmount?.[x * height + y] ?? 0;
+  }
+
+  /** Whether the block at (x, y) is inactive (actuated). */
+  inactive(x: number, y: number): boolean {
+    return ((this.#world.planes.flags?.[x * this.#world.height + y] ?? 0) & INACTIVE_FLAG) !== 0;
+  }
+
+  /** The shape (0 full, 1 half, 2–5 slopes) of the block at (x, y); 0 outside the world. */
+  shape(x: number, y: number): number {
+    const { width, height, planes } = this.#world;
+    if (x < 0 || y < 0 || x >= width || y >= height) return 0;
+    return planes.shape?.[x * height + y] ?? 0;
   }
 }
 
@@ -258,7 +294,7 @@ function treeTile(
   const ground = groundUnder(reader, out.grounds, trunkX, y, type);
   const block = type === COMMON_TREE ? trunkBlocks.get(ground) ?? 0 : 0;
   out.trunks.push({
-    behind: true,
+    behind: true, row: y,
     kind: "tile", id: type, sx: frameX + block * TRUNK_BLOCK, sy: frameY, width: TRUNK_CELL, height: TRUNK_CELL,
     dx: x * SPRITE_PIXELS_PER_TILE - TRUNK_OFFSET, dy: y * SPRITE_PIXELS_PER_TILE,
   });
@@ -268,7 +304,7 @@ function treeTile(
   const frame = Math.floor((frameY - LEAFY_FRAME_Y) / FRAME_STRIDE) + foliage.frame;
   if (frameX === TOP_FRAME_X) {
     out.tops.push({
-      behind: true,
+      behind: true, row: y, stage: DRAW_STAGE.foliage,
       kind: "treeTop", id: foliage.style, sx: frame * (foliage.width + FOLIAGE_GAP), sy: 0, width: foliage.width, height: foliage.height,
       dx: x * SPRITE_PIXELS_PER_TILE + SPRITE_PIXELS_PER_TILE / 2 - Math.floor(foliage.width / 2),
       dy: (y + 1) * SPRITE_PIXELS_PER_TILE - foliage.height,
@@ -277,7 +313,7 @@ function treeTile(
   }
   const left = trunkX > x;
   out.branches.push({
-    behind: true,
+    behind: true, row: y, stage: DRAW_STAGE.foliage,
     kind: "treeBranch", id: foliage.style, sx: left ? 0 : BRANCH_SIZE + FOLIAGE_GAP, sy: frame * (BRANCH_SIZE + FOLIAGE_GAP),
     width: BRANCH_SIZE, height: BRANCH_SIZE,
     dx: left ? (x + 1) * SPRITE_PIXELS_PER_TILE - BRANCH_SIZE : x * SPRITE_PIXELS_PER_TILE, dy: y * SPRITE_PIXELS_PER_TILE - BRANCH_RAISE,
@@ -292,14 +328,14 @@ function palmTile(reader: ObjectReader, x: number, y: number, out: Collected): v
   if (row === undefined || frameX < 0) return;
   const dx = x * SPRITE_PIXELS_PER_TILE + lean;
   out.trunks.push({
-    behind: true,
+    behind: true, row: y,
     kind: "tile", id: PALM_TREE, sx: frameX, sy: row * FRAME_STRIDE, width: TRUNK_CELL, height: TRUNK_CELL, dx: dx - TRUNK_OFFSET,
     dy: y * SPRITE_PIXELS_PER_TILE,
   });
   if (frameX < PALM_TOP_FRAME_X) return;
   const stride = PALM_TOP_SIZE + FOLIAGE_GAP;
   out.tops.push({
-    behind: true,
+    behind: true, row: y, stage: DRAW_STAGE.foliage,
     kind: "treeTop", id: PALM_TOPS, sx: Math.floor((frameX - PALM_TOP_FRAME_X) / FRAME_STRIDE) * stride, sy: row * stride,
     width: PALM_TOP_SIZE, height: PALM_TOP_SIZE, dx: dx + SPRITE_PIXELS_PER_TILE / 2 - PALM_TOP_SIZE / 2,
     dy: (y + 1) * SPRITE_PIXELS_PER_TILE - PALM_TOP_SIZE,
@@ -312,23 +348,111 @@ function mushroomTile(reader: ObjectReader, x: number, y: number, out: Collected
   const frameY = reader.frameY(x, y);
   if (frameX < 0 || frameY < 0) return;
   out.trunks.push({
-    behind: true,
+    behind: true, row: y,
     kind: "tile", id: GIANT_MUSHROOM, sx: frameX, sy: frameY, width: SPRITE_PIXELS_PER_TILE, height: SHROOM_CELL_HEIGHT,
     dx: x * SPRITE_PIXELS_PER_TILE, dy: y * SPRITE_PIXELS_PER_TILE,
   });
   if (frameX !== SHROOM_TOP_FRAME_X) return;
   out.tops.push({
-    behind: true,
+    behind: true, row: y,
     kind: "shroomTop", id: 0, sx: Math.floor(frameY / SHROOM_CELL_HEIGHT) * (SHROOM_TOP_WIDTH + FOLIAGE_GAP), sy: 0,
     width: SHROOM_TOP_WIDTH, height: SHROOM_TOP_HEIGHT,
     dx: x * SPRITE_PIXELS_PER_TILE + SPRITE_PIXELS_PER_TILE / 2 - SHROOM_TOP_WIDTH / 2, dy: (y + 1) * SPRITE_PIXELS_PER_TILE - SHROOM_TOP_HEIGHT,
   });
 }
 
+/** The stride of a tile's stored frames: 16 pixels and a 2-pixel gap. */
+const TILE_FRAME_STRIDE = 18;
+const ROPES: ReadonlySet<number> = new Set(terrariaSpriteObjects.ropes);
+const BLOCKS_STAIRS: ReadonlySet<number> = new Set(terrariaSpriteObjects.blocksStairs);
+const SUNFLOWER = 27;
+const GOLF_FLAG = 493;
+const LILY_PAD = 518;
+/** The rise the observed draw data of a lily pad holds: a dry tile's, −3. */
+const LILY_PAD_DRY = -3;
+const SOLID_BLOCKS: ReadonlySet<number> = new Set(terrariaSpriteObjects.solidBlocks);
+
+/**
+ * How far (pixels) the game lifts a lily pad above its tile's top: with its liquid amount a, a / 16 − 3 (in whole
+ * steps), at most 8 under a solid block; on a dry tile over a half block, max(8, the half block's liquid / 16) − 16, over
+ * a slope cut at its top 4 lower.
+ */
+function lilyPadRise(reader: ObjectReader, x: number, y: number): number {
+  const amount = reader.liquid(x, y);
+  let rise = Math.floor(amount / 16) - 3;
+  const solidAbove = reader.hasFullBlock(x, y - 1) && SOLID_BLOCKS.has(reader.id(x, y - 1)) && !reader.inactive(x, y - 1);
+  if (solidAbove && rise > 8) rise = 8;
+  if (amount === 0 && reader.hasBlock(x, y + 1) && !reader.inactive(x, y + 1)) {
+    const below = reader.shape(x, y + 1);
+    if (below === 1) rise = -16 + Math.max(8, Math.floor(reader.liquid(x, y + 1) / 16));
+    else if (below === 2 || below === 3) rise -= 4;
+  }
+  return rise;
+}
+const SUNFLOWER_GLOW = 74;
+/** The planter box, which draws the rope it is threaded on as platforms do. */
+const PLANTER_BOX = 380;
+/** How far a rope above and below a platform is looked for. */
+const ROPE_REACH = 5;
+
+/**
+ * The pieces a platform (or planter box) draws behind it and the tiles around it, with the solid tiles (docs/assets.md,
+ * "Slopes and half blocks"): a sloped platform's stair piece in the tile below it, when the tile below on its low side
+ * is solid, neither a half block nor sloped against it, and the tile below it is empty, sloped otherwise or does not
+ * block stairs; from the sheet's stair column (198 for shape 2, 162 for shape 3), or the platform end (324, 306) when
+ * that tile is a flat platform. And a rope behind it when a rope lies above and below it within reach, through
+ * unbroken tiles: the top rope's cell (90, ((x + y) mod 3) · 18).
+ */
+function platformPieces(reader: ObjectReader, id: number, x: number, y: number, out: ObjectSprite[]): void {
+  const shape = reader.shape(x, y);
+  if (id !== PLANTER_BOX && (shape === 2 || shape === 3)) {
+    const side = shape === 2 ? 1 : -1;
+    const toward = reader.id(x + side, y + 1);
+    const towardShape = reader.shape(x + side, y + 1);
+    const below = reader.id(x, y + 1);
+    const belowShape = reader.shape(x, y + 1);
+    const climbs = reader.hasBlock(x + side, y + 1) && (tileDrawFlags(toward) & TILE_DRAW_FLAGS.solid) !== 0
+      && towardShape !== 1 && towardShape !== 5 - shape;
+    const open = !reader.hasBlock(x, y + 1) || (belowShape !== 0 && belowShape !== 7 - shape) || !BLOCKS_STAIRS.has(below);
+    if (climbs && open) {
+      const flat = (tileDrawFlags(toward) & TILE_DRAW_FLAGS.platform) !== 0 && towardShape === 0;
+      out.push({
+        kind: "tile", id, sx: shape === 2 ? (flat ? 324 : 198) : (flat ? 306 : 162), sy: reader.frameY(x, y),
+        width: SPRITE_PIXELS_PER_TILE, height: SPRITE_PIXELS_PER_TILE,
+        dx: x * SPRITE_PIXELS_PER_TILE, dy: (y + 1) * SPRITE_PIXELS_PER_TILE, behind: true, solidLayer: true,
+      });
+    }
+  }
+  let top = -1;
+  for (let i = 1; i <= ROPE_REACH && y - i >= 0 && reader.hasBlock(x, y - i); i++) {
+    if (ROPES.has(reader.id(x, y - i))) {
+      top = y - i;
+      break;
+    }
+  }
+  if (top < 0) return;
+  for (let ty = y + 1; ty <= top + ROPE_REACH + 1 && ty < reader.height && reader.hasBlock(x, ty); ty++) {
+    if (!ROPES.has(reader.id(x, ty))) continue;
+    out.push({
+      kind: "tile", id: reader.id(x, top), sx: 90, sy: ((x + y) % 3) * TILE_FRAME_STRIDE,
+      width: SPRITE_PIXELS_PER_TILE, height: SPRITE_PIXELS_PER_TILE,
+      dx: x * SPRITE_PIXELS_PER_TILE, dy: y * SPRITE_PIXELS_PER_TILE, behind: true, solidLayer: true,
+    });
+    return;
+  }
+}
+
+/** Whether (x, y) holds a platform that is neither a half block nor sloped. */
+function flatPlatform(reader: ObjectReader, x: number, y: number): boolean {
+  return reader.hasFullBlock(x, y) && (tileDrawFlags(reader.id(x, y)) & TILE_DRAW_FLAGS.platform) !== 0;
+}
+
 /**
  * A frame-important tile drawn with its observed draw size and top offset (docs/assets.md, "Draw offsets"), centred on
  * its tile (chosen: the draw data gives no horizontal offset) and mirrored as observed for its column's parity. Styles
- * past the sheet's edge continue in its next block (wrappedFrame), as in the chunk pass.
+ * past the sheet's edge continue in its next block (wrappedFrame), as in the chunk pass. A tile drawn in a stage after
+ * the others ("Draw order") is placed as that stage places it: a hanging object 2 pixels up (10 under a flat platform
+ * for one tile wide, and the 2-wide 465, 591, 592 under two), ordered by its top row; a swaying plant uncentred.
  */
 function drawnTile(reader: ObjectReader, id: number, x: number, y: number, out: ObjectSprite[]): void {
   const frameX = reader.frameX(x, y);
@@ -338,11 +462,37 @@ function drawnTile(reader: ObjectReader, id: number, x: number, y: number, out: 
   if (variant === undefined) return;
   const [width, height, top, evenFlip, oddFlip] = variant;
   const [sx, sy] = wrappedFrame(id, frameX, frameY);
-  out.push({
-    kind: "tile", id, sx, sy, width, height,
-    dx: x * SPRITE_PIXELS_PER_TILE - (width - SPRITE_PIXELS_PER_TILE) / 2, dy: y * SPRITE_PIXELS_PER_TILE + top,
-    flip: (x % 2 === 0 ? evenFlip : oddFlip) === 1, behind: true,
-  });
+  const stage = drawStage(id, frameX);
+  let dx = x * SPRITE_PIXELS_PER_TILE - (width - SPRITE_PIXELS_PER_TILE) / 2;
+  let dy = y * SPRITE_PIXELS_PER_TILE + top;
+  let row = y;
+  const hanging = HANGING_OBJECTS.get(id);
+  if (hanging !== undefined) {
+    const [columns, rows] = hanging;
+    const left = x - Math.floor((frameX % (columns * TILE_FRAME_STRIDE)) / TILE_FRAME_STRIDE);
+    row = y - Math.floor((frameY % (rows * TILE_FRAME_STRIDE)) / TILE_FRAME_STRIDE);
+    const wide = id === 465 || id === 591 || id === 592;
+    const platform = wide ? flatPlatform(reader, left, row - 1) && flatPlatform(reader, left + 1, row - 1) : columns === 1 && flatPlatform(reader, left, row - 1);
+    dy -= platform ? 10 : 2;
+    if (id === 698) dx -= 10;
+  } else if (stage === DRAW_STAGE.swaying) {
+    dx = x * SPRITE_PIXELS_PER_TILE;
+    // Ordered by the object's top row: its frames start at its top (two styles share 705's sheet column, 36 apart).
+    if (id !== 519 && id !== 651 && id !== 652) row = y - Math.floor((id === 705 || id === 233 ? frameY % 36 : frameY) / TILE_FRAME_STRIDE);
+  }
+  let flip = (x % 2 === 0 ? evenFlip : oddFlip) === 1;
+  if (id === GOLF_FLAG && frameY === 0) {
+    // With no wind the game mirrors the flag's top and shifts it 6 pixels toward where it then points.
+    flip = !flip;
+    dx += flip ? 6 : -6;
+  }
+  if (id === LILY_PAD) dy += LILY_PAD_DRY - lilyPadRise(reader, x, y);
+  const sprite: ObjectSprite = {
+    kind: "tile", id, sx, sy, width, height, dx, dy, flip, behind: true, row, ...(stage === undefined ? {} : { stage }),
+  };
+  out.push(sprite);
+  // A sunflower's glow: the same frame SUNFLOWER_GLOW rows lower on its sheet, drawn over it at full light.
+  if (id === SUNFLOWER) out.push({ ...sprite, sy: sy + SUNFLOWER_GLOW });
 }
 
 /**
@@ -389,6 +539,7 @@ export function objectSprites(world: ObjectWorld, area: TileArea): ObjectSprite[
       else if (id === PALM_TREE) palmTile(reader, x, y, out);
       else if (id === GIANT_MUSHROOM) mushroomTile(reader, x, y, out);
       else if (DRAWN_TILES.has(id)) drawnTile(reader, id, x, y, out.drawn);
+      if (id === PLANTER_BOX || (tileDrawFlags(id) & TILE_DRAW_FLAGS.platform) !== 0) platformPieces(reader, id, x, y, out.drawn);
       // The tile's paint and inactive shade on every sprite it added.
       const index = x * world.height + y;
       const paint = world.planes.paint?.[index] ?? 0;

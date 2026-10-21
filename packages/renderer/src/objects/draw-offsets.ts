@@ -27,8 +27,58 @@ const STANDING: DrawVariant = [16, 16, 2, 0, 0];
 /** Any other row of 165: drawn as a plain cell by the object pass (the chunk pass leaves the type to it). */
 const PLAIN: DrawVariant = [16, 16, 0, 0, 0];
 
-/** Tile types some frame of which the game draws other than as a plain 16 × 16 cell at its own tile. */
-export const DRAWN_TILES: ReadonlySet<number> = new Set([...BY_TYPE.keys(), STALACTITES]);
+/**
+ * The stages the game draws after all the tiles that are not solid, in this order (docs/assets.md, "Draw order"): the
+ * hanging objects (chandeliers, lanterns, banners), the swaying multi-tile plants, the plants that sway, the moss plants,
+ * the tree foliage, the hanging vines and the rising vines. Within a stage, row by row from the top.
+ */
+export const DRAW_STAGE = { hanging: 0, swaying: 1, plants: 2, moss: 3, foliage: 4, vines: 5, risingVines: 6 } as const;
+
+/** The vines that hang (drawn 2 pixels up) and those that rise (2 pixels down), in the chunk pass ("Draw order"). */
+export const HANGING_VINES: readonly number[] = [52, 62, 115, 205, 382, 528, 636, 638];
+export const RISING_VINES: readonly number[] = [549];
+
+/**
+ * The colour the game tints rainbow content with (the rainbow brick tiles and walls, the rainbow waterfall): it cycles
+ * through the hues; still, at time 0, it is pure red.
+ */
+export const DISCO_COLOR: readonly [number, number, number] = [255, 0, 0];
+export const DISCO_TILES: readonly number[] = [160, 692];
+export const DISCO_WALLS: readonly number[] = [44, 346];
+
+/** The hanging objects: type → [width, height] in tiles; their tiles are drawn 2 pixels up from their top tile. */
+export const HANGING_OBJECTS: ReadonlyMap<number, readonly [number, number]> = new Map([
+  [34, [3, 3]], [454, [4, 3]], [42, [1, 2]], [270, [1, 2]], [271, [1, 2]], [572, [1, 2]], [581, [1, 2]], [660, [1, 2]],
+  [91, [1, 3]], [95, [2, 2]], [126, [2, 2]], [444, [2, 2]], [465, [2, 3]], [591, [2, 3]], [592, [2, 3]], [698, [1, 1]],
+] as const);
+/** The swaying multi-tile plants (sunflowers, cattails, …), drawn at their tile without centring. */
+const SWAYING: ReadonlySet<number> = new Set([27, 233, 236, 238, 485, 489, 490, 493, 519, 521, 522, 523, 524, 525, 526, 527, 530, 651, 652, 702, 705]);
+// Types whose draw data could not be observed keep the chunk pass's cell.
+const PLANTS: ReadonlySet<number> = new Set(terrariaSpriteObjects.swaysInWind.filter((type) => !terrariaSpriteObjects.drawUnobserved.includes(type)));
+const MOSS_PLANTS = 184;
+/** frameX of the dye plants (227) that stand still. */
+const STILL_DYE_PLANTS: ReadonlySet<number> = new Set([204, 238, 408, 442, 476]);
+
+/** The stage (DRAW_STAGE) a tile of `type` with stored frameX is drawn in; undefined: row by row. */
+export function drawStage(type: number, frameX: number): number | undefined {
+  if (HANGING_OBJECTS.has(type)) return DRAW_STAGE.hanging;
+  if (SWAYING.has(type)) {
+    // Only part of these sheets sways: the rest is drawn with the tiles.
+    if (type === 530 && frameX >= 270) return undefined;
+    if (type === 705 && frameX % 486 >= 270) return undefined;
+    if (type === 519 && Math.floor(frameX / 18) > 4) return undefined;
+    return DRAW_STAGE.swaying;
+  }
+  if (type === MOSS_PLANTS) return DRAW_STAGE.moss;
+  if (PLANTS.has(type) && !(type === 227 && STILL_DYE_PLANTS.has(frameX))) return DRAW_STAGE.plants;
+  return undefined;
+}
+
+/**
+ * Tile types some frame of which the game draws other than as a plain 16 × 16 cell at its own tile, or in a stage
+ * after the other tiles.
+ */
+export const DRAWN_TILES: ReadonlySet<number> = new Set([...BY_TYPE.keys(), STALACTITES, ...HANGING_OBJECTS.keys(), ...SWAYING, ...PLANTS, MOSS_PLANTS]);
 
 const runAt = (runs: Runs, value: number): number | undefined => runs.find(([from, to]) => value >= from && value <= to)?.[2];
 
@@ -39,7 +89,7 @@ const runAt = (runs: Runs, value: number): number | undefined => runs.find(([fro
 export function drawVariant(type: number, frameX: number, frameY: number): DrawVariant | undefined {
   if (type === STALACTITES) return HANGING_ROWS.has(frameY) ? HANGING : STANDING_ROWS.has(frameY) ? STANDING : PLAIN;
   const entry = BY_TYPE.get(type);
-  if (entry === undefined) return undefined;
+  if (entry === undefined) return DRAWN_TILES.has(type) ? PLAIN : undefined;
   const [base, rows, columns] = entry;
   return terrariaSpriteObjects.drawVariants[runAt(rows, frameY) ?? runAt(columns, frameX) ?? base];
 }

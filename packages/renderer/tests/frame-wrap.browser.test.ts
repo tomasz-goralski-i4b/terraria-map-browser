@@ -71,7 +71,9 @@ test("frame-important tiles whose stored frame lies past the sheet's edge draw t
         // readPixels rows are bottom-up.
         const at = ((ZOOM - 1 - sy) * canvas.width + tile * ZOOM + sx) * 4;
         const actual = [...pixels.subarray(at, at + 4)].join();
-        const expected = sheetPixel(block, x + sx, y + sy).join();
+        // Lanterns hang 2 pixels above their tile (docs/assets.md, "Draw order"), leaving its bottom 2 rows empty.
+        const lift = SHEETS[block]?.id === 42 ? 2 : 0;
+        const expected = sy >= ZOOM - lift ? "0,0,0,0" : sheetPixel(block, x + sx, y + sy + lift).join();
         if (actual !== expected) mismatches.push(`tile ${String(tile)} (${String(sx)}, ${String(sy)}): ${actual} ≠ ${expected}`);
       }
     }

@@ -62,14 +62,23 @@ interface Scan {
 }
 
 // Case-insensitive: the casing of Tiles_/Wall_ files differs between installs (docs/assets.md).
-const SHEET_NAME = /^(tiles|wall|tree_tops|tree_branches|item|liquid|liquidslope|waterfall)_(\d+)\.xnb$/i;
+const SHEET_NAME = /^(tiles|wall|tree_tops|tree_branches|item|liquid|liquidslope|waterfall|water)_(\d+)\.xnb$/i;
+/**
+ * The `Misc/water_<n>` sheets the liquids are drawn from (docs/assets.md, "Liquids"): forest water, lava, honey and
+ * shimmer; the other water styles depend on where the player stands.
+ */
+const WATER_IDS: ReadonlySet<number> = new Set([0, 1, 11, 14]);
+/** The folder of `Images` holding the water sheets. */
+const MISC = "Misc";
 /** The single sheets the atlas holds by name, each as id 0 of its kind (docs/assets.md, "Atlas"). */
 const NAMED_SHEETS: ReadonlyMap<string, SheetKind> = new Map([
   ["shroom_tops.xnb", "shroomTop"], ["wiresnew.xnb", "wire"], ["actuator.xnb", "actuator"],
+  // The shimmer wall's glow (docs/assets.md, "Walls").
+  ["glow_361.xnb", "wallGlow"],
 ]);
 const NUMBERED_KINDS: ReadonlyMap<string, SheetKind> = new Map([
   ["tiles", "tile"], ["wall", "wall"], ["tree_tops", "treeTop"], ["tree_branches", "treeBranch"],
-  ["item", "item"], ["liquid", "liquid"], ["liquidslope", "liquidSlope"], ["waterfall", "waterfall"],
+  ["item", "item"], ["liquid", "liquid"], ["liquidslope", "liquidSlope"], ["waterfall", "waterfall"], ["water", "water"],
 ]);
 
 /** The kind and id of a sheet file the atlas holds, or undefined for any other file. */
@@ -79,7 +88,8 @@ function sheetOf(name: string): { readonly kind: SheetKind; readonly id: number 
   const match = SHEET_NAME.exec(name);
   if (match === null) return undefined;
   const kind = NUMBERED_KINDS.get((match[1] ?? "").toLowerCase());
-  return kind === undefined ? undefined : { kind, id: Number(match[2]) };
+  const id = Number(match[2]);
+  return kind === undefined || (kind === "water" && !WATER_IDS.has(id)) ? undefined : { kind, id };
 }
 
 /** Whether a file of this name is a sheet the atlas holds (docs/assets.md, "Atlas"); every other file is never read. */
@@ -99,7 +109,19 @@ async function imagesDirectory(contentDir: ContentDirectory): Promise<ContentDir
 async function scanSheets(directory: ContentDirectory): Promise<Scan> {
   const sheets: SourceSheet[] = [];
   const unreadable: MissingSheet[] = [];
-  for await (const [name, entry] of directory.entries()) {
+  let misc: ContentDirectory | null = null;
+  try {
+    misc = await directory.getDirectoryHandle(MISC);
+  } catch {
+    // No Misc folder (a fallback listing, or a partial copy): no water sheets.
+  }
+  const entries = async function* (): AsyncGenerator<[string, ContentEntry]> {
+    yield* directory.entries();
+    if (misc !== null) {
+      for await (const entry of misc.entries()) if (sheetOf(entry[0])?.kind === "water") yield entry;
+    }
+  };
+  for await (const [name, entry] of entries()) {
     const sheet = sheetOf(name);
     if (sheet === undefined || entry.kind !== "file" || entry.getFile === undefined) continue;
     const { kind, id } = sheet;

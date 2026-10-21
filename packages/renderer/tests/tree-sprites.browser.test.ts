@@ -110,20 +110,24 @@ interface Expected {
 }
 
 /**
- * The documented sprites (docs/assets.md, "Trees"), in drawing order: trunk cells column by column, each from the top
- * (20 × 20, 2 pixels left of the tile; a palm's shifted by its stored lean, its row by the sand), then the branches
- * (40 × 40 against the trunk, 12 pixels above the tile), then the tops (centred, bottom on the tile's bottom).
+ * The documented sprites (docs/assets.md, "Trees"), in drawing order: trunk cells row by row, as the game draws the
+ * tiles that are not solid (20 × 20, 2 pixels left of the tile; a palm's shifted by its stored lean, its row by the
+ * sand), then the branches (40 × 40 against the trunk, 12 pixels above the tile), then the tops (centred, bottom on the
+ * tile's bottom).
  */
 function expectedSprites(): Expected[] {
   const trunk = (id: number, x: number, y: number, sx: number, sy: number, lean = 0): Expected =>
     ({ kind: "tile", id, sx, sy, width: 20, height: 20, dx: 16 * x - 2 + lean, dy: 16 * y });
-  return [
+  const trunks = [
     trunk(583, 2, 7, 44, 198), trunk(583, 3, 5, 22, 198), ...[6, 7, 8, 9].map((y) => trunk(583, 3, y, 0, y === 6 ? 22 : 0)),
     trunk(583, 4, 7, 66, 198),
     trunk(5, 8, 7, 44, 220), trunk(5, 9, 5, 22, 220), ...[6, 7, 8, 9].map((y) => trunk(5, 9, y, 0, 22 * (y - 6))),
     trunk(5, 10, 7, 66, 220),
     // Sand: palm row 0.
     trunk(323, 15, 6, 88, 0, 6), trunk(323, 15, 7, 0, 0, 4), trunk(323, 15, 8, 22, 0, 2), trunk(323, 15, 9, 66, 0, 0),
+  ];
+  return [
+    ...trunks.sort((a, b) => a.dy - b.dy),
     // Gem tree (Tree_Branches_22, frame 0) and forest tree (Tree_Branches_0, variant 1: frame 1).
     { kind: "treeBranch", id: 22, sx: 0, sy: 0, width: 40, height: 40, dx: 16 * 2 + 16 - 40, dy: 16 * 7 - 12 },
     { kind: "treeBranch", id: 22, sx: 42, sy: 0, width: 40, height: 40, dx: 16 * 4, dy: 16 * 7 - 12 },

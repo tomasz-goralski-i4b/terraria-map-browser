@@ -5,9 +5,11 @@
 import { CHUNK_SIZE } from "../camera/camera.js";
 import type { ChunkCoord } from "../camera/camera.js";
 import { NO_CELL } from "../framing/cells.js";
+import { liquidLayout, LIQUID_LAYOUT_REACH, shimmerGlitterPlane, type LiquidLayout, type LiquidRegion } from "../chunk/liquid-layout.js";
 import { createChunkCellCache, type ChunkCellCache } from "../framing/chunk-cells.js";
 import { createChunkWallCellCache, type ChunkWallCellCache } from "../framing/chunk-wall-cells.js";
 import type { BlockFraming } from "../framing/frame-block.js";
+import { waterfallSources } from "../objects/waterfalls.js";
 import { chunkGrid, union, type Area } from "./chunk-grid.js";
 import { UNIT, arrayTexture, bindTexture, defaultUnpack, requireValue, type Counters, type GpuPart, type UnpackState } from "./gl.js";
 import {
@@ -17,11 +19,11 @@ import {
 import type { RenderableWorld } from "./types.js";
 
 /**
- * Chunks per page. A page holds one layer per plane and chunk: 32 × 7 = 224 layers of the 16-bit texture and
- * 32 × 5 = 160 of the 8-bit one, within the 256 array layers WebGL2 guarantees, with room for one more 16-bit
- * plane (32 × 8 = 256). A page of both textures is about 9.8 MiB.
+ * Chunks per page. A page holds one layer per plane and chunk: 25 × 10 = 250 layers of the 16-bit texture and
+ * 25 × 5 = 125 of the 8-bit one, within the 256 array layers WebGL2 guarantees. A page of both textures is about
+ * 10.5 MiB.
  */
-export const CHUNKS_PER_PAGE = 32;
+export const CHUNKS_PER_PAGE = 25;
 /** Texels per side of a page layer: the chunk and its apron of neighbouring tiles on every side. */
 export const PAGE_SIZE: number = CHUNK_SIZE + 2 * PAGE_APRON;
 /** Ints per instance: the chunk rectangle (origin x, origin y, columns, rows) and its page layer. */
@@ -32,7 +34,10 @@ export type Resident = readonly [chunk: ChunkCoord, slot: number];
 
 /** One array texture per plane format, holding up to CHUNKS_PER_PAGE chunks with their aprons, a layer per plane. */
 interface Page {
-  /** R16UI, PLANES_16 per chunk: block, wall, flags, frameX, frameY, framed block cell, framed wall cell. */
+  /**
+   * R16UI, PLANES_16 per chunk: block, wall, flags, frameX, frameY, framed block cell, framed wall cell, and the liquid
+   * layout's three planes.
+   */
   readonly planes16: WebGLTexture;
   /** R8UI, PLANES_8 per chunk: liquid kind, liquid amount, block paint, wall paint, block shape. */
   readonly planes8: WebGLTexture;
@@ -118,7 +123,10 @@ export interface ChunkStore extends GpuPart {
   readonly isFramed: (slot: number) => boolean;
   /** Frames `chunk` (once; cached while resident) and uploads its cells into the slot's cell layers. No-op without a framing. */
   readonly frame: (chunk: ChunkCoord, slot: number) => void;
-  /** Recomputes the cached cells around changed tiles; returns the block and wall cell areas recomputed. */
+  /**
+   * Recomputes the cached cells around changed tiles; returns the block and wall cell areas recomputed. The liquid
+   * layout around them is marked dirty in the resident chunks it reaches that hold or are near liquid.
+   */
   readonly invalidateCells: (tiles: readonly { readonly x: number; readonly y: number }[]) => {
     readonly blocks: readonly { left: number; top: number; width: number; height: number }[];
     readonly walls: readonly { left: number; top: number; width: number; height: number }[];
@@ -137,6 +145,11 @@ export interface ChunkStore extends GpuPart {
   ) => number;
   /** The page layer of a slot with its CELLS_INSTANCE_BIT and WALLS_INSTANCE_BIT, as the chunk vertex shader reads it. */
   readonly layerOf: (slot: number) => number;
+  /**
+   * The items whose chunks may show liquid in sprite mode: their liquid layout holds any, or they are not framed yet
+   * (their liquid is drawn in map colours). The liquid overlay pass draws these.
+   */
+  readonly liquidItems: (items: readonly Resident[]) => Resident[];
 }
 
 /**
@@ -182,6 +195,12 @@ export function createChunkStore(
   // Resident chunks whose planes changed, with the world tiles that changed in their layers (right and bottom
   // exclusive): uploaded again on their next draw, that rectangle only.
   const dirty = new Map<number, Area>();
+  // Resident chunks whose liquid layout changed, with the world tiles whose layout to upload again; and the framed
+  // slots whose liquid layers hold any liquid (an edit there may remove it).
+  const liquidDirty = new Map<number, Area>();
+  const liquidSlots = new Set<number>();
+  // The slots whose glitter layer holds their chunk's shimmer glitter (uploaded once a shimmer piece shows there).
+  const glitterSlots = new Set<number>();
   // Self-framed blocks and walls: the framing, the framed cells of the current world's resident chunks, and the slots
   // whose cell layers hold their chunk's current cells. Tiles framed by caches already let go are kept in the
   // framed…Before counts.
@@ -210,6 +229,9 @@ export function createChunkStore(
     wallCache = null;
     framedSlots.clear();
     wallSlots.clear();
+    liquidSlots.clear();
+    glitterSlots.clear();
+    liquidDirty.clear();
     staleInstances();
   };
 
@@ -330,9 +352,49 @@ export function createChunkStore(
   };
 
   /**
+   * Uploads the liquid layout (liquidLayout) of the world tiles `area` of `chunk` (the whole chunk without one) into
+   * its slot's liquid layers, without the apron, the 16-bit planes texture bound.
+   */
+  const uploadLiquids = (chunk: ChunkCoord, slot: number, area?: Area): void => {
+    const source = requireWorld();
+    const originX = chunk.x * CHUNK_SIZE, originY = chunk.y * CHUNK_SIZE;
+    const left = Math.max(originX, area?.left ?? 0), top = Math.max(originY, area?.top ?? 0);
+    const right = Math.min(originX + CHUNK_SIZE, source.width, area?.right ?? Infinity);
+    const bottom = Math.min(originY + CHUNK_SIZE, source.height, area?.bottom ?? Infinity);
+    if (right <= left || bottom <= top) return;
+    const layout = regionLiquidLayout(source, { left, top, width: right - left, height: bottom - top });
+    const layer = (slot % CHUNKS_PER_PAGE) * PLANE_COUNT_16;
+    for (const [plane, data] of [
+      [PLANES_16.liquidCell, layout.cell], [PLANES_16.liquidRect, layout.rect], [PLANES_16.liquidBehind, layout.behind],
+    ] as const) {
+      gl.texSubImage3D(
+        gl.TEXTURE_2D_ARRAY, 0, top - originY + PAGE_APRON, left - originX + PAGE_APRON, layer + plane, bottom - top, right - left, 1,
+        gl.RED_INTEGER, gl.UNSIGNED_SHORT, data,
+      );
+    }
+    if (layout.cell.some((value) => value !== 0) || layout.behind.some((value) => value !== 0)) liquidSlots.add(slot);
+    else if (area === undefined) liquidSlots.delete(slot);
+    if (!glitterSlots.has(slot) && layout.cell.some((value) => value >> 12 === SHIMMER_KIND)) {
+      // The glitter of every tile corner of the page layer, apron included (it reads the corners past its tiles).
+      const page = pageOf(slot);
+      bindTexture(gl, UNIT.planes8, gl.TEXTURE_2D_ARRAY, page.planes8);
+      gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+      gl.texSubImage3D(
+        gl.TEXTURE_2D_ARRAY, 0, 0, 0, (slot % CHUNKS_PER_PAGE) * PLANE_COUNT_8 + PLANES_8.glitter, PAGE_SIZE, PAGE_SIZE, 1,
+        gl.RED_INTEGER, gl.UNSIGNED_BYTE,
+        shimmerGlitterPlane(originX - PAGE_APRON, originY - PAGE_APRON, PAGE_SIZE, PAGE_SIZE),
+      );
+      gl.pixelStorei(gl.UNPACK_ALIGNMENT, 2);
+      bindTexture(gl, UNIT.planes16, gl.TEXTURE_2D_ARRAY, page.planes16);
+      glitterSlots.add(slot);
+    }
+  };
+
+  /**
    * Uploads the framed cells of `chunk` (framing it on first use) into the cell layers of its slot: the chunk's block
    * cells without the apron, which the sprite pass never reads for blocks, and its wall cells with the apron, whose
-   * overhang reaches into the chunk (the whole layer: NO_CELL past the world's edges). One texture upload.
+   * overhang reaches into the chunk (the whole layer: NO_CELL past the world's edges); and its liquid layout. One
+   * texture upload.
    */
   const uploadCells = (chunk: ChunkCoord, slot: number): void => {
     const caches = cellsOf();
@@ -357,6 +419,7 @@ export function createChunkStore(
       gl.UNSIGNED_SHORT, walls,
     );
     noteWalls(slot, walls);
+    uploadLiquids(chunk, slot);
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
     counters.textureUploads++;
     framedSlots.add(slot);
@@ -381,8 +444,8 @@ export function createChunkStore(
     /** Uploads columns [c0, c1) × rows [r0, r1) of a column-major array of `rows` rows, `offset` texels into the layer. */
     const part = (
       plane: number, cells: Uint16Array, rows: number, offset: number, c0: number, c1: number, r0: number, r1: number,
-    ): boolean => {
-      if (c1 <= c0 || r1 <= r0) return false;
+    ): void => {
+      if (c1 <= c0 || r1 <= r0) return;
       gl.pixelStorei(gl.UNPACK_ROW_LENGTH, rows);
       // A 3D upload must fit its skipped rows within the image height: the array's columns.
       gl.pixelStorei(gl.UNPACK_IMAGE_HEIGHT, cells.length / rows);
@@ -392,25 +455,50 @@ export function createChunkStore(
         gl.TEXTURE_2D_ARRAY, 0, offset + r0, offset + c0, layer + plane, r1 - r0, c1 - c0, 1, gl.RED_INTEGER,
         gl.UNSIGNED_SHORT, cells,
       );
-      return true;
     };
     const columns = Math.min(CHUNK_SIZE, source.width - originX);
     const rows = Math.min(CHUNK_SIZE, source.height - originY);
-    const blocks = part(
+    part(
       PLANES_16.cell, caches.blocks.cells(chunk), rows, PAGE_APRON,
       Math.max(0, area.left - originX), Math.min(columns, area.right - originX),
       Math.max(0, area.top - originY), Math.min(rows, area.bottom - originY),
     );
     const walls = caches.walls.cells(chunk);
-    const wallsUploaded = part(
+    part(
       PLANES_16.wallCell, walls, PAGE_SIZE, 0,
       Math.max(0, area.left - originX + PAGE_APRON), Math.min(PAGE_SIZE, area.right - originX + PAGE_APRON),
       Math.max(0, area.top - originY + PAGE_APRON), Math.min(PAGE_SIZE, area.bottom - originY + PAGE_APRON),
     );
     defaultUnpack(gl);
-    if (blocks || wallsUploaded) counters.textureUploads++;
+    counters.textureUploads++;
     // A wall cell may have appeared where the chunk had none.
     noteWalls(slot, walls);
+  };
+
+  /**
+   * Marks the liquid layout around changed tiles dirty (LIQUID_LAYOUT_REACH) in the framed resident chunks it reaches
+   * whose layers hold liquid (it may be gone now) or near which liquid lies now.
+   */
+  const markLiquids = (tiles: readonly { readonly x: number; readonly y: number }[]): void => {
+    if (framedSlots.size === 0) return;
+    const source = requireWorld();
+    const grid = chunkGrid(source);
+    for (const { x, y } of tiles) {
+      const area = {
+        left: Math.max(0, x - LIQUID_LAYOUT_REACH.x), top: Math.max(0, y - LIQUID_LAYOUT_REACH.up),
+        right: Math.min(source.width, x + LIQUID_LAYOUT_REACH.x + 1), bottom: Math.min(source.height, y + LIQUID_LAYOUT_REACH.down + 1),
+      };
+      let wet: boolean | undefined;
+      for (let cx = Math.floor(area.left / CHUNK_SIZE); cx * CHUNK_SIZE < area.right; cx++) {
+        for (let cy = Math.floor(area.top / CHUNK_SIZE); cy * CHUNK_SIZE < area.bottom; cy++) {
+          const key = grid.keyOf({ x: cx, y: cy });
+          const slot = chunks.get(key);
+          if (slot === undefined || !framedSlots.has(slot)) continue;
+          wet ??= anyLiquid(source, area);
+          if (wet || liquidSlots.has(slot)) liquidDirty.set(key, union(liquidDirty.get(key), area));
+        }
+      }
+    }
   };
 
   const layerOf = (slot: number): number => (slot % CHUNKS_PER_PAGE) | (framedSlots.has(slot)
@@ -465,6 +553,9 @@ export function createChunkStore(
         freeSlots.push(slot);
         evicted++;
         dirty.delete(key);
+        liquidDirty.delete(key);
+        liquidSlots.delete(slot);
+        glitterSlots.delete(slot);
         cellCache?.drop(coordOf(key));
         wallCache?.drop(coordOf(key));
         // Its slot is filled again: no instance buffer drawn before may be drawn again.
@@ -478,6 +569,9 @@ export function createChunkStore(
         freeSlots.push(slot);
         evicted++;
         dirty.delete(key);
+        liquidDirty.delete(key);
+        liquidSlots.delete(slot);
+        glitterSlots.delete(slot);
         cellCache?.drop(coordOf(key));
         wallCache?.drop(coordOf(key));
         // Its slot is filled again: no instance buffer drawn before may be drawn again.
@@ -490,27 +584,43 @@ export function createChunkStore(
       const slot = allocateSlot();
       uploadChunk(chunk, slot);
       dirty.delete(key);
+      liquidDirty.delete(key);
       chunks.set(key, slot);
       return slot;
     },
-    isDirty: (key) => dirty.has(key),
+    isDirty: (key) => dirty.has(key) || liquidDirty.has(key),
     markDirty: (key, area) => {
       if (!chunks.has(key)) return;
       dirty.set(key, union(dirty.get(key), area));
     },
     refresh: (chunk, key, slot) => {
       const area = dirty.get(key);
-      if (area === undefined) return;
-      uploadChunk(chunk, slot, area);
-      if (framedSlots.has(slot)) uploadCellArea(chunk, slot, area);
-      dirty.delete(key);
+      if (area !== undefined) {
+        uploadChunk(chunk, slot, area);
+        if (framedSlots.has(slot)) uploadCellArea(chunk, slot, area);
+        dirty.delete(key);
+      }
+      const liquids = liquidDirty.get(key);
+      if (liquids !== undefined && framedSlots.has(slot)) {
+        unpack.reset();
+        gl.pixelStorei(gl.UNPACK_ALIGNMENT, 2);
+        bindTexture(gl, UNIT.planes16, gl.TEXTURE_2D_ARRAY, pageOf(slot).planes16);
+        uploadLiquids(chunk, slot, liquids);
+        defaultUnpack(gl);
+        counters.textureUploads++;
+      }
+      liquidDirty.delete(key);
     },
     isFramed: (slot) => framedSlots.has(slot),
+    liquidItems: (items) => items.filter(([, slot]) => !framedSlots.has(slot) || liquidSlots.has(slot)),
     frame: uploadCells,
-    invalidateCells: (tiles) => ({
-      blocks: cellCache !== null && cellCache.world === world ? cellCache.invalidate(tiles) : [],
-      walls: wallCache !== null && wallCache.world === world ? wallCache.invalidate(tiles) : [],
-    }),
+    invalidateCells: (tiles) => {
+      markLiquids(tiles);
+      return {
+        blocks: cellCache !== null && cellCache.world === world ? cellCache.invalidate(tiles) : [],
+        walls: wallCache !== null && wallCache.world === world ? wallCache.invalidate(tiles) : [],
+      };
+    },
     draw: (items) => {
       if (items.length === 0) return 0;
       let held = instances.find((entry) => entry.items === items);
@@ -576,4 +686,23 @@ export function createChunkStore(
       world = null;
     },
   };
+}
+
+/** The liquid layout of `region` (liquidLayout), with no liquid behind the half blocks waterfalls start at. */
+/** The liquid kind of shimmer in the liquid layout's cells (kind << 12). */
+const SHIMMER_KIND = 4;
+
+function regionLiquidLayout(source: RenderableWorld, region: LiquidRegion): LiquidLayout {
+  const { left, top, width, height } = region;
+  const starts = new Set(waterfallSources(source, { left, top, right: left + width, bottom: top + height })
+    .map(({ x, y }) => x * source.height + y));
+  return liquidLayout(source, region, (x, y) => starts.has(x * source.height + y));
+}
+
+/** Whether any tile of `area` (world tiles, right and bottom exclusive) holds liquid. */
+function anyLiquid(source: RenderableWorld, area: Area): boolean {
+  for (let x = area.left; x < area.right; x++) {
+    for (let y = area.top; y < area.bottom; y++) if ((source.planes.liquidAmount[x * source.height + y] ?? 0) !== 0) return true;
+  }
+  return false;
 }

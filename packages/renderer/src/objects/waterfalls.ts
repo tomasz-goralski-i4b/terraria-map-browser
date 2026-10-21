@@ -1,42 +1,72 @@
-// Waterfalls (docs/assets.md, "Waterfalls"): where the game starts one and the path it takes, as tile steps the object
-// pass draws from the `Waterfall_<n>` sheets. Sources follow the game's own source finder, observed at runtime on
-// synthetic tiles (R, scripts/waterfalls/observe.ps1); the path follows in-game screenshots of test setups (G).
+// Waterfalls (docs/assets.md, "Waterfalls"): where the game starts one, the path its stream takes tile by tile and the
+// pieces of the `Waterfall_<n>` sheets it draws on the way, as sprites for the object pass.
 import type { ContentRef } from "@studio/world-model";
-import { terrariaFramingData } from "../framing/terraria-framing.generated.js";
-import { OBJECT_TILES } from "./object-sprites.js";
+import { terrariaSpriteObjects } from "./terraria-sprite-objects.generated.js";
 import type { ObjectSprite, TileArea } from "./object-sprites.js";
 
-/** Steps a waterfall takes at most, its source's lip included (R: the manager's `maxLength`). */
+/** Steps a waterfall takes at most (the stream's reach at full quality). */
 export const WATERFALL_MAX_LENGTH = 100;
-/** The last steps over which a waterfall fades out (G: the long drop fades over about eight tiles). */
-export const WATERFALL_FADE_STEPS = 8;
-/** The liquid beside a source must hold more than this (R: the manager's `minWet`). */
+/** The liquid beside a source must hold more than this. */
 export const WATERFALL_MIN_WET = 160;
-/** CWM block shapes: a half block, and the slopes whose surface goes down to the right / to the left. */
+/** The last steps over which a waterfall fades out. */
+const FADE_STEPS = 10;
+/** Near a cloud block a stream reaches this far per 4200 tiles of world width. */
+const CLOUD_REACH = 40;
+
+/** CWM block shapes: a half block; 2–5 are the slopes (the game's slope 1–4 is shape − 1). */
 const HALF = 1;
-const DOWN_RIGHT = 2;
-const DOWN_LEFT = 3;
 const ABSENT = 0xffff;
-/** CWM liquid kind of shimmer. */
+/** The CWM `flags` bit of an inactive (actuated) tile. */
+const INACTIVE = 32;
+/** CWM liquid kinds. */
+const LAVA = 2;
+const HONEY = 3;
 const SHIMMER = 4;
-/** The first row of shimmer's edge band in Waterfall_25 (measured, S). */
-const SHIMMER_EDGE_BAND = 42;
+
+/** Tile ids the streams read. */
+const PLATFORM = 19;
+const RAINBOW_BRICK = 160;
+const GEMSPARK_FIRST = 262;
+const GEMSPARK_LAST = 268;
+const CLOUDS = [189, 196];
+/** Cloud blocks that rain (the tile below them is the rain's source), with their rain's sheets: foreground, background. */
+const RAIN_CLOUDS: ReadonlyMap<number, { readonly type: number; readonly back: number | null; readonly reach: number }> = new Map([
+  [196, { type: 11, back: 12, reach: WATERFALL_MAX_LENGTH / 4 }],
+  [460, { type: 22, back: null, reach: WATERFALL_MAX_LENGTH / 2 }],
+  [717, { type: 26, back: 27, reach: WATERFALL_MAX_LENGTH / 4 }],
+]);
+/** A wall behind which water still falls at full opacity. */
+const ECHO_WALL = 318;
+
+/** The `Waterfall_<n>` sheet of CWM liquid kinds 1–4: forest water, lava, honey, shimmer. */
+export const WATERFALL_SHEETS: readonly number[] = [0, 1, 14, 25];
+
+/** Shimmer's and the rainbow stream's sheets, and the rows below a shimmer frame its glitter band starts at. */
+const SHIMMER_STREAM = 25;
+const RAINBOW_STREAM = 2;
+const SHIMMER_GLITTER_BAND = 42;
+
+const solidBlocks = new Set(terrariaSpriteObjects.solidBlocks);
+const hidesLiquid = new Set(terrariaSpriteObjects.hidesLiquidBehind);
 
 /** The slice of a world waterfalls are read from. Planes are column-major (`x * height + y`). */
 export interface WaterfallWorld {
   readonly width: number;
   readonly height: number;
+  /** The world's surface level: water falls fainter below it. Absent: everywhere above it. */
+  readonly surfaceY?: number;
   readonly planes: {
     readonly block: Uint16Array;
-    readonly frameX?: Int16Array;
+    readonly wall?: Uint16Array;
     readonly shape?: Uint8Array;
+    readonly flags?: Uint16Array;
     readonly liquid: Uint8Array;
     readonly liquidAmount: Uint8Array;
   };
   readonly palette: readonly ContentRef[];
 }
 
-/** A waterfall's start: its half block, the way it flows (1 right, -1 left) and the CWM liquid kind (1–4). */
+/** A waterfall's start and the way it first flows (1 right, -1 left), and the CWM liquid kind (1–4) it pours. */
 export interface WaterfallSource {
   readonly x: number;
   readonly y: number;
@@ -44,40 +74,18 @@ export interface WaterfallSource {
   readonly kind: number;
 }
 
-/**
- * One tile of a waterfall's path. `lip`: the stream pours over this tile's edge on the `direction` side (the source's
- * half block, a ledge's end); `fall`: it falls down this tile's side facing where it came from; `run`: it runs along
- * the top of the block below this tile; `slide`: it slides down this tile's slope.
- */
-export interface WaterfallStep {
-  readonly piece: "lip" | "fall" | "run" | "slide";
-  readonly x: number;
-  readonly y: number;
-  readonly direction: 1 | -1;
-  /** 255, falling to near 0 over the last WATERFALL_FADE_STEPS of WATERFALL_MAX_LENGTH steps. */
-  readonly alpha: number;
-}
-
-/**
- * Ropes and webs: no solid block although the world stores no frame for them (G: a stream pours past a rope beside a
- * hole and falls through it; chosen for the others): rope, chain, vine rope, silk rope, web rope and cobweb.
- */
-const ROPES_AND_WEBS: readonly number[] = [213, 214, 353, 365, 366, 51];
-
-/**
- * Tile ids that hold no solid block although the world stores no frame for them: vines and cactus (the framing
- * database's non-blocks), the trees the object pass draws, ropes and webs.
- */
-const NOT_SOLID: ReadonlySet<number> = new Set([...terrariaFramingData.nonBlocks.types, ...OBJECT_TILES, ...ROPES_AND_WEBS]);
-
-/** Reads a world's tiles for waterfalls. */
+/** Reads a world's tiles as the streams see them. */
 class Reader {
   readonly #world: WaterfallWorld;
-  readonly #solidIndex: Uint8Array;
+  readonly #ids: Int32Array;
 
   constructor(world: WaterfallWorld) {
     this.#world = world;
-    this.#solidIndex = Uint8Array.from(world.palette, (ref) => (ref.kind === "vanilla" && NOT_SOLID.has(ref.id) ? 0 : 1));
+    this.#ids = Int32Array.from(world.palette, (ref) => (ref.kind === "vanilla" ? ref.id : -1));
+  }
+
+  get height(): number {
+    return this.#world.height;
   }
 
   inWorld(x: number, y: number): boolean {
@@ -88,234 +96,305 @@ class Reader {
     return x * this.#world.height + y;
   }
 
-  shape(x: number, y: number): number {
-    return this.#world.planes.shape?.[this.#index(x, y)] ?? 0;
+  /** The tile id at (x, y): -1 for none, outside the world or content that is not vanilla. */
+  type(x: number, y: number): number {
+    if (!this.inWorld(x, y)) return -1;
+    const block = this.#world.planes.block[this.#index(x, y)] ?? ABSENT;
+    return block === ABSENT ? -1 : this.#ids[block] ?? -1;
   }
 
-  /** The liquid kind (1–4) and amount at (x, y); none outside the world. */
-  liquid(x: number, y: number): { readonly kind: number; readonly amount: number } {
-    if (!this.inWorld(x, y)) return { kind: 0, amount: 0 };
+  active(x: number, y: number): boolean {
+    return this.inWorld(x, y) && (this.#world.planes.block[this.#index(x, y)] ?? ABSENT) !== ABSENT;
+  }
+
+  /** Active and not actuated. */
+  nactive(x: number, y: number): boolean {
+    return this.active(x, y) && ((this.#world.planes.flags?.[this.#index(x, y)] ?? 0) & INACTIVE) === 0;
+  }
+
+  shape(x: number, y: number): number {
+    return this.active(x, y) ? this.#world.planes.shape?.[this.#index(x, y)] ?? 0 : 0;
+  }
+
+  half(x: number, y: number): boolean {
+    return this.shape(x, y) === HALF;
+  }
+
+  /** The game's slope 1–4 (0 none): 1 and 2 have their surface on top, going down to the right and to the left. */
+  slope(x: number, y: number): number {
+    const shape = this.shape(x, y);
+    return shape >= 2 && shape <= 5 ? shape - 1 : 0;
+  }
+
+  topSlope(x: number, y: number): boolean {
+    const slope = this.slope(x, y);
+    return slope === 1 || slope === 2;
+  }
+
+  bottomSlope(x: number, y: number): boolean {
+    const slope = this.slope(x, y);
+    return slope === 3 || slope === 4;
+  }
+
+  /** A full, active solid block (not one solid on top only, nor shaped); outside the world counts as one. */
+  solid(x: number, y: number): boolean {
+    if (!this.inWorld(x, y)) return true;
+    return this.nactive(x, y) && solidBlocks.has(this.type(x, y)) && this.shape(x, y) === 0;
+  }
+
+  /** The liquid amount at (x, y), any kind; none outside the world. */
+  liquid(x: number, y: number): number {
+    if (!this.inWorld(x, y)) return 0;
     const i = this.#index(x, y);
     const kind = this.#world.planes.liquid[i] ?? 0;
-    const amount = this.#world.planes.liquidAmount[i] ?? 0;
-    return kind >= 1 && kind <= 4 && amount !== 0 ? { kind, amount } : { kind: 0, amount: 0 };
+    return kind >= 1 && kind <= 4 ? this.#world.planes.liquidAmount[i] ?? 0 : 0;
   }
 
-  /**
-   * Whether (x, y) holds a solid block (chosen, docs/assets.md "Waterfalls"): a block the world stores no frame for,
-   * except vines, cactus, trees, ropes and webs. Furniture, plants, platforms and other framed content do not stop water.
-   */
-  solid(x: number, y: number): boolean {
-    if (!this.inWorld(x, y)) return false;
-    const i = this.#index(x, y);
-    const block = this.#world.planes.block[i] ?? ABSENT;
-    if (block === ABSENT || this.#solidIndex[block] === 0) return false;
-    return (this.#world.planes.frameX?.[i] ?? -1) < 0;
+  kind(x: number, y: number): number {
+    return this.liquid(x, y) === 0 ? 0 : this.#world.planes.liquid[this.#index(x, y)] ?? 0;
   }
 
-  /** The way a slope at (x, y) goes down (1 right, -1 left), or 0 for none. */
-  slope(x: number, y: number): 0 | 1 | -1 {
-    if (!this.solid(x, y)) return 0;
-    const shape = this.shape(x, y);
-    return shape === DOWN_RIGHT ? 1 : shape === DOWN_LEFT ? -1 : 0;
+  /** Whether a wall the water falls fainter over lies at (x, y). */
+  wall(x: number, y: number): boolean {
+    const wall = this.inWorld(x, y) ? this.#world.planes.wall?.[this.#index(x, y)] ?? ABSENT : ABSENT;
+    return wall !== ABSENT && this.#ids[wall] !== ECHO_WALL;
   }
 }
 
 /**
- * The waterfall sources inside `area` (R, docs/assets.md "Waterfalls"): a half block with liquid of more than 160 on
- * one side and, on the other, no solid full block, no slope and no liquid at all; no liquid above it. The waterfall
- * flows away from the liquid, in the liquid's kind.
+ * The waterfall sources inside `area`: a half block with no more than a film of liquid above it (or a solid block
+ * there), liquid of more than WATERFALL_MIN_WET on one side and on either side a dry tile that is neither a solid
+ * block nor sloped. It pours lava if any of those three tiles holds lava, else honey, else shimmer, else water, and
+ * flows away from the wet side.
  */
 export function waterfallSources(world: WaterfallWorld, area: TileArea): WaterfallSource[] {
   const reader = new Reader(world);
   const out: WaterfallSource[] = [];
-  const left = Math.max(0, area.left), right = Math.min(world.width, area.right);
-  const top = Math.max(0, area.top), bottom = Math.min(world.height, area.bottom);
-  for (let x = left; x < right; x++) {
-    for (let y = top; y < bottom; y++) {
-      if (!reader.solid(x, y) || reader.shape(x, y) !== HALF || reader.liquid(x, y - 1).kind !== 0) continue;
-      for (const direction of [1, -1] as const) {
-        const wet = reader.liquid(x - direction, y);
-        if (wet.amount <= WATERFALL_MIN_WET) continue;
-        const open = x + direction;
-        const blocked = reader.liquid(open, y).kind !== 0 || (reader.solid(open, y) && reader.shape(open, y) !== HALF);
-        if (!blocked) out.push({ x, y, direction, kind: wet.kind });
-      }
+  for (let x = Math.max(1, area.left); x < Math.min(world.width - 1, area.right); x++) {
+    for (let y = Math.max(1, area.top); y < Math.min(world.height, area.bottom); y++) {
+      if (!reader.active(x, y) || !reader.half(x, y)) continue;
+      if (reader.liquid(x, y - 1) >= 16 && !reader.solid(x, y - 1)) continue;
+      const open = (side: number): boolean => reader.liquid(side, y) === 0 && !reader.solid(side, y) && reader.slope(side, y) === 0;
+      const left = reader.liquid(x - 1, y), right = reader.liquid(x + 1, y);
+      if (!(left > WATERFALL_MIN_WET || right > WATERFALL_MIN_WET) || !(open(x - 1) || open(x + 1))) continue;
+      const kinds = [reader.kind(x, y - 1), reader.kind(x + 1, y), reader.kind(x - 1, y)];
+      const kind = kinds.includes(LAVA) ? LAVA : kinds.includes(HONEY) ? HONEY : kinds.includes(SHIMMER) ? SHIMMER : 1;
+      out.push({ x, y, direction: left > WATERFALL_MIN_WET ? 1 : -1, kind });
     }
   }
   return out;
 }
 
-/**
- * The `Waterfall_<n>` sheet of CWM liquid kinds 1–4 (R: the type the source finder gives water, lava, honey and
- * shimmer). Water is always the forest style, as for the liquids ("Liquids").
- */
-export const WATERFALL_SHEETS: readonly number[] = [0, 1, 14, 25];
+/** One piece a stream draws: a rectangle of its frame-0 sheet, its top-left in world sprite pixels, mirrored or not. */
+interface Piece {
+  readonly type: number;
+  readonly sx: number;
+  readonly sy: number;
+  readonly width: number;
+  readonly height: number;
+  readonly dx: number;
+  readonly dy: number;
+  readonly flip: boolean;
+  /** Opacity 0–1. */
+  readonly alpha: number;
+}
+
+/** The sheet of each CWM liquid kind's stream (WATERFALL_SHEETS) by the game's liquid type. */
+function sheetOf(kind: number): number {
+  return WATERFALL_SHEETS[kind - 1] ?? 0;
+}
 
 /**
- * The frame the viewer draws (S, docs/assets.md "Waterfalls": 16 animation frames 32 pixels apart; frame 0, as liquids
- * are not animated). Its art flows left: the lip's flat part (x 16–31) lies over the tile it pours from, its column
- * part (x 10–15) hangs into the next tile; below it (rows 24–39) the 10-pixel column the stream falls in.
+ * The opacity of a stream of sheet `type` at step `step` of `steps` over the tile at (x, y): lava fully, honey 0.8,
+ * shimmer 0.75, water fully under the sky and 0.6 over a wall or below the surface; the last FADE_STEPS steps fade out.
  */
-const LIP = { sx: 10, sy: 0, width: 22, height: 24 } as const;
-const COLUMN = { sx: 10, sy: 24, width: 10, height: 16 } as const;
-/**
- * The film on the ground: the lip's flat part, its top FILM_RISE pixels above the ground and its lower half behind the
- * ground's block, where it shows through the block's transparent pixels (G: water fills the notches of a staircase).
- */
-const FILM = { sx: 16, sy: 0, width: 16, height: 16 } as const;
-const FILM_RISE = 8;
-/** The lip's corner: its column part with the 4 pixels of flat part the column reaches back over (x 10–19). */
-const CORNER = { sx: 10, sy: 0, width: 10, height: 24 } as const;
-/** The lip's column part reaches this far past its tile; the column 4 pixels back over it. */
-const LIP_OVERHANG = 6;
-const COLUMN_BACK = 4;
-const TILE = 16;
+function opacityOf(reader: Reader, world: WaterfallWorld, type: number, x: number, y: number, step: number, steps: number): number {
+  let alpha = type === 1 ? 1 : type === 14 ? 0.8 : type === 25 ? 0.75
+    : reader.wall(x, y) || y >= (world.surfaceY ?? Infinity) ? 0.6 : 1;
+  if (step > steps - FADE_STEPS) alpha *= (steps - step) / FADE_STEPS;
+  return alpha;
+}
 
 /**
- * The object pass's sprites of the waterfalls whose source lies in `area` (docs/assets.md, "Waterfalls"): per step of
- * its path, a lip at the tile it pours from (its top at the source's liquid surface, or on the ground a ledge's lip
- * sits on), the column down the side of a falling tile, a film on the ground under a running tile, and on a slope 2-pixel
- * films along its surface. Mirrored for a waterfall flowing right; faded by its step.
+ * The pieces of the stream from `source` of sheet `type`: tile by tile it falls while the tile below is open, slides
+ * along a slope below it in the slope's direction, runs along flat ground away from the liquid or the wall behind it,
+ * turning back at most once, and ends in liquid, against a full solid block, at the world's edge or after its reach.
+ */
+function streamPieces(reader: Reader, world: WaterfallWorld, source: { readonly x: number; readonly y: number }, type: number): Piece[] {
+  const out: Piece[] = [];
+  const draw = (pieceType: number, sx: number, sy: number, width: number, height: number, dx: number, dy: number, flip: boolean, alpha: number): void => {
+    if (width > 0 && height > 0) out.push({ type: pieceType, sx, sy, width, height, dx, dy, flip, alpha });
+  };
+  const fixedType = type === 1 || type === 14 || type === 25;
+  let x = source.x, y = source.y;
+  let steps = WATERFALL_MAX_LENGTH;
+  // The stream's state: the last step's move (dx, dy), its direction and the last direction, whether it slid down a
+  // slope, the drawing offset of a stream on the ground (8 pixels down) and the turns it took.
+  let lastDx = 0, lastDy = 0, direction = 0, lastDirection = 0, lastSlide = 0, ground = 0, turns = 0;
+  let lastType = type, lastAlpha = 1;
+  for (let step = 0; step < steps && turns < 2; step++) {
+    if (reader.nactive(x, y) && solidBlocks.has(reader.type(x, y)) && reader.type(x, y) !== PLATFORM && reader.shape(x, y) === 0) break;
+    const half = reader.half(x, y);
+    if (reader.solid(x, y + 1) && !half) ground = 8;
+    else if (lastDy !== 0) ground = 0;
+    let slide = 0, dx = 0, dy = 0, onSlope = false;
+    const previousDirection = lastDirection;
+    if (reader.topSlope(x, y + 1) && !half && reader.type(x, y + 1) !== PLATFORM) {
+      onSlope = true;
+      direction = reader.slope(x, y + 1) === 1 ? 1 : -1;
+      slide = dx = lastDirection = direction;
+      dy = 1;
+    } else if ((!reader.solid(x, y + 1) && !reader.bottomSlope(x, y + 1) && !half) || (!reader.active(x, y + 1) && !half)) {
+      turns = 0;
+      dy = 1;
+    } else if ((reader.solid(x - 1, y) || reader.topSlope(x - 1, y) || reader.liquid(x - 1, y) > 0) && !reader.solid(x + 1, y) && reader.liquid(x + 1, y) === 0) {
+      if (direction === -1) turns++;
+      dx = 1;
+      direction = 1;
+    } else if ((reader.solid(x + 1, y) || reader.topSlope(x + 1, y) || reader.liquid(x + 1, y) > 0) && !reader.solid(x - 1, y) && reader.liquid(x - 1, y) === 0) {
+      if (direction === 1) turns++;
+      dx = -1;
+      direction = -1;
+    } else if (((!reader.solid(x + 1, y) && !reader.topSlope(x, y)) || reader.liquid(x + 1, y) === 0) && !reader.solid(x - 1, y) && !reader.topSlope(x, y) && reader.liquid(x - 1, y) === 0) {
+      dx = direction;
+    } else {
+      turns++;
+    }
+    if (turns >= 2) {
+      direction *= -1;
+      dx *= -1;
+    }
+    // Content under or in the tile restyles a water stream: rainbow bricks, gemspark blocks.
+    let pieceType = type;
+    if (!fixedType) {
+      const under = reader.type(x, y) !== -1 ? reader.type(x, y) : reader.type(x, y + 1);
+      if (under === RAINBOW_BRICK) pieceType = 2;
+      else if (under >= GEMSPARK_FIRST && under <= GEMSPARK_LAST) pieceType = 15 + under - GEMSPARK_FIRST;
+    }
+    const alpha = opacityOf(reader, world, pieceType, x, y, step, steps);
+    // The previous step's opacity where the stream changed its look this step.
+    const carried = lastType !== pieceType ? lastAlpha : alpha;
+    const carriedType = lastType !== pieceType ? lastType : pieceType;
+    const fill = Math.trunc(reader.liquid(x, y) / 16);
+    const px = x * 16, py = y * 16;
+    // Onto a slope going the other way: the corner turning onto it.
+    if (onSlope && direction !== previousDirection) {
+      draw(pieceType, 0, 24, 32, 16 - fill - 2, previousDirection === 1 ? px - 16 : px, py + 14, previousDirection === 1, alpha);
+    }
+    // Off a slope it slid down onto a fall: the corner turning down, unfaded.
+    if (lastDx === 0 && slide !== 0 && lastDy === 1 && direction !== lastDirection) {
+      slide = 0;
+      direction = lastDirection;
+      draw(pieceType, 0, 24, 32, 16 - fill, px - 16, py + 16, true, 1);
+    }
+    if (lastSlide !== 0 && dx === 0 && dy === 1) {
+      draw(pieceType, 0, 0, 16, 16 - fill - 8, px, py + ground + 8, direction === 1, direction === 1 ? carried : alpha);
+    }
+    // Landing on flat ground: the column's foot.
+    if (ground === 8 && lastDy === 1 && lastSlide === 0) {
+      draw(carriedType, 0, 24, 32, 8, lastDirection === -1 ? px : px - 16, py, lastDirection !== -1, carried);
+    }
+    if (slide !== 0 && lastDx === 0) {
+      draw(carriedType, 0, 24, 32, 16 - fill, previousDirection === 1 ? px - 16 : px, py, previousDirection === 1, carried);
+    }
+    if (dy === 1 && slide === 0 && lastSlide === 0) {
+      // Falling: the lip where it starts falling, else the column.
+      if (lastDy === 0) draw(pieceType, 0, 0, 16, 16 - fill, px, py + ground, direction !== -1, alpha);
+      else draw(carriedType, 0, 24, 32, 16 - fill, direction === -1 ? px : px - 16, py, direction !== -1, carried);
+    } else if (dx !== 0 && !(reader.liquid(x, y) > 0 && !half)) {
+      if (slide === dx) {
+        // Along a slope's surface: eight 2-pixel strips, one step lower each.
+        ground = 8;
+        for (let column = 0; column < 8; column++) {
+          const lower = dx === 1 ? 2 * column : 14 - 2 * column;
+          const top = lastDx === 0 && (dx === 1 ? column < 2 : column > 5) ? 4 : lower;
+          draw(pieceType, 16 + (dx === 1 ? 14 - 2 * column : 2 * column), 0, 2, 8, px + 2 * column, py + ground + top, true, alpha);
+        }
+      } else {
+        const height = hidesLiquid.has(reader.type(x, y)) || hidesLiquid.has(reader.type(x, y + 1)) ? 8 : 16;
+        draw(pieceType, 16, 0, 16, height, px, py + ground, dx === 1, alpha);
+      }
+    } else if (dx === 0 && dy === 0) {
+      // Stopped on the ground: the film it ends in.
+      if (reader.liquid(x, y) <= 0 || half) draw(pieceType, 16, 0, 16, 16, px, py + ground, false, alpha);
+      break;
+    }
+    if (reader.liquid(x, y) > 0 && !half) break;
+    lastDy = dy;
+    lastDirection = direction;
+    lastDx = dx;
+    x += dx;
+    y += dy;
+    lastSlide = slide;
+    lastType = pieceType;
+    lastAlpha = alpha;
+    const nearCloud = [[x - dx - 1, y - dy], [x - dx + 1, y - dy], [x - dx, y - dy + 1]]
+      .some(([cx = 0, cy = 0]) => reader.active(cx, cy) && CLOUDS.includes(reader.type(cx, cy)));
+    if (nearCloud) steps = Math.trunc(CLOUD_REACH * (world.width / 4200));
+    if (!reader.inWorld(x, y)) break;
+  }
+  return out;
+}
+
+/**
+ * The rain under a cloud block at (x, y) (its tile below is the source): a column of 16-pixel drops, shifted a pixel
+ * left and right by row, down to a solid block (included) or deep liquid, with its last 8 drops fading out.
+ */
+function rainPieces(reader: Reader, x: number, y: number, rain: { readonly type: number; readonly back: number | null; readonly reach: number }): Piece[] {
+  const out: Piece[] = [];
+  if (reader.solid(x, y + 1) || reader.liquid(x, y + 1) !== 0 || reader.slope(x, y + 1) !== 0) return out;
+  // Frame 0 of the drops; the background drops two frames on, the foreground three, at even columns.
+  const front = x % 2 === 0 ? 3 : 0, back = x % 2 === 0 ? 2 : 0;
+  let row = y + 1;
+  let dx = x * 16 + (row % 2 !== 0 ? 0 : 1), dy = row * 16;
+  if (reader.active(x, row - 1) && reader.bottomSlope(x, row - 1)) dy -= 16;
+  let height = 16;
+  const [frontAlpha, backAlpha] = rain.type === 26 ? [0.9, 0.4] : [0.6, 0.3];
+  let stop = false;
+  for (let drop = 0; drop < rain.reach; drop++) {
+    const fade = drop > rain.reach - 8 ? (rain.reach - drop) / 8 : 1;
+    if (rain.back !== null) out.push({ type: rain.back, sx: back * 18, sy: 0, width: 16, height, dx, dy, flip: false, alpha: backAlpha * fade });
+    out.push({ type: rain.type, sx: front * 18, sy: 0, width: 16, height, dx, dy, flip: false, alpha: frontAlpha * fade });
+    if (stop) break;
+    row++;
+    if (row >= reader.height) break;
+    if (reader.solid(x, row)) stop = true;
+    const liquid = reader.liquid(x, row);
+    if (liquid > 0) {
+      const sunk = Math.trunc(16 * (liquid / 255)) & 0xfe;
+      if (sunk >= 15) break;
+      height -= sunk;
+      if (height <= 0) break;
+    }
+    dx += row % 2 === 0 ? 1 : -1;
+    dy += 16;
+  }
+  return out;
+}
+
+/**
+ * The object pass's sprites of the waterfalls whose source lies in `area` (docs/assets.md, "Waterfalls"), frame 0 of
+ * their sheets, behind the blocks and under the liquids' front layer as the game draws them; shimmer's grey sheet
+ * tinted (its edge band); and the rain under rain clouds.
  */
 export function waterfallSprites(world: WaterfallWorld, area: TileArea): ObjectSprite[] {
   const reader = new Reader(world);
-  const out: ObjectSprite[] = [];
-  for (const source of waterfallSources(world, area)) {
-    const id = WATERFALL_SHEETS[source.kind - 1];
-    if (id === undefined) continue;
-    const path = pathOf(reader, source);
-    // Down a step of one tile (a ledge's lip, one falling tile, then ground again) the game shows the film and a short
-    // corner reaching the next step, no falling column (G: in-game screenshot of a staircase, 2026-10-14).
-    const oneTileDrop = (index: number): boolean =>
-      path[index]?.piece === "lip" && path[index + 1]?.piece === "fall" && path[index + 2]?.piece !== "fall" && index > 0;
-    // Past the low tip of a slope going down back towards it, the stream falls straight on (G: in-game screenshot of the
-    // user's setup 4): the column keeps its mirroring and its edge until the stream next runs, pours or slides.
-    let straight: { readonly flip: boolean; readonly edge: number } | null = null;
-    for (const [index, step] of path.entries()) {
-      if (step.piece === "fall" && oneTileDrop(index - 1)) continue;
-      const previous = path[index - 1];
-      const turnsBack = step.piece === "slide" && previous?.piece === "fall" && previous.direction !== step.direction;
-      if (turnsBack) {
-        straight ??= { flip: previous.direction === 1, edge: previous.direction === 1 ? previous.x * TILE : (previous.x + 1) * TILE };
-      } else if (step.piece !== "fall") {
-        straight = null;
-      }
-      const flip = straight?.flip ?? step.direction === 1;
-      // Shimmer's sheet is a grey mask the game colours while drawing (S): tinted by its map colour (chosen). Behind the
-      // blocks (G: the source's half block stays visible under the lip, the basin's blocks cover the column's edge) and under the
-      // liquids (G: a stream pouring into a pool ends at its surface).
-      const base = { kind: "waterfall" as const, id, flip, alpha: step.alpha, behind: true, underLiquid: true, ...(source.kind === SHIMMER ? { tint: true } : {}) };
-      // Shimmer's sheet: three bands 42 rows apart, the shape (rows 0–39), its edge mask (42–81) and a fainter one; the
-      // viewer draws the edge band, blended from lavender to its light edge by its grey (the object pass, OBJECT_TINT).
-      const band = source.kind === SHIMMER ? SHIMMER_EDGE_BAND : 0;
-      const left = step.x * TILE;
-      const ground = (step.y + 1) * TILE + (reader.solid(step.x, step.y + 1) && reader.shape(step.x, step.y + 1) === HALF ? TILE / 2 : 0);
-      if (step.piece === "lip" && step.x === source.x && step.y === source.y) {
-        out.push({ ...base, ...LIP, sy: LIP.sy + band, dx: flip ? left : left - LIP_OVERHANG, dy: step.y * TILE });
-      } else if (step.piece === "lip") {
-        // A ledge's end (G): the film over the ledge, and the corner turning down past its edge.
-        out.push({ ...base, ...FILM, sy: FILM.sy + band, dx: left, dy: ground - FILM_RISE });
-        const corner = oneTileDrop(index) ? { ...CORNER, height: TILE } : CORNER;
-        out.push({ ...base, ...corner, sy: corner.sy + band, dx: flip ? left + TILE - COLUMN_BACK : left - CORNER.width + COLUMN_BACK, dy: ground - FILM_RISE });
-      } else if (step.piece === "fall" || turnsBack) {
-        // The column hugs the edge the stream falls along: 4 pixels over the side it came from (mirrored: right of it).
-        const edge = straight?.edge ?? (step.direction === 1 ? left : left + TILE);
-        const dx = flip ? edge - COLUMN_BACK : edge - COLUMN.width + COLUMN_BACK;
-        // Off a slope's tip the column reaches up to the slide's last film (G: in-game screenshot of setup 3): its lower
-        // half above the tile, so the stream has no gap there.
-        if (step.piece === "fall" && previous?.piece === "slide" && !turnsBack && straight === null) {
-          out.push({ ...base, ...COLUMN, sy: COLUMN.sy + TILE / 2 + band, height: TILE / 2, dx, dy: step.y * TILE - TILE / 2 });
-        }
-        out.push({ ...base, ...COLUMN, sy: COLUMN.sy + band, dx, dy: step.y * TILE });
-      } else if (step.piece === "run") {
-        out.push({ ...base, ...FILM, sy: FILM.sy + band, dx: left, dy: ground - FILM_RISE });
-      } else {
-        // A slope's surface: down to the right from its top-left (shape 2), down to the left from its top-right (3).
-        for (let column = 0; column < TILE / 2; column++) {
-          const surface = step.direction === 1 ? 2 * column : TILE - 2 - 2 * column;
-          out.push({ ...base, sx: FILM.sx + 2 * column, sy: band, width: 2, height: FILM.height, dx: left + 2 * column, dy: step.y * TILE + surface - FILM_RISE });
-        }
-      }
+  const pieces: Piece[] = [];
+  for (const source of waterfallSources(world, area)) pieces.push(...streamPieces(reader, world, source, sheetOf(source.kind)));
+  for (let x = Math.max(0, area.left); x < Math.min(world.width, area.right); x++) {
+    for (let y = Math.max(0, area.top); y < Math.min(world.height - 1, area.bottom); y++) {
+      const rain = RAIN_CLOUDS.get(reader.type(x, y));
+      if (rain !== undefined) pieces.push(...rainPieces(reader, x, y, rain));
     }
   }
-  return out;
-}
-
-/** The alpha of step `index` (0-based). */
-function fade(index: number): number {
-  const left = WATERFALL_MAX_LENGTH - index;
-  return left > WATERFALL_FADE_STEPS ? 255 : Math.round((255 * left) / (WATERFALL_FADE_STEPS + 1));
-}
-
-/**
- * The path of the waterfall from `source` (G, docs/assets.md "Waterfalls"), at most WATERFALL_MAX_LENGTH steps: a lip
- * over the source; then it falls while the tile below is open; on a slope it slides along it, taking the slope's
- * downhill direction; on flat ground it runs along the top until the next tile ahead has open ground below it, where
- * it pours over the edge (a lip) and falls again. It ends in liquid, against a solid block or at the world's edge.
- */
-export function waterfallPath(world: WaterfallWorld, source: WaterfallSource): WaterfallStep[] {
-  return pathOf(new Reader(world), source);
-}
-
-/** waterfallPath over a reader already set up (waterfallSprites walks every source with one). */
-function pathOf(reader: Reader, source: WaterfallSource): WaterfallStep[] {
-  const out: WaterfallStep[] = [];
-  let direction = source.direction;
-  const push = (piece: WaterfallStep["piece"], x: number, y: number): boolean => {
-    out.push({ piece, x, y, direction, alpha: fade(out.length) });
-    return out.length < WATERFALL_MAX_LENGTH;
-  };
-  if (!push("lip", source.x, source.y)) return out;
-  // The lip covers the tile beside the source; the stream goes on below it.
-  let x = source.x + direction;
-  let y = source.y + 1;
-  let falling = true;
-  for (;;) {
-    if (!reader.inWorld(x, y) || reader.liquid(x, y).kind !== 0) break;
-    const slope = reader.slope(x, y);
-    if (slope !== 0) {
-      direction = slope;
-      if (!push("slide", x, y)) break;
-      x += direction;
-      // Against a block level with the slope's low tip the stream runs on along its top (G: a staircase); else it
-      // goes on below the tip.
-      if (reader.solid(x, y + 1) && reader.slope(x, y + 1) === 0) {
-        falling = false;
-        continue;
-      }
-      y += 1;
-      falling = true;
-      continue;
-    }
-    if (reader.solid(x, y)) break;
-    if (!reader.inWorld(x, y + 1)) {
-      push("fall", x, y);
-      break;
-    }
-    if (!reader.solid(x, y + 1) || reader.slope(x, y + 1) !== 0) {
-      if (!push("fall", x, y)) break;
-      y += 1;
-      falling = true;
-      continue;
-    }
-    // On flat ground: the column reaches it, then the stream runs on.
-    if (falling && !push("fall", x, y)) break;
-    falling = false;
-    const ahead = x + direction;
-    if (!reader.inWorld(ahead, y) || reader.solid(ahead, y) || reader.liquid(ahead, y).kind !== 0) {
-      push("run", x, y);
-      break;
-    }
-    if (!reader.solid(ahead, y + 1) || reader.slope(ahead, y + 1) !== 0) {
-      if (!push("lip", x, y)) break;
-      x = ahead;
-      y += 1;
-      falling = true;
-      continue;
-    }
-    if (!push("run", x, y)) break;
-    x = ahead;
-  }
-  return out;
+  return pieces.flatMap((piece): ObjectSprite[] => {
+    const sprite: ObjectSprite = {
+      kind: "waterfall", id: piece.type, sx: piece.sx, sy: piece.sy, width: piece.width, height: piece.height,
+      dx: piece.dx, dy: piece.dy, flip: piece.flip, alpha: Math.round(255 * Math.min(1, Math.max(0, piece.alpha))), behind: true,
+    };
+    if (piece.type === RAINBOW_STREAM) return [{ ...sprite, color: "disco" }];
+    // Shimmer's stream: its grey core coloured by shimmer's base colour, and its glitter band added over it.
+    if (piece.type === SHIMMER_STREAM) return [{ ...sprite, color: "shimmer" }, { ...sprite, sy: piece.sy + SHIMMER_GLITTER_BAND, color: "glitter" }];
+    return [sprite];
+  });
 }

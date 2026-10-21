@@ -43,17 +43,22 @@ const STONE_WALL = 1;
 const DIRT_WALL = 2;
 /** A large-frame wall (cells by position, 6 × 6). */
 const LARGE_WALL = 185;
+/** A starry glass wall: eight frames of 180 rows, each tile drawing one by its position. */
+const STARRY_WALL = 242;
+/** The rainbow brick wall, tinted by the disco colour, and the shimmer wall, with its glow. */
+const RAINBOW_WALL = 44;
+const SHIMMER_WALL = 347;
 /** A wall the synthetic atlas has no sheet for: drawn as the missing-texture checkerboard. */
 const UNSHEETED_WALL = 7;
 const MOD_BLOCK: ContentRef = { kind: "mod", mod: "Example", internalName: "Crate" };
 const MOD_WALL: ContentRef = { kind: "mod", mod: "Example", internalName: "Panel" };
 
 /** `1` stone wall, `2` dirt wall, `L` large-frame wall, `7` a wall without a sheet, `m` a modded wall; `#` puts a
- * modded block (no sprite: its map colour) over a stone wall, `B` one with no wall behind it. */
+ * modded block (no sprite: its map colour) over a stone wall, `B` one with no wall behind it, `s` a starry glass wall. */
 const LEGEND: Readonly<Record<string, { readonly wall?: ContentRef; readonly block?: ContentRef }>> = {
   "1": { wall: { kind: "vanilla", id: STONE_WALL } }, "2": { wall: { kind: "vanilla", id: DIRT_WALL } },
   L: { wall: { kind: "vanilla", id: LARGE_WALL } }, "7": { wall: { kind: "vanilla", id: UNSHEETED_WALL } },
-  m: { wall: MOD_WALL }, "#": { wall: { kind: "vanilla", id: STONE_WALL }, block: MOD_BLOCK }, B: { block: MOD_BLOCK },
+  m: { wall: MOD_WALL }, s: { wall: { kind: "vanilla", id: STARRY_WALL } }, "#": { wall: { kind: "vanilla", id: STONE_WALL }, block: MOD_BLOCK }, B: { block: MOD_BLOCK },
 };
 
 function stamp(world: CanonicalWorld, left: number, top: number, rows: readonly string[]): void {
@@ -69,11 +74,20 @@ function renderable(world: CanonicalWorld): RenderableWorld {
   return { width: world.width, height: world.height, surfaceY: 2, planes: world.planes, palette: world.palette };
 }
 
-const PAGE = 1024;
-/** Wall sheets of 13 × 6 cells of 36 pixels: rows 0–4 of every wall and row 5 of the large-frame walls. */
-const SHEETS: readonly SpriteSheetEntry[] = [STONE_WALL, DIRT_WALL, LARGE_WALL].map((id, index) => ({
-  kind: "wall" as const, id, page: 0, x: 4, y: 4 + index * 220, width: 468, height: 216, frameWidth: 32, frameHeight: 32,
-}));
+const PAGE = 2048;
+/**
+ * Wall sheets of 13 × 6 cells of 36 pixels: rows 0–4 of every wall and row 5 of the large-frame walls; the starry
+ * glass wall's 8 frames of 180 rows beside them.
+ */
+const SHEETS: readonly SpriteSheetEntry[] = [
+  ...[STONE_WALL, DIRT_WALL, LARGE_WALL].map((id, index) => ({
+    kind: "wall" as const, id, page: 0, x: 4, y: 4 + index * 220, width: 468, height: 216, frameWidth: 32, frameHeight: 32,
+  })),
+  { kind: "wall", id: STARRY_WALL, page: 0, x: 480, y: 4, width: 468, height: 1440, frameWidth: 32, frameHeight: 32 },
+  { kind: "wall", id: RAINBOW_WALL, page: 0, x: 960, y: 4, width: 468, height: 216, frameWidth: 32, frameHeight: 32 },
+  { kind: "wall", id: SHIMMER_WALL, page: 0, x: 960, y: 230, width: 468, height: 216, frameWidth: 32, frameHeight: 32 },
+  { kind: "wallGlow", id: 0, page: 0, x: 960, y: 460, width: 468, height: 216, frameWidth: 32, frameHeight: 32 },
+];
 
 /**
  * Distinct per pixel and sheet. A cell's 16 × 16 middle is opaque; its 8-pixel overhang mixes transparent, opaque and
@@ -281,6 +295,40 @@ describe("walls in sprite mode", () => {
     renderer.invalidateTiles([{ x: CHUNK_SIZE + 1, y: 1 }, { x: CHUNK_SIZE + 2, y: 1 }, { x: CHUNK_SIZE + 1, y: 2 }]);
     renderer.render();
     expectClose(readCanvas(canvas), expectedCanvas(world, CHUNK_SIZE - 4, 0, columns, world.height), columns * ZOOM);
+  });
+
+  test("a starry glass wall draws each tile from the frame its position picks", () => {
+    const world = createWorld(12, 6);
+    stamp(world, 0, 0, ["............", ".ssssssssss.", ".ssssssssss.", ".ssssssssss.", ".ssssssssss.", "............"]);
+    const pixels = readCanvas(draw(world).canvas);
+    expectClose(pixels, expectedCanvas(world), world.width * ZOOM);
+    // Tile (3, 2) takes frame ((11 · 3 + 27 · 2) mod 160) div 20 = 4: its sprite pixel (7, 7), where its own cell is
+    // drawn last of the four covering it, is cell pixel (15, 15) of frame 4, 4 · 180 rows down.
+    const at = (x: number, y: number): Rgba => pixelAt(pixels, (y * world.width * ZOOM + x) * 4);
+    const cell = createChunkWallCellCache(world, framing.walls).cellAt(3, 2);
+    expect(at(3 * ZOOM + 7, 2 * ZOOM + 7)).toEqual(sheetPixel(3, (cell >> 6) * 36 + 15, (cell & 63) * 36 + 15 + 4 * 180));
+  });
+
+  test("a rainbow wall is tinted by the disco colour; a shimmer wall adds its glow in shimmer's glitter colours", () => {
+    const world = createWorld(4, 4);
+    world.setTile(1, 1, { wall: { kind: "vanilla", id: RAINBOW_WALL }, wires: 0, actuator: false });
+    world.setTile(2, 2, { wall: { kind: "vanilla", id: SHIMMER_WALL }, wires: 0, actuator: false });
+    const pixels = readCanvas(draw(world).canvas);
+    const at = (x: number, y: number): Rgba => pixelAt(pixels, (y * world.width * ZOOM + x) * 4);
+    const cells = createChunkWallCellCache(world, framing.walls);
+    // Sprite pixel (7, 7) of a lone wall's tile: its own cell's opaque middle (16 + 7 − 8 = 15 into the cell).
+    const cellPixel = (sheet: number, x: number, y: number): Rgba => {
+      const cell = cells.cellAt(x, y);
+      return sheetPixel(sheet, (cell >> 6) * 36 + 15, (cell & 63) * 36 + 15);
+    };
+    const rainbow = cellPixel(4, 1, 1);
+    expect(at(ZOOM + 7, ZOOM + 7)).toEqual([rainbow[0], 0, 0, 255]);
+    // The glow (opaque in its middle) only adds to the shimmer wall's pixel: in the channels its hue lights.
+    const plain = cellPixel(5, 2, 2);
+    const lit = at(2 * ZOOM + 7, 2 * ZOOM + 7);
+    const added = [0, 1, 2].map((k) => (lit[k] ?? 0) - (plain[k] ?? 0));
+    expect(added.every((value) => value >= 0)).toBe(true);
+    expect(Math.max(...added)).toBeGreaterThan(5);
   });
 
   test("invalidating one changed wall recomputes exactly its 3 × 3 area and redraws it", () => {

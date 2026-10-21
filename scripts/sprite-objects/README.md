@@ -9,7 +9,7 @@ code is read. The raw output stays local; the one committed product is
 
 | File | Does |
 |---|---|
-| `observe.ps1` | loads `TerrariaServer.exe` in a 32-bit host and records: every track piece's source rectangle and extras (`Minecart.GetSourceRect`, `DrawLeftDecoration`, …), placed track layouts, grown trees and palms with their draw data (`TileDrawing.GetTileDrawData`), and on synthetic trees over every block type the foliage data (`WorldGen.Get…TreeFoliageData`) for every tree top variation 0–63 at 30 columns, the trunk biome (`GetTreeBiome`) and the palm biome (`GetPalmTreeBiome`) (about 30 s) |
+| `observe.ps1` | loads `TerrariaServer.exe` in a 32-bit host and records: every track piece's source rectangle and extras (`Minecart.GetSourceRect`, `DrawLeftDecoration`, …), placed track layouts, grown trees and palms with their draw data (`TileDrawing.GetTileDrawData`), and on synthetic trees over every block type the foliage data (`WorldGen.Get…TreeFoliageData`) for every tree top variation 0–63 at 30 columns, the trunk biome (`GetTreeBiome`), the palm biome (`GetPalmTreeBiome`) and the solidity tables of tile types (about 30 s) |
 | `export.mjs` | refuses an incomplete or inconsistent observation and writes the generated tables |
 | `export.test.mjs` | the exporter on a synthetic observation; opt-in (`TERRARIA_ASSEMBLY`): the committed tables against a fresh observation |
 

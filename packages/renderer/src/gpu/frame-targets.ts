@@ -47,8 +47,9 @@ export function createFrameTargets(gl: WebGL2RenderingContext): FrameTargets {
       gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
       const depth = requireValue(gl.createRenderbuffer(), "a renderbuffer");
       gl.bindRenderbuffer(gl.RENDERBUFFER, depth);
-      gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, width, height);
-      gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, depth);
+      // Depth and a stencil bit: sprite mode orders its passes by depth and marks the object pass's pixels.
+      gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH24_STENCIL8, width, height);
+      gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_STENCIL_ATTACHMENT, gl.RENDERBUFFER, depth);
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
       const target = { texture, framebuffer, depth, width, height };
       targets[index] = target;
