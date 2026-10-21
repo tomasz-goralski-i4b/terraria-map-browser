@@ -8,7 +8,8 @@ import { NO_CELL } from "../framing/cells.js";
 import { createChunkCellCache, type ChunkCellCache } from "../framing/chunk-cells.js";
 import { createChunkWallCellCache, type ChunkWallCellCache } from "../framing/chunk-wall-cells.js";
 import type { BlockFraming } from "../framing/frame-block.js";
-import { UNIT, arrayTexture, bindTexture, defaultUnpack, requireValue, union, type Area, type Counters, type GpuPart, type UnpackState } from "./gl.js";
+import { chunkGrid, union, type Area } from "./chunk-grid.js";
+import { UNIT, arrayTexture, bindTexture, defaultUnpack, requireValue, type Counters, type GpuPart, type UnpackState } from "./gl.js";
 import {
   CELLS_INSTANCE_BIT, LAYER_ATTRIBUTE, PAGE_APRON, PLANES_16, PLANES_8, PLANE_COUNT_16, PLANE_COUNT_8, PRESENT, RECT_ATTRIBUTE,
   WALLS_INSTANCE_BIT,
@@ -123,8 +124,8 @@ export interface ChunkStore extends GpuPart {
     readonly walls: readonly { left: number; top: number; width: number; height: number }[];
   };
   /**
-   * Draws `items` with the current program: one instanced draw call per page, the page textures bound. The instance
-   * buffer is kept for the same `items` array, so drawing it again in the same frame uploads nothing.
+   * Draws `items` with the current program: one instanced draw call per page, the page textures bound. Its instance
+   * buffer is kept for the same `items` array (INSTANCE_BUFFERS), so drawing it again in the same frame uploads nothing.
    */
   readonly draw: (items: readonly Resident[]) => number;
   /**
@@ -136,6 +137,20 @@ export interface ChunkStore extends GpuPart {
   ) => number;
   /** The page layer of a slot with its CELLS_INSTANCE_BIT and WALLS_INSTANCE_BIT, as the chunk vertex shader reads it. */
   readonly layerOf: (slot: number) => number;
+}
+
+/**
+ * Instance buffers kept at once: the chunks a frame draws and one subset of them (the liquid overlay pass's) keep
+ * theirs, so the strips of a reused frame and the highlight pass draw them without uploading them again.
+ */
+const INSTANCE_BUFFERS = 2;
+
+/** An instance buffer and the items it holds (null: stale), with their page runs. */
+interface InstanceBuffer {
+  readonly buffer: WebGLBuffer;
+  readonly array: WebGLVertexArrayObject;
+  items: readonly Resident[] | null;
+  runs: readonly (readonly [number, number])[];
 }
 
 /** The chunk pass's vertex array: the chunk rectangle and page layer per instance; pointers set per draw. */
@@ -178,14 +193,15 @@ export function createChunkStore(
   const framedSlots = new Set<number>();
   // The framed slots whose wall cell layer holds any wall cell (WALLS_INSTANCE_BIT).
   const wallSlots = new Set<number>();
-  let buffer: WebGLBuffer | null = null;
-  let array: WebGLVertexArrayObject | null = null;
   let instanceData = new Int32Array(INSTANCE_INTS * 256);
-  // The items whose instances the buffer holds, and their page runs.
-  let uploaded: { readonly items: readonly Resident[]; readonly runs: readonly (readonly [number, number])[] } | null = null;
+  // The instance buffers, least recently drawn first.
+  let instances: InstanceBuffer[] = [];
+  /** The slots' layers changed: no instance buffer may be drawn again as it is. */
+  const staleInstances = (): void => {
+    for (const entry of instances) entry.items = null;
+  };
 
-  const chunksX = (): number => Math.ceil((world?.width ?? 0) / CHUNK_SIZE);
-  const coordOf = (key: number): ChunkCoord => ({ x: key % chunksX(), y: Math.floor(key / chunksX()) });
+  const coordOf = (key: number): ChunkCoord => chunkGrid(requireWorld()).coordOf(key);
 
   const releaseCells = (): void => {
     framedBefore += cellCache?.framedTiles ?? 0;
@@ -194,7 +210,7 @@ export function createChunkStore(
     wallCache = null;
     framedSlots.clear();
     wallSlots.clear();
-    uploaded = null;
+    staleInstances();
   };
 
   /** Forgets every chunk; their page textures are deleted by the caller (or died with the context). */
@@ -291,7 +307,7 @@ export function createChunkStore(
     // The slot's cell layer still holds the cells of whatever was there before.
     if (area === undefined) {
       framedSlots.delete(slot);
-      uploaded = null;
+      staleInstances();
     }
   };
 
@@ -310,7 +326,7 @@ export function createChunkStore(
   const noteWalls = (slot: number, walls: Uint16Array): void => {
     if (walls.some((cell) => cell !== NO_CELL)) wallSlots.add(slot);
     else wallSlots.delete(slot);
-    uploaded = null;
+    staleInstances();
   };
 
   /**
@@ -452,7 +468,7 @@ export function createChunkStore(
         cellCache?.drop(coordOf(key));
         wallCache?.drop(coordOf(key));
         // Its slot is filled again: no instance buffer drawn before may be drawn again.
-        uploaded = null;
+        staleInstances();
       }
     },
     evictOne: (keep) => {
@@ -465,7 +481,7 @@ export function createChunkStore(
         cellCache?.drop(coordOf(key));
         wallCache?.drop(coordOf(key));
         // Its slot is filled again: no instance buffer drawn before may be drawn again.
-        uploaded = null;
+        staleInstances();
         return true;
       }
       return false;
@@ -497,12 +513,18 @@ export function createChunkStore(
     }),
     draw: (items) => {
       if (items.length === 0) return 0;
-      if (buffer === null || array === null) {
-        buffer = requireValue(gl.createBuffer(), "a buffer");
-        array = instanceArray(gl, buffer);
-      }
-      gl.bindVertexArray(array);
-      if (uploaded?.items !== items) {
+      let held = instances.find((entry) => entry.items === items);
+      if (held === undefined) {
+        // A new buffer while there is room, else the least recently drawn one.
+        if (instances.length < INSTANCE_BUFFERS) {
+          const buffer = requireValue(gl.createBuffer(), "a buffer");
+          held = { buffer, array: instanceArray(gl, buffer), items: null, runs: [] };
+        } else {
+          held = instances[0];
+          if (held === undefined) throw new Error("no instance buffer");
+        }
+        gl.bindVertexArray(held.array);
+        gl.bindBuffer(gl.ARRAY_BUFFER, held.buffer);
         const sorted = [...items].sort((first, second) => first[1] - second[1]);
         if (instanceData.length < sorted.length * INSTANCE_INTS) instanceData = new Int32Array(sorted.length * INSTANCE_INTS * 2);
         const source = requireWorld();
@@ -519,14 +541,17 @@ export function createChunkStore(
           instanceData[at + 3] = Math.min(CHUNK_SIZE, source.height - originY);
           instanceData[at + 4] = layerOf(slot);
         });
-        gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
         gl.bufferData(gl.ARRAY_BUFFER, instanceData.subarray(0, sorted.length * INSTANCE_INTS), gl.STREAM_DRAW);
-        uploaded = { items, runs };
+        held.items = items;
+        held.runs = runs;
       } else {
-        gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+        gl.bindVertexArray(held.array);
+        gl.bindBuffer(gl.ARRAY_BUFFER, held.buffer);
       }
+      // Most recently drawn last.
+      instances = [...instances.filter((entry) => entry !== held), held];
       const stride = INSTANCE_INTS * 4;
-      const calls = drawRuns(uploaded.runs, items.length, (first) => {
+      const calls = drawRuns(held.runs, items.length, (first) => {
         gl.vertexAttribIPointer(RECT_ATTRIBUTE, 4, gl.INT, stride, first * stride);
         gl.vertexAttribIPointer(LAYER_ATTRIBUTE, 1, gl.INT, stride, first * stride + 16);
       });
@@ -537,16 +562,16 @@ export function createChunkStore(
     layerOf,
     lost: () => {
       forget();
-      buffer = null;
-      array = null;
+      instances = [];
     },
     release: () => {
       deletePages();
       forget();
-      if (buffer !== null) gl.deleteBuffer(buffer);
-      if (array !== null) gl.deleteVertexArray(array);
-      buffer = null;
-      array = null;
+      for (const entry of instances) {
+        gl.deleteBuffer(entry.buffer);
+        gl.deleteVertexArray(entry.array);
+      }
+      instances = [];
       planes = null;
       world = null;
     },

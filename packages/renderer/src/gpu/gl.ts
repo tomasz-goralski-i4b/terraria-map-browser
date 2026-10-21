@@ -207,28 +207,3 @@ export function createUnpackState(gl: WebGL2RenderingContext): UnpackState {
 export interface Counters {
   textureUploads: number;
 }
-
-/** A rectangle of world tiles; right and bottom exclusive. */
-export interface Area {
-  readonly left: number;
-  readonly top: number;
-  readonly right: number;
-  readonly bottom: number;
-}
-
-/** The smallest area holding `first` (if any) and `second`. */
-export function union(first: Area | undefined, second: Area): Area {
-  if (first === undefined) return second;
-  return {
-    left: Math.min(first.left, second.left), top: Math.min(first.top, second.top),
-    right: Math.max(first.right, second.right), bottom: Math.max(first.bottom, second.bottom),
-  };
-}
-
-/** Sorts `chunks` in place by distance from (centreX, centreY) in tiles; Array.prototype.sort is stable. */
-export function byDistance<T extends { readonly x: number; readonly y: number }>(
-  chunks: T[], chunkSize: number, centreX: number, centreY: number,
-): T[] {
-  const distance = (chunk: T): number => Math.hypot((chunk.x + 0.5) * chunkSize - centreX, (chunk.y + 0.5) * chunkSize - centreY);
-  return chunks.sort((first, second) => distance(first) - distance(second));
-}

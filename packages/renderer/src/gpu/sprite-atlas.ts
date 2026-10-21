@@ -15,9 +15,9 @@ import {
   type UnpackState,
 } from "./gl.js";
 import { PALETTE_ROW } from "./map-colors.js";
+import { halfAtlasFragmentSource, halfAtlasVertexSource } from "./atlas-shaders.js";
 import {
-  LIQUID_FLAT, PAINT_GROUP_LIMIT, SPRITE_SHEET_ROW, SPRITE_SHEET_TEXELS, SPRITE_STATE, halfAtlasFragmentSource,
-  halfAtlasVertexSource, spriteSampling,
+  LIQUID_FLAT, PAINT_GROUP_LIMIT, SPRITE_SHEET_ROW, SPRITE_SHEET_TEXELS, SPRITE_STATE, spriteSampling,
 } from "./shaders.js";
 import type { SpriteAtlasSource, SpriteSheetEntry } from "./types.js";
 

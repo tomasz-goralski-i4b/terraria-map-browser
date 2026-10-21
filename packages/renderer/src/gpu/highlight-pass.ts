@@ -13,7 +13,8 @@ import { highlightChunkFragmentSource, highlightMaskFragmentSource } from "./hig
 import { createIdleTask } from "./idle-task.js";
 import { PALETTE_CAPACITY } from "./map-colors.js";
 import { OVERVIEW_UNIFORMS, setOverviewUniforms } from "./overview.js";
-import { chunkVertexSource, overviewVertexSource } from "./shaders.js";
+import { overviewVertexSource } from "./overview-shaders.js";
+import { chunkVertexSource } from "./shaders.js";
 import type { FrameView, RenderableWorld } from "./types.js";
 
 /** Texels per row of the highlight lookup (R8UI, 256 × 256: one per 16-bit palette index). */

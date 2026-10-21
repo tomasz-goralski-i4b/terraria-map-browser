@@ -7,13 +7,14 @@ import type { ChunkCoord } from "../camera/camera.js";
 import { SHIMMER_WATERFALL } from "../chunk/liquids.js";
 import { objectSprites, type ObjectSprite } from "../objects/object-sprites.js";
 import { waterfallSprites } from "../objects/waterfalls.js";
+import { chunkGrid } from "./chunk-grid.js";
 import type { Resident } from "./chunk-store.js";
 import { requireValue, type GpuPart, type ProgramCache, type ProgramSource } from "./gl.js";
 import { PAINT_GROUP_UNIFORMS, SAMPLING_UNIFORMS, setPaintGroups, type SpriteAtlas } from "./sprite-atlas.js";
 import {
   OBJECT_BEHIND, OBJECT_DEST_ATTRIBUTE, OBJECT_FADE_SHIFT, OBJECT_FLIP, OBJECT_GROUP_SHIFT, OBJECT_INACTIVE, OBJECT_PAINT_SHIFT,
   OBJECT_SOURCE_ATTRIBUTE, OBJECT_TINT, OBJECT_UNDER_LIQUID, objectFragmentSource, objectVertexSource,
-} from "./shaders.js";
+} from "./object-shaders.js";
 import type { FrameView, RenderableWorld } from "./types.js";
 
 /** Ints per object pass instance: its rectangle in world sprite pixels, then (atlas page, x, y, flags) of its source. */
@@ -157,18 +158,8 @@ export function createObjectPass(gl: WebGL2RenderingContext, programs: ProgramCa
   return {
     draw: (view, visible) => {
       const { source, layers } = view;
-      const chunksX = Math.ceil(source.width / CHUNK_SIZE);
-      const chunksY = Math.ceil(source.height / CHUNK_SIZE);
-      const keys = new Set<number>();
-      for (const chunk of visible) {
-        for (let dy = -1; dy <= 1; dy++) {
-          for (let dx = -1; dx <= 1; dx++) {
-            const x = chunk.x + dx;
-            const y = chunk.y + dy;
-            if (x >= 0 && y >= 0 && x < chunksX && y < chunksY) keys.add(y * chunksX + x);
-          }
-        }
-      }
+      const grid = chunkGrid(source);
+      const keys = new Set(visible.flatMap(grid.around));
       const sorted = [...keys].sort((a, b) => a - b);
       const vao = vertexArray();
       const previous = uploaded;
@@ -176,7 +167,7 @@ export function createObjectPass(gl: WebGL2RenderingContext, programs: ProgramCa
       const unchanged = previous !== null && previous.keys.length === sorted.length
         && sorted.every((key, index) => previous.keys[index] === key && cache.has(key));
       if (!unchanged) {
-        const lists = sorted.map((key) => objectsOf(source, { x: key % chunksX, y: Math.floor(key / chunksX) }, key, layers));
+        const lists = sorted.map((key) => objectsOf(source, grid.coordOf(key), key, layers));
         const total = lists.reduce((sum, list) => sum + list.length, 0);
         if (data.length < total) data = new Int32Array(total * 2);
         let at = 0;
@@ -209,25 +200,17 @@ export function createObjectPass(gl: WebGL2RenderingContext, programs: ProgramCa
       return 1;
     },
     overlayChunks: (source, items) => {
-      const chunksX = Math.ceil(source.width / CHUNK_SIZE);
-      const behindAt = (x: number, y: number): boolean => x >= 0 && x < chunksX && cache.get(y * chunksX + x)?.behind === true;
-      return items.filter(([chunk]) => {
-        if (cache.get(chunk.y * chunksX + chunk.x)?.liquid !== true) return false;
-        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (behindAt(chunk.x + dx, chunk.y + dy)) return true;
-        return false;
-      });
+      const grid = chunkGrid(source);
+      return items.filter(([chunk]) => cache.get(grid.keyOf(chunk))?.liquid === true
+        && grid.around(chunk).some((key) => cache.get(key)?.behind === true));
     },
     clear: () => {
       cache.clear();
       uploaded = null;
     },
     invalidate: (source, tiles) => {
-      const chunksX = Math.ceil(source.width / CHUNK_SIZE);
-      for (const { x, y } of tiles) {
-        const chunkX = Math.floor(x / CHUNK_SIZE);
-        const chunkY = Math.floor(y / CHUNK_SIZE);
-        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) cache.delete((chunkY + dy) * chunksX + chunkX + dx);
-      }
+      const grid = chunkGrid(source);
+      for (const { x, y } of tiles) for (const key of grid.around(grid.coordOf(grid.keyAt(x, y)))) cache.delete(key);
     },
     lost: forget,
     release: () => {

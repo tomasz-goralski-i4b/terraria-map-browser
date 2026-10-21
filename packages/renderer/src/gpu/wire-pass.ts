@@ -6,12 +6,14 @@ import { CHUNK_SIZE } from "../camera/camera.js";
 import type { ChunkCoord } from "../camera/camera.js";
 import { WIRE_LAYER } from "../chunk/render.js";
 import { collectWireRuns, type WireRuns } from "../objects/wires.js";
+import { chunkGrid } from "./chunk-grid.js";
 import { CHUNKS_PER_PAGE, type ChunkStore, type Resident } from "./chunk-store.js";
 import { UNIT, requireValue, type GpuPart, type ProgramCache, type ProgramSource } from "./gl.js";
 import { OVERLAY_UNIFORMS, hasFlags, setWireUniforms } from "./map-colors.js";
 import { SPRITE_PASS_UNIFORMS, setSpritePassUniforms } from "./object-pass.js";
 import type { SpriteAtlas } from "./sprite-atlas.js";
-import { LAYER_ATTRIBUTE, RECT_ATTRIBUTE, WIRE_RUN_ATTRIBUTE, wireFragmentSource, wireVertexSource } from "./shaders.js";
+import { LAYER_ATTRIBUTE, RECT_ATTRIBUTE } from "./shaders.js";
+import { WIRE_RUN_ATTRIBUTE, wireFragmentSource, wireVertexSource } from "./wire-shaders.js";
 import type { FrameView, RenderableWorld } from "./types.js";
 
 /** Ints per instance: its chunk's rectangle and page layer (as the chunk pass), then its run (x, y, w, h). */
@@ -82,9 +84,9 @@ export function createWirePass(
 
   /** Writes the instances of `ready`'s chunks with shown wires, sorted by page, into the buffer. */
   const upload = (source: RenderableWorld, ready: readonly Resident[], shown: number): NonNullable<typeof uploaded> => {
-    const chunksX = Math.ceil(source.width / CHUNK_SIZE);
+    const grid = chunkGrid(source);
     const items = ready
-      .map(([chunk, slot]) => [chunk, slot, runsOf(source, chunk, chunk.y * chunksX + chunk.x)] as const)
+      .map(([chunk, slot]) => [chunk, slot, runsOf(source, chunk, grid.keyOf(chunk))] as const)
       .filter(([, , runs]) => (runs.bits & shown) !== 0)
       .sort((first, second) => first[1] - second[1]);
     const total = items.reduce((sum, [, , runs]) => sum + runs.runs.length / 4, 0);
@@ -161,8 +163,8 @@ export function createWirePass(
       uploaded = null;
     },
     invalidate: (source, tiles) => {
-      const chunksX = Math.ceil(source.width / CHUNK_SIZE);
-      for (const { x, y } of tiles) runsByChunk.delete(Math.floor(y / CHUNK_SIZE) * chunksX + Math.floor(x / CHUNK_SIZE));
+      const grid = chunkGrid(source);
+      for (const { x, y } of tiles) runsByChunk.delete(grid.keyAt(x, y));
       uploaded = null;
     },
     lost: forget,

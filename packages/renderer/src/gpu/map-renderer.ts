@@ -15,9 +15,9 @@ import { createBackgroundProgram } from "./background-program.js";
 import { createChunkStore, CHUNKS_PER_PAGE, type Resident } from "./chunk-store.js";
 import { createFrameTargets } from "./frame-targets.js";
 import {
-  TEXTURE_UNITS, UNIT, byDistance, createProgramCache, createUnpackState, union, type Area, type Counters, type GpuPart,
-  type ProgramSource,
+  TEXTURE_UNITS, UNIT, createProgramCache, createUnpackState, type Counters, type GpuPart, type ProgramSource,
 } from "./gl.js";
+import { byDistance, chunkGrid, chunksAround, union, type Area } from "./chunk-grid.js";
 import { createHighlightPass } from "./highlight-pass.js";
 import { createIdleTask } from "./idle-task.js";
 import { OVERLAY_UNIFORMS, TILE_UNIFORMS, createMapColors, setWireUniforms } from "./map-colors.js";
@@ -240,15 +240,6 @@ function layerBits(layers: ChunkLayers): number {
     | (((layers.wires ?? 0) & WIRE_LAYER.all) << 4) | (layers.paint === false ? 0 : PAINT_LAYER_BIT);
 }
 
-/** The chunks within `margin` tiles around the view of `camera` over `viewport`. */
-function chunksAround(camera: Camera, viewport: { width: number; height: number }, source: RenderableWorld, margin: number): ChunkCoord[] {
-  return visibleChunks(
-    { x: camera.x - margin, y: camera.y - margin, zoom: camera.zoom },
-    { width: viewport.width + 2 * margin * camera.zoom, height: viewport.height + 2 * margin * camera.zoom },
-    source,
-  );
-}
-
 export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRendererOptions): MapRenderer {
   // Straight (non-premultiplied) alpha: the shader writes the same RGBA that `renderChunk` produces. No multisampling:
   // it would blend a pixel the edge of a chunk quad crosses (the world's edge at a sub-tile camera) by coverage.
@@ -374,8 +365,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     const candidate = overviews.of(source);
     const target = candidate !== null && camera.zoom < 1 / candidate.factor ? candidate : null;
 
-    const chunksX = Math.ceil(source.width / CHUNK_SIZE);
-    const keyOf = (chunk: ChunkCoord): number => chunk.y * chunksX + chunk.x;
+    const { keyOf } = chunkGrid(source);
     const visible = visibleChunks(view, viewport, source);
     const spriteZoom = spriteMode && atlas.ready() && camera.zoom >= SPRITE_MIN_ZOOM;
     // Until the sprite program is linked, frames are drawn in map colours.
@@ -485,6 +475,8 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     }
 
     /** The chunk pass, then in sprite mode the object, liquid overlay and wire passes, into the bound target. */
+    // The liquid overlay pass's chunks, collected once per frame (by the first strip's object pass).
+    let covered: Resident[] | null = null;
     const drawChunks = (): void => {
       // Chunks still loading show the overview (built when the area was seen zoomed out, possibly with other layers)
       // instead of a hole; drawn chunks overwrite it completely, so a complete frame stays exact.
@@ -530,7 +522,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       gl.depthFunc(gl.LEQUAL);
       const drawnObjects = (layers & OBJECT_LAYERS) !== 0 ? objects.draw(frameView, visible) : 0;
       drawCalls += drawnObjects;
-      const covered = drawnObjects > 0 && (layers & LIQUIDS_LAYER) !== 0 ? objects.overlayChunks(source, ready) : [];
+      covered ??= drawnObjects > 0 && (layers & LIQUIDS_LAYER) !== 0 ? objects.overlayChunks(source, ready) : [];
       if (covered.length > 0) {
         gl.useProgram(spriteChunk.program);
         gl.uniform1i(sprite.uLiquidOverlay, 1);
@@ -645,8 +637,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     const overview = overviews.of(source);
     if (overview !== null && camera.zoom < 1 / overview.factor) return;
     const framed = spriteMode && atlas.ready() && camera.zoom >= SPRITE_MIN_ZOOM && spriteProgram.linked() && framing !== null;
-    const chunksX = Math.ceil(source.width / CHUNK_SIZE);
-    const keyOf = (chunk: ChunkCoord): number => chunk.y * chunksX + chunk.x;
+    const { keyOf } = chunkGrid(source);
     const around = chunksAround(camera, viewport, source, prefetchChunks * CHUNK_SIZE);
     const keep = new Set(around.map(keyOf));
     // The view's chunks are the frames' to load: a prefetch never changes what the last frame shows.
@@ -657,7 +648,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       const slot = store.slotOf(key);
       if (slot === undefined) return true;
       return framed && !store.isFramed(slot) && !store.isDirty(key);
-    }), CHUNK_SIZE, camera.x + viewport.width / (2 * camera.zoom), camera.y + viewport.height / (2 * camera.zoom));
+    }), camera, viewport);
     let done = 0;
     for (const chunk of wanted) {
       if (done > 0 && (deadline === null || deadline.timeRemaining() < PREFETCH_IDLE_RESERVE)) break;
@@ -744,7 +735,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       frameVersion++;
       const source = world;
       const regions = store.invalidateCells(tiles);
-      const chunksX = Math.ceil(source.width / CHUNK_SIZE);
+      const grid = chunkGrid(source);
       // Per touched chunk, the union of the changed tiles (right and bottom exclusive).
       const touched = new Map<number, Area>();
       const touch = (left: number, top: number, right: number, bottom: number): void => {
@@ -752,7 +743,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
         const lastY = Math.floor(Math.min(source.height - 1, bottom) / CHUNK_SIZE);
         for (let x = Math.floor(Math.max(0, left) / CHUNK_SIZE); x <= lastX; x++) {
           for (let y = Math.floor(Math.max(0, top) / CHUNK_SIZE); y <= lastY; y++) {
-            const key = y * chunksX + x;
+            const key = grid.keyOf({ x, y });
             touched.set(key, union(touched.get(key), { left, top, right: right + 1, bottom: bottom + 1 }));
           }
         }

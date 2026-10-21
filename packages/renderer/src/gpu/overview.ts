@@ -2,12 +2,13 @@
 // and drawn in their place below one pixel per texel (and as the stand-in for chunks still loading).
 /// <reference lib="dom" />
 
-import { CHUNK_SIZE, visibleChunks } from "../camera/camera.js";
+import { CHUNK_SIZE } from "../camera/camera.js";
 import type { Camera, ChunkCoord, Size } from "../camera/camera.js";
 import type { ChunkStore, Resident } from "./chunk-store.js";
-import { UNIT, bindTexture, byDistance, requireValue, type GpuPart, type ProgramCache, type ProgramSource } from "./gl.js";
+import { byDistance, chunkGrid, chunksAround } from "./chunk-grid.js";
+import { UNIT, bindTexture, requireValue, type GpuPart, type ProgramCache, type ProgramSource } from "./gl.js";
 import { OVERLAY_UNIFORMS, TILE_UNIFORMS, setWireUniforms, type MapColors } from "./map-colors.js";
-import { overviewBuildFragmentSource, overviewBuildVertexSource, overviewFragmentSource, overviewVertexSource } from "./shaders.js";
+import { overviewBuildFragmentSource, overviewBuildVertexSource, overviewFragmentSource, overviewVertexSource } from "./overview-shaders.js";
 import type { FrameView, RenderableWorld } from "./types.js";
 
 /** The smallest overview factor: one overview texel per 2 × 2 tiles, used below half a pixel per tile. */
@@ -48,7 +49,7 @@ export function overviewFactor(source: RenderableWorld, maxTextureSize: number):
 export interface Overview {
   readonly world: RenderableWorld;
   readonly factor: number;
-  /** Per chunk (y * chunksX + x): 1 once its texels hold the current layers. */
+  /** Per chunk key (chunkGrid): 1 once its texels hold the current layers. */
   readonly built: Uint8Array;
   /** Whether any texel was ever built: invalidation keeps the old texels until the rebuild overwrites them. */
   readonly filled: () => boolean;
@@ -98,9 +99,8 @@ export function createOverviewPart(
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     // Storage starts zeroed but its mip chain is incomplete until generated.
     gl.generateMipmap(gl.TEXTURE_2D);
-    const chunksX = Math.ceil(source.width / CHUNK_SIZE);
-    const chunksY = Math.ceil(source.height / CHUNK_SIZE);
-    const built = new Uint8Array(chunksX * chunksY);
+    const grid = chunkGrid(source);
+    const built = new Uint8Array(grid.columns * grid.rows);
     let filled = false;
     // The build order of the last frame's camera and viewport (footprint).
     let sweep: { readonly camera: Camera; readonly width: number; readonly height: number; readonly order: readonly ChunkCoord[] } | null = null;
@@ -111,19 +111,13 @@ export function createOverviewPart(
         if (sweep !== null && sweep.camera === camera && sweep.width === viewport.width && sweep.height === viewport.height) {
           return sweep.order;
         }
-        const margin = Math.ceil(4 / camera.zoom);
-        const around = visibleChunks(
-          { x: camera.x - margin, y: camera.y - margin, zoom: camera.zoom },
-          { width: viewport.width + 2 * margin * camera.zoom, height: viewport.height + 2 * margin * camera.zoom },
-          source,
-        );
-        const inView = new Set(visible.map((chunk) => chunk.y * chunksX + chunk.x));
-        const centreX = camera.x + viewport.width / (2 * camera.zoom);
-        const centreY = camera.y + viewport.height / (2 * camera.zoom);
+        // The texels a mipmapped sample of the view reads reach a few screen pixels past it.
+        const around = chunksAround(camera, viewport, source, Math.ceil(4 / camera.zoom));
+        const inView = new Set(visible.map(grid.keyOf));
         // Equal distances keep visibleChunks' row-major order.
         const order = [
-          ...byDistance([...visible], CHUNK_SIZE, centreX, centreY),
-          ...byDistance(around.filter((chunk) => !inView.has(chunk.y * chunksX + chunk.x)), CHUNK_SIZE, centreX, centreY),
+          ...byDistance([...visible], camera, viewport),
+          ...byDistance(around.filter((chunk) => !inView.has(grid.keyOf(chunk))), camera, viewport),
         ];
         sweep = { camera, width: viewport.width, height: viewport.height, order };
         return order;
@@ -142,7 +136,7 @@ export function createOverviewPart(
         gl.uniform2f(program.uniforms.uTarget, width, height);
         store.draw(items);
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-        for (const [chunk] of items) built[chunk.y * chunksX + chunk.x] = 1;
+        for (const [chunk] of items) built[grid.keyOf(chunk)] = 1;
         filled = true;
         bindTexture(gl, UNIT.overview, gl.TEXTURE_2D, texture);
         gl.generateMipmap(gl.TEXTURE_2D);

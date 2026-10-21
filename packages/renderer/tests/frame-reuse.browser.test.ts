@@ -157,10 +157,20 @@ describe("frame reuse", () => {
     const start = { x: 10.3, y: 14.2, zoom: 16 };
     renderer.setCamera(start);
     step();
+    const proto = WebGL2RenderingContext.prototype;
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- called with the real receiver below
+    const bufferData = proto.bufferData;
+    let uploads = 0;
+    vi.spyOn(proto, "bufferData").mockImplementation(function (this: WebGL2RenderingContext, ...args: unknown[]) {
+      uploads++;
+      (bufferData as (...rest: unknown[]) => void).apply(this, args);
+    });
     const moved = { x: start.x + 1.75, y: start.y + 0.5, zoom: 16 };
     renderer.setCamera(moved);
     step();
     expect(renderer.stats().reusedFrames).toBe(1);
+    // Two strips, each drawing the chunks and the liquid overlay's chunks: one upload of each set.
+    expect(uploads).toBe(2);
     const reused = pixels();
     const full = setup(world);
     sprites(full.renderer);
