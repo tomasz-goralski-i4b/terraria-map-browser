@@ -97,6 +97,27 @@ describe("frame reuse", () => {
     expect(reused).toEqual(fullFrame(world, moved, step));
   });
 
+  test("a reused frame uploads its chunk instances once for both revealed strips and the highlight", () => {
+    const step = animationFrames();
+    const { renderer } = setup(patchwork(300, 200));
+    renderer.setHighlight({ blocks: [1], walls: [], liquids: [], dim: true });
+    renderer.setCamera({ x: 40.2, y: 30.9, zoom: 3 });
+    step();
+    const gl = WebGL2RenderingContext.prototype;
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- called with the real receiver below
+    const bufferData = gl.bufferData;
+    let uploads = 0;
+    vi.spyOn(gl, "bufferData").mockImplementation(function (this: WebGL2RenderingContext, ...args: unknown[]) {
+      uploads++;
+      (bufferData as (...rest: unknown[]) => void).apply(this, args);
+    });
+    // Diagonal: two strips, each drawn by the chunk pass, then the highlight over the chunks drawn.
+    renderer.setCamera({ x: 55.5, y: 41.5, zoom: 3 });
+    step();
+    expect(renderer.stats().reusedFrames).toBe(1);
+    expect(uploads).toBe(1);
+  });
+
   test("in sprite mode a pan reuses the frame with the depth layering intact: plants behind blocks and under water", () => {
     const step = animationFrames();
     // Stone (map colour) with plants (3, 16 × 20, reaching 4 pixels into the stone below) on it, half of them under water.
