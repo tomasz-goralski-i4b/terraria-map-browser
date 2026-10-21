@@ -591,6 +591,41 @@ cover the column's edge) and **under the liquids** (G: the corner pouring off th
 surface): the chunk pass writes depth 0 where a block covers a pixel and 0.5 where only a tile's own liquid does; waterfalls (`OBJECT_UNDER_LIQUID`) are drawn only where it left 1, the other sprites behind the blocks where it did not leave 0, with the liquid overlay pass over them ("Draw offsets"). The liquids layer
 toggle shows and hides them.
 
+### Paint and inactive tiles
+
+**How we derived it (R).** `scripts/sprite-paint/observe.ps1` loads the game's own `TileShader` effect on a real GPU
+device, draws each of its passes over a synthetic texture (the RGB cube in steps of 17: 4096 colours) and records the
+pixels; `Main.ConvertPaintIdToTileShaderIndex` says which pass a paint uses on a block and on a wall, and
+`Tile.actColor` how an inactive tile is shaded. No game or shader code is read; the output stays local. The rules
+below are our own description of the results (`spritePaintedColor`, `inactiveSpriteColor` in
+`packages/renderer/src/palette/sprite-paint.ts`, mirrored in the shaders) and match every observed colour of every paint
+within one step (rounding). With M and m the largest and smallest channel and L = (M + m) / 2:
+
+| Paint | Sprite colour |
+|---|---|
+| 1–12 (red … pink) | HSV: brightness and saturation kept, hue 30° · (paint − 1) |
+| 13–24 (deep) | the same hue, saturation 0.6 + 0.4 · S |
+| 25 black | grey 0.3 · L |
+| 26 white | grey (L + 0.2 (M − m)) (2 − L) on a 0–1 scale, clamped |
+| 27 gray | grey L |
+| 28 brown | M · (1, 0.7, 0.49) |
+| 29 shadow | grey 0.05 · L |
+| 30 negative | 255 − c on blocks, 2 (1 − c) − 1.25 (0–1, clamped) on walls; black stays black |
+| 31 illuminant, 0 | unchanged (illuminant only lights the tile: lighting is not drawn) |
+
+This differs from the map colours (ADR 0002, `paintedColor`), which the game computes separately. Every sprite path
+applies it: frame-important tiles and self-framed blocks in the chunk pass (the tile's paint), each wall's 32 × 32 cell in
+its own wall paint (overhangs included), and the object pass (trees, palms, mushrooms, track extras and the tiles drawn
+with offsets carry their tile's paint). Tree foliage uses the same rule; the game paints only the leaves' hues there
+(the shader's leaf passes, whose hue limits the game sets per tree), which is deferred.
+
+**Inactive (actuated) tiles** are drawn at 102/255 of their (painted) colour in sprite mode, as the game shades them;
+the game's map does not change their colour (observed with `MapHelper.CreateMapTile`), so map colours keep it.
+
+The **Paint** layer (`ChunkLayers.paint`, on by default) hides paint in map colours and on sprites alike. Coatings: the
+echo coating (`invisibleBlock`/`invisibleWall`) still draws the tile, as an editor must show it; the illuminant coating
+has no colour of its own.
+
 ### Worked examples
 
 | # | Case | Input | Source rectangle (x, y, w, h) | Basis |
@@ -611,17 +646,17 @@ Expected sheet sizes (consistent with the size arithmetic, confirmed only by the
 |---|---|---|
 | Frame-important tiles with a 16×16 grid (most furniture, multi-tile objects) | draw each tile's own cell at `(frameX, frameY)`; multi-tile objects need nothing extra because every tile carries its own frame; frames past the sheet's edge wrap ("Frames past the sheet's edge") | — |
 | Frame-important tiles with other grids (torches, plants, …) and draw offsets | the draw size, top offset and mirroring the game's draw data gives each stored frame (R), in the object pass ("Draw offsets"); the 12 types the observer cannot draw keep their cell scaled into the tile | the horizontal offset, animation frames, tiles whose offset depends on their neighbours |
-| Non-frame-important blocks | the cell framed by "Tile framing" and its database (#141, #146), grass and moss included; half blocks and slopes cut per "Slopes and half blocks"; falling blocks with nothing below them in map colours | paint, lighting |
-| Walls | the cell framed by "Walls" and the framing database (#147), a 32 × 32 cell centred on the tile, below the blocks | paint, lighting |
-| Vines and cactus (no stored frame, not blocks) | the cell framed by "Vines and cactus" and the database's `nonBlocks` (#237) | the corrupt, crimson and hallowed cactus textures, paint, lighting |
+| Non-frame-important blocks | the cell framed by "Tile framing" and its database (#141, #146), grass and moss included; half blocks and slopes cut per "Slopes and half blocks"; falling blocks with nothing below them in map colours | lighting |
+| Walls | the cell framed by "Walls" and the framing database (#147), a 32 × 32 cell centred on the tile, below the blocks | lighting |
+| Vines and cactus (no stored frame, not blocks) | the cell framed by "Vines and cactus" and the database's `nonBlocks` (#237) | the corrupt, crimson and hallowed cactus textures, lighting |
 | Animated tiles (173 ids flagged `isAnimated` in A12, all frame-important) | draw the stored frame (static) | animation |
-| Minecart tracks (314) | the stored pieces' cells, a junction's back piece under its front piece, decorations below and bumpers above (#239, "Minecart tracks") | pressure-plate and booster animation, minecarts, paint |
-| Trees (5, 583–589, 596, 616, 634), palms (323), the giant mushroom (72) | trunk cells by ground, tops and branches by ground, zone and tree top variation, palm rows and lean, mushroom caps, in an object pass over the chunk pass (#238, "Trees") | wind sway, paint, lighting, the oasis palm rows |
+| Minecart tracks (314) | the stored pieces' cells, a junction's back piece under its front piece, decorations below and bumpers above (#239, "Minecart tracks") | pressure-plate and booster animation, minecarts |
+| Trees (5, 583–589, 596, 616, 634), palms (323), the giant mushroom (72) | trunk cells by ground, tops and branches by ground, zone and tree top variation, palm rows and lean, mushroom caps, in an object pass over the chunk pass (#238, "Trees") | wind sway, leaf-only paint on foliage, lighting, the oasis palm rows |
 | Other variant sheets (`Tiles_2_Beach`, `Tiles_59_2`, …) | — | yes |
 | Wires and actuators | the `WiresNew` piece the four same-colour side neighbours give, red to yellow, the actuator on top, over everything in a wire pass; the colour overlay below `SPRITE_MIN_ZOOM` (#241, "Wires") | animation, the wiring tools' translucency modes, the other `WiresNew` rows |
 | Liquids | water, lava and honey from frame 0 of their `Liquid_<n>` sheet, cut to the fill level, with one surface line at the top of a pool, filling the cut-away part of half blocks and slopes, an opaque back layer over the background and a translucent front layer over what lies in front of it, also over the object-pass sprites under it (#240, "Liquids"); shimmer in its measured colours, a rainbow surface with sparkles | animation (waves, lava glow), biome water styles, the slope pieces (`LiquidSlope_<n>`), lighting |
 | Waterfalls | sources by the game's own source finder (R), the path from in-game screenshots (G): lips, falling columns, runs along the ground and films along slopes from frame 0 of `Waterfall_<n>`, in the object pass ("Waterfalls") | animation, waterfalls from liquid films, rain, the biome water styles, the gemspark and rain waterfalls |
-| Paint, actuated/inactive tint, illumination | — | yes |
+| Paint, inactive tiles | every paint on every sprite path, inactive tiles at 102/255 (#229, "Paint and inactive tiles") | illumination (lighting), the echo coating's invisibility |
 
 ## Tile framing
 

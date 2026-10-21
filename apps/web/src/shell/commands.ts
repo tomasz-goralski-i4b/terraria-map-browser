@@ -138,7 +138,8 @@ export const LAYER_TOGGLES: readonly { readonly layer: Exclude<keyof MapLayers, 
   { layer: "walls", label: "Walls", shortcut: "Alt+3" },
   { layer: "blocks", label: "Blocks", shortcut: "Alt+4" },
   { layer: "liquids", label: "Liquids", shortcut: "Alt+5" },
-  { layer: "wires", label: "Wires and actuators", shortcut: "Alt+6" },
+  { layer: "paint", label: "Paint", shortcut: "Alt+6" },
+  { layer: "wires", label: "Wires and actuators", shortcut: "Alt+7" },
 ];
 
 /** Whether a layer row's eye is open (for wires: the group switch, whatever colours are chosen inside it). */

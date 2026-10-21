@@ -21,18 +21,20 @@ export interface MapLayers {
   readonly liquids: boolean;
   readonly wires: boolean;
   readonly wireMask: number;
+  /** Paint on blocks and walls (map colours and sprites). */
+  readonly paint: boolean;
   /** Frame-important tiles drawn from the connected Terraria assets' sprites (only while an atlas is loaded). */
   readonly sprites: boolean;
 }
 
 export const DEFAULT_MAP_LAYERS: MapLayers = {
-  background: true, walls: true, blocks: true, liquids: true, wires: true, wireMask: WIRE_LAYER.all, sprites: true,
+  background: true, walls: true, blocks: true, liquids: true, wires: true, wireMask: WIRE_LAYER.all, paint: true, sprites: true,
 };
 
 /** The layers as the renderer takes them: the wire mask applies only while the group is shown. */
 export function rendererLayers(layers: MapLayers): ChunkLayers {
-  const { background, walls, blocks, liquids, wires, wireMask } = layers;
-  return { background, walls, blocks, liquids, wires: wires ? wireMask : 0 };
+  const { background, walls, blocks, liquids, wires, wireMask, paint } = layers;
+  return { background, walls, blocks, liquids, wires: wires ? wireMask : 0, paint };
 }
 
 /** Transient view state: small values the chrome shows, never world data. Not persisted. */
