@@ -124,10 +124,30 @@ function Shortcuts(): null { useGlobalShortcuts(useCommands()); return null; }
 test("Enter typed before the matches are shown still goes to the first one, and F3 steps globally with wrap", async () => {
   await render(<><Shortcuts /><SearchPanel content={world} /><StatusBar world={null} /></>);
   const box = page.getByRole("searchbox", { name: "Search Content" });
+  // The highlight delay's timers are held until after the Enter, so it lands before the matches are shown however slow
+  // the machine is; the ones the panel clears again are dropped.
+  const held = new Map<number, () => void>();
+  let nextHeld = 1_000_000;
+  const realSetTimeout = window.setTimeout.bind(window);
+  const realClearTimeout = window.clearTimeout.bind(window);
+  const setTimeoutSpy = vi.spyOn(window, "setTimeout").mockImplementation(((handler: TimerHandler, delay?: number, ...args: unknown[]) => {
+    if (delay !== HIGHLIGHT_DELAY_MS || typeof handler !== "function") return realSetTimeout(handler, delay, ...args);
+    const id = nextHeld++;
+    held.set(id, () => { (handler as (...rest: unknown[]) => void)(...args); });
+    return id;
+  }) as typeof window.setTimeout);
+  const clearTimeoutSpy = vi.spyOn(window, "clearTimeout").mockImplementation((id) => {
+    if (typeof id === "number" && held.delete(id)) return;
+    realClearTimeout(id);
+  });
   await box.fill("dirt block");
   // Before the highlight delay has passed: the step waits for the index instead of being lost.
   await userEvent.keyboard("{Enter}");
   expect(goTo).not.toHaveBeenCalled();
+  setTimeoutSpy.mockRestore();
+  clearTimeoutSpy.mockRestore();
+  expect(held.size).toBeGreaterThan(0);
+  for (const run of held.values()) run();
   await expect.poll(() => goTo.mock.calls.length).toBe(1);
   expect(goTo).toHaveBeenLastCalledWith(1.5, 0.5, GO_TO_ZOOM);
   await expect.element(page.getByTestId("search-position")).toHaveTextContent("1 of 2 matches");

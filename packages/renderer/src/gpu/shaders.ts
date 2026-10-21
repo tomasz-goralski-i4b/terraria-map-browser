@@ -9,7 +9,6 @@ import { BLOCK_CELL_STRIDE } from "../framing/chunk-cells.js";
 import { NO_CELL } from "../framing/frame-block.js";
 import { WALL_CELL_STRIDE, WALL_OVERHANG } from "../framing/frame-wall.js";
 import { TRACK_CELL_STRIDE, trackShaderConstants } from "../objects/tracks.js";
-import { WIRE_CELL_STRIDE } from "../objects/wires.js";
 import { INACTIVE_SPRITE_SHADE } from "../palette/sprite-paint.js";
 
 /** A colour as a GLSL ivec3 literal. */
@@ -47,7 +46,8 @@ export const INACTIVE_FLAG = 32;
 export const PAINT_GROUP_LIMIT = 15;
 
 /** Paint and the inactive shade on sprites; mirrors spritePaintedColor() and inactiveSpriteColor() (../palette/sprite-paint.ts). */
-const spritePaintSource = `
+// eslint-disable-next-line @typescript-eslint/no-inferrable-types -- an interpolated template needs it under isolatedDeclarations
+export const spritePaintSource: string = `
 // Special groups 1…PAINT_GROUP_LIMIT (PaintGroup): (min hue, max hue, min saturation, max saturation), (hue offset, invert).
 uniform vec4 uPaintGroupRanges[${String(PAINT_GROUP_LIMIT)}];
 uniform vec2 uPaintGroupModes[${String(PAINT_GROUP_LIMIT)}];
@@ -140,7 +140,7 @@ export const MISSING_SPRITE_COLORS: readonly (readonly [number, number, number])
 export const LIQUID_FLAT = 2;
 
 /** Sprite pixels across one tile: a frame's cell is scaled into these. */
-const SPRITE_TILE_PIXELS = 16;
+export const SPRITE_TILE_PIXELS = 16;
 
 /** Pixels per tile from which sprite mode samples the atlas: below SPRITE_FULL_ZOOM it fades in over the map colour. */
 export const SPRITE_MIN_ZOOM = 5;
@@ -189,7 +189,7 @@ export const LAYER_ATTRIBUTE = 1;
 // Straight-alpha top over below, in integers. Over an opaque pixel it is renderChunk's rounded blend (map mode only ever
 // has opaque or empty pixels, so it stays bit-exact); over a partly transparent one (a half-transparent sprite pixel
 // with nothing behind it) the general rule, alpha and colour rounded to nearest.
-const overSource = `
+export const overSource = `
 ivec4 over(ivec4 top, ivec4 below) {
   if (top.a == 0) return below;
   if (below.a == 0 || top.a == 255) return top;
@@ -205,7 +205,7 @@ ivec4 over(ivec4 top, ivec4 below) {
 // the half-resolution atlas) is read at full resolution. The cells of the shipped layouts start at even pixels of their
 // sheets (the atlas tests pin it), so a texel never mixes a cell with its gutter; tile 529's 15-pixel frames at a
 // 17-pixel stride are the one exception, where one row blends with its neighbour.
-const atlasTexelSource = `
+export const atlasTexelSource = `
 vec4 atlasTexel(ivec2 origin, ivec2 at, int page) {
   if (uSpriteLevel == 1 && ((origin.x | origin.y) & 1) == 0) {
     return vec4(texelFetch(uAtlasHalf, ivec3(at >> 1, page), 0)) / 255.0;
@@ -214,22 +214,30 @@ vec4 atlasTexel(ivec2 origin, ivec2 at, int page) {
 }
 `;
 
-const header = `#version 300 es
+export const header = `#version 300 es
 precision highp float;
 precision highp int;
 `;
 
 // Per instance: the chunk's tile rectangle (origin x, origin y, columns, rows) and its slot in the page.
-const instanceInputs = `
+// eslint-disable-next-line @typescript-eslint/no-inferrable-types -- an interpolated template needs it under isolatedDeclarations
+export const instanceInputs: string = `
 layout(location = ${String(RECT_ATTRIBUTE)}) in ivec4 aRect;
 layout(location = ${String(LAYER_ATTRIBUTE)}) in int aLayer;
 flat out ivec4 vRect;
 flat out int vLayer;
 flat out int vCells;
+// Hands the instance's chunk rectangle, page layer and cell bits (CELLS_INSTANCE_BIT, WALLS_INSTANCE_BIT) to the fragment.
+void passInstance() {
+  vRect = aRect;
+  vLayer = aLayer & ${String(CELLS_INSTANCE_BIT - 1)};
+  vCells = (aLayer >> 16) & 3;
+}
 `;
 
 /** Shared by both chunk passes: the colour of one world tile, resolved from its chunk's page layers. */
-const tileColorSource = `
+// eslint-disable-next-line @typescript-eslint/no-inferrable-types -- an interpolated template needs it under isolatedDeclarations
+export const tileColorSource: string = `
 precision highp usampler2DArray;
 precision highp usampler2D;
 precision highp isampler2D;
@@ -968,9 +976,7 @@ void main() {
   vec2 tile = vec2(aRect.xy) + corner * vec2(aRect.zw);
   vec2 screen = (tile - uCamera) * uZoom;
   gl_Position = vec4(screen.x / uViewport.x * 2.0 - 1.0, 1.0 - screen.y / uViewport.y * 2.0, 0.0, 1.0);
-  vRect = aRect;
-  vLayer = aLayer & ${String(CELLS_INSTANCE_BIT - 1)};
-  vCells = (aLayer >> 16) & 3;
+  passInstance();
 }
 `;
 
@@ -1070,7 +1076,8 @@ export const chunkFragmentSource: string = header + chunkFragmentBody;
 export const chunkSpriteFragmentSource: string = header + "#define SPRITES\n" + chunkFragmentBody;
 
 /** The uniforms the object and wire passes share: the camera and the sprite sampling of spriteSampling(). */
-const spritePassInputs = `
+// eslint-disable-next-line @typescript-eslint/no-inferrable-types -- an interpolated template needs it under isolatedDeclarations
+export const spritePassInputs: string = `
 precision highp sampler2DArray;
 precision highp usampler2DArray;
 uniform vec2 uCamera;
@@ -1105,317 +1112,5 @@ void writeFaded(ivec4 color) {
   float alpha = float(color.a) / 255.0 * float(uSpriteWeight) / 256.0;
   if (alpha <= 0.0) discard;
   outColor = vec4(vec3(color.rgb) / 255.0, alpha);
-}
-`;
-
-/** Per-instance attributes of the object pass: the sprite's rectangle in world sprite pixels and its atlas source. */
-export const OBJECT_DEST_ATTRIBUTE = 0;
-export const OBJECT_SOURCE_ATTRIBUTE = 1;
-/** The object pass's source flags: mirrored left to right, and the shift of 255 minus its opacity. */
-export const OBJECT_FLIP = 1;
-export const OBJECT_FADE_SHIFT = 1;
-/** The object pass's source flag of a sprite multiplied by uTint (bit 9, above the fade's 8 bits). */
-export const OBJECT_TINT = 512;
-/**
- * The object pass's source flag of a sprite that lies behind the blocks (bit 10): frame-important tiles, which the
- * game draws under the blocks around them (docs/assets.md, "Draw offsets"). The chunk pass writes depth 0 where a
- * block covers a pixel; such a sprite is drawn only elsewhere.
- */
-export const OBJECT_BEHIND = 1024;
-/**
- * The object pass's source flag of a sprite behind the blocks that also lies under the liquids (bit 11, with
- * OBJECT_BEHIND): the waterfalls. The chunk pass writes depth 0.5 where a tile's own liquid covers a pixel.
- */
-export const OBJECT_UNDER_LIQUID = 2048;
-/** The object pass's source bits 12–19: the paint of the tile the sprite belongs to. */
-export const OBJECT_PAINT_SHIFT = 12;
-/** The object pass's source flag of a sprite of an inactive (actuated) tile (bit 20). */
-export const OBJECT_INACTIVE = 1_048_576;
-/** The object pass's source bits 21–24: the special group (1-based, 0 for none) the sprite is painted with. */
-export const OBJECT_GROUP_SHIFT = 21;
-
-/**
- * Object pass (docs/assets.md, "Trees", "Minecart tracks"): in sprite mode, after the chunk pass, one instanced quad
- * per object sprite (tree trunk cells, tops and branches, mushroom caps, track decorations and bumpers), placed at its
- * rectangle in world sprite pixels (16 per tile), which may reach past its tile into the tiles around it.
- */
-export const objectVertexSource: string = header + `
-uniform vec2 uCamera;
-uniform float uZoom;
-uniform vec2 uViewport;
-layout(location = ${String(OBJECT_DEST_ATTRIBUTE)}) in ivec4 aDest;
-layout(location = ${String(OBJECT_SOURCE_ATTRIBUTE)}) in ivec4 aSource;
-flat out ivec4 vDest;
-flat out ivec4 vSource;
-void main() {
-  vec2 corner = vec2(float(gl_VertexID & 1), float(gl_VertexID >> 1));
-  vec2 tile = (vec2(aDest.xy) + corner * vec2(aDest.zw)) / ${String(SPRITE_TILE_PIXELS)}.0;
-  vec2 screen = (tile - uCamera) * uZoom;
-  // Sprites under the liquids (OBJECT_UNDER_LIQUID) at depth 0.75: drawn only where the chunk pass left depth 1 (no
-  // block or liquid pixel); behind the blocks (OBJECT_BEHIND) at 0.25: not where it left 0 (a block pixel); the others
-  // at depth 0, over everything.
-  float depth = (aSource.w & ${String(OBJECT_UNDER_LIQUID)}) != 0 ? 0.5 : (aSource.w & ${String(OBJECT_BEHIND)}) != 0 ? -0.5 : -1.0;
-  gl_Position = vec4(screen.x / uViewport.x * 2.0 - 1.0, 1.0 - screen.y / uViewport.y * 2.0, depth, 1.0);
-  vDest = aDest;
-  vSource = aSource;
-}
-`;
-
-/**
- * Object pass fragment: the straight-alpha mean of uSpriteSamples² atlas pixels of the object's source rectangle (its
- * top-left (x, y) on page `page`: vSource = (page, x, y, flags)), sampled as the chunk pass samples sprites, faded in.
- * Flags (OBJECT_FLIP, OBJECT_FADE_SHIFT): bit 0 mirrors the rectangle left to right, bits 1–8 hold 255 minus the
- * opacity its pixels are scaled by (a waterfall's fade; 0 for an opaque sprite), bit 9 (OBJECT_TINT) multiplies its
- * colour by uTint (shimmer's map colour, for its grey waterfall sheet), bits 12–19 (OBJECT_PAINT_SHIFT) paint it and
- * bit 20 (OBJECT_INACTIVE) shades it as an inactive tile, bits 21–24 (OBJECT_GROUP_SHIFT) name its special group.
- */
-export const objectFragmentSource: string = header + spritePassInputs + `
-uniform ivec3 uTint;
-uniform ivec3 uTintEdge;
-uniform int uLayers;
-flat in ivec4 vDest;
-flat in ivec4 vSource;
-${spritePaintSource}
-void main() {
-  vec2 centre = worldSpritePixel() - vec2(vDest.xy);
-  int count = uSpriteSamples;
-  ivec4 sum = ivec4(0);
-  for (int y = 0; y < count; y++) {
-    for (int x = 0; x < count; x++) {
-      ivec2 sub = samplePixelIn(centre, vDest.zw, x, y);
-      if ((vSource.w & ${String(OBJECT_FLIP)}) != 0) sub.x = vDest.z - 1 - sub.x;
-      ivec4 sampled = ivec4(round(atlasTexel(vSource.yz, vSource.yz + sub, vSource.x) * 255.0));
-      sampled.a = sampled.a * (255 - ((vSource.w >> ${String(OBJECT_FADE_SHIFT)}) & 255)) / 255;
-      // Tinted (shimmer's waterfall edge band): from uTint to uTintEdge by the band's grey (200 at its edge).
-      if ((vSource.w & ${String(OBJECT_TINT)}) != 0) sampled.rgb = uTint + (uTintEdge - uTint) * min(sampled.r, 200) / 200;
-      sum += ivec4(sampled.rgb * sampled.a, sampled.a);
-    }
-  }
-  int samples = count * count;
-  if (sum.a == 0) discard;
-  ivec3 rgb = spritePainted((2 * sum.rgb + sum.a) / (2 * sum.a), (vSource.w >> ${String(OBJECT_PAINT_SHIFT)}) & 255, false,
-    (vSource.w >> ${String(OBJECT_GROUP_SHIFT)}) & 15);
-  if ((vSource.w & ${String(OBJECT_INACTIVE)}) != 0) rgb = inactiveShade(rgb);
-  writeFaded(ivec4(rgb, (2 * sum.a + samples) / (2 * samples)));
-}
-`;
-
-/** Per-instance attribute of the wire pass: the run of tiles (x, y, width, height) its quad covers. */
-export const WIRE_RUN_ATTRIBUTE = 2;
-
-/**
- * Wire pass vertex: the chunk pass's instance inputs (its chunk's rectangle and page layer, which the fragment reads the
- * flags by), but the quad covers only the instance's run of tiles with a wire or actuator.
- */
-export const wireVertexSource: string = header + `
-uniform vec2 uCamera;
-uniform float uZoom;
-uniform vec2 uViewport;
-${instanceInputs}
-layout(location = ${String(WIRE_RUN_ATTRIBUTE)}) in ivec4 aRun;
-void main() {
-  vec2 corner = vec2(float(gl_VertexID & 1), float(gl_VertexID >> 1));
-  vec2 tile = vec2(aRun.xy) + corner * vec2(aRun.zw);
-  vec2 screen = (tile - uCamera) * uZoom;
-  gl_Position = vec4(screen.x / uViewport.x * 2.0 - 1.0, 1.0 - screen.y / uViewport.y * 2.0, 0.0, 1.0);
-  vRect = aRect;
-  vLayer = aLayer & ${String(CELLS_INSTANCE_BIT - 1)};
-  vCells = (aLayer >> 16) & 3;
-}
-`;
-
-/**
- * Wire pass (docs/assets.md, "Wires"): in sprite mode, after the object pass, the runs of tiles with a wire or actuator
- * of every chunk (wireVertexSource), drawing only its wires and actuators: per colour (red, blue, green, yellow, in that order) the WiresNew piece its four
- * same-colour side neighbours give, then the actuator over them, faded in over the colour overlay below
- * SPRITE_FULL_ZOOM. Without the wire sheet it draws the overlay; an actuator without its sheet its overlay colour.
- */
-export const wireFragmentSource: string = header + spritePassInputs + `
-precision highp usampler2DArray;
-uniform usampler2DArray uPlanes16;
-uniform int uPresent;
-uniform int uLayers;
-uniform ivec3 uWireColors[5];
-uniform int uWireBits[5];
-uniform int uWireAlpha;
-uniform ivec2 uWorldSize;
-// The wire pieces (WiresNew) and the actuator in the atlas: (page, x, y, 1), or all 0 without that sheet.
-uniform ivec4 uWireSheet;
-uniform ivec4 uActuatorSheet;
-flat in ivec4 vRect;
-flat in int vLayer;
-flat in int vCells;
-
-// The CWM flags of the tile local (relative to the chunk's origin, apron included), 0 past the world's edges (the
-// apron holds stale values there).
-int flagsAt(ivec2 local) {
-  ivec2 tile = vRect.xy + local;
-  if (any(lessThan(tile, ivec2(0))) || any(greaterThanEqual(tile, uWorldSize))) return 0;
-  ivec2 texel = ivec2(local.y + ${String(PAGE_APRON)}, local.x + ${String(PAGE_APRON)});
-  return int(texelFetch(uPlanes16, ivec3(texel, vLayer * ${String(PLANE_COUNT_16)} + ${String(PLANES_16.flags)}), 0).r);
-}
-
-// The highest of bits 0–3 set in bits, -1 for none (GLSL ES 3.00 has no findMSB).
-int highestBit(int bits) {
-  return (bits & 8) != 0 ? 3 : (bits & 4) != 0 ? 2 : (bits & 2) != 0 ? 1 : (bits & 1) != 0 ? 0 : -1;
-}
-
-// The wires (bits 0–3 of wires) and actuator (bit 4) of a tile at sprite pixel sub, straight alpha; up, right, down
-// and left are the flags of its side neighbours.
-ivec4 wirePixel(int wires, int up, int right, int down, int left, ivec2 sub) {
-  ivec4 color = ivec4(0);
-  // Runtime bounds (up to the topmost colour drawn): the loop stays a loop, so the shader stays small.
-  int last = highestBit(wires & 15);
-  for (int k = 0; k <= last; k++) {
-    int bit = 1 << k;
-    if ((wires & bit) == 0) continue;
-    int column = ((up & bit) != 0 ? 1 : 0) | ((right & bit) != 0 ? 2 : 0) | ((down & bit) != 0 ? 4 : 0) | ((left & bit) != 0 ? 8 : 0);
-    ivec2 pixel = ivec2(column, k) * ${String(WIRE_CELL_STRIDE)} + sub;
-    color = over(ivec4(round(atlasTexel(uWireSheet.yz, uWireSheet.yz + pixel, uWireSheet.x) * 255.0)), color);
-  }
-  if ((wires & 16) != 0) {
-    ivec4 actuator = uActuatorSheet.w != 0
-      ? ivec4(round(atlasTexel(uActuatorSheet.yz, uActuatorSheet.yz + sub, uActuatorSheet.x) * 255.0))
-      : ivec4(uWireColors[4], uWireAlpha);
-    color = over(actuator, color);
-  }
-  return color;
-}
-
-void main() {
-  vec2 world = worldSpritePixel() / ${String(SPRITE_TILE_PIXELS)}.0;
-  ivec2 local = clamp(ivec2(floor(world)) - vRect.xy, ivec2(0), vRect.zw - 1);
-  vec2 centre = clamp((world - vec2(vRect.xy + local)) * ${String(SPRITE_TILE_PIXELS)}.0, vec2(0.0), vec2(${String(SPRITE_TILE_PIXELS)}.0));
-  int shown = (uLayers >> 4) & 31;
-  int wires = (uPresent & ${String(PRESENT.flags)}) != 0 ? flagsAt(local) & shown : 0;
-  if (wires == 0) discard;
-  ivec3 wire = ivec3(0);
-  for (int i = 4; i >= 0; i--) {
-    if ((wires & uWireBits[i]) != 0) wire = uWireColors[i];
-  }
-  // The overlay, faded out as the sprites fade in (premultiplied, for blending with one, one minus source alpha).
-  float fade = uWireSheet.w != 0 ? float(uSpriteWeight) / 256.0 : 0.0;
-  vec4 overlay = vec4(vec3(wire) / 255.0, 1.0) * (float(uWireAlpha) / 255.0) * (1.0 - fade);
-  vec4 sprite = vec4(0.0);
-  if (fade > 0.0) {
-    int up = flagsAt(local - ivec2(0, 1));
-    int down = flagsAt(local + ivec2(0, 1));
-    int left = flagsAt(local - ivec2(1, 0));
-    int right = flagsAt(local + ivec2(1, 0));
-    int count = uSpriteSamples;
-    ivec4 sum = ivec4(0);
-    for (int y = 0; y < count; y++) {
-      for (int x = 0; x < count; x++) {
-        ivec4 sampled = wirePixel(wires, up, right, down, left, samplePixelIn(centre, ivec2(${String(SPRITE_TILE_PIXELS)}), x, y));
-        sum += ivec4(sampled.rgb * sampled.a, sampled.a);
-      }
-    }
-    int samples = count * count;
-    if (sum.a > 0) {
-      ivec4 mean = ivec4((2 * sum.rgb + sum.a) / (2 * sum.a), (2 * sum.a + samples) / (2 * samples));
-      sprite = vec4(vec3(mean.rgb) / 255.0, 1.0) * (float(mean.a) / 255.0) * fade;
-    }
-  }
-  vec4 color = overlay + sprite;
-  if (color.a <= 0.0) discard;
-  outColor = color;
-}
-`;
-
-/**
- * Overview build pass: every instance is one chunk drawn into the overview texture, one texel per uFactor × uFactor
- * tiles. A texel is the mean of its tiles inside the chunk, premultiplied so that mipmaps average it correctly.
- * Texel row r holds tile rows r × uFactor onwards (no vertical flip).
- */
-export const overviewBuildVertexSource: string = header + `
-uniform int uFactor;
-uniform vec2 uTarget;
-${instanceInputs}
-void main() {
-  vec2 corner = vec2(float(gl_VertexID & 1), float(gl_VertexID >> 1));
-  vec2 start = vec2(aRect.xy / uFactor);
-  vec2 end = vec2((aRect.xy + aRect.zw + uFactor - 1) / uFactor);
-  vec2 texel = start + corner * (end - start);
-  gl_Position = vec4(texel / uTarget * 2.0 - 1.0, 0.0, 1.0);
-  vRect = aRect;
-  vLayer = aLayer & ${String(CELLS_INSTANCE_BIT - 1)};
-  vCells = (aLayer >> 16) & 3;
-}
-`;
-
-export const overviewBuildFragmentSource: string = header + `
-uniform int uFactor;
-out vec4 outColor;
-${tileColorSource}
-void main() {
-  ivec2 first = ivec2(gl_FragCoord.xy) * uFactor;
-  vec4 sum = vec4(0.0);
-  float count = 0.0;
-  for (int dy = 0; dy < uFactor; dy++) {
-    for (int dx = 0; dx < uFactor; dx++) {
-      ivec2 local = first + ivec2(dx, dy) - vRect.xy;
-      if (any(lessThan(local, ivec2(0))) || any(greaterThanEqual(local, vRect.zw))) continue;
-      vec4 color = vec4(tileColor(vRect.xy + local));
-      sum += vec4(color.rgb * color.a / 255.0, color.a);
-      count += 1.0;
-    }
-  }
-  outColor = count == 0.0 ? vec4(0.0) : sum / (255.0 * count);
-}
-`;
-
-/**
- * Half-resolution atlas pass: one RGBA8UI texel per 2 × 2 atlas pixels of page uPage, their straight-alpha mean as the
- * chunk pass averages sprite samples (colour weighted by alpha, both rounded to nearest, in integers). Sheets packed
- * at even positions keep their cells apart: every cell, gutter and shape column starts at an even pixel.
- */
-export const halfAtlasVertexSource: string = header + `
-void main() {
-  // One triangle over the whole target.
-  gl_Position = vec4(float((gl_VertexID & 1) * 4 - 1), float((gl_VertexID >> 1) * 4 - 1), 0.0, 1.0);
-}
-`;
-
-export const halfAtlasFragmentSource: string = header + `
-precision highp sampler2DArray;
-uniform sampler2DArray uAtlas;
-uniform int uPage;
-out uvec4 outColor;
-void main() {
-  ivec2 at = ivec2(gl_FragCoord.xy) * 2;
-  ivec4 sum = ivec4(0);
-  for (int k = 0; k < 4; k++) {
-    ivec4 color = ivec4(round(texelFetch(uAtlas, ivec3(at + ivec2(k & 1, k >> 1), uPage), 0) * 255.0));
-    sum += ivec4(color.rgb * color.a, color.a);
-  }
-  outColor = sum.a == 0 ? uvec4(0u) : uvec4(uvec3((2 * sum.rgb + sum.a) / (2 * sum.a)), uint((2 * sum.a + 4) / 8));
-}
-`;
-
-/** Overview display pass: the whole world as one quad, sampled with mipmaps and drawn in straight alpha. */
-export const overviewVertexSource: string = header + `
-uniform vec2 uCamera;
-uniform float uZoom;
-uniform vec2 uViewport;
-uniform vec2 uWorld;
-// Tiles covered by the overview texture: its size times the factor (at least the world size).
-uniform vec2 uExtent;
-out vec2 vUv;
-void main() {
-  vec2 corner = vec2(float(gl_VertexID & 1), float(gl_VertexID >> 1));
-  vec2 tile = corner * uWorld;
-  vec2 screen = (tile - uCamera) * uZoom;
-  gl_Position = vec4(screen.x / uViewport.x * 2.0 - 1.0, 1.0 - screen.y / uViewport.y * 2.0, 0.0, 1.0);
-  vUv = tile / uExtent;
-}
-`;
-
-export const overviewFragmentSource: string = header + `
-uniform sampler2D uOverview;
-in vec2 vUv;
-out vec4 outColor;
-void main() {
-  vec4 color = texture(uOverview, vUv);
-  outColor = color.a == 0.0 ? vec4(0.0) : vec4(color.rgb / color.a, color.a);
 }
 `;
