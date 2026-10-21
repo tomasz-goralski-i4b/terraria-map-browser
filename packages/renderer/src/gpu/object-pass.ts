@@ -11,7 +11,7 @@ import { requireValue, type GpuPart, type ProgramCache, type ProgramSource } fro
 import { PAINT_GROUP_UNIFORMS, SAMPLING_UNIFORMS, setPaintGroups, type SpriteAtlas } from "./sprite-atlas.js";
 import {
   OBJECT_BEHIND, OBJECT_DEST_ATTRIBUTE, OBJECT_FADE_SHIFT, OBJECT_FLIP, OBJECT_GROUP_SHIFT, OBJECT_INACTIVE, OBJECT_PAINT_SHIFT,
-  OBJECT_SOURCE_ATTRIBUTE, OBJECT_TINT, objectFragmentSource, objectVertexSource,
+  OBJECT_SOURCE_ATTRIBUTE, OBJECT_TINT, objectFragmentSource, objectOrder, objectVertexSource,
 } from "./object-shaders.js";
 import type { FrameView, RenderableWorld } from "./types.js";
 
@@ -101,7 +101,7 @@ export function createObjectPass(gl: WebGL2RenderingContext, programs: ProgramCa
         | (sprite.inactive === true ? OBJECT_INACTIVE : 0) | ((sprite.paintGroup ?? 0) << OBJECT_GROUP_SHIFT);
       placed.set([
         sprite.dx, sprite.dy, sprite.width | (sprite.height << 16),
-        sprite.row !== undefined ? sprite.row + 2 : sprite.afterTiles === true ? 1 : 0,
+        objectOrder(sprite),
         sheet.page, sheet.x + sprite.sx, sheet.y + sprite.sy, flags,
       ], at);
       at += OBJECT_INTS;

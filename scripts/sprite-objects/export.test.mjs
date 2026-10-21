@@ -87,11 +87,11 @@ test("draw offsets the runs do not reproduce are refused", () => {
 test("solidity: the solid blocks are the solid types that are not solid on top only; walls blending as another", () => {
   const tables = solidityTables({
     solid: [0, 1, 19, 379], solidTop: [14, 19], hidesLiquidBehind: [54], platforms: [19], solidLayer: [0, 1, 19],
-    ignoresNearbyHalfBricks: [380], notReallySolid: [10], smoothBorders: [56], noSlopes: [137], wallBlend: [0, 1, 1, 3], swaysInWind: [3, 24],
+    ignoresNearbyHalfBricks: [380], notReallySolid: [10], smoothBorders: [56], noSlopes: [137], wallBlend: [0, 1, 1, 3], swaysInWind: [3, 24], ropes: [213], blocksStairs: [1],
   });
   assert.deepEqual(tables, {
     solidBlocks: [0, 1, 379], solidTops: [14, 19], hidesLiquidBehind: [54], platforms: [19], solidLayer: [0, 1, 19],
-    ignoresNearbyHalfBricks: [380], notReallySolid: [10], smoothBorders: [56], noSlopes: [137], wallBlends: [[2, 1]], swaysInWind: [3, 24],
+    ignoresNearbyHalfBricks: [380], notReallySolid: [10], smoothBorders: [56], noSlopes: [137], wallBlends: [[2, 1]], swaysInWind: [3, 24], ropes: [213], blocksStairs: [1],
   });
   assert.throws(() => solidityTables(undefined), /no solidity/);
 });

@@ -60,4 +60,8 @@ export interface SpriteObjectData {
   readonly wallBlends: readonly (readonly [number, number])[];
   /** Tile types the game sways in the wind: drawn after the tiles that are not solid ("Draw order"). */
   readonly swaysInWind: readonly number[];
+  /** Rope tile types: a platform between two ropes draws a rope behind it. */
+  readonly ropes: readonly number[];
+  /** Tile types a sloped platform's stair piece is not drawn into (unless sloped the other way). */
+  readonly blocksStairs: readonly number[];
 }

@@ -560,7 +560,15 @@ The viewer draws a world's layers in the game's order, from back to front:
 4. the tiles that are not solid (plants, furniture, platforms, torches, …) and their sprites, **row by row** from the
    top, so a lower row's sprite covers the row above it where they overlap (a plant reaching up over a bottle on a
    shelf);
-5. tree tops and branches, palm tops (`afterTiles`);
+5. a series of stages (`DRAW_STAGE`, `drawStage` in `packages/renderer/src/objects/draw-offsets.ts`), each row by row
+   from the top: the **hanging objects** (chandeliers, lanterns, banners and the like: 34, 42, 91, 95, 126, 270, 271,
+   444, 454, 465, 572, 581, 591, 592, 660, 698), drawn **2 pixels above** their tiles, 10 when the object is one tile
+   wide (465, 591 and 592: two tiles) and hangs from a platform that is neither half nor sloped, and 698 also 10 pixels
+   left, ordered by their top row; the **swaying multi-tile plants** (sunflowers, cattails, …), drawn at their tile
+   without centring; the **plants that sway** (`swaysInWind` of the sprite-object tables, but the still dye plants);
+   the **moss plants** (184); the **tree foliage** (tree tops and branches, palm tops). Types in these stages without
+   draw data of their own are drawn by the object pass as plain cells; types whose draw data was not observed stay in
+   the chunk pass. With no wind, nothing sways;
 6. the waterfalls;
 7. the solid tiles, each with the liquid behind it first ("Liquids", behind blocks);
 8. the liquids' front layer, over everything in its tile;
@@ -570,7 +578,7 @@ The two GPU passes keep that order with the depth buffer. The chunk pass draws t
 sprite of its own; it gives a solid tile depth 0 (also a type drawn with the solid tiles, `solidLayer`), a tile that
 is not solid the depth of its row (`rowDepth`: 0.95 − row / 8192, never below 0.3), and an empty tile depth 1. The
 object pass draws the sprites behind the blocks with the depth test: a non-solid tile's sprite half a row in front of
-its row, the tree foliage at 0.275, the waterfalls at 0.25; track extras and the other sprites in front go over
+its row, a sprite of the later stages at 0.299 − (stage · 4096 + row) / 2²⁰ (`objectOrder`), the waterfalls at 0.25; track extras and the other sprites in front go over
 everything. The chunk pass composes the liquids' front layer over its own pixels and clears their stencil mark; the
 object pass marks the pixels it draws, and the liquid overlay pass draws the front layer once more over
 exactly those, so sprites in a liquid lie under it.

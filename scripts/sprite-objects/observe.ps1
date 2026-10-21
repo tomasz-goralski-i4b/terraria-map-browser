@@ -649,7 +649,7 @@ public static class SpriteObjectObserver {
     /** The game's per-type solidity and drawing tables after its tile data is set up: solid, solid on top only, the
      *  types that draw no liquid behind themselves, the platforms, the types drawn with the solid tiles, and the types
      *  that draw beside half blocks, their slopes or their slices in their own ways; per wall the wall it counts as
-     *  where walls meet; the plants that sway in the wind. */
+     *  where walls meet; the plants that sway in the wind; the ropes and the types that block a platform's stair. */
     static void Solidity(StringBuilder json) {
         Type sets = game.GetType("Terraria.ID.TileID+Sets", true);
         bool[] solid = (bool[])Field(mainType, "tileSolid").GetValue(null);
@@ -669,6 +669,8 @@ public static class SpriteObjectObserver {
         json.Append(",\"smoothBorders\":").Append(SetIds((bool[])Field(sets, "AllBlocksWithSmoothBordersToResolveHalfBlockIssue").GetValue(null)));
         json.Append(",\"noSlopes\":").Append(SetIds((bool[])Field(sets, "DontDrawTileSlopes").GetValue(null)));
         json.Append(",\"swaysInWind\":").Append(SetIds((bool[])Field(sets, "SwaysInWindBasic").GetValue(null)));
+        json.Append(",\"ropes\":").Append(SetIds((bool[])Field(mainType, "tileRope").GetValue(null)));
+        json.Append(",\"blocksStairs\":").Append(SetIds((bool[])Field(sets, "BlocksStairs").GetValue(null)));
         int[] wallBlend = (int[])Field(mainType, "wallBlend").GetValue(null);
         json.Append(",\"wallBlend\":[").Append(string.Join(",", Array.ConvertAll(wallBlend, b => b.ToString(CultureInfo.InvariantCulture)))).Append("]");
         json.Append("}");

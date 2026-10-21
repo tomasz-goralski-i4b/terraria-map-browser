@@ -2,7 +2,7 @@
 // documented rules are written out here, so the test pins them rather than the generated table.
 import { describe, expect, test } from "vitest";
 import type { ContentRef } from "@studio/world-model";
-import { objectSprites, paintGroupOf } from "../src/index.js";
+import { DRAW_STAGE, objectSprites, paintGroupOf } from "../src/index.js";
 import type { ObjectSprite, ObjectWorld, TreeSettings } from "../src/index.js";
 
 const ABSENT = 0xffff;
@@ -55,11 +55,11 @@ describe("tree sprites", () => {
     expect(of(sprites, "tile")).toContainEqual({ kind: "tile", id: 5, sx: 0, sy: 0, width: 20, height: 20, dx: 158, dy: 16 * 16, behind: true, row: 16 });
     expect(of(sprites, "tile")).toHaveLength(7);
     // Top: Tree_Tops_0 (variation 0), frame 0, 80 × 80, centred on the tile, its bottom on the tile's bottom.
-    expect(of(sprites, "treeTop")).toEqual([{ kind: "treeTop", id: 0, sx: 0, sy: 0, width: 80, height: 80, dx: 128, dy: 16 * 15 + 16 - 80, behind: true, afterTiles: true }]);
+    expect(of(sprites, "treeTop")).toEqual([{ kind: "treeTop", id: 0, sx: 0, sy: 0, width: 80, height: 80, dx: 128, dy: 16 * 15 + 16 - 80, behind: true, row: 15, stage: DRAW_STAGE.foliage }]);
     // Branches: Tree_Branches_0, left column 0 and right column 42, 40 × 40, against the trunk, 12 pixels above the tile.
     expect(of(sprites, "treeBranch")).toEqual([
-      { kind: "treeBranch", id: 0, sx: 0, sy: 0, width: 40, height: 40, dx: 16 * 9 + 16 - 40, dy: 16 * 17 - 12, behind: true, afterTiles: true },
-      { kind: "treeBranch", id: 0, sx: 42, sy: 0, width: 40, height: 40, dx: 16 * 11, dy: 16 * 17 - 12, behind: true, afterTiles: true },
+      { kind: "treeBranch", id: 0, sx: 0, sy: 0, width: 40, height: 40, dx: 16 * 9 + 16 - 40, dy: 16 * 17 - 12, behind: true, row: 17, stage: DRAW_STAGE.foliage },
+      { kind: "treeBranch", id: 0, sx: 42, sy: 0, width: 40, height: 40, dx: 16 * 11, dy: 16 * 17 - 12, behind: true, row: 17, stage: DRAW_STAGE.foliage },
     ]);
     // Drawing order: the trunk cells, then the branches, then the top.
     const kinds = sprites.map((sprite) => sprite.kind);
@@ -93,7 +93,7 @@ describe("tree sprites", () => {
     expect(of(corrupt, "treeTop")[0]).toMatchObject({ id: 1, width: 80, height: 80 });
     const jungle = objectSprites(world(tree(10, 5, 60)), ALL);
     expect(lowestTrunk(jungle)).toMatchObject({ sx: 6 * 176 });
-    expect(of(jungle, "treeTop")[0]).toEqual({ kind: "treeTop", id: 13, sx: 0, sy: 0, width: 116, height: 96, dx: 160 + 8 - 58, dy: 16 * 15 + 16 - 96, behind: true, afterTiles: true });
+    expect(of(jungle, "treeTop")[0]).toEqual({ kind: "treeTop", id: 13, sx: 0, sy: 0, width: 116, height: 96, dx: 160 + 8 - 58, dy: 16 * 15 + 16 - 96, behind: true, row: 15, stage: DRAW_STAGE.foliage });
     // Hallow: Tree_Tops_3, 80 × 140, frame = variant + 3 · (x mod 3), branches by their own column.
     const hallow = objectSprites(world(tree(10, 5, 109, 1)), ALL);
     expect(lowestTrunk(hallow)).toMatchObject({ sx: 3 * 176 });
@@ -104,7 +104,7 @@ describe("tree sprites", () => {
   test("a gem tree draws Tiles_583 trunk cells and the Tree_Tops_22 top", () => {
     const sprites = objectSprites(world(tree(10, 583, 1)), ALL);
     expect(lowestTrunk(sprites)).toMatchObject({ id: 583, sx: 0, sy: 0, width: 20, height: 20, dx: 158 });
-    expect(of(sprites, "treeTop")).toEqual([{ kind: "treeTop", id: 22, sx: 0, sy: 0, width: 116, height: 96, dx: 110, dy: 16 * 15 + 16 - 96, behind: true, afterTiles: true }]);
+    expect(of(sprites, "treeTop")).toEqual([{ kind: "treeTop", id: 22, sx: 0, sy: 0, width: 116, height: 96, dx: 110, dy: 16 * 15 + 16 - 96, behind: true, row: 15, stage: DRAW_STAGE.foliage }]);
     expect(of(sprites, "treeBranch").map((sprite) => sprite.id)).toEqual([22, 22]);
   });
 
@@ -122,7 +122,7 @@ describe("tree sprites", () => {
       { kind: "tile", id: 323, sx: 22, sy: 22, width: 20, height: 20, dx: 160, dy: 16 * 18, behind: true, row: 18 },
       { kind: "tile", id: 323, sx: 66, sy: 22, width: 20, height: 20, dx: 158, dy: 16 * 19, behind: true, row: 19 },
     ]);
-    expect(of(sprites, "treeTop")).toEqual([{ kind: "treeTop", id: 15, sx: 82, sy: 82, width: 80, height: 80, dx: 160 + 8 - 40 + 6, dy: 16 * 16 + 16 - 80, behind: true, afterTiles: true }]);
+    expect(of(sprites, "treeTop")).toEqual([{ kind: "treeTop", id: 15, sx: 82, sy: 82, width: 80, height: 80, dx: 160 + 8 - 40 + 6, dy: 16 * 16 + 16 - 80, behind: true, row: 16, stage: DRAW_STAGE.foliage }]);
   });
 
   test("a palm on a ground that names no palm row draws nothing", () => {

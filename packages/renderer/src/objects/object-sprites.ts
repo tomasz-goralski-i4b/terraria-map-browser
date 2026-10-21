@@ -5,7 +5,8 @@ import type { ContentRef } from "@studio/world-model";
 import { terrariaSpriteObjects } from "./terraria-sprite-objects.generated.js";
 import { wrappedFrame } from "../gpu/frame-wrap.js";
 import { paintGroupOf } from "../palette/sprite-paint.js";
-import { DRAWN_TILES, drawVariant } from "./draw-offsets.js";
+import { DRAW_STAGE, DRAWN_TILES, HANGING_OBJECTS, drawStage, drawVariant } from "./draw-offsets.js";
+import { TILE_DRAW_FLAGS, tileDrawFlags } from "./tile-draw-flags.js";
 import { TRACK_CELL_STRIDE, TRACK_EXTRA_OFFSET, TRACK_TILE, trackExtraCell, trackPiece, type TrackExtra } from "./tracks.js";
 
 /** Pixels per tile of the sprites (the game's art is drawn at twice its resolution). */
@@ -38,8 +39,11 @@ export interface ObjectSprite {
    * tile in a later row covers it and it covers one in an earlier row. Absent: drawn after them all (waterfalls).
    */
   readonly row?: number;
-  /** With `behind` and no row: drawn after the tiles that are not solid but before the waterfalls (tree foliage). */
-  readonly afterTiles?: boolean;
+  /**
+   * With `behind` and `row`, the stage after all the tiles that are not solid it is drawn in (DRAW_STAGE), row by row
+   * within it; absent: drawn with those tiles.
+   */
+  readonly stage?: number;
   /** The paint of the tile it belongs to; absent means unpainted. */
   readonly paint?: number;
   /** Of an inactive (actuated) tile: shaded as the game draws one; absent means active. */
@@ -266,7 +270,7 @@ function treeTile(
   const frame = Math.floor((frameY - LEAFY_FRAME_Y) / FRAME_STRIDE) + foliage.frame;
   if (frameX === TOP_FRAME_X) {
     out.tops.push({
-      behind: true, afterTiles: true,
+      behind: true, row: y, stage: DRAW_STAGE.foliage,
       kind: "treeTop", id: foliage.style, sx: frame * (foliage.width + FOLIAGE_GAP), sy: 0, width: foliage.width, height: foliage.height,
       dx: x * SPRITE_PIXELS_PER_TILE + SPRITE_PIXELS_PER_TILE / 2 - Math.floor(foliage.width / 2),
       dy: (y + 1) * SPRITE_PIXELS_PER_TILE - foliage.height,
@@ -275,7 +279,7 @@ function treeTile(
   }
   const left = trunkX > x;
   out.branches.push({
-    behind: true, afterTiles: true,
+    behind: true, row: y, stage: DRAW_STAGE.foliage,
     kind: "treeBranch", id: foliage.style, sx: left ? 0 : BRANCH_SIZE + FOLIAGE_GAP, sy: frame * (BRANCH_SIZE + FOLIAGE_GAP),
     width: BRANCH_SIZE, height: BRANCH_SIZE,
     dx: left ? (x + 1) * SPRITE_PIXELS_PER_TILE - BRANCH_SIZE : x * SPRITE_PIXELS_PER_TILE, dy: y * SPRITE_PIXELS_PER_TILE - BRANCH_RAISE,
@@ -297,7 +301,7 @@ function palmTile(reader: ObjectReader, x: number, y: number, out: Collected): v
   if (frameX < PALM_TOP_FRAME_X) return;
   const stride = PALM_TOP_SIZE + FOLIAGE_GAP;
   out.tops.push({
-    behind: true, afterTiles: true,
+    behind: true, row: y, stage: DRAW_STAGE.foliage,
     kind: "treeTop", id: PALM_TOPS, sx: Math.floor((frameX - PALM_TOP_FRAME_X) / FRAME_STRIDE) * stride, sy: row * stride,
     width: PALM_TOP_SIZE, height: PALM_TOP_SIZE, dx: dx + SPRITE_PIXELS_PER_TILE / 2 - PALM_TOP_SIZE / 2,
     dy: (y + 1) * SPRITE_PIXELS_PER_TILE - PALM_TOP_SIZE,
@@ -323,10 +327,20 @@ function mushroomTile(reader: ObjectReader, x: number, y: number, out: Collected
   });
 }
 
+/** The stride of a tile's stored frames: 16 pixels and a 2-pixel gap. */
+const TILE_FRAME_STRIDE = 18;
+
+/** Whether (x, y) holds a platform that is neither a half block nor sloped. */
+function flatPlatform(reader: ObjectReader, x: number, y: number): boolean {
+  return reader.hasFullBlock(x, y) && (tileDrawFlags(reader.id(x, y)) & TILE_DRAW_FLAGS.platform) !== 0;
+}
+
 /**
  * A frame-important tile drawn with its observed draw size and top offset (docs/assets.md, "Draw offsets"), centred on
  * its tile (chosen: the draw data gives no horizontal offset) and mirrored as observed for its column's parity. Styles
- * past the sheet's edge continue in its next block (wrappedFrame), as in the chunk pass.
+ * past the sheet's edge continue in its next block (wrappedFrame), as in the chunk pass. A tile drawn in a stage after
+ * the others ("Draw order") is placed as that stage places it: a hanging object 2 pixels up (10 under a flat platform
+ * for one tile wide, and the 2-wide 465, 591, 592 under two), ordered by its top row; a swaying plant uncentred.
  */
 function drawnTile(reader: ObjectReader, id: number, x: number, y: number, out: ObjectSprite[]): void {
   const frameX = reader.frameX(x, y);
@@ -336,10 +350,25 @@ function drawnTile(reader: ObjectReader, id: number, x: number, y: number, out: 
   if (variant === undefined) return;
   const [width, height, top, evenFlip, oddFlip] = variant;
   const [sx, sy] = wrappedFrame(id, frameX, frameY);
+  const stage = drawStage(id, frameX);
+  let dx = x * SPRITE_PIXELS_PER_TILE - (width - SPRITE_PIXELS_PER_TILE) / 2;
+  let dy = y * SPRITE_PIXELS_PER_TILE + top;
+  let row = y;
+  const hanging = HANGING_OBJECTS.get(id);
+  if (hanging !== undefined) {
+    const [columns, rows] = hanging;
+    const left = x - Math.floor((frameX % (columns * TILE_FRAME_STRIDE)) / TILE_FRAME_STRIDE);
+    row = y - Math.floor((frameY % (rows * TILE_FRAME_STRIDE)) / TILE_FRAME_STRIDE);
+    const wide = id === 465 || id === 591 || id === 592;
+    const platform = wide ? flatPlatform(reader, left, row - 1) && flatPlatform(reader, left + 1, row - 1) : columns === 1 && flatPlatform(reader, left, row - 1);
+    dy -= platform ? 10 : 2;
+    if (id === 698) dx -= 10;
+  } else if (stage === DRAW_STAGE.swaying) {
+    dx = x * SPRITE_PIXELS_PER_TILE;
+  }
   out.push({
-    kind: "tile", id, sx, sy, width, height,
-    dx: x * SPRITE_PIXELS_PER_TILE - (width - SPRITE_PIXELS_PER_TILE) / 2, dy: y * SPRITE_PIXELS_PER_TILE + top,
-    flip: (x % 2 === 0 ? evenFlip : oddFlip) === 1, behind: true, row: y,
+    kind: "tile", id, sx, sy, width, height, dx, dy,
+    flip: (x % 2 === 0 ? evenFlip : oddFlip) === 1, behind: true, row, ...(stage === undefined ? {} : { stage }),
   });
 }
 

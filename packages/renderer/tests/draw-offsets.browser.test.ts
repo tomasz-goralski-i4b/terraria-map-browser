@@ -1,5 +1,6 @@
-// Frame-important tiles with draw offsets lie behind the blocks (docs/assets.md, "Draw offsets"): where a plant reaches
-// into the tile below it, that tile's opaque sprite pixels cover it and its transparent ones show it.
+// Frame-important tiles with draw offsets (docs/assets.md, "Draw offsets") in the game's order ("Draw order"): a plant
+// that sways is drawn after the other tiles that are not solid, so where it reaches into the tile below it covers that
+// tile's sprite.
 import { afterEach, beforeAll, expect, test } from "vitest";
 import { LIQUID_FRONT_ALPHA, createBlockFraming, createMapRenderer, loadFramingDatabase, terrariaFramingData } from "../src/index.js";
 import type { BlockFraming, MapRenderer, RenderableWorld, SpriteAtlasSource, SpriteSheetEntry } from "../src/index.js";
@@ -95,14 +96,15 @@ function draw(w: RenderableWorld): (x: number, y: number) => Rgba {
   };
 }
 
-test("a plant reaching into the tile below lies behind that tile's opaque pixels and shows through its transparent ones", () => {
+test("a swaying plant reaching into the tile below covers that tile's sprite, opaque pixels too", () => {
   const at = draw(world());
   const wrong: string[] = [];
   // The overlap: the bottle's top 4 rows, where the plant's rows 16–19 reach (x = 1 is odd: the plant is not mirrored).
   for (let sy = 0; sy < 4; sy++) {
     for (let sx = 0; sx < 16; sx++) {
       const bottle = sheetPixel(1, sx, sy);
-      const expected = bottle[3] === 255 ? bottle : sheetPixel(0, sx, 16 + sy);
+      const plant = sheetPixel(0, sx, 16 + sy);
+      const expected = plant[3] === 255 ? plant : bottle;
       const actual = at(ZOOM + sx, ZOOM + sy);
       if (actual.join() !== expected.join()) wrong.push(`(${String(sx)}, ${String(sy)}): ${actual.join()} ≠ ${expected.join()}`);
     }

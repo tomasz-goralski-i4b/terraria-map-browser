@@ -147,8 +147,8 @@ export function drawOffsetTables(drawOffsets) {
  * that are not solid on top only (platforms and the like), the types solid on top only, the types that draw no liquid
  * behind themselves, the platforms, the types drawn with the solid tiles, and the types with their own drawing beside
  * half blocks (ignoring them, not really solid, with smooth borders) or without slopes; and the walls that count as
- * another wall where walls meet ("Walls": [wall, the wall it counts as]); and the plants that sway in the wind ("Draw
- * order").
+ * another wall where walls meet ("Walls": [wall, the wall it counts as]); the plants that sway in the wind ("Draw
+ * order"); the ropes, and the types a sloped platform's stair piece is not drawn over ("Slopes and half blocks").
  */
 export function solidityTables(solidity) {
   if (solidity === undefined) fail("the observation has no solidity");
@@ -166,6 +166,8 @@ export function solidityTables(solidity) {
     wallBlends: (solidity.wallBlend ?? fail("the observation has no wall blend table"))
       .flatMap((blend, wall) => (blend === wall ? [] : [[wall, blend]])),
     swaysInWind: solidity.swaysInWind ?? fail("the observation has no sway table"),
+    ropes: solidity.ropes ?? fail("the observation has no rope table"),
+    blocksStairs: solidity.blocksStairs ?? fail("the observation has no stair table"),
   };
 }
 

@@ -3,7 +3,7 @@ import { ROW_DEPTH_SCALE, ROW_DEPTH_TOP, SPRITE_TILE_PIXELS, header, spritePaint
 
 /**
  * Per-instance attributes of the object pass: the sprite's rectangle in world sprite pixels (x, y, width | height << 16,
- * its order: its tile row + 2, 1 after the tiles that are not solid, 0 with the waterfalls) and its atlas source.
+ * its order: objectOrder) and its atlas source.
  */
 export const OBJECT_DEST_ATTRIBUTE = 0;
 export const OBJECT_SOURCE_ATTRIBUTE = 1;
@@ -25,6 +25,23 @@ export const OBJECT_INACTIVE = 1_048_576;
 /** The object pass's source bits 21–24: the special group (1-based, 0 for none) the sprite is painted with. */
 export const OBJECT_GROUP_SHIFT = 21;
 
+/** Rows per stage in objectOrder: rows below the last are ordered as the last. */
+const STAGE_ROWS = 4096;
+/** The depth of the first row of the first stage after the tiles that are not solid, and the step per row. */
+const STAGE_DEPTH_TOP = "0.299";
+const STAGE_DEPTH_SCALE = "0.00000095367431640625";
+
+/**
+ * Where a sprite lies in the game's order (docs/assets.md, "Draw order"), as the object pass's order attribute: its
+ * row + 2 when drawn with the tiles that are not solid; −(1 + stage · 4096 + row) when drawn in a stage after them
+ * (DRAW_STAGE); 0 with the waterfalls.
+ */
+export function objectOrder(sprite: { readonly row?: number; readonly stage?: number }): number {
+  if (sprite.row === undefined) return 0;
+  if (sprite.stage === undefined) return sprite.row + 2;
+  return -(1 + sprite.stage * STAGE_ROWS + Math.min(sprite.row, STAGE_ROWS - 1));
+}
+
 /**
  * Object pass (docs/assets.md, "Trees", "Minecart tracks"): in sprite mode, after the chunk pass, one instanced quad
  * per object sprite (tree trunk cells, tops and branches, mushroom caps, track decorations and bumpers), placed at its
@@ -43,12 +60,14 @@ void main() {
   ivec2 size = ivec2(aDest.z & 65535, aDest.z >> 16);
   vec2 tile = (vec2(aDest.xy) + corner * vec2(size)) / ${String(SPRITE_TILE_PIXELS)}.0;
   vec2 screen = (tile - uCamera) * uZoom;
-  // The game's order (docs/assets.md, "Draw order"): the sprites of the tiles that are not solid row by row (half a row
-  // in front of their own row's depth, rowDepth in the chunk pass), so a later row's tile or sprite covers them, then
-  // the tree foliage (0.275), the waterfalls (0.25) and the solid tiles (0); the other sprites over everything (0).
+  // The game's order (docs/assets.md, "Draw order"; objectOrder): the sprites of the tiles that are not solid row by
+  // row (half a row in front of their own row's depth, rowDepth in the chunk pass), so a later row's tile or sprite
+  // covers them, then the stages after them (from ${STAGE_DEPTH_TOP} down, a stage after another and a row after another nearer),
+  // the waterfalls (0.25) and the solid tiles (0); the other sprites over everything (0).
   float depth = 0.0;
   if ((aSource.w & ${String(OBJECT_BEHIND)}) != 0) {
-    depth = aDest.w > 1 ? max(0.3, ${ROW_DEPTH_TOP} - (float(aDest.w - 2) + 0.5) * ${ROW_DEPTH_SCALE}) : aDest.w == 1 ? 0.275 : 0.25;
+    depth = aDest.w > 1 ? max(0.3, ${ROW_DEPTH_TOP} - (float(aDest.w - 2) + 0.5) * ${ROW_DEPTH_SCALE})
+      : aDest.w < 0 ? ${STAGE_DEPTH_TOP} - float(-aDest.w - 1) * ${STAGE_DEPTH_SCALE} : 0.25;
   }
   gl_Position = vec4(screen.x / uViewport.x * 2.0 - 1.0, 1.0 - screen.y / uViewport.y * 2.0, 2.0 * depth - 1.0, 1.0);
   vDest = ivec4(aDest.xy, size);
