@@ -2,7 +2,8 @@
 #   ./scripts/sprite-paint/observe.ps1 -Dir '<Terraria directory>' -Out paint.json
 # Black-box observation (ADR 0003): the game's TileShader effect is loaded on a real GPU device and every one of its
 # passes is drawn over a synthetic texture (the RGB cube in steps of 17); Main.ConvertPaintIdToTileShaderIndex says
-# which pass each paint uses, and Tile.actColor how an inactive tile is shaded. Only the results are recorded; no game
+# which pass each paint uses, Tile.actColor how an inactive tile is shaded, and TreePaintSystemData's settings applied by
+# the game's TreePaintingSettings.ApplyShader how trees and grass are painted (their special groups). Only the results are recorded; no game
 # code or shader code is read. The output is game-derived and never committed.
 [CmdletBinding()]
 param([string]$Dir = 'C:/Program Files (x86)/Steam/steamapps/common/Terraria', [Parameter(Mandatory = $true)][string]$Out)
@@ -42,7 +43,8 @@ public static class Observer {
     var fx = content.Load<Effect>("TileShader");
     var game = Assembly.LoadFrom(System.IO.Path.Combine(dir, "Terraria.exe"));
     var convert = game.GetType("Terraria.Main").GetMethod("ConvertPaintIdToTileShaderIndex", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
-    var sb = new StringBuilder("{\"parameters\":\"");
+    var sb = new StringBuilder("{\"gameVersion\":\"");
+    sb.Append("v" + game.GetName().Version).Append("\",\"parameters\":\"");
     foreach (var p in convert.GetParameters()) sb.Append(p.Name + " ");
     sb.Append("\",\"defaults\":{");
     bool first = true;
@@ -75,6 +77,45 @@ public static class Observer {
       if (paint > 0) sb.Append(',');
       sb.AppendFormat("[{0},{1},{2},{3}]", convert.Invoke(null, new object[] { paint, false, false }), convert.Invoke(null, new object[] { paint, false, true }),
         convert.Invoke(null, new object[] { paint, true, false }), convert.Invoke(null, new object[] { paint, true, true }));
+    }
+    // Special groups (trees, grass): the game's own settings applied by the game's own ApplyShader, per paint.
+    var data = game.GetType("Terraria.GameContent.TreePaintSystemData");
+    var probes = new System.Collections.Generic.List<object[]>();
+    // Past the game's tile ids (754 in 1.4.5): the settings function takes any id.
+    for (int t = 0; t < 1000; t++)
+      for (int style = -1; style < 9; style++) probes.Add(new object[] { "tile:" + t + ":" + style, data.GetMethod("GetTileSettings").Invoke(null, new object[] { t, style }) });
+    for (int f = 0; f < 32; f++)
+      for (int style = -1; style < 9; style++) probes.Add(new object[] { "foliage:" + f + ":" + style, data.GetMethod("GetTreeFoliageSettings").Invoke(null, new object[] { f, style }) });
+    var groups = new System.Collections.Generic.Dictionary<string, System.Collections.Generic.List<string>>();
+    var settingsOf = new System.Collections.Generic.Dictionary<string, object>();
+    foreach (var entry in probes) {
+      var settings = entry[1];
+      var key = new StringBuilder();
+      foreach (var f in settings.GetType().GetFields()) key.AppendFormat(System.Globalization.CultureInfo.InvariantCulture, "\"{0}\":{1},", f.Name, f.FieldType == typeof(bool) ? f.GetValue(settings).ToString().ToLowerInvariant() : ((float)f.GetValue(settings)).ToString("R", System.Globalization.CultureInfo.InvariantCulture));
+      string k = key.ToString().TrimEnd(',');
+      if (!groups.ContainsKey(k)) { groups[k] = new System.Collections.Generic.List<string>(); settingsOf[k] = settings; }
+      groups[k].Add((string)entry[0]);
+    }
+    var apply = settingsOf.Count == 0 ? null : new System.Collections.Generic.List<object>(settingsOf.Values)[0].GetType().GetMethod("ApplyShader");
+    sb.Append("],\"groups\":[");
+    bool firstGroup = true;
+    foreach (var k in groups.Keys) {
+      sb.Append(firstGroup ? "" : ",").Append("{\"settings\":{").Append(k).Append("},\"keys\":[\"").Append(string.Join("\",\"", groups[k])).Append("\"],\"painted\":[");
+      firstGroup = false;
+      for (int paint = 0; paint < 32; paint++) {
+        device.SetRenderTarget(target);
+        device.Clear(Color.Transparent);
+        batch.Begin(SpriteSortMode.Immediate, BlendState.Opaque, SamplerState.PointClamp, DepthStencilState.None, RasterizerState.CullNone);
+        apply.Invoke(settingsOf[k], new object[] { paint, fx });
+        batch.Draw(texture, Vector2.Zero, Color.White);
+        batch.End();
+        device.SetRenderTarget(null);
+        target.GetData(output);
+        sb.Append(paint == 0 ? "\"" : ",\"");
+        foreach (var c in output) sb.AppendFormat("{0:x2}{1:x2}{2:x2}{3:x2}", c.R, c.G, c.B, c.A);
+        sb.Append('"');
+      }
+      sb.Append("]}");
     }
     sb.Append("],\"inactive\":\"");
     var tile = game.GetType("Terraria.Tile");

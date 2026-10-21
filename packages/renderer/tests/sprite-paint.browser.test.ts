@@ -1,7 +1,8 @@
 import { afterEach, beforeAll, describe, expect, test } from "vitest";
 import { createWorld, type CanonicalWorld, type Tile } from "@studio/world-model";
 import {
-  createBlockFraming, createMapRenderer, inactiveSpriteColor, loadFramingDatabase, spritePaintedColor, terrariaFramingData,
+  createBlockFraming, createMapRenderer, inactiveSpriteColor, loadFramingDatabase, paintGroup, paintGroupOf, spritePaintedColor,
+  terrariaFramingData,
 } from "../src/index.js";
 import type { BlockFraming, ChunkLayers, MapRenderer, SpriteAtlasSource, SpriteSheetEntry } from "../src/index.js";
 
@@ -23,19 +24,22 @@ const ALL: ChunkLayers = { background: true, walls: true, blocks: true, liquids:
 const BOTTLE = { kind: "vanilla", id: 13 } as const;
 const PLANT = { kind: "vanilla", id: 3 } as const;
 const STONE_WALL = { kind: "vanilla", id: 1 } as const;
+/** Grass (2), drawn by the chunk pass with the dirt and grass special group. */
+const GRASS = { kind: "vanilla", id: 2 } as const;
 
 /** Each sheet is one opaque colour, so a sprite pixel's colour is its sheet's whatever the cell. */
-const COLORS = { bottle: [85, 170, 136], plant: [200, 120, 40], wall: [51, 102, 153] } as const;
+const COLORS = { bottle: [85, 170, 136], plant: [200, 120, 40], wall: [51, 102, 153], grass: [102, 68, 51] } as const;
 const PAGE = 512;
 const SHEETS: readonly SpriteSheetEntry[] = [
   { kind: "tile", id: 13, page: 0, x: 0, y: 0, width: 16, height: 16, frameWidth: 16, frameHeight: 16 },
   { kind: "tile", id: 3, page: 0, x: 20, y: 0, width: 16, height: 20, frameWidth: 16, frameHeight: 20 },
   { kind: "wall", id: 1, page: 0, x: 0, y: 24, width: 468, height: 180, frameWidth: 32, frameHeight: 32 },
+  { kind: "tile", id: 2, page: 0, x: 40, y: 0, width: 16, height: 16, frameWidth: 16, frameHeight: 16 },
 ];
 
 function atlas(): SpriteAtlasSource {
   const page = new Uint8Array(PAGE * PAGE * 4);
-  [COLORS.bottle, COLORS.plant, COLORS.wall].forEach((color, index) => {
+  [COLORS.bottle, COLORS.plant, COLORS.wall, COLORS.grass].forEach((color, index) => {
     const sheet = SHEETS[index];
     if (sheet === undefined) throw new Error("no sheet");
     for (let y = 0; y < sheet.height; y++) {
@@ -45,17 +49,21 @@ function atlas(): SpriteAtlasSource {
   return { pages: [page], index: { pageSize: PAGE, entries: SHEETS } };
 }
 
-/** The world: a bottle in column 1 and a plant in column 4 (row 1, each over nothing), stone walls in columns 6–8. */
-function world(bottle: Partial<Tile>, plant: Partial<Tile>, wallPaint: number): CanonicalWorld {
+/**
+ * The world: a bottle in column 1, grass in column 2 and a plant in column 4 (row 1, each over nothing), stone walls in
+ * columns 6–8.
+ */
+function world(bottle: Partial<Tile>, plant: Partial<Tile>, wallPaint: number, grass: Partial<Tile> = {}): CanonicalWorld {
   const built = createWorld(WIDTH, HEIGHT);
+  built.setTile(2, 1, { block: GRASS, frameX: 0, frameY: 0, wires: 0, actuator: false, ...grass });
   built.setTile(1, 1, { block: BOTTLE, frameX: 0, frameY: 0, wires: 0, actuator: false, ...bottle });
   built.setTile(4, 1, { block: PLANT, frameX: 0, frameY: 0, wires: 0, actuator: false, ...plant });
   for (let x = 6; x < WIDTH; x++) for (let y = 0; y < HEIGHT; y++) built.setTile(x, y, { wall: STONE_WALL, wallPaint, wires: 0, actuator: false });
   return built;
 }
 
-/** The colours at the centres of the bottle, the plant and the middle wall tile. */
-function draw(source: CanonicalWorld, layers: ChunkLayers = ALL): readonly (readonly number[])[] {
+/** The colours at the centres of the tiles in `columns` of row 1: by default the bottle, the plant and a wall. */
+function draw(source: CanonicalWorld, layers: ChunkLayers = ALL, columns: readonly number[] = [1, 4, 7]): readonly (readonly number[])[] {
   const canvas = document.createElement("canvas");
   canvas.width = WIDTH * ZOOM;
   canvas.height = HEIGHT * ZOOM;
@@ -70,7 +78,7 @@ function draw(source: CanonicalWorld, layers: ChunkLayers = ALL): readonly (read
   renderer.render();
   const gl = canvas.getContext("webgl2");
   if (gl === null) throw new Error("no webgl2 context");
-  return [1, 4, 7].map((x) => {
+  return columns.map((x) => {
     const out = new Uint8Array(4);
     gl.readPixels(x * ZOOM + ZOOM / 2, (HEIGHT - 1 - 1) * ZOOM + ZOOM / 2, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, out);
     return [out[0] ?? 0, out[1] ?? 0, out[2] ?? 0];
@@ -91,6 +99,12 @@ describe("paint and the inactive shade on sprites", () => {
       spritePaintedColor(COLORS.bottle, paint, "block"), spritePaintedColor(COLORS.plant, paint, "block"),
       spritePaintedColor(COLORS.wall, paint, "wall"),
     ]);
+  });
+
+  test("grass and dirt keep their earthy pixels under paints 1–12 and take the others, as the game's special group says", () => {
+    const dirt = paintGroup(paintGroupOf("tile", 2));
+    expectColors(draw(world({}, {}, 0, { paint: 1 }), ALL, [2]), [COLORS.grass]);
+    expectColors(draw(world({}, {}, 0, { paint: 14 }), ALL, [2]), [spritePaintedColor(COLORS.grass, 14, "block", dirt)]);
   });
 
   test("with the paint layer hidden, sprites keep their own colours", () => {

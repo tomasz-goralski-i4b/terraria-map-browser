@@ -4,6 +4,7 @@
 import type { ContentRef } from "@studio/world-model";
 import { terrariaSpriteObjects } from "./terraria-sprite-objects.generated.js";
 import { wrappedFrame } from "../gpu/frame-wrap.js";
+import { paintGroupOf } from "../palette/sprite-paint.js";
 import { DRAWN_TILES, drawVariant } from "./draw-offsets.js";
 import { TRACK_CELL_STRIDE, TRACK_EXTRA_OFFSET, TRACK_TILE, trackExtraCell, trackPiece, type TrackExtra } from "./tracks.js";
 
@@ -38,6 +39,8 @@ export interface ObjectSprite {
   readonly paint?: number;
   /** Of an inactive (actuated) tile: shaded as the game draws one; absent means active. */
   readonly inactive?: boolean;
+  /** With `paint`, the special group (1-based, paintGroupOf) it is applied with; absent means none. */
+  readonly paintGroup?: number;
 }
 
 /**
@@ -335,6 +338,21 @@ function drawnTile(reader: ObjectReader, id: number, x: number, y: number, out: 
   });
 }
 
+/**
+ * The special group a sprite's paint is applied with (docs/assets.md, "Paint and inactive tiles"): by tile type, for the
+ * common tree by its biome (trunk block − 1) and for palms by their row; by foliage sheet, for palm tops by their row.
+ */
+function spritePaintGroup(sprite: ObjectSprite): number {
+  if (sprite.kind === "tile") {
+    const style = sprite.id === COMMON_TREE ? Math.floor(sprite.sx / TRUNK_BLOCK) - 1 : sprite.id === PALM_TREE ? sprite.sy / FRAME_STRIDE : -1;
+    return paintGroupOf("tile", sprite.id, style);
+  }
+  if (sprite.kind === "treeTop" || sprite.kind === "treeBranch") {
+    return paintGroupOf("foliage", sprite.id, sprite.id === PALM_TOPS ? sprite.sy / (PALM_TOP_SIZE + FOLIAGE_GAP) : -1);
+  }
+  return 0;
+}
+
 /** Sprites by drawing layer: trunk cells and track extras, then branches, then tops and caps. */
 interface Collected {
   readonly drawn: ObjectSprite[];
@@ -370,7 +388,9 @@ export function objectSprites(world: ObjectWorld, area: TileArea): ObjectSprite[
       [out.drawn, out.trunks, out.branches, out.tops].forEach((list, layer) => {
         for (let i = lengths[layer] ?? list.length; i < list.length; i++) {
           const sprite = list[i];
-          if (sprite !== undefined) list[i] = { ...sprite, ...(paint !== 0 ? { paint } : {}), ...(inactive ? { inactive } : {}) };
+          if (sprite === undefined) continue;
+          const paintGroup = paint === 0 ? 0 : spritePaintGroup(sprite);
+          list[i] = { ...sprite, ...(paint !== 0 ? { paint } : {}), ...(inactive ? { inactive } : {}), ...(paintGroup !== 0 ? { paintGroup } : {}) };
         }
       });
     }

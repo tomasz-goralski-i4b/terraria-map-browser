@@ -2,7 +2,57 @@
 // synthetic colours (scripts/sprite-paint/observe.ps1); the rules are our own description of its results and are
 // mirrored by spritePainted() and INACTIVE_SHADE in ../gpu/shaders.ts.
 
+import { terrariaPaintGroups } from "./terraria-paint-groups.generated.js";
+
 type Rgb = readonly [number, number, number];
+
+/**
+ * A special group (docs/assets.md, "Paint and inactive tiles"): paints 1–12 colour only the pixels whose hue (0–1, plus
+ * `hueOffset`, wrapped) and HSV saturation lie in the ranges, or with `invert` only the others.
+ */
+export type PaintGroup = readonly [minHue: number, maxHue: number, minSaturation: number, maxSaturation: number, hueOffset: number, invert: number];
+
+/** The generated special groups: per tile type and foliage index, the 1-based group of each style −1…8 (0: none). */
+export interface PaintGroupData {
+  readonly gameVersion: string;
+  readonly groups: readonly PaintGroup[];
+  /** [id, group] when the style does not matter, else [id, group of style −1, of style 0, …, of style 8]. */
+  readonly tiles: readonly (readonly number[])[];
+  readonly foliage: readonly (readonly number[])[];
+}
+
+const groupRows = {
+  tile: new Map(terrariaPaintGroups.tiles.map((row) => [row[0] ?? -1, row.slice(1)])),
+  foliage: new Map(terrariaPaintGroups.foliage.map((row) => [row[0] ?? -1, row.slice(1)])),
+};
+
+/**
+ * The 1-based special group of a tile type (style: a tree's biome, a palm's row) or a Tree_Tops/Tree_Branches sheet
+ * (style: a palm top's row); 0 for none.
+ */
+export function paintGroupOf(kind: "tile" | "foliage", id: number, style = -1): number {
+  const row = groupRows[kind].get(id);
+  if (row === undefined) return 0;
+  return (row.length === 1 ? row[0] : row[style + 1] ?? row[0]) ?? 0;
+}
+
+/** The special group of a 1-based group index, undefined for 0. */
+export function paintGroup(index: number): PaintGroup | undefined {
+  return index === 0 ? undefined : terrariaPaintGroups.groups[index - 1];
+}
+
+/** Whether a pixel takes paint under special group `group`. */
+function inGroup(color: Rgb, group: PaintGroup): boolean {
+  const [red, green, blue] = color;
+  const max = Math.max(red, green, blue);
+  const delta = max - Math.min(red, green, blue);
+  let hue = 0;
+  if (delta > 0) hue = max === red ? (((green - blue) / delta + 6) % 6) : max === green ? (blue - red) / delta + 2 : (red - green) / delta + 4;
+  hue = (hue / 6 + group[4]) % 1;
+  const saturation = max === 0 ? 0 : delta / max;
+  const inside = hue >= group[0] && hue <= group[1] && saturation >= group[2] && saturation <= group[3];
+  return group[5] === 1 ? !inside : inside;
+}
 
 const DEEP_PAINTS = 12;
 const BLACK_PAINT = 25;
@@ -28,8 +78,10 @@ const grey = (value: number): Rgb => {
  * same with saturation 0.6 + 0.4 · S; black is 0.3 · L (L = (M + m) / 2), gray L, shadow 0.05 · L, white
  * (L + 0.2 (M − m)) (2 − L) on a 0–1 scale; brown M times (1, 0.7, 0.49); negative inverts (on walls 2 (1 − c) − 1.25,
  * clamped) except black. Paint 0, 31 (illuminant: no colour of its own) and unknown IDs leave the colour unchanged.
+ * With a special `group` (trees), paints 1–12 colour only the pixels the group selects; the other paints all of them.
  */
-export function spritePaintedColor(color: Rgb, paint: number, layer: "block" | "wall"): Rgb {
+export function spritePaintedColor(color: Rgb, paint: number, layer: "block" | "wall", group?: PaintGroup): Rgb {
+  if (group !== undefined && paint >= 1 && paint <= DEEP_PAINTS && !inGroup(color, group)) return color;
   const [red, green, blue] = color;
   const max = Math.max(red, green, blue);
   const min = Math.min(red, green, blue);

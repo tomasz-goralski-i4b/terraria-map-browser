@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { inactiveSpriteColor, spritePaintedColor } from "../src/index.js";
+import { inactiveSpriteColor, paintGroup, paintGroupOf, spritePaintedColor } from "../src/index.js";
 
 type Rgb = readonly [number, number, number];
 
@@ -61,6 +61,29 @@ describe("sprite paint", () => {
     expect(spritePaintedColor([85, 170, 136], 99, "wall")).toEqual([85, 170, 136]);
     expect(spritePaintedColor([0, 0, 0], 30, "block")).toEqual([0, 0, 0]);
     expect(spritePaintedColor([0, 0, 0], 30, "wall")).toEqual([0, 0, 0]);
+  });
+
+  test("trees, palms and dirt take paints 1–12 only on the pixels their special group selects, other paints everywhere", () => {
+    // Observed: the game's settings for the forest foliage, a beach palm (row 0) and dirt, applied by its ApplyShader.
+    const forest = paintGroup(paintGroupOf("foliage", 0));
+    const palm = paintGroup(paintGroupOf("tile", 323, 0));
+    const dirt = paintGroup(paintGroupOf("tile", 0));
+    expect([forest, palm, dirt].every((group) => group !== undefined)).toBe(true);
+    expect(spritePaintedColor([85, 170, 85], 1, "block", forest)).toEqual([170, 85, 85]);
+    expect(spritePaintedColor([153, 102, 51], 1, "block", forest)).toEqual([153, 102, 51]);
+    expect(spritePaintedColor([153, 102, 51], 14, "block", forest)).toEqual([153, 87, 20]);
+    expect(spritePaintedColor([85, 170, 85], 1, "block", palm)).toEqual([85, 170, 85]);
+    expect(spritePaintedColor([102, 68, 51], 1, "block", dirt)).toEqual([102, 68, 51]);
+    expect(spritePaintedColor([153, 102, 51], 1, "block", dirt)).toEqual([153, 51, 51]);
+    expect(spritePaintedColor([102, 68, 51], 14, "block", dirt)).toEqual([102, 61, 20]);
+  });
+
+  test("only trees, palms, gem, vanity and ash trees, grass, dirt and mud have special groups", () => {
+    expect(paintGroupOf("tile", 1)).toBe(0);
+    expect(paintGroupOf("tile", 13)).toBe(0);
+    expect(paintGroupOf("tile", 2)).toBe(paintGroupOf("tile", 0));
+    expect(paintGroupOf("tile", 5, -1)).toBe(paintGroupOf("foliage", 0));
+    expect(paintGroupOf("tile", 5, 0)).toBe(paintGroupOf("foliage", 1));
   });
 
   test("an inactive (actuated) tile's sprite is drawn at 102/255 of its colour, as the game shades it", () => {

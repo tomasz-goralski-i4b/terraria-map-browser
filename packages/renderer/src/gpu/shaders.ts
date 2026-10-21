@@ -43,10 +43,36 @@ export const PAINT_LAYER_BIT = 512;
 /** The CWM `flags` bit of an inactive (actuated) tile. */
 export const INACTIVE_FLAG = 32;
 
+/** Room for the generated special groups (terraria-paint-groups.generated.ts) in the shaders' uniform arrays. */
+export const PAINT_GROUP_LIMIT = 15;
+
 /** Paint and the inactive shade on sprites; mirrors spritePaintedColor() and inactiveSpriteColor() (../palette/sprite-paint.ts). */
 const spritePaintSource = `
-ivec3 spritePainted(ivec3 c, int paint, bool wall) {
+// Special groups 1…PAINT_GROUP_LIMIT (PaintGroup): (min hue, max hue, min saturation, max saturation), (hue offset, invert).
+uniform vec4 uPaintGroupRanges[${String(PAINT_GROUP_LIMIT)}];
+uniform vec2 uPaintGroupModes[${String(PAINT_GROUP_LIMIT)}];
+
+// Whether a pixel takes paints 1–12 under special group group (1-based).
+bool inPaintGroup(ivec3 c, int group) {
+  vec4 range = uPaintGroupRanges[group - 1];
+  vec2 mode = uPaintGroupModes[group - 1];
+  float hi = float(max(c.r, max(c.g, c.b)));
+  float d = hi - float(min(c.r, min(c.g, c.b)));
+  float h = 0.0;
+  if (d > 0.0) {
+    if (c.r == int(hi)) h = mod(float(c.g - c.b) / d + 6.0, 6.0);
+    else if (c.g == int(hi)) h = float(c.b - c.r) / d + 2.0;
+    else h = float(c.r - c.g) / d + 4.0;
+  }
+  h = fract(h / 6.0 + mode.x);
+  float s = hi > 0.0 ? d / hi : 0.0;
+  bool inside = h >= range.x && h <= range.y && s >= range.z && s <= range.w;
+  return mode.y != 0.0 ? !inside : inside;
+}
+
+ivec3 spritePainted(ivec3 c, int paint, bool wall, int group) {
   if ((uLayers & ${String(PAINT_LAYER_BIT)}) == 0 || paint == 0) return c;
+  if (group != 0 && paint <= 12 && !inPaintGroup(c, group)) return c;
   float hi = float(max(c.r, max(c.g, c.b)));
   float lo = float(min(c.r, min(c.g, c.b)));
   if (paint <= 24) {
@@ -88,7 +114,7 @@ export const RULE_HEADER_ROWS = 256;
  */
 export const SPRITE_SHEET_ROW = 256;
 /** Texels per palette index in the sprite sheet lookup. */
-export const SPRITE_SHEET_TEXELS = 5;
+export const SPRITE_SHEET_TEXELS = 6;
 
 /** The state of a palette index in the sprite sheet lookup. */
 export const SPRITE_STATE = {
@@ -683,7 +709,7 @@ vec4 drawWall(vec4 below, int dx, int dy, ivec2 sub) {
     ivec3 b = wallB(dx, dy);
     if (any(greaterThanEqual(pixel, b.xy))) return below;
     vec4 sampled = atlasTexel(a.xy, pixel, a.z);
-    if (b.z != 0) sampled.rgb = vec3(spritePainted(ivec3(round(sampled.rgb * 255.0)), b.z, true)) / 255.0;
+    if (b.z != 0) sampled.rgb = vec3(spritePainted(ivec3(round(sampled.rgb * 255.0)), b.z, true, 0)) / 255.0;
     top = vec4(sampled.rgb * sampled.a, sampled.a);
   } else {
     top = a.w == WALL_MISSING ? vec4(vec3(missingPixel(sub).rgb) / 255.0, 1.0) : wallOwn;
@@ -833,7 +859,8 @@ ivec4 localColorAt(ivec2 local, vec2 sub) {
 #ifdef SPRITES
   hasSprite = blockShown && spriteSample(block, texel, sub, sprite);
   if (hasSprite) {
-    sprite.rgb = spritePainted(sprite.rgb, int(plane8(texel, ${String(PLANES_8.paint)})), false);
+    sprite.rgb = spritePainted(sprite.rgb, int(plane8(texel, ${String(PLANES_8.paint)})), false,
+      texelFetch(uSpriteSheets, sheetAt(block) + ivec2(5, 0), 0).x);
     if ((uPresent & ${String(PRESENT.flags)}) != 0 && (plane16(texel, ${String(PLANES_16.flags)}) & ${String(INACTIVE_FLAG)}u) != 0u) {
       sprite.rgb = inactiveShade(sprite.rgb);
     }
@@ -1104,6 +1131,8 @@ export const OBJECT_UNDER_LIQUID = 2048;
 export const OBJECT_PAINT_SHIFT = 12;
 /** The object pass's source flag of a sprite of an inactive (actuated) tile (bit 20). */
 export const OBJECT_INACTIVE = 1_048_576;
+/** The object pass's source bits 21–24: the special group (1-based, 0 for none) the sprite is painted with. */
+export const OBJECT_GROUP_SHIFT = 21;
 
 /**
  * Object pass (docs/assets.md, "Trees", "Minecart tracks"): in sprite mode, after the chunk pass, one instanced quad
@@ -1138,7 +1167,7 @@ void main() {
  * Flags (OBJECT_FLIP, OBJECT_FADE_SHIFT): bit 0 mirrors the rectangle left to right, bits 1–8 hold 255 minus the
  * opacity its pixels are scaled by (a waterfall's fade; 0 for an opaque sprite), bit 9 (OBJECT_TINT) multiplies its
  * colour by uTint (shimmer's map colour, for its grey waterfall sheet), bits 12–19 (OBJECT_PAINT_SHIFT) paint it and
- * bit 20 (OBJECT_INACTIVE) shades it as an inactive tile.
+ * bit 20 (OBJECT_INACTIVE) shades it as an inactive tile, bits 21–24 (OBJECT_GROUP_SHIFT) name its special group.
  */
 export const objectFragmentSource: string = header + spritePassInputs + `
 uniform ivec3 uTint;
@@ -1164,7 +1193,8 @@ void main() {
   }
   int samples = count * count;
   if (sum.a == 0) discard;
-  ivec3 rgb = spritePainted((2 * sum.rgb + sum.a) / (2 * sum.a), (vSource.w >> ${String(OBJECT_PAINT_SHIFT)}) & 255, false);
+  ivec3 rgb = spritePainted((2 * sum.rgb + sum.a) / (2 * sum.a), (vSource.w >> ${String(OBJECT_PAINT_SHIFT)}) & 255, false,
+    (vSource.w >> ${String(OBJECT_GROUP_SHIFT)}) & 15);
   if ((vSource.w & ${String(OBJECT_INACTIVE)}) != 0) rgb = inactiveShade(rgb);
   writeFaded(ivec4(rgb, (2 * sum.a + samples) / (2 * samples)));
 }
