@@ -57,7 +57,7 @@ beforeEach(() => {
         ? null : { x: Math.floor(tile.x), y: Math.floor(tile.y) };
     },
     render: vi.fn(), flushFrame: vi.fn(), dispose: vi.fn(),
-    stats: () => ({ textureUploads: 0, drawCalls: 0, visibleChunks: [], residentChunks: 0, evictedChunks: 0, atlasUploads: 0, framedTiles: 0, framedWalls: 0, spritesPreparing: false, reusedFrames: 0, highlightUploads: 0, highlightBuilding: false }),
+    stats: () => ({ textureUploads: 0, drawCalls: 0, visibleChunks: [], residentChunks: 0, evictedChunks: 0, atlasUploads: 0, framedTiles: 0, framedWalls: 0, spritesPreparing: false, reusedFrames: 0, highlightUploads: 0, highlightBuilding: false, objectUploads: 0, objectChunksCollected: 0 }),
   };
   vi.mocked(createMapRenderer).mockReturnValue(renderer);
 });

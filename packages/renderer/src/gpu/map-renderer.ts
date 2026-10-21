@@ -129,6 +129,13 @@ export interface MapRendererStats {
    * overview mask (an idle slice, or an edit's patch). They never count as `textureUploads`.
    */
   readonly highlightUploads: number;
+  /**
+   * Uploads of the object pass's instances since creation: one when a frame draws other chunks than the last upload,
+   * or one of their object lists was collected again. Drawing the same chunks again uploads nothing.
+   */
+  readonly objectUploads: number;
+  /** Chunk object lists the object pass collected since creation: once per chunk, again after an edit within one chunk of it. */
+  readonly objectChunksCollected: number;
   /** Whether the highlight's overview mask is still being built in idle slices. */
   readonly highlightBuilding: boolean;
 }
@@ -804,7 +811,8 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       textureUploads: counters.textureUploads, drawCalls, visibleChunks: drawn, residentChunks: store.size(),
       evictedChunks: store.evicted(), atlasUploads: atlas.uploads(), framedTiles: store.framedTiles(),
       framedWalls: store.framedWalls(), spritesPreparing: spriteProgram.preparing(), reusedFrames,
-      highlightUploads: highlight.uploads(), highlightBuilding: highlight.building(),
+      highlightUploads: highlight.uploads(), highlightBuilding: highlight.building(), objectUploads: objects.uploads(),
+      objectChunksCollected: objects.collected(),
     }),
     dispose: () => {
       if (disposed) return;

@@ -1,8 +1,13 @@
 // Frame-important tiles with draw offsets lie behind the blocks (docs/assets.md, "Draw offsets"): where a plant reaches
 // into the tile below it, that tile's opaque sprite pixels cover it and its transparent ones show it.
-import { afterEach, expect, test } from "vitest";
-import { LIQUID_SPRITE_ALPHA, createMapRenderer } from "../src/index.js";
-import type { MapRenderer, RenderableWorld, SpriteAtlasSource, SpriteSheetEntry } from "../src/index.js";
+import { afterEach, beforeAll, expect, test } from "vitest";
+import { LIQUID_SPRITE_ALPHA, createBlockFraming, createMapRenderer, loadFramingDatabase, terrariaFramingData } from "../src/index.js";
+import type { BlockFraming, MapRenderer, RenderableWorld, SpriteAtlasSource, SpriteSheetEntry } from "../src/index.js";
+
+let framing: BlockFraming;
+beforeAll(async () => {
+  framing = createBlockFraming(await loadFramingDatabase(terrariaFramingData));
+});
 
 const created: MapRenderer[] = [];
 afterEach(() => {
@@ -15,14 +20,19 @@ const ZOOM = 16;
 
 /**
  * 3 × 3: a plant (3, frame (0, 0): 16 × 20, drawn from its tile's top) at (1, 0) over a bottle (13) at (1, 1), plus
- * the `plants` and full water at the `water` tiles given.
+ * the `plants` and full water at the `water` tiles given; with `walls` a stone wall (1) on every tile, without
+ * `plant` no plant at (1, 0).
  */
-function world(water: readonly (readonly [number, number])[] = [], plants: readonly (readonly [number, number])[] = []): RenderableWorld {
+function world(
+  water: readonly (readonly [number, number])[] = [], plants: readonly (readonly [number, number])[] = [],
+  { walls = false, plant = true }: { readonly walls?: boolean; readonly plant?: boolean } = {},
+): RenderableWorld {
   const n = 3, count = n * n;
   const block = new Uint16Array(count).fill(ABSENT);
   const frameX = new Int16Array(count).fill(-1);
   const frameY = new Int16Array(count).fill(-1);
-  for (const [x, y, palette] of [[1, 0, 0], [1, 1, 1], ...plants.map(([px, py]) => [px, py, 0] as const)] as const) {
+  const placed = [...(plant ? [[1, 0, 0] as const] : []), [1, 1, 1] as const, ...plants.map(([px, py]) => [px, py, 0] as const)];
+  for (const [x, y, palette] of placed) {
     block[x * n + y] = palette;
     frameX[x * n + y] = 0;
     frameY[x * n + y] = 0;
@@ -32,18 +42,20 @@ function world(water: readonly (readonly [number, number])[] = [], plants: reado
   return {
     width: n, height: n, surfaceY: 3,
     planes: {
-      block, wall: new Uint16Array(count).fill(ABSENT), frameX, frameY, liquid,
+      block, wall: new Uint16Array(count).fill(walls ? 2 : ABSENT), frameX, frameY, liquid,
       liquidAmount, paint: new Uint8Array(count), wallPaint: new Uint8Array(count),
     },
-    palette: [{ kind: "vanilla", id: 3 }, { kind: "vanilla", id: 13 }],
+    palette: [{ kind: "vanilla", id: 3 }, { kind: "vanilla", id: 13 }, { kind: "vanilla", id: 1 }],
   };
 }
 
-const PAGE = 64;
+const PAGE = 512;
 const SHEETS: readonly SpriteSheetEntry[] = [
   { kind: "tile", id: 3, page: 0, x: 2, y: 2, width: 16, height: 20, frameWidth: 16, frameHeight: 20 },
   { kind: "tile", id: 13, page: 0, x: 22, y: 2, width: 16, height: 16, frameWidth: 16, frameHeight: 16 },
   { kind: "liquid", id: 0, page: 0, x: 2, y: 26, width: 34, height: 16, frameWidth: 16, frameHeight: 16 },
+  // Stone wall: 13 × 6 cells of 32 × 32 at a stride of 36 (docs/assets.md, "Walls").
+  { kind: "wall", id: 1, page: 0, x: 2, y: 48, width: 468, height: 216, frameWidth: 32, frameHeight: 32 },
 ];
 /** The water sheet: one opaque colour. */
 const WATER: Rgba = [10, 60, 200, 255];
@@ -54,6 +66,7 @@ const WATER: Rgba = [10, 60, 200, 255];
  */
 function sheetPixel(sheet: number, x: number, y: number): Rgba {
   if (sheet === 2) return WATER;
+  if (sheet === 3) return [(x * 7) % 256, (y * 5) % 256, 90, 255];
   if (sheet === 0) return [200, (x * 9) % 256, (y * 11) % 256, x >= 14 && y < 16 ? 0 : 255];
   return [(x * 13) % 256, 40, (y * 7) % 256, y < 4 && x % 2 === 0 ? 0 : 255];
 }
@@ -76,6 +89,7 @@ function draw(w: RenderableWorld): (x: number, y: number) => Rgba {
   renderer.setWorld(w);
   renderer.setLayers({ background: true, walls: true, blocks: true, liquids: true });
   renderer.setAtlas(atlas());
+  renderer.setFraming(framing);
   renderer.setSpriteMode(true);
   renderer.setCamera({ x: 0, y: 0, zoom: ZOOM });
   renderer.render();
@@ -129,4 +143,21 @@ test("liquid does not bleed into a tile drawn as an object sprite: its transpare
   const wet = draw(world([[2, 0]]));
   const dry = draw(world());
   for (const x of [ZOOM + 14, ZOOM + 15]) expect(wet(x, 5), `x ${String(x)}`).toEqual(dry(x, 5));
+});
+
+test("a plant's transparent pixels show the wall's sprite behind it, and the background where there is no wall", () => {
+  // The plant's right 2 columns above row 16 are transparent; the same world without the plant shows what lies there.
+  for (const walls of [true, false]) {
+    const planted = draw(world([], [], { walls }));
+    const bare = draw(world([], [], { walls, plant: false }));
+    for (let sy = 0; sy < 16; sy += 3) {
+      for (const sx of [14, 15]) expect(planted(ZOOM + sx, sy), `walls ${String(walls)}, (${String(sx)}, ${String(sy)})`).toEqual(bare(ZOOM + sx, sy));
+      expect(planted(ZOOM + 5, sy)).toEqual(sheetPixel(0, 5, sy));
+    }
+    if (walls) {
+      // The wall's cell pixels, not its flat map colour: they differ from pixel to pixel.
+      expect(bare(ZOOM + 14, 3)).not.toEqual(bare(ZOOM + 15, 3));
+      expect(bare(ZOOM + 14, 3)).not.toEqual(draw(world())(ZOOM + 14, 3));
+    }
+  }
 });

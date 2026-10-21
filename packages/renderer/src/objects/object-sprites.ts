@@ -198,11 +198,18 @@ const palmRows = new Map(terrariaSpriteObjects.palmRows.map(([ground, row]) => [
 const foliageByType = new Map(terrariaSpriteObjects.foliage.map((family) =>
   [family.type, new Map(family.grounds.map((row) => [row[0] ?? -1, row]))]));
 
-/** The block type under the column of `type` tiles through (x, y): the first other tile below; -1 for none. */
-function groundUnder(reader: ObjectReader, x: number, y: number, type: number): number {
+/**
+ * The block type under the column of `type` tiles through (x, y): the first other tile below; -1 for none. One walk
+ * per column run: the ground is kept in `grounds` (by tile index) for every tile it passed.
+ */
+function groundUnder(reader: ObjectReader, grounds: Map<number, number>, x: number, y: number, type: number): number {
+  const cached = grounds.get(x * reader.height + y);
+  if (cached !== undefined) return cached;
   let below = y;
   while (reader.id(x, below) === type) below++;
-  return reader.id(x, below);
+  const ground = reader.id(x, below);
+  for (let at = y; at < below; at++) grounds.set(x * reader.height + at, ground);
+  return ground;
 }
 
 /** The forest tree-style zone of column x: 0 left of treeX[0], 1 left of treeX[1], 2 left of treeX[2], else 3. */
@@ -230,7 +237,7 @@ function foliageOf(type: number, ground: number, trunkX: number, x: number, sett
   const variations = settings?.treeTopVariations ?? [];
   const value = area === -1 ? 0 : variations[area === -2 ? forestZone(trunkX, settings?.treeX ?? []) : area] ?? 0;
   // A variation the observation did not cover (outside 0–63) takes the variation-0 pattern.
-  const pattern = terrariaSpriteObjects.foliagePatterns[row[2 + value] ?? row[2] ?? -1];
+  const pattern = terrariaSpriteObjects.foliagePatterns[(value >= 0 && value < 64 ? row[2 + value] : undefined) ?? row[2] ?? -1];
   if (pattern === undefined) return undefined;
   const period = pattern[0] ?? 1;
   const at = 1 + 4 * (((x % period) + period) % period);
@@ -248,7 +255,7 @@ function treeTile(
   if (frameX < 0 || frameY < 0) return;
   const leafy = frameY >= LEAFY_FRAME_Y;
   const trunkX = leafy && frameX === LEFT_BRANCH_FRAME_X ? x + 1 : leafy && frameX === RIGHT_BRANCH_FRAME_X ? x - 1 : x;
-  const ground = groundUnder(reader, trunkX, y, type);
+  const ground = groundUnder(reader, out.grounds, trunkX, y, type);
   const block = type === COMMON_TREE ? trunkBlocks.get(ground) ?? 0 : 0;
   out.trunks.push({
     behind: true,
@@ -281,7 +288,7 @@ function treeTile(
 function palmTile(reader: ObjectReader, x: number, y: number, out: Collected): void {
   const frameX = reader.frameX(x, y);
   const lean = reader.frameY(x, y);
-  const row = palmRows.get(groundUnder(reader, x, y, PALM_TREE));
+  const row = palmRows.get(groundUnder(reader, out.grounds, x, y, PALM_TREE));
   if (row === undefined || frameX < 0) return;
   const dx = x * SPRITE_PIXELS_PER_TILE + lean;
   out.trunks.push({
@@ -359,6 +366,8 @@ interface Collected {
   readonly trunks: ObjectSprite[];
   readonly branches: ObjectSprite[];
   readonly tops: ObjectSprite[];
+  /** groundUnder's walks, by tile index. */
+  readonly grounds: Map<number, number>;
 }
 
 /**
@@ -368,7 +377,7 @@ interface Collected {
  */
 export function objectSprites(world: ObjectWorld, area: TileArea): ObjectSprite[] {
   const reader = new ObjectReader(world);
-  const out: Collected = { drawn: [], trunks: [], branches: [], tops: [] };
+  const out: Collected = { drawn: [], trunks: [], branches: [], tops: [], grounds: new Map() };
   const right = Math.min(area.right, world.width);
   const bottom = Math.min(area.bottom, world.height);
   for (let x = Math.max(0, area.left); x < right; x++) {
