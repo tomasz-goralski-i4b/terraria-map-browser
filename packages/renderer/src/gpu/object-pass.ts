@@ -18,15 +18,17 @@ import type { FrameView, RenderableWorld } from "./types.js";
 
 /** Ints per object pass instance: its rectangle in world sprite pixels, then (atlas page, x, y, flags) of its source. */
 const OBJECT_INTS = 8;
-/** The layer bits of the blocks (the objects) and the liquids (the waterfalls). */
-export const OBJECT_LAYERS = 12;
+/** The layer bits (shaders' uLayers) of the blocks, which hold the objects, and the liquids, which hold the waterfalls. */
+const BLOCKS_LAYER = 4;
+export const LIQUIDS_LAYER = 8;
+export const OBJECT_LAYERS: number = BLOCKS_LAYER | LIQUIDS_LAYER;
 
 /** The camera uniforms every sprite pass besides the chunk pass has (spritePassInputs). */
 export const SPRITE_PASS_UNIFORMS: readonly ["uCamera", "uZoom", "uViewport", ...typeof SAMPLING_UNIFORMS] = [
   "uCamera", "uZoom", "uViewport", ...SAMPLING_UNIFORMS,
 ];
 
-const PROGRAM: ProgramSource<(typeof SPRITE_PASS_UNIFORMS)[number] | (typeof PAINT_GROUP_UNIFORMS)[number] | "uTint" | "uTintEdge" | "uLayers"> = {
+const OBJECT_PROGRAM: ProgramSource<(typeof SPRITE_PASS_UNIFORMS)[number] | (typeof PAINT_GROUP_UNIFORMS)[number] | "uTint" | "uTintEdge" | "uLayers"> = {
   vertex: objectVertexSource, fragment: objectFragmentSource,
   uniforms: [...SPRITE_PASS_UNIFORMS, ...PAINT_GROUP_UNIFORMS, "uTint", "uTintEdge", "uLayers"],
 };
@@ -94,8 +96,8 @@ export function createObjectPass(gl: WebGL2RenderingContext, programs: ProgramCa
     // Waterfalls belong to the liquids layer (docs/assets.md, "Waterfalls"), the other objects to the blocks layer;
     // toggling either drops these lists.
     const sprites: readonly ObjectSprite[] = [
-      ...((layers & 4) !== 0 ? objectSprites(source, area) : []),
-      ...((layers & 8) !== 0 ? waterfallSprites(source, area) : []),
+      ...((layers & BLOCKS_LAYER) !== 0 ? objectSprites(source, area) : []),
+      ...((layers & LIQUIDS_LAYER) !== 0 ? waterfallSprites(source, area) : []),
     ];
     const placed = new Int32Array(sprites.length * OBJECT_INTS);
     let at = 0;
@@ -190,7 +192,7 @@ export function createObjectPass(gl: WebGL2RenderingContext, programs: ProgramCa
       }
       const instances = uploaded?.instances ?? 0;
       if (instances === 0) return 0;
-      const { program, uniforms } = programs.get(PROGRAM);
+      const { program, uniforms } = programs.get(OBJECT_PROGRAM);
       gl.useProgram(program);
       setSpritePassUniforms(gl, atlas, uniforms, view);
       // Shimmer's waterfall: its core and edge colours (G: measured in an in-game screenshot).

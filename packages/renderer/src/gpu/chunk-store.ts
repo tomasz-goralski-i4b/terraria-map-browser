@@ -451,6 +451,8 @@ export function createChunkStore(
         dirty.delete(key);
         cellCache?.drop(coordOf(key));
         wallCache?.drop(coordOf(key));
+        // Its slot is filled again: no instance buffer drawn before may be drawn again.
+        uploaded = null;
       }
     },
     evictOne: (keep) => {
@@ -462,6 +464,8 @@ export function createChunkStore(
         dirty.delete(key);
         cellCache?.drop(coordOf(key));
         wallCache?.drop(coordOf(key));
+        // Its slot is filled again: no instance buffer drawn before may be drawn again.
+        uploaded = null;
         return true;
       }
       return false;

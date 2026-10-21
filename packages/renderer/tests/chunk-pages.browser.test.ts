@@ -364,6 +364,22 @@ describe("map option rules across the renderer's lifecycle", () => {
     expectReference(second.gl, second.pixels, world);
   });
 
+  test("a renderer created on a context other code left with a non-default unpack state draws exactly", () => {
+    const canvas = document.createElement("canvas");
+    const gl = canvas.getContext("webgl2", { premultipliedAlpha: false, antialias: false });
+    if (gl === null) throw new Error("WebGL2 unavailable");
+    gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 7);
+    gl.pixelStorei(gl.UNPACK_SKIP_ROWS, 3);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 8);
+    const world = fullWorld(300, 200);
+    const { renderer, pixels } = setup(300, 200, { mapPalette: syntheticMapPalette }, canvas);
+    renderer.setWorld(world);
+    renderer.setLayers(layers);
+    renderer.setCamera({ x: 0, y: 0, zoom: 1 });
+    renderer.render();
+    expectReference(gl, pixels, world);
+  });
+
   test("a lost and restored context draws ruled content exactly", async () => {
     const world = fullWorld(300, 200);
     const { renderer, canvas, gl, pixels } = setup(300, 200, { mapPalette: syntheticMapPalette });

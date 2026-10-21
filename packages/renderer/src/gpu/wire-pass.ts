@@ -17,7 +17,7 @@ import type { FrameView, RenderableWorld } from "./types.js";
 /** Ints per instance: its chunk's rectangle and page layer (as the chunk pass), then its run (x, y, w, h). */
 const WIRE_INTS = 9;
 
-const PROGRAM: ProgramSource<
+const WIRE_PROGRAM: ProgramSource<
   (typeof SPRITE_PASS_UNIFORMS)[number] | (typeof OVERLAY_UNIFORMS)[number] | "uPlanes16" | "uPresent" | "uLayers" | "uWorldSize"
   | "uWireSheet" | "uActuatorSheet"
 > = {
@@ -133,7 +133,7 @@ export function createWirePass(
         gl.bindVertexArray(null);
         return 0;
       }
-      const { program, uniforms } = programs.get(PROGRAM);
+      const { program, uniforms } = programs.get(WIRE_PROGRAM);
       gl.useProgram(program);
       setSpritePassUniforms(gl, atlas, uniforms, view);
       gl.uniform1i(uniforms.uPlanes16, UNIT.planes16);

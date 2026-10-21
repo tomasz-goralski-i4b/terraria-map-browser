@@ -21,7 +21,7 @@ import {
 import { createHighlightPass } from "./highlight-pass.js";
 import { createIdleTask } from "./idle-task.js";
 import { OVERLAY_UNIFORMS, TILE_UNIFORMS, createMapColors, setWireUniforms } from "./map-colors.js";
-import { OBJECT_LAYERS, createObjectPass } from "./object-pass.js";
+import { LIQUIDS_LAYER, OBJECT_LAYERS, createObjectPass } from "./object-pass.js";
 import { BUILD_PROGRAM, DRAW_PROGRAM, createOverviewPart, overviewFactor } from "./overview.js";
 import { createAnnotationPass, createGridPass } from "./overlay-passes.js";
 import {
@@ -207,8 +207,6 @@ const DEFAULT_PREFETCH_CHUNKS = 1;
 const PREFETCH_IDLE_RESERVE = 3;
 const DEFAULT_MAX_CHUNK_UPLOADS_PER_FRAME = 256;
 const DEFAULT_MAX_UPLOAD_MILLISECONDS_PER_FRAME = 8;
-/** The layer bit of the liquids (shaders' uLayers). */
-const LIQUIDS_LAYER = 8;
 
 const CHUNK_PASS_UNIFORMS = [...TILE_UNIFORMS, "uCamera", "uZoom", "uViewport", "uFilter", "uStep", "uWorldSize"] as const;
 /** The chunk pass in map colours, with the wire overlay. */
@@ -312,7 +310,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   const grid = createGridPass(gl, programs);
   const annotations = createAnnotationPass(gl, programs);
   const frames = createFrameTargets(gl);
-  const parts: readonly GpuPart[] = [programs, store, colors, atlas, overviews, spriteProgram, objects, wires, highlight, annotations, frames];
+  const parts: readonly GpuPart[] = [unpack, programs, store, colors, atlas, overviews, spriteProgram, objects, wires, highlight, annotations, frames];
   /** Links the map programs every renderer draws with at once, so a broken one fails here rather than in a frame. */
   const linkMapPrograms = (): void => {
     for (const source of [CHUNK_PROGRAM, BUILD_PROGRAM, DRAW_PROGRAM]) programs.get(source);
@@ -689,7 +687,6 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   const onContextRestored = (): void => {
     // Every GL object died with the context: the parts create theirs again on demand, chunks upload again (and are
     // framed again) as they are drawn, the highlight's lookup and mask are uploaded again.
-    unpack.lost();
     for (const part of parts) part.lost();
     linkMapPrograms();
     lastFrame = null;
@@ -709,8 +706,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
         objects.clear();
         wires.clear();
         // Also drops the reference that would keep the previous world's planes alive.
-        if (gl.isContextLost()) unpack.lost();
-        else unpack.reset();
+        unpack.release();
         world = next;
         highlight.setWorld(next);
       }
@@ -828,9 +824,6 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       canvas.removeEventListener("webglcontextrestored", onContextRestored);
       // GL calls on a lost context do nothing; the parts still cancel their timers and drop their references.
       for (const part of parts) part.release();
-      // The context outlives this renderer: leave it with the default unpack state.
-      if (gl.isContextLost()) unpack.lost();
-      else unpack.reset();
       world = null;
     },
   };

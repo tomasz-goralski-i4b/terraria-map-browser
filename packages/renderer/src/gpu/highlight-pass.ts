@@ -21,7 +21,7 @@ const LOOKUP_ROW = 256;
 /** Time an idle slice of the mask build may spend, in milliseconds (less when the idle period is shorter). */
 const MASK_SLICE_MILLISECONDS = 6;
 
-const CHUNK_PROGRAM: ProgramSource<
+const HIGHLIGHT_CHUNK_PROGRAM: ProgramSource<
   "uPlanes16" | "uPlanes8" | "uHighlight" | "uLiquids" | "uPaletteLength" | "uCamera" | "uZoom" | "uViewport" | "uWorldSize"
   | "uColor" | "uDimAlpha" | "uTintAlpha" | "uOutline"
 > = {
@@ -31,7 +31,7 @@ const CHUNK_PROGRAM: ProgramSource<
     "uColor", "uDimAlpha", "uTintAlpha", "uOutline",
   ],
 };
-const MASK_PROGRAM: ProgramSource<(typeof OVERVIEW_UNIFORMS)[number] | "uMask" | "uColor" | "uDimAlpha"> = {
+const HIGHLIGHT_MASK_PROGRAM: ProgramSource<(typeof OVERVIEW_UNIFORMS)[number] | "uMask" | "uColor" | "uDimAlpha"> = {
   vertex: overviewVertexSource, fragment: highlightMaskFragmentSource, uniforms: [...OVERVIEW_UNIFORMS, "uMask", "uColor", "uDimAlpha"],
 };
 
@@ -194,7 +194,7 @@ export function createHighlightPass(
       gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
       if (chunks) {
         uploadLookup();
-        const { program, uniforms } = programs.get(CHUNK_PROGRAM);
+        const { program, uniforms } = programs.get(HIGHLIGHT_CHUNK_PROGRAM);
         gl.useProgram(program);
         gl.uniform1i(uniforms.uPlanes16, UNIT.planes16);
         gl.uniform1i(uniforms.uPlanes8, UNIT.planes8);
@@ -213,7 +213,7 @@ export function createHighlightPass(
         calls += store.draw(ready);
       } else if (mask !== null && mask.texture !== null && mask.mask.world === source) {
         const { mask: levels, texture } = mask;
-        const { program, uniforms } = programs.get(MASK_PROGRAM);
+        const { program, uniforms } = programs.get(HIGHLIGHT_MASK_PROGRAM);
         gl.useProgram(program);
         setOverviewUniforms(gl, uniforms, view, levels.width * levels.factor, levels.height * levels.factor);
         gl.uniform1i(uniforms.uMask, UNIT.highlight);

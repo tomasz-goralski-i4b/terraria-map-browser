@@ -168,17 +168,21 @@ export function defaultUnpack(gl: WebGL2RenderingContext): void {
  * The unpack state chunk uploads leave behind. They set it once per world (alignment, row length, image height) and
  * then only move the skip parameters; every other upload calls `reset` first, which restores GL's defaults.
  */
-export interface UnpackState {
+export interface UnpackState extends GpuPart {
   /** Sets the plane unpack state of `world` unless it is set already. */
   readonly forWorld: (world: RenderableWorld) => void;
   readonly reset: () => void;
-  /** After a context loss: a new context starts with the default unpack state. */
-  readonly lost: () => void;
 }
 
 export function createUnpackState(gl: WebGL2RenderingContext): UnpackState {
-  // The world the plane unpack state is set for; null for GL's defaults.
+  // The world the plane unpack state is set for; null for GL's defaults, which the context may not hold yet.
   let world: RenderableWorld | null = null;
+  defaultUnpack(gl);
+  const reset = (): void => {
+    if (world === null) return;
+    defaultUnpack(gl);
+    world = null;
+  };
   return {
     forWorld: (source) => {
       if (world === source) return;
@@ -188,12 +192,14 @@ export function createUnpackState(gl: WebGL2RenderingContext): UnpackState {
       gl.pixelStorei(gl.UNPACK_IMAGE_HEIGHT, source.width);
       world = source;
     },
-    reset: () => {
-      if (world === null) return;
-      defaultUnpack(gl);
-      world = null;
-    },
+    reset,
+    // A restored context starts with the default unpack state.
     lost: () => { world = null; },
+    // The context outlives the renderer: leave it with the default unpack state.
+    release: () => {
+      if (gl.isContextLost()) world = null;
+      else reset();
+    },
   };
 }
 
