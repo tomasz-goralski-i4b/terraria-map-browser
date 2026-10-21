@@ -14,6 +14,8 @@ export interface ChunkLayers {
    * `WIRE_LAYER`). Absent or 0 draws no overlay.
    */
   readonly wires?: number;
+  /** Paint on blocks and walls, in map colours and on sprites; absent means shown. */
+  readonly paint?: boolean;
 }
 
 /** Bits of `ChunkLayers.wires`, equal to the CWM `flags` bits they show. */
@@ -158,7 +160,7 @@ export function renderChunk(
       }
       const wall = block === undefined ? wallColors[planes.wall[index] ?? absentContent] : undefined;
       let color = block ?? wall;
-      if (mapPalette !== undefined && color !== undefined) {
+      if (mapPalette !== undefined && color !== undefined && layers.paint !== false) {
         color = block === undefined
           ? paintedColor(color, planes.wallPaint[index] ?? 0, "wall", mapPalette)
           : paintedColor(color, planes.paint[index] ?? 0, "block", mapPalette);

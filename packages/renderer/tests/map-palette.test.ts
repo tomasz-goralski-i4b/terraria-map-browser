@@ -188,6 +188,18 @@ test("renderChunk paints blocks and walls and draws the background by depth with
   expect(pixel(0, 2)).toEqual([0x32, 0x14, 0x14, 255]);
 });
 
+test("with the paint layer hidden renderChunk draws blocks and walls unpainted", () => {
+  const world = createWorld(2, 1);
+  world.setTile(0, 0, { block: { kind: "vanilla", id: 0 }, paint: 1, wires: 0, actuator: false });
+  world.setTile(1, 0, { wall: { kind: "vanilla", id: 1 }, wallPaint: 30, wires: 0, actuator: false });
+  const options = { surfaceY: 1, mapPalette: syntheticMapPalette };
+  const unpainted = createWorld(2, 1);
+  unpainted.setTile(0, 0, { block: { kind: "vanilla", id: 0 }, wires: 0, actuator: false });
+  unpainted.setTile(1, 0, { wall: { kind: "vanilla", id: 1 }, wires: 0, actuator: false });
+  expect(renderChunk(world, 0, 0, { ...options, layers: { ...allLayers, paint: false } }).pixels)
+    .toEqual(renderChunk(unpainted, 0, 0, { ...options, layers: allLayers }).pixels);
+});
+
 test("without a map palette paint does not change renderChunk pixels", () => {
   const world = createWorld(1, 1);
   world.setTile(0, 0, { block: { kind: "vanilla", id: 0 }, paint: 1, wires: 0, actuator: false });

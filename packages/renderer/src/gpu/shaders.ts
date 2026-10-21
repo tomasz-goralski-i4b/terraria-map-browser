@@ -10,6 +10,7 @@ import { NO_CELL } from "../framing/frame-block.js";
 import { WALL_CELL_STRIDE, WALL_OVERHANG } from "../framing/frame-wall.js";
 import { TRACK_CELL_STRIDE, trackShaderConstants } from "../objects/tracks.js";
 import { WIRE_CELL_STRIDE } from "../objects/wires.js";
+import { INACTIVE_SPRITE_SHADE } from "../palette/sprite-paint.js";
 
 /** A colour as a GLSL ivec3 literal. */
 function glslColor(color: readonly number[] | undefined): string {
@@ -36,6 +37,40 @@ export const PLANE_COUNT_8: number = Object.keys(PLANES_8).length;
  * from the world); each instance then says whether its chunk's cells are uploaded (CELLS_INSTANCE_BIT).
  */
 export const PRESENT = { flags: 1, frameX: 2, frameY: 4, shape: 8, cells: 16 } as const;
+
+/** Bit of `uLayers` that shows paint (ChunkLayers.paint), above the background, content and wire bits. */
+export const PAINT_LAYER_BIT = 512;
+/** The CWM `flags` bit of an inactive (actuated) tile. */
+export const INACTIVE_FLAG = 32;
+
+/** Paint and the inactive shade on sprites; mirrors spritePaintedColor() and inactiveSpriteColor() (../palette/sprite-paint.ts). */
+const spritePaintSource = `
+ivec3 spritePainted(ivec3 c, int paint, bool wall) {
+  if ((uLayers & ${String(PAINT_LAYER_BIT)}) == 0 || paint == 0) return c;
+  float hi = float(max(c.r, max(c.g, c.b)));
+  float lo = float(min(c.r, min(c.g, c.b)));
+  if (paint <= 24) {
+    // Hue replaced in HSV; deep paints (13–24) raise the saturation.
+    float low = paint > 12 ? 0.4 * lo : lo;
+    vec3 k = mod(vec3(5.0, 3.0, 1.0) + float((paint - 1) % 12) / 2.0, 6.0);
+    return ivec3(floor(hi - (hi - low) * clamp(min(k, 4.0 - k), 0.0, 1.0) + 0.5));
+  }
+  float l = (hi + lo) / 2.0;
+  if (paint == 25) return ivec3(floor(0.3 * l + 0.5));
+  if (paint == 26) return ivec3(floor(min((l + 0.2 * (hi - lo)) * (510.0 - l) / 255.0, 255.0) + 0.5));
+  if (paint == 27) return ivec3(floor(l + 0.5));
+  if (paint == 28) return ivec3(floor(hi * vec3(1.0, 0.7, 0.49) + 0.5));
+  if (paint == 29) return ivec3(floor(0.05 * l + 0.5));
+  if (paint == 30 && hi > 0.0) {
+    return wall ? ivec3(floor(clamp(2.0 * (255.0 - vec3(c)) - 318.75, 0.0, 255.0) + 0.5)) : 255 - c;
+  }
+  return c;
+}
+
+ivec3 inactiveShade(ivec3 c) {
+  return (c * ${String(INACTIVE_SPRITE_SHADE)} + 127) / 255;
+}
+`;
 
 /**
  * Rules texture: 256 texels per row. Rows 0–255 hold one header per palette index (index % 256, index / 256):
@@ -273,6 +308,7 @@ ivec3 painted(ivec3 base, int paint, bool wall) {
 
 ${overSource}
 #ifdef SPRITES
+${spritePaintSource}
 // The missing-texture checkerboard at sprite pixel sub.
 ivec4 missingPixel(ivec2 sub) {
   bool first = ((sub.x / ${String(SPRITE_TILE_PIXELS / 2)} + sub.y / ${String(SPRITE_TILE_PIXELS / 2)}) & 1) == 0;
@@ -572,29 +608,30 @@ const int WALL_SHEET = 1;
 const int WALL_MAPPED = 2;
 const int WALL_MISSING = 3;
 ivec4 wallNWA;
-ivec2 wallNWB;
+ivec3 wallNWB;
 ivec4 wallNA;
-ivec2 wallNB;
+ivec3 wallNB;
 ivec4 wallNEA;
-ivec2 wallNEB;
+ivec3 wallNEB;
 ivec4 wallWA;
-ivec2 wallWB;
+ivec3 wallWB;
 ivec4 wallCA;
-ivec2 wallCB;
+ivec3 wallCB;
 ivec4 wallEA;
-ivec2 wallEB;
+ivec3 wallEB;
 ivec4 wallSWA;
-ivec2 wallSWB;
+ivec3 wallSWB;
 ivec4 wallSA;
-ivec2 wallSB;
+ivec3 wallSB;
 ivec4 wallSEA;
-ivec2 wallSEB;
+ivec3 wallSEB;
+// B = (the end of its sheet in the atlas, its wall paint).
 // The map colour of the tile's own wall, premultiplied (zero without one).
 vec4 wallOwn;
 
-void loadWall(ivec2 texel, bool own, out ivec4 a, out ivec2 b) {
+void loadWall(ivec2 texel, bool own, out ivec4 a, out ivec3 b) {
   a = ivec4(0);
-  b = ivec2(0);
+  b = ivec3(0);
   uint cell = plane16(texel, ${String(PLANES_16.wallCell)});
   if (cell == ${String(NO_CELL)}u) {
     if (own && wallOwn.a > 0.0) a.w = WALL_MAPPED;
@@ -604,7 +641,7 @@ void loadWall(ivec2 texel, bool own, out ivec4 a, out ivec2 b) {
   ivec4 place = texelFetch(uSpriteSheets, sheet, 0);
   if (place.w == ${String(SPRITE_STATE.sheet)}) {
     a = ivec4(place.yz + ivec2(int(cell >> 6u), int(cell & 63u)) * ${String(WALL_CELL_STRIDE)}, place.x, WALL_SHEET);
-    b = place.yz + texelFetch(uSpriteSheets, sheet + ivec2(1, 0), 0).xy;
+    b = ivec3(place.yz + texelFetch(uSpriteSheets, sheet + ivec2(1, 0), 0).xy, int(plane8(texel, ${String(PLANES_8.wallPaint)})));
   } else if (own) {
     a.w = place.w == ${String(SPRITE_STATE.missing)} ? WALL_MISSING : WALL_MAPPED;
   }
@@ -616,14 +653,14 @@ ivec4 wallA(int dx, int dy) {
   return dx < 0 ? wallSWA : dx == 0 ? wallSA : wallSEA;
 }
 
-ivec2 wallB(int dx, int dy) {
+ivec3 wallB(int dx, int dy) {
   if (dy < 0) return dx < 0 ? wallNWB : dx == 0 ? wallNB : wallNEB;
   if (dy == 0) return dx < 0 ? wallWB : dx == 0 ? wallCB : wallEB;
   return dx < 0 ? wallSWB : dx == 0 ? wallSB : wallSEB;
 }
 
 // Stores the wall at (dx, dy) loaded by wallSample into its variable.
-void storeWall(int dx, int dy, ivec4 a, ivec2 b) {
+void storeWall(int dx, int dy, ivec4 a, ivec3 b) {
   if (dx == -1 && dy == -1) { wallNWA = a; wallNWB = b; }
   else if (dx == 0 && dy == -1) { wallNA = a; wallNB = b; }
   else if (dx == 1 && dy == -1) { wallNEA = a; wallNEB = b; }
@@ -643,8 +680,10 @@ vec4 drawWall(vec4 below, int dx, int dy, ivec2 sub) {
   vec4 top;
   if (a.w == WALL_SHEET) {
     ivec2 pixel = a.xy + sub + ${String(WALL_OVERHANG)} - ${String(SPRITE_TILE_PIXELS)} * ivec2(dx, dy);
-    if (any(greaterThanEqual(pixel, wallB(dx, dy)))) return below;
+    ivec3 b = wallB(dx, dy);
+    if (any(greaterThanEqual(pixel, b.xy))) return below;
     vec4 sampled = atlasTexel(a.xy, pixel, a.z);
+    if (b.z != 0) sampled.rgb = vec3(spritePainted(ivec3(round(sampled.rgb * 255.0)), b.z, true)) / 255.0;
     top = vec4(sampled.rgb * sampled.a, sampled.a);
   } else {
     top = a.w == WALL_MISSING ? vec4(vec3(missingPixel(sub).rgb) / 255.0, 1.0) : wallOwn;
@@ -671,28 +710,28 @@ ivec4 wallSample(ivec2 texel, vec2 centre, ivec4 ownMapped) {
   bool north = low.y < ${String(SPRITE_TILE_PIXELS / 2)};
   bool south = high.y >= ${String(SPRITE_TILE_PIXELS / 2)};
   wallNWA = ivec4(0);
-  wallNWB = ivec2(0);
+  wallNWB = ivec3(0);
   wallNA = ivec4(0);
-  wallNB = ivec2(0);
+  wallNB = ivec3(0);
   wallNEA = ivec4(0);
-  wallNEB = ivec2(0);
+  wallNEB = ivec3(0);
   wallWA = ivec4(0);
-  wallWB = ivec2(0);
+  wallWB = ivec3(0);
   wallCA = ivec4(0);
-  wallCB = ivec2(0);
+  wallCB = ivec3(0);
   wallEA = ivec4(0);
-  wallEB = ivec2(0);
+  wallEB = ivec3(0);
   wallSWA = ivec4(0);
-  wallSWB = ivec2(0);
+  wallSWB = ivec3(0);
   wallSA = ivec4(0);
-  wallSB = ivec2(0);
+  wallSB = ivec3(0);
   wallSEA = ivec4(0);
-  wallSEB = ivec2(0);
+  wallSEB = ivec3(0);
   // Runtime bounds: one copy of loadWall, not one per neighbour.
   for (int dy = north ? -1 : 0; dy <= (south ? 1 : 0); dy++) {
     for (int dx = west ? -1 : 0; dx <= (east ? 1 : 0); dx++) {
       ivec4 a;
-      ivec2 b;
+      ivec3 b;
       loadWall(texel + ivec2(dy, dx), dx == 0 && dy == 0, a, b);
       storeWall(dx, dy, a, b);
     }
@@ -793,6 +832,12 @@ ivec4 localColorAt(ivec2 local, vec2 sub) {
   bool hasSprite = false;
 #ifdef SPRITES
   hasSprite = blockShown && spriteSample(block, texel, sub, sprite);
+  if (hasSprite) {
+    sprite.rgb = spritePainted(sprite.rgb, int(plane8(texel, ${String(PLANES_8.paint)})), false);
+    if ((uPresent & ${String(PRESENT.flags)}) != 0 && (plane16(texel, ${String(PLANES_16.flags)}) & ${String(INACTIVE_FLAG)}u) != 0u) {
+      sprite.rgb = inactiveShade(sprite.rgb);
+    }
+  }
 #endif
   // The block's map colour: shown without a sprite, and faded out under a sprite below SPRITE_FULL_ZOOM.
   ivec4 mapped = blockShown
@@ -808,7 +853,7 @@ ivec4 localColorAt(ivec2 local, vec2 sub) {
     bool wallShown = paletteColor(wall, 256, content);
     if (wallShown) color = ivec4(painted(content, int(plane8(texel, ${String(PLANES_8.wallPaint)})), true), 255);
     // Wall sprites are drawn wherever the wall layer is shown, also on tiles without a wall of their own: the
-    // overhang of the walls around them reaches in. Paint is not applied to sprites. Nothing of them is seen under an
+    // overhang of the walls around them reaches in, each in its own paint. Nothing of them is seen under an
     // opaque block sprite, also while it fades in (it is mixed with the block's map colour, not with what lies behind
     // it), so they are skipped there. Like the block fade below, the fade mixes straight-alpha colours, so over a
     // hidden background a fading overhang darkens slightly.
@@ -819,7 +864,7 @@ ivec4 localColorAt(ivec2 local, vec2 sub) {
       color = uSpriteWeight < 256 ? (color * (256 - uSpriteWeight) + walls * uSpriteWeight + 128) / 256 : walls;
     }
 #endif
-    // A sprite over what lies behind it (paint is not applied to sprites).
+    // A sprite (painted, shaded when inactive) over what lies behind it.
 #ifdef SPRITES
     if (hasSprite) {
       // A shaped block's liquid lies under the block: its front layer here.
@@ -1055,6 +1100,10 @@ export const OBJECT_BEHIND = 1024;
  * OBJECT_BEHIND): the waterfalls. The chunk pass writes depth 0.5 where a tile's own liquid covers a pixel.
  */
 export const OBJECT_UNDER_LIQUID = 2048;
+/** The object pass's source bits 12–19: the paint of the tile the sprite belongs to. */
+export const OBJECT_PAINT_SHIFT = 12;
+/** The object pass's source flag of a sprite of an inactive (actuated) tile (bit 20). */
+export const OBJECT_INACTIVE = 1_048_576;
 
 /**
  * Object pass (docs/assets.md, "Trees", "Minecart tracks"): in sprite mode, after the chunk pass, one instanced quad
@@ -1088,13 +1137,16 @@ void main() {
  * top-left (x, y) on page `page`: vSource = (page, x, y, flags)), sampled as the chunk pass samples sprites, faded in.
  * Flags (OBJECT_FLIP, OBJECT_FADE_SHIFT): bit 0 mirrors the rectangle left to right, bits 1–8 hold 255 minus the
  * opacity its pixels are scaled by (a waterfall's fade; 0 for an opaque sprite), bit 9 (OBJECT_TINT) multiplies its
- * colour by uTint (shimmer's map colour, for its grey waterfall sheet).
+ * colour by uTint (shimmer's map colour, for its grey waterfall sheet), bits 12–19 (OBJECT_PAINT_SHIFT) paint it and
+ * bit 20 (OBJECT_INACTIVE) shades it as an inactive tile.
  */
 export const objectFragmentSource: string = header + spritePassInputs + `
 uniform ivec3 uTint;
 uniform ivec3 uTintEdge;
+uniform int uLayers;
 flat in ivec4 vDest;
 flat in ivec4 vSource;
+${spritePaintSource}
 void main() {
   vec2 centre = worldSpritePixel() - vec2(vDest.xy);
   int count = uSpriteSamples;
@@ -1112,7 +1164,9 @@ void main() {
   }
   int samples = count * count;
   if (sum.a == 0) discard;
-  writeFaded(ivec4((2 * sum.rgb + sum.a) / (2 * sum.a), (2 * sum.a + samples) / (2 * samples)));
+  ivec3 rgb = spritePainted((2 * sum.rgb + sum.a) / (2 * sum.a), (vSource.w >> ${String(OBJECT_PAINT_SHIFT)}) & 255, false);
+  if ((vSource.w & ${String(OBJECT_INACTIVE)}) != 0) rgb = inactiveShade(rgb);
+  writeFaded(ivec4(rgb, (2 * sum.a + samples) / (2 * samples)));
 }
 `;
 

@@ -30,7 +30,7 @@ import {
   CELLS_INSTANCE_BIT, WALLS_INSTANCE_BIT, LAYER_ATTRIBUTE, PAGE_APRON, PLANES_16, PLANES_8, PLANE_COUNT_16, PLANE_COUNT_8, PRESENT, RECT_ATTRIBUTE,
   LIQUID_FLAT, RULE_HEADER_ROWS, RULE_ROW, SPRITE_MIN_ZOOM, SPRITE_SHEET_ROW, SPRITE_SHEET_TEXELS, spriteSampling, SPRITE_STATE, chunkFragmentSource, chunkSpriteFragmentSource, chunkVertexSource, overviewBuildFragmentSource,
   halfAtlasFragmentSource, halfAtlasVertexSource, overviewBuildVertexSource, overviewFragmentSource, overviewVertexSource,
-  OBJECT_BEHIND, OBJECT_DEST_ATTRIBUTE, OBJECT_UNDER_LIQUID, OBJECT_FADE_SHIFT, OBJECT_FLIP, OBJECT_SOURCE_ATTRIBUTE, OBJECT_TINT, objectFragmentSource, objectVertexSource, wireFragmentSource,
+  OBJECT_BEHIND, OBJECT_DEST_ATTRIBUTE, OBJECT_INACTIVE, OBJECT_PAINT_SHIFT, OBJECT_UNDER_LIQUID, PAINT_LAYER_BIT, OBJECT_FADE_SHIFT, OBJECT_FLIP, OBJECT_SOURCE_ATTRIBUTE, OBJECT_TINT, objectFragmentSource, objectVertexSource, wireFragmentSource,
   WIRE_RUN_ATTRIBUTE, wireVertexSource,
 } from "./shaders.js";
 import { OBJECT_TILES, objectSprites, type ObjectSprite, type TreeSettings } from "../objects/object-sprites.js";
@@ -359,7 +359,7 @@ const OBJECT_UNIFORMS = [
   "uCamera", "uZoom", "uViewport", "uAtlas", "uAtlasHalf", "uSpriteSamples", "uSpriteStep", "uSpriteLevel", "uSpriteWeight",
 ] as const;
 /** The object program's uniforms: the shared sprite pass ones and the tint of shimmer's waterfalls. */
-const OBJECT_PROGRAM_UNIFORMS = [...OBJECT_UNIFORMS, "uTint", "uTintEdge"] as const;
+const OBJECT_PROGRAM_UNIFORMS = [...OBJECT_UNIFORMS, "uTint", "uTintEdge", "uLayers"] as const;
 /** The wire pass's uniforms (wireFragmentSource). */
 const WIRE_UNIFORMS = [
   ...OBJECT_UNIFORMS, "uPlanes16", "uPresent", "uLayers", "uWireColors", "uWireBits", "uWireAlpha", "uWorldSize", "uWireSheet",
@@ -678,7 +678,7 @@ function createResources(gl: WebGL2RenderingContext, rules: RuleTable): GpuResou
 
 function layerBits(layers: ChunkLayers): number {
   return (layers.background ? 1 : 0) | (layers.walls ? 2 : 0) | (layers.blocks ? 4 : 0) | (layers.liquids ? 8 : 0)
-    | (((layers.wires ?? 0) & WIRE_LAYER.all) << 4);
+    | (((layers.wires ?? 0) & WIRE_LAYER.all) << 4) | (layers.paint === false ? 0 : PAINT_LAYER_BIT);
 }
 
 const wireColorUniform = new Int32Array(WIRE_COLORS.flatMap(([, color]) => [...color]));
@@ -1511,7 +1511,8 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       if (sprite.sx + sprite.width > sheet.width || sprite.sy + sprite.height > sheet.height) continue;
       const flags = (sprite.flip === true ? OBJECT_FLIP : 0) | ((255 - (sprite.alpha ?? 255)) << OBJECT_FADE_SHIFT)
         | (sprite.tint === true ? OBJECT_TINT : 0) | (sprite.behind === true ? OBJECT_BEHIND : 0)
-        | (sprite.underLiquid === true ? OBJECT_UNDER_LIQUID : 0);
+        | (sprite.underLiquid === true ? OBJECT_UNDER_LIQUID : 0) | ((sprite.paint ?? 0) << OBJECT_PAINT_SHIFT)
+        | (sprite.inactive === true ? OBJECT_INACTIVE : 0);
       placed.set([sprite.dx, sprite.dy, sprite.width, sprite.height, sheet.page, sheet.x + sprite.sx, sheet.y + sprite.sy, flags], at);
       at += OBJECT_INTS;
       if (sprite.behind === true && sprite.underLiquid !== true) behind = true;
@@ -1593,6 +1594,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
     // Shimmer's waterfall: its core and edge colours (G: measured in an in-game screenshot).
     gl.uniform3i(objectProgram.uniforms.uTint, ...SHIMMER_WATERFALL[0]);
     gl.uniform3i(objectProgram.uniforms.uTintEdge, ...SHIMMER_WATERFALL[1]);
+    gl.uniform1i(objectProgram.uniforms.uLayers, layers);
     gl.bindVertexArray(resources.objectArray);
     gl.enable(gl.BLEND);
     gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
