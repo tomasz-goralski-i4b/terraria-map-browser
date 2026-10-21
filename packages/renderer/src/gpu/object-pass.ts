@@ -61,6 +61,10 @@ export interface ObjectPass extends GpuPart {
    * ground under its trunk), so the lists of every chunk within one chunk of a changed tile are collected again.
    */
   readonly invalidate: (source: RenderableWorld, tiles: readonly { readonly x: number; readonly y: number }[]) => void;
+  /** Instance buffer uploads since creation (MapRendererStats.objectUploads). */
+  readonly uploads: () => number;
+  /** Chunk object lists collected since creation (MapRendererStats.objectChunksCollected). */
+  readonly collected: () => number;
 }
 
 export function createObjectPass(gl: WebGL2RenderingContext, programs: ProgramCache, atlas: SpriteAtlas): ObjectPass {
@@ -72,6 +76,8 @@ export function createObjectPass(gl: WebGL2RenderingContext, programs: ProgramCa
   // The chunk keys whose instances the buffer holds, in order, and their instance count: a frame showing the same
   // chunks with none of their lists collected again draws the buffer as it is, without uploading it again.
   let uploaded: { readonly keys: readonly number[]; readonly instances: number } | null = null;
+  let uploads = 0;
+  let collected = 0;
 
   /**
    * The instances of `chunk` (cached): its object sprites whose sheet is in the atlas, each as its rectangle in world
@@ -80,6 +86,7 @@ export function createObjectPass(gl: WebGL2RenderingContext, programs: ProgramCa
   const objectsOf = (source: RenderableWorld, chunk: ChunkCoord, key: number, layers: number): Int32Array => {
     const cached = cache.get(key);
     if (cached !== undefined) return cached.instances;
+    collected++;
     const area = {
       left: chunk.x * CHUNK_SIZE, top: chunk.y * CHUNK_SIZE, right: (chunk.x + 1) * CHUNK_SIZE, bottom: (chunk.y + 1) * CHUNK_SIZE,
     };
@@ -158,6 +165,7 @@ export function createObjectPass(gl: WebGL2RenderingContext, programs: ProgramCa
         if (total > 0) {
           gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
           gl.bufferData(gl.ARRAY_BUFFER, data.subarray(0, total), gl.DYNAMIC_DRAW);
+          uploads++;
         }
         uploaded = { keys: sorted, instances: total / OBJECT_INTS };
       }
@@ -185,6 +193,8 @@ export function createObjectPass(gl: WebGL2RenderingContext, programs: ProgramCa
       const grid = chunkGrid(source);
       for (const { x, y } of tiles) for (const key of grid.around(grid.coordOf(grid.keyAt(x, y)))) cache.delete(key);
     },
+    uploads: () => uploads,
+    collected: () => collected,
     lost: forget,
     release: () => {
       if (buffer !== null) gl.deleteBuffer(buffer);
