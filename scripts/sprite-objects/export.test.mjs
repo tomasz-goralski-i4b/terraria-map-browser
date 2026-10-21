@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { OUTPUT, drawOffsetTables, exportObjects, trackTables, treeTables } from "./export.mjs";
+import { OUTPUT, drawOffsetTables, exportObjects, solidityTables, trackTables, treeTables } from "./export.mjs";
 
 const pieces = (count) => Array.from({ length: 40 }, (_, piece) => ({
   piece, rect: [(piece % 8) * 18, Math.floor(piece / 8) * 18, 16, 16], rect1: [0, 0, 0, 0],
@@ -82,6 +82,12 @@ test("draw offsets the runs do not reproduce are refused", () => {
   const a = [16, 16, 2, 0, 0], b = [16, 16, 0, 0, 0];
   assert.throws(() => drawOffsetTables([drawType(7, [[0, 2400, a]], [[0, 2400, a]], (fx, fy) => (fx === 18 && fy === 18 ? b : a))]), /the runs give/);
   assert.throws(() => drawOffsetTables([drawType(7, [[0, 2400, "parity"]], [[0, 2400, a]], () => a)]), /more than the frame/);
+});
+
+test("solidity: the solid blocks are the solid types that are not solid on top only", () => {
+  const tables = solidityTables({ solid: [0, 1, 19, 379], solidTop: [14, 19], hidesLiquidBehind: [54] });
+  assert.deepEqual(tables, { solidBlocks: [0, 1, 379], solidTops: [14, 19], hidesLiquidBehind: [54] });
+  assert.throws(() => solidityTables(undefined), /no solidity/);
 });
 
 const assembly = process.env.TERRARIA_ASSEMBLY;

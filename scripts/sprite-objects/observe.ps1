@@ -637,8 +637,29 @@ public static class SpriteObjectObserver {
         json.Append("]");
     }
 
+    // --- Solidity of tile types ------------------------------------------------------------------------------------
+
+    /** The ids whose entry in a per-type flag table is set. */
+    static string SetIds(bool[] flags) {
+        var ids = new List<string>();
+        for (int type = 0; type < flags.Length; type++) if (flags[type]) ids.Add(type.ToString(CultureInfo.InvariantCulture));
+        return "[" + string.Join(",", ids.ToArray()) + "]";
+    }
+
+    /** The game's per-type solidity tables after its tile data is set up: solid, solid on top only (platforms), and the
+     *  types that draw no liquid behind themselves. */
+    static void Solidity(StringBuilder json) {
+        Type sets = game.GetType("Terraria.ID.TileID+Sets", true);
+        json.Append("{\"solid\":").Append(SetIds((bool[])Field(mainType, "tileSolid").GetValue(null)));
+        json.Append(",\"solidTop\":").Append(SetIds((bool[])Field(mainType, "tileSolidTop").GetValue(null)));
+        json.Append(",\"hidesLiquidBehind\":").Append(SetIds((bool[])Field(sets, "BlocksWaterDrawingBehindSelf").GetValue(null)));
+        json.Append("}");
+    }
+
     public static string Observe(string path) {
         Initialize(path);
+        var solidity = new StringBuilder();
+        Solidity(solidity);
         var json = new StringBuilder("{\"gameVersion\":\"");
         json.Append(Convert.ToString(Field(mainType, "versionNumber").GetValue(null), CultureInfo.InvariantCulture)).Append("\"");
         json.Append(",\"tracks\":");
@@ -651,6 +672,7 @@ public static class SpriteObjectObserver {
         Palms(json);
         json.Append(",\"drawOffsets\":");
         DrawOffsets(json);
+        json.Append(",\"solidity\":").Append(solidity);
         return json.Append(",\"complete\":true}").ToString();
     }
 }

@@ -1,6 +1,7 @@
 // Turns the sprite object observation (observe.ps1, ADR 0003) into the tables the renderer reads:
 //   node scripts/sprite-objects/export.mjs local-renders/sprite-objects.json
-// Minecart track pieces (#239) and tree trunk blocks, palm rows and foliage styles (#238). Only numbers are written,
+// Minecart track pieces (#239), tree trunk blocks, palm rows and foliage styles (#238), draw offsets and the solidity
+// of tile types. Only numbers are written,
 // no texture and no code. The output, packages/renderer/src/objects/terraria-sprite-objects.generated.ts, is
 // regenerated, never edited by hand.
 import { readFileSync, writeFileSync } from "node:fs";
@@ -141,6 +142,20 @@ export function drawOffsetTables(drawOffsets) {
   return { drawVariants: variants, drawTypes: types, drawUnobserved: unobserved };
 }
 
+/**
+ * Which tile types the liquids treat as solid (docs/assets.md, "Liquids"): the solid types that are not solid on top
+ * only (platforms and the like), the types solid on top only, and the types that draw no liquid behind themselves.
+ */
+export function solidityTables(solidity) {
+  if (solidity === undefined) fail("the observation has no solidity");
+  const top = new Set(solidity.solidTop);
+  return {
+    solidBlocks: solidity.solid.filter((type) => !top.has(type)),
+    solidTops: solidity.solidTop,
+    hidesLiquidBehind: solidity.hidesLiquidBehind,
+  };
+}
+
 export function exportObjects(observed) {
   if (observed.complete !== true) fail("the observation is incomplete");
   if (!Array.isArray(observed.drawOffsets)) fail("the observation has no draw offsets");
@@ -149,6 +164,7 @@ export function exportObjects(observed) {
     ...(() => { const { pieces, extras } = trackTables(observed.tracks); return { trackPieces: pieces, trackExtras: extras }; })(),
     ...treeTables(observed.treeStyles, observed.palms),
     ...drawOffsetTables(observed.drawOffsets),
+    ...solidityTables(observed.solidity),
   };
 }
 

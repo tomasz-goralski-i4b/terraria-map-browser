@@ -38,4 +38,10 @@ export interface SpriteObjectData {
   readonly drawTypes: readonly (readonly [number, number, readonly (readonly [number, number, number])[], readonly (readonly [number, number, number])[]])[];
   /** Frame-important types the observer could not draw (they need the game's textures or tile entities). */
   readonly drawUnobserved: readonly number[];
+  /** Tile types that are solid blocks: solid, and not solid on top only. */
+  readonly solidBlocks: readonly number[];
+  /** Tile types solid on top only (platforms and the like). */
+  readonly solidTops: readonly number[];
+  /** Tile types that draw no liquid behind themselves unless sloped (docs/assets.md, "Liquids"). */
+  readonly hidesLiquidBehind: readonly number[];
 }
