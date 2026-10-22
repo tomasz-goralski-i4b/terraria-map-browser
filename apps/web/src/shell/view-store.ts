@@ -53,6 +53,8 @@ export interface ViewState {
   readonly spritePreviewOpen: boolean;
   /** Whether the renderer still prepares its sprite program (its onSpritesPreparing): sprites show map colours meanwhile. */
   readonly spritesPreparing: boolean;
+  /** When the renderer started preparing it (`Date.now()`), 0 while it does not. */
+  readonly spritesPreparingSince: number;
   readonly setHoverTile: (tile: TilePoint | null) => void;
   readonly setPinnedTile: (tile: TilePoint | null) => void;
   readonly setLayers: (layers: Partial<MapLayers>) => void;
@@ -76,6 +78,7 @@ export const useViewStore = create<ViewState>()((set, get) => ({
   statsVisible: false,
   spritePreviewOpen: false,
   spritesPreparing: false,
+  spritesPreparingSince: 0,
   setHoverTile: (tile) => {
     const previous = get().hoverTile;
     if (previous?.x === tile?.x && previous?.y === tile?.y) return;
@@ -103,7 +106,7 @@ export const useViewStore = create<ViewState>()((set, get) => ({
     set({ spritePreviewOpen: open });
   },
   setSpritesPreparing: (preparing) => {
-    if (get().spritesPreparing !== preparing) set({ spritesPreparing: preparing });
+    if (get().spritesPreparing !== preparing) set({ spritesPreparing: preparing, spritesPreparingSince: preparing ? Date.now() : 0 });
   },
   setStatsVisible: (visible) => {
     set({ statsVisible: visible });
