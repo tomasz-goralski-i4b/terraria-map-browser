@@ -28,20 +28,21 @@ const ZOOM = 16;
 const PAGE = 1536;
 const ALL: ChunkLayers = { background: true, walls: true, blocks: true, liquids: true };
 
-/** water_0 and water_14 (48 and 144 × 1360), Liquid_0 (34 × 16) and a fully transparent Tiles_1. */
+/** water_0 and water_14 (48 and 144 × 1360), Liquid_0 (34 × 16), a fully transparent Tiles_1 and LiquidSlope_0 (72 × 16). */
 const SHEETS: readonly SpriteSheetEntry[] = [
   { kind: "water", id: 0, page: 0, x: 2, y: 2, width: 48, height: 1360, frameWidth: 16, frameHeight: 16 },
   { kind: "water", id: 14, page: 0, x: 60, y: 2, width: 144, height: 1360, frameWidth: 16, frameHeight: 16 },
   { kind: "liquid", id: 0, page: 0, x: 210, y: 2, width: 34, height: 16, frameWidth: 16, frameHeight: 16 },
   { kind: "tile", id: STONE, page: 0, x: 260, y: 2, width: 288, height: 288, frameWidth: 16, frameHeight: 16 },
+  { kind: "liquidSlope", id: 0, page: 0, x: 560, y: 2, width: 72, height: 16, frameWidth: 16, frameHeight: 16 },
 ];
 
 /**
  * Distinct opaque pixels per water sheet; shimmer's base pieces white, as the game's, its sparkle columns black (adding
- * nothing) or, with `sparkles`, white; the stone transparent.
+ * nothing) or, with `sparkles`, white; the stone transparent; each slope piece transparent in its first 4 columns.
  */
 function sheetPixel(sheet: number, x: number, y: number, sparkles = false): Rgba {
-  if (sheet === 3) return [0, 0, 0, 0];
+  if (sheet === 3 || (sheet === 4 && x % 18 < 4)) return [0, 0, 0, 0];
   if (sheet === 1) return x < 48 || sparkles ? [255, 255, 255, 255] : [0, 0, 0, 255];
   return [(x * 5 + sheet * 70) % 256, (y * 3 + 20) % 256, (x * y + sheet * 40) % 256, 255];
 }
@@ -98,6 +99,35 @@ function liquidWorld(): CanonicalWorld {
   pour(8, 2, WATER);
   stone(11, 3);
   pour(11, 2, SHIMMER);
+  return world;
+}
+
+/**
+ * Slopes (shape 2, the game's slope 1) by water: one under water at (1, 3) with water above and right of it, in a pool
+ * walled with stone; one at the surface at (7, 2) with water right of it and nothing above.
+ */
+function slopeWorld(): CanonicalWorld {
+  const world = createWorld(13, 14);
+  const stone = (x: number, y: number, shape = 0): void => {
+    world.setTile(x, y, { block: { kind: "vanilla", id: STONE }, wires: 0, actuator: false });
+    world.planes.shape[x * world.height + y] = shape;
+  };
+  const pour = (x: number, y: number): void => {
+    world.planes.liquid[x * world.height + y] = WATER;
+    world.planes.liquidAmount[x * world.height + y] = 255;
+  };
+  for (let x = 0; x < 5; x++) stone(x, 4);
+  for (const y of [2, 3]) {
+    stone(0, y);
+    stone(4, y);
+  }
+  stone(1, 3, 2);
+  for (const [x, y] of [[1, 2], [2, 2], [3, 2], [2, 3], [3, 3]] as const) pour(x, y);
+  for (let x = 6; x < 10; x++) stone(x, 3);
+  stone(6, 2);
+  stone(9, 2);
+  stone(7, 2, 2);
+  pour(8, 2);
   return world;
 }
 
@@ -194,6 +224,20 @@ describe("liquids drawn as the game draws them", () => {
     // Liquid_0's frame 0 from its top row (no liquid above the block).
     expect(pixel(9, 2, 1, 6)).toEqual(over(withAlpha(sheetPixel(2, 1, 6), 128), background(world, 2)));
     expect(pixel(9, 2, 6, 6)).toEqual(background(world, 2));
+  });
+
+  test("behind a slope under water, the slope's piece lies in the tile as drawn, row for row", () => {
+    const world = renderable(slopeWorld(), 10);
+    const { pixel } = draw(world);
+    for (const [sx, sy] of [[8, 0], [8, 3], [12, 13]] as const) expect(pixel(1, 3, sx, sy)).toEqual(sheetPixel(4, sx, sy));
+  });
+
+  test("behind a slope at the surface, the slope's piece takes the Liquid sheet's surface rows", () => {
+    const world = renderable(slopeWorld(), 10);
+    const { pixel } = draw(world);
+    for (const [sx, sy] of [[8, 0], [8, 3], [12, 13]] as const) expect(pixel(7, 2, sx, sy)).toEqual(sheetPixel(2, sx, sy));
+    // Outside the slope piece's outline nothing is drawn behind the block.
+    expect(pixel(7, 2, 1, 8)).toEqual(background(world, 2));
   });
 
   test("shimmer is its base colour, which varies along the world", () => {

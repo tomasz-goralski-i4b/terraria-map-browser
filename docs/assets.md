@@ -588,7 +588,7 @@ The viewer draws a world's layers in the game's order, from back to front:
    the **moss plants** (184); the **tree foliage** (tree tops and branches, palm tops); the **hanging vines** (52, 62,
    115, 205, 382, 528, 636, 638), drawn **2 pixels up**, so each vine's tile ends in the top 2 rows of the vine below it
    and the tile holding the strip shows the first vine's top 2 rows under its own sprite; the **rising vines** (549),
-   2 pixels down likewise. The vines stay in the chunk pass (`vinePixel`) at their stage's depth. Types in these stages
+   2 pixels down likewise. The vines stay in the chunk pass (`spritePixel`) at their stage's depth. Types in these stages
    without draw data of their own are drawn by the object pass as plain cells; types whose draw data was not observed
    stay in the chunk pass. With no wind, nothing sways: a golf flag's top (493) is then mirrored and shifted 6 pixels
    the way it points, and a sunflower draws its glow (its sheet's rows 74 lower) over each of its tiles;

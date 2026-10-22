@@ -118,9 +118,11 @@ test("while the renderer prepares its sprite program the Sprites row and the ass
   await page.getByRole("button", { name: "Connect Terraria assets" }).click();
   await expect.element(page.getByRole("button", { name: "Terraria assets connected" })).toBeVisible();
   // The renderer reports it (MapCanvas wires onSpritesPreparing into the view store).
-  useViewStore.setState({ spritesPreparing: true });
+  useViewStore.getState().setSpritesPreparing(true);
   await expect.element(page.getByRole("progressbar", { name: "Preparing sprites" })).toBeVisible();
-  await expect.element(page.getByRole("button", { name: "Preparing sprites…" })).toBeVisible();
+  // The driver reports no progress: the button counts the seconds instead.
+  await expect.element(page.getByRole("button", { name: "Preparing sprites… 0 s" })).toBeVisible();
+  await expect.element(page.getByRole("button", { name: "Preparing sprites… 1 s" })).toBeVisible();
   useViewStore.setState({ spritesPreparing: false });
   await expect.element(page.getByRole("progressbar", { name: "Preparing sprites" })).not.toBeInTheDocument();
   await expect.element(page.getByRole("button", { name: "Terraria assets connected" })).toBeVisible();

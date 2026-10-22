@@ -525,40 +525,12 @@ int vineKind(uint index) {
   return ${RISING_VINES.map((id) => `id == ${String(id)}`).join(" || ")} ? 2 : 0;
 }
 
-// The pixel of a vine at sprite pixel sub of its tile (docs/assets.md, "Draw order"): the game draws hanging vines 2
-// pixels up and rising ones 2 pixels down, so a vine's tile shows the next vine of its strip past its own rows, and
-// nothing past the strip's end.
-bool vinePixel(uint index, ivec2 texel, ivec2 sub, int vine, out ivec4 color) {
-  ivec2 s = sub + ivec2(0, vine == 1 ? 2 : -2);
-  ivec2 t = texel;
-  uint i = index;
-  if (s.y >= ${String(SPRITE_TILE_PIXELS)} || s.y < 0) {
-    int dy = s.y < 0 ? -1 : 1;
-    s.y -= dy * ${String(SPRITE_TILE_PIXELS)};
-    ivec2 next = texel + ivec2(dy, 0);
-    uint nextIndex = plane16(next, ${String(PLANES_16.block)});
-    if (vineKind(nextIndex) != vine) {
-      color = ivec4(0);
-      return true;
-    }
-    // shortcut: block cells are uploaded without the apron, so at the chunk's top or bottom row the next vine's rows
-    // come from this tile's own cell; upload the cell apron to draw them exactly.
-    bool edge = dy < 0 ? texel.x == ${String(PAGE_APRON)} : texel.x == ${String(PAGE_APRON)} + vRect.w - 1;
-    if (!edge) {
-      t = next;
-      i = nextIndex;
-    }
-  }
-  ivec2 at = sheetAt(i);
-  return cellPixel(i, texelFetch(uSpriteSheets, at, 0), at, t, s, color);
-}
-
 // The vine the game draws into the tile at texel from the strip it holds (a hanging vine's top 2 rows above its root,
 // a rising vine's bottom 2 rows below its root), at sprite pixel sub; transparent elsewhere. Lies under the tile's own
 // sprite.
 ivec4 vineInto(ivec2 texel, ivec2 sub) {
   int dy = sub.y >= ${String(SPRITE_TILE_PIXELS - 2)} ? 1 : sub.y < 2 ? -1 : 0;
-  // The cells of the tiles past the chunk's top and bottom rows are not uploaded (see vinePixel).
+  // The cells of the tiles past the chunk's top and bottom rows are not uploaded (see spritePixel).
   if (dy == 0 || (dy < 0 ? texel.x == ${String(PAGE_APRON)} : texel.x == ${String(PAGE_APRON)} + vRect.w - 1)) return ivec4(0);
   ivec2 next = texel + ivec2(dy, 0);
   uint index = plane16(next, ${String(PLANES_16.block)});
@@ -577,15 +549,41 @@ bool spritePixel(uint index, ivec2 texel, ivec2 sub, out ivec4 color) {
   ivec4 place = texelFetch(uSpriteSheets, at, 0);
   if (place.w == ${String(SPRITE_STATE.track)}) return trackPixel(place, texel, sub, color);
   int vine = vineKind(index);
-  if (vine != 0) return vinePixel(index, texel, sub, vine, color);
-  if (place.w == ${String(SPRITE_STATE.object)}) {
-    color = ivec4(0);
-    return true;
+  ivec2 stored = ivec2(-1);
+  if (vine != 0) {
+    // A vine (docs/assets.md, "Draw order"): the game draws hanging vines 2 pixels up and rising ones 2 pixels down, so
+    // a vine's tile shows the next vine of its strip past its own rows, and nothing past the strip's end. Its framed
+    // cell is read by the one cellPixel call below (each call site is inlined whole: compile time).
+    sub.y += vine == 1 ? 2 : -2;
+    if (sub.y >= ${String(SPRITE_TILE_PIXELS)} || sub.y < 0) {
+      int dy = sub.y < 0 ? -1 : 1;
+      sub.y -= dy * ${String(SPRITE_TILE_PIXELS)};
+      ivec2 next = texel + ivec2(dy, 0);
+      uint nextIndex = plane16(next, ${String(PLANES_16.block)});
+      if (vineKind(nextIndex) != vine) {
+        color = ivec4(0);
+        return true;
+      }
+      // shortcut: block cells are uploaded without the apron, so at the chunk's top or bottom row the next vine's rows
+      // come from this tile's own cell; upload the cell apron to draw them exactly.
+      bool edge = dy < 0 ? texel.x == ${String(PAGE_APRON)} : texel.x == ${String(PAGE_APRON)} + vRect.w - 1;
+      if (!edge) {
+        texel = next;
+        index = nextIndex;
+        at = sheetAt(index);
+        place = texelFetch(uSpriteSheets, at, 0);
+      }
+    }
+  } else {
+    if (place.w == ${String(SPRITE_STATE.object)}) {
+      color = ivec4(0);
+      return true;
+    }
+    bool frames = (uPresent & ${String(PRESENT.frameX | PRESENT.frameY)}) == ${String(PRESENT.frameX | PRESENT.frameY)};
+    if (frames) {
+      stored = ivec2(frame(texel, ${String(PLANES_16.frameX)}, ${String(PRESENT.frameX)}), frame(texel, ${String(PLANES_16.frameY)}, ${String(PRESENT.frameY)}));
+    }
   }
-  bool frames = (uPresent & ${String(PRESENT.frameX | PRESENT.frameY)}) == ${String(PRESENT.frameX | PRESENT.frameY)};
-  ivec2 stored = frames
-    ? ivec2(frame(texel, ${String(PLANES_16.frameX)}, ${String(PRESENT.frameX)}), frame(texel, ${String(PLANES_16.frameY)}, ${String(PRESENT.frameY)}))
-    : ivec2(-1);
   if (stored.x < 0 || stored.y < 0) return cellPixel(index, place, at, texel, sub, color);
   // Styles past the sheet's edge continue in its next block (wrappedFrame in frame-wrap.ts).
   ivec4 wrap = texelFetch(uSpriteSheets, at + ivec2(4, 0), 0);
@@ -619,17 +617,11 @@ bool spritePixel(uint index, ivec2 texel, ivec2 sub, out ivec4 color) {
 // pixels, kept inside the tile. One sample (16 pixels per tile and above) is spritePixel at the centre.
 bool spriteSample(uint index, ivec2 texel, vec2 centre, out ivec4 color) {
   int count = uSpriteSamples;
-  // One sample: its pixel is its own mean (fully transparent ones are zero), without the divisions below.
-  if (count == 1) {
-    if (!spritePixel(index, texel, samplePixel(centre, 0, 0), color)) return false;
-    if (color.a == 0) color = ivec4(0);
-    return true;
-  }
   ivec4 sum = ivec4(0);
-  for (int y = 0; y < ${String(MAX_SPRITE_SAMPLES)}; y++) {
-    if (y >= count) break;
-    for (int x = 0; x < ${String(MAX_SPRITE_SAMPLES)}; x++) {
-      if (x >= count) break;
+  // Runtime bounds (at most MAX_SPRITE_SAMPLES) and one call: the driver inlines spritePixel once, not per sample (compile
+  // time). One sample is its own mean here too (fully transparent ones are zero).
+  for (int y = 0; y < count; y++) {
+    for (int x = 0; x < count; x++) {
       ivec4 sampled;
       if (!spritePixel(index, texel, samplePixel(centre, x, y), sampled)) return false;
       sum += ivec4(sampled.rgb * sampled.a, sampled.a);
@@ -686,9 +678,16 @@ ivec4 behindArt(uint behind, int shape, ivec2 p, ivec2 tile) {
   bool slope = shape >= 2;
   ivec4 sheet = uLiquidSheets[kind + (slope ? 7 : 3)];
   if (sheet.w == 0) return ivec4(0);
-  int sourceY = mode <= 4 ? 4 : shape >= 2 ? step : (bits & 64) != 0 ? 0 : 4;
+  // A slope's piece lies in the tile row for row; the Liquid sheet starts at its top row or 4 rows down.
+  int sourceY = slope ? dest.y : mode <= 4 ? 4 : (bits & 64) != 0 ? 0 : 4;
   ivec2 source = ivec2(d.x + (slope ? 18 * (shape - 2) : 0), min(sourceY + d.y, sheet.w - 1));
   ivec4 art = ivec4(round(atlasTexel(sheet.yz, sheet.yz + source, sheet.x) * 255.0));
+  // Open to the sky at its top, a slope shows the Liquid sheet's surface rows inside its piece's outline, as the liquid
+  // beside it does (the slope sheet has none).
+  ivec4 plain = uLiquidSheets[kind + 3];
+  if (slope && (bits & 64) != 0 && art.a != 0 && plain.w != 0) {
+    art.rgb = ivec3(round(atlasTexel(plain.yz, plain.yz + ivec2(d.x, min(d.y, plain.w - 1)), plain.x).rgb * 255.0));
+  }
   if (kind == 4) art.rgb = shimmerTint(art.rgb, tile, (vec2(d) + 0.5) / vec2(dest.zw));
   int code = (bits >> 7) & 7;
   if (code == ${String(BEHIND_FADING[0])} || code == ${String(BEHIND_FADING[1])}) art.a = art.a * (2 * d.y + 1) / (2 * dest.w);
@@ -1267,14 +1266,17 @@ ivec4 pointColor(vec2 screen) {
 
 void main() {
   vec2 screen = vec2(gl_FragCoord.x, uViewport.y - gl_FragCoord.y);
-  // One call of the colour functions: each call site inlines all of them (compile time).
-  ivec4 color = uFilter != 0 ? filtered(ivec2(floor(screen))) : pointColor(screen);
 #ifdef SPRITES
+  // Sprites start at SPRITE_MIN_ZOOM, far above the box filter (uFilter, below one pixel per tile), so this program
+  // has none: the filter's loop would inline the whole sprite code once per tile it averages (minutes of D3D11 compile).
+  ivec4 color = pointColor(screen);
   if (uLiquidOverlay != 0) {
-    if (uFilter != 0 || liquidOverlay.a == 0) discard;
+    if (liquidOverlay.a == 0) discard;
     outColor = vec4(liquidOverlay) / 255.0;
     return;
   }
+#else
+  ivec4 color = uFilter != 0 ? filtered(ivec2(floor(screen))) : pointColor(screen);
 #endif
   outColor = vec4(color) / 255.0;
 #ifdef SPRITES

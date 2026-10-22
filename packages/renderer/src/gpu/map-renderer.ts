@@ -215,10 +215,14 @@ const PREFETCH_IDLE_RESERVE = 3;
 const DEFAULT_MAX_CHUNK_UPLOADS_PER_FRAME = 256;
 const DEFAULT_MAX_UPLOAD_MILLISECONDS_PER_FRAME = 8;
 
-const CHUNK_PASS_UNIFORMS = [...TILE_UNIFORMS, "uCamera", "uZoom", "uViewport", "uFilter", "uStep", "uWorldSize"] as const;
+const CHUNK_PASS_UNIFORMS = [...TILE_UNIFORMS, "uCamera", "uZoom", "uViewport", "uWorldSize"] as const;
+/** The box filter below one pixel per tile: map colours only (sprites start far above it). */
+const FILTER_UNIFORMS = ["uFilter", "uStep"] as const;
 /** The chunk pass in map colours, with the wire overlay. */
-const CHUNK_PROGRAM: ProgramSource<(typeof CHUNK_PASS_UNIFORMS)[number] | (typeof OVERLAY_UNIFORMS)[number]> = {
-  vertex: chunkVertexSource, fragment: chunkFragmentSource, uniforms: [...CHUNK_PASS_UNIFORMS, ...OVERLAY_UNIFORMS],
+const CHUNK_PROGRAM: ProgramSource<
+  (typeof CHUNK_PASS_UNIFORMS)[number] | (typeof FILTER_UNIFORMS)[number] | (typeof OVERLAY_UNIFORMS)[number]
+> = {
+  vertex: chunkVertexSource, fragment: chunkFragmentSource, uniforms: [...CHUNK_PASS_UNIFORMS, ...FILTER_UNIFORMS, ...OVERLAY_UNIFORMS],
 };
 /** The chunk pass in sprite mode (chunkSpriteFragmentSource): sprites and framed cells; the wire pass draws wires. */
 const SPRITE_CHUNK_PROGRAM: ProgramSource<
@@ -503,14 +507,14 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
         gl.uniform2f(uniforms.uCamera, view.x, view.y);
         gl.uniform1f(uniforms.uZoom, view.zoom);
         gl.uniform2f(uniforms.uViewport, viewport.width, viewport.height);
-        // Below one pixel per tile a pixel averages the tiles under it (filterTiles) instead of point-sampling one.
-        gl.uniform1i(uniforms.uFilter, view.zoom < 1 ? 1 : 0);
-        gl.uniform1f(uniforms.uStep, filterTilesPerPixel(view.zoom));
         gl.uniform2i(uniforms.uWorldSize, source.width, source.height);
       };
       if (spriteChunk === null) {
         const map = programs.get(CHUNK_PROGRAM);
         setPassUniforms(map);
+        // Below one pixel per tile a pixel averages the tiles under it (filterTiles) instead of point-sampling one.
+        gl.uniform1i(map.uniforms.uFilter, view.zoom < 1 ? 1 : 0);
+        gl.uniform1f(map.uniforms.uStep, filterTilesPerPixel(view.zoom));
         setWireUniforms(gl, map.uniforms);
         drawCalls += store.draw(ready);
         return;

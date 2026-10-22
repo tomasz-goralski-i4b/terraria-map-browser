@@ -107,6 +107,12 @@ function recentMenu(recent: readonly RecentWorld[], now: number): MenuItem {
   return { kind: "submenu", label: "Open Recent", icon: "clock", items };
 }
 
+/** Whole seconds since `since`, counting each second. */
+function Elapsed({ since }: { readonly since: number }): React.JSX.Element {
+  const now = useNow(1000);
+  return <> {String(Math.max(0, Math.floor((now - since) / 1000)))} s</>;
+}
+
 /** The menu bar, the open world's name and file, and the global actions. Nothing else lives here. */
 export function TopBar({ commands }: { readonly commands: readonly Command[] }): React.JSX.Element {
   const summary = useAppStore((state) => state.summary);
@@ -114,6 +120,7 @@ export function TopBar({ commands }: { readonly commands: readonly Command[] }):
   const input = useRef<HTMLInputElement>(null);
   const assetStatus = useAssetStore((state) => state.status);
   const spritesPreparing = useViewStore((state) => state.spritesPreparing);
+  const preparingSince = useViewStore((state) => state.spritesPreparingSince);
   const folder = useWorldLibrary((state) => state.folder);
   const recent = useWorldLibrary((state) => state.recent);
   const now = useNow();
@@ -219,7 +226,11 @@ export function TopBar({ commands }: { readonly commands: readonly Command[] }):
           )}
           {assetStatus.kind === "ready" && spritesPreparing && <ProgressFill fraction={0} waiting />}
           <span className="assets-dot" data-state={assetStatus.kind} aria-hidden="true" />
-          <span className="button-label">{assetButton.label}</span>
+          <span className="button-label">
+            {assetButton.label}
+            {/* The driver reports no progress on a compile: the seconds it has taken so far. */}
+            {assetStatus.kind === "ready" && spritesPreparing && preparingSince !== 0 && <Elapsed since={preparingSince} />}
+          </span>
         </button>
         <span className="top-divider hide-on-phone" aria-hidden="true" />
         <span className="hide-on-phone">
