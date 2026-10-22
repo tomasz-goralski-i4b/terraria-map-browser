@@ -126,6 +126,8 @@ export interface MapController {
   readonly actualSize: () => void;
   /** Glides to `zoom` backing-store pixels per tile around the centre of the view. */
   readonly zoomTo: (zoom: number) => void;
+  /** Glides the zoom by `factor` (from the zoom it is gliding to) around the centre of the view. */
+  readonly zoomBy: (factor: number) => void;
   /** Moves the camera at once (no glide), clamped to the world; the editor's "go to" and tests use it. */
   readonly jumpTo: (camera: Camera) => void;
   /** Draws a complete frame now (all visible chunks), so the canvas can be read back in the same task. */

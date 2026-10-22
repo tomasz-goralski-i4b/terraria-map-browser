@@ -60,7 +60,8 @@ export interface SpriteAtlasSource {
 }
 
 export interface MapAnnotations {
-  /** Nine floats per primitive: from x/y, to x/y, RGB (0–1), CSS width, kind (0 stroke, 1 handle, 2 tick).
+  /** Nine floats per primitive: from x/y, to x/y, RGB (0–1), CSS width, kind (0 stroke, 1 handle, 2 tick,
+   * 3 hollow ring, `width` CSS pixels across).
    * Replace the array when geometry or styling changes; camera moves never upload it again. */
   readonly data: Float32Array;
   readonly density: number;

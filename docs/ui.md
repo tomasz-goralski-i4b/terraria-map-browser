@@ -55,7 +55,7 @@ Code: `apps/web/src/ui/` (primitives), `apps/web/src/shell/` (layout, commands, 
     and age; the submenu flies out on hover or `→`), **Open Recent ▸**, Save… `Ctrl+S` (with unsaved edits; asks where to
     write a verified copy until saving over the opened file exists), Save As… `Ctrl+Shift+S`, Close World (asks
     before dropping unsaved edits, as opening another world does).
-  - *View*: Show panels, Fit world, Actual size, Show render stats, **Theme ▸**, Reset layout.
+  - *View*: Show panels, Fit world, Actual size, Show minimap (`N`), Show render stats, **Theme ▸**, Reset layout.
   - *Edit*: Undo `Ctrl+Z`, Redo `Ctrl+Shift+Z` (Command on macOS); then Copy `Ctrl+C`, Paste `Ctrl+V`, Place paste
     `Enter` and Deselect / Cancel paste `Escape` for the Select tool; then Find… `Ctrl+F`, Next match `F3` and Previous
     match `Shift+F3` (see the Search section; `F3` also works while the search box has focus). Undo and Redo also sit on the top bar right after the
@@ -88,7 +88,9 @@ Code: `apps/web/src/ui/` (primitives), `apps/web/src/shell/` (layout, commands, 
   every tool, so switching tools never moves the map. On narrow screens the
   fields wrap, materials first. See [editor.md](editor.md).
 - **Map** (`components/MapView.tsx`, `MapCanvas.tsx`) holds the zoom controls (Fit world `F`, 1:1 `1`) in its top
-  right corner. The minimap (#145) and transient messages (loading, errors) also go over the map. With no world it shows the **start screen** (`components/StartScreen.tsx`),
+  right corner. The minimap (`components/Minimap.tsx`, below the zoom controls) shows the
+  whole world with the visible area while zoomed in: click to go there, drag the rectangle to pan, wheel to zoom; it
+  marks spawn and the dungeon and redraws after edits. Transient messages (loading, errors) also go over the map. With no world it shows the **start screen** (`components/StartScreen.tsx`),
   as an editor's start page: Open World, Open Worlds Folder, Connect assets, the folder's worlds and the recent ones,
   where Terraria keeps worlds, and that files stay on this computer.
   The primary mouse button uses the active tool; right-button and middle-button drags pan with every tool.

@@ -150,6 +150,32 @@ test("annotation strokes and handles draw at fixed screen width and leave cached
   expect(readCanvas(canvas).some((value) => value !== 0)).toBe(false);
 });
 
+test("a ring annotation is a fixed-size light band between dark ones and leaves its inside to the map", () => {
+  const canvas = makeCanvas(100, 80);
+  const renderer = makeRenderer(canvas, { prefetchChunks: 0 });
+  renderer.setWorld(syntheticWorld(128, 128));
+  renderer.setLayers({ background: false, blocks: false, walls: false, liquids: false });
+  renderer.setCamera({ x: 0, y: 0, zoom: 10 });
+  renderer.setAnnotations({ data: new Float32Array([5.5, 4.5, 5.5, 4.5, 1, 1, 1, 16, 3]), density: 1 });
+  renderer.flushFrame();
+  const pixels = readCanvas(canvas);
+  const at = (x: number, y: number): number[] => [...pixels.subarray((y * 100 + x) * 4, (y * 100 + x) * 4 + 4)];
+  // 16 CSS pixels across, centred on (55, 45): inside stays the map, then a light band, then a dark rim.
+  expect(at(55, 45)).toEqual([0, 0, 0, 0]);
+  expect(at(58, 45)).toEqual([0, 0, 0, 0]);
+  expect(at(61, 45)).toEqual([255, 255, 255, 255]);
+  expect(at(49, 45)).toEqual([255, 255, 255, 255]);
+  expect(at(62, 45)[0]).toBeLessThan(40);
+  expect(at(62, 45)[3]).toBe(255);
+  expect(at(64, 45)).toEqual([0, 0, 0, 0]);
+  // The same on-screen size at any zoom.
+  renderer.setCamera({ x: 0, y: 0, zoom: 0.5 });
+  renderer.setAnnotations({ data: new Float32Array([20, 20, 20, 20, 1, 1, 1, 16, 3]), density: 1 });
+  renderer.flushFrame();
+  const far = readCanvas(canvas);
+  expect([...far.subarray((10 * 100 + 16) * 4, (10 * 100 + 16) * 4 + 4)]).toEqual([255, 255, 255, 255]);
+});
+
 test("creating and updating annotations preserves the terrain outside their strokes", () => {
   const canvas = makeCanvas(100, 80);
   const renderer = makeRenderer(canvas, { prefetchChunks: 0 });

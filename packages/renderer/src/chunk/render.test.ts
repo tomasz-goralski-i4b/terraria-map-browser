@@ -1,7 +1,7 @@
 import { describe, expect, test, vi } from "vitest";
 import { createWorld } from "@studio/world-model";
 import type { CanonicalWorld, Tile, WorldPlanes } from "@studio/world-model";
-import { placeholderColor, renderChunk } from "../index.js";
+import { minimapPixels, placeholderColor, renderChunk, terrariaMapPalette } from "../index.js";
 import type { ChunkLayers, ChunkPixels, ChunkRenderOptions } from "../index.js";
 
 const allLayers: ChunkLayers = { background: true, walls: true, blocks: true, liquids: true };
@@ -231,4 +231,28 @@ test("hashes each palette entry once across chunks and colours entries added lat
   } finally {
     imul.mockRestore();
   }
+});
+
+describe("minimapPixels", () => {
+  test("each pixel has the map colour of the tile at its centre, the background by that tile's depth", () => {
+    const world = createWorld(300, 200);
+    for (let x = 0; x < 300; x++) for (let y = 0; y < 200; y++) {
+      world.setTile(x, y, { ...(x % 7 === 0 ? { block: stone } : {}), ...(y % 5 === 0 ? { wall: dirt } : {}), wires: 1, actuator: false });
+    }
+    const options = { surfaceY: 60, rockY: 120, layers: { ...allLayers, wires: 31 }, mapPalette: terrariaMapPalette };
+    const minimap = minimapPixels(world, { width: 30, height: 8 }, options);
+    expect(minimap.width).toBe(30);
+    expect(minimap.height).toBe(8);
+    const chunkCache = new Map<string, ChunkPixels>();
+    const tileColor = (x: number, y: number): number[] => {
+      const key = `${String(x >> 7)},${String(y >> 7)}`;
+      const chunk = chunkCache.get(key) ?? renderChunk(world, x >> 7, y >> 7, { ...options, layers: allLayers });
+      chunkCache.set(key, chunk);
+      return pixel(chunk, x % 128, y % 128);
+    };
+    // Wires are left out: the minimap shows the terrain.
+    for (let px = 0; px < 30; px++) for (let py = 0; py < 8; py++) {
+      expect(pixel(minimap, px, py)).toEqual(tileColor(Math.floor((px + 0.5) * 10), Math.floor((py + 0.5) * 25)));
+    }
+  });
 });
