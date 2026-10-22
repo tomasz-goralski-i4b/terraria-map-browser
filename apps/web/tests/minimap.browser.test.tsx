@@ -17,16 +17,20 @@ import "../src/styles.css";
 const WIDTH = 256;
 const HEIGHT = 128;
 
-function element<T extends Element>(selector: string): T {
-  const found = document.querySelector<T>(selector);
+function element(selector: string): HTMLElement {
+  const found = document.querySelector<HTMLElement>(selector);
   if (found === null) throw new Error(`${selector} is missing`);
   return found;
 }
 
-const canvas = (): HTMLCanvasElement => element<HTMLCanvasElement>("canvas[aria-label='World map']");
-const minimap = (): HTMLElement => element<HTMLElement>(".minimap");
+function canvas(): HTMLCanvasElement {
+  const found = element("canvas[aria-label='World map']");
+  if (!(found instanceof HTMLCanvasElement)) throw new Error("World map is not a canvas");
+  return found;
+}
+const minimap = (): HTMLElement => element(".minimap");
 const camera = (): Camera => JSON.parse(canvas().dataset["camera"] ?? "null") as Camera;
-const draws = (): string | undefined => element<HTMLCanvasElement>(".minimap-image").dataset["draws"];
+const draws = (): string | undefined => element(".minimap-image").dataset["draws"];
 
 async function mount(): Promise<ReturnType<typeof readWorldTiles>> {
   const world = readWorldTiles(brushSource(WIDTH, HEIGHT, Array.from({ length: WIDTH }, () => [0x40, HEIGHT - 1]).flat()));
@@ -57,7 +61,7 @@ test("the minimap shows the visible area while zoomed in and hides at fit-world 
   expect(minimap().hidden).toBe(true);
   act(() => { getMapController()?.jumpTo({ x: 64, y: 32, zoom: 4 * canvas().width / canvas().clientWidth }); });
   await expect.poll(() => minimap().hidden).toBe(false);
-  const view = element<HTMLElement>(".minimap-view");
+  const view = element(".minimap-view");
   expect(parseFloat(view.style.left)).toBeCloseTo(64 / WIDTH * 100, 3);
   expect(parseFloat(view.style.top)).toBeCloseTo(32 / HEIGHT * 100, 3);
   expect(parseFloat(view.style.width)).toBeCloseTo(100 / WIDTH * 100, 3);
@@ -96,14 +100,36 @@ test("clicking the minimap centres the map there; dragging the rectangle pans by
   // Settled at the centre: now drag the rectangle (around the centre) right and down by 10 CSS pixels.
   const start = camera();
   const box = minimap().getBoundingClientRect();
+  const image = element(".minimap-image").getBoundingClientRect();
   act(() => {
     pointer("pointerdown", 0.5, 0.5);
     pointer("pointermove", 0.5 + 10 / box.width, 0.5 + 5 / box.height);
     pointer("pointerup", 0.5 + 10 / box.width, 0.5 + 5 / box.height);
   });
-  expect(camera().x - start.x).toBeCloseTo(10 * WIDTH / box.width, 1);
-  expect(camera().y - start.y).toBeCloseTo(5 * HEIGHT / box.height, 1);
+  expect(camera().x - start.x).toBeCloseTo(10 * WIDTH / image.width, 1);
+  expect(camera().y - start.y).toBeCloseTo(5 * HEIGHT / image.height, 1);
   expect(camera().zoom).toBe(start.zoom);
+});
+
+test("a drag that starts outside the rectangle pans from the clicked place; a release the minimap missed ends it", async () => {
+  await mount();
+  const zoom = 4 * canvas().width / canvas().clientWidth;
+  act(() => { getMapController()?.jumpTo({ x: 0, y: 0, zoom }); });
+  await expect.poll(() => minimap().hidden).toBe(false);
+  const box = minimap().getBoundingClientRect();
+  const image = element(".minimap-image").getBoundingClientRect();
+  // From 60 % across the image (right of the rectangle), then 10 CSS pixels right.
+  const fx = (image.left - box.left + 0.6 * image.width) / box.width, fy = (image.top - box.top + 0.5 * image.height) / box.height;
+  act(() => { pointer("pointerdown", fx, fy); pointer("pointermove", fx + 10 / box.width, fy); });
+  const centre = (): number => camera().x + canvas().width / camera().zoom / 2;
+  expect(centre()).toBeCloseTo(153.5 + 10 * WIDTH / image.width, 1);
+  // A move with no button held (the release happened elsewhere) ends the drag: later moves do nothing.
+  const before = camera();
+  act(() => {
+    minimap().dispatchEvent(new PointerEvent("pointermove", { bubbles: true, pointerId: 7, buttons: 0, clientX: box.left + 5, clientY: box.top + 5 }));
+    pointer("pointermove", fx + 30 / box.width, fy);
+  });
+  expect(camera()).toEqual(before);
 });
 
 test("the minimap does not take pointer events outside its box", async () => {

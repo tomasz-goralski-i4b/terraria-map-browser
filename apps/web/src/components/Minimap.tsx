@@ -10,6 +10,8 @@ import { getDefaultWorldSession } from "../world/world-session.js";
 const IMAGE_WIDTH = 480;
 const IMAGE_HEIGHT = 360;
 const WHEEL_ZOOM_PER_PIXEL = 0.0015;
+/** The view rectangle is drawn and grabbed at least this many CSS pixels across, however far the map zooms in. */
+const MIN_VIEW_SIZE = 4;
 /** Edits within this many milliseconds redraw the overview once. */
 const EDIT_REDRAW_DELAY = 150;
 const LAYERS = { background: true, walls: true, blocks: true, liquids: true, paint: true };
@@ -31,7 +33,7 @@ export function Minimap({ world, ref }: { readonly world: RenderableWorld; reado
   const imageRef = useRef<HTMLCanvasElement>(null);
   const viewRef = useRef<HTMLDivElement>(null);
   const last = useRef<{ camera: Camera; viewport: Size } | null>(null);
-  const drag = useRef<{ readonly id: number; readonly x: number; readonly y: number; readonly camera: Camera } | null>(null);
+  const drag = useRef<{ readonly id: number; readonly x: number; readonly y: number; readonly camera: Camera; moved: boolean } | null>(null);
   const size = minimapSize(world, IMAGE_WIDTH, IMAGE_HEIGHT);
 
   const place = (): void => {
@@ -55,12 +57,16 @@ export function Minimap({ world, ref }: { readonly world: RenderableWorld; reado
     },
   }));
 
-  useEffect(() => useLayoutStore.subscribe((state, previous) => { if (state.minimap !== previous.minimap) place(); }));
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- place reads the world and its size only
+  useEffect(() => useLayoutStore.subscribe((state, previous) => { if (state.minimap !== previous.minimap) place(); }), [world]);
 
   useEffect(() => {
     const image = imageRef.current;
     const context = image?.getContext("2d");
     if (image === null || context === null || context === undefined) return undefined;
+    // The camera of another world says nothing about this one; the map sends its new camera next.
+    last.current = null;
+    place();
     const draw = (): void => {
       const { pixels } = minimapPixels(world, size, {
         surfaceY: world.surfaceY, ...(world.rockY === undefined ? {} : { rockY: world.rockY }), layers: LAYERS, mapPalette: terrariaMapPalette,
@@ -93,11 +99,12 @@ export function Minimap({ world, ref }: { readonly world: RenderableWorld; reado
     return () => { root.removeEventListener("wheel", onWheel); };
   }, []);
 
-  /** Minimap image pixels of a pointer event. */
+  /** Minimap image pixels of a pointer event; the image sits inside the box's border. */
   const imagePoint = (event: React.PointerEvent): { readonly x: number; readonly y: number } => {
-    const box = event.currentTarget.getBoundingClientRect();
+    const box = (imageRef.current ?? event.currentTarget).getBoundingClientRect();
     return { x: (event.clientX - box.left) * size.width / box.width, y: (event.clientY - box.top) * size.height / box.height };
   };
+  const endDrag = (): void => { drag.current = null; };
 
   const loaded = getDefaultWorldSession().getLoadedWorld();
   const landmarks = loaded?.planes === world.planes ? loaded.details.spawnAndLandmarks : null;
@@ -113,29 +120,41 @@ export function Minimap({ world, ref }: { readonly world: RenderableWorld; reado
       className="minimap"
       style={{ ...STYLE, aspectRatio: `${String(size.width)} / ${String(size.height)}` }}
       hidden
+      role="img"
       aria-label="Minimap"
       onPointerDown={(event) => {
         if (event.button !== 0 || last.current === null) return;
         event.preventDefault();
         const point = imagePoint(event);
-        const rect = minimapViewRect(last.current.camera, last.current.viewport, world, size);
-        if (point.x >= rect.x && point.x <= rect.x + rect.width && point.y >= rect.y && point.y <= rect.y + rect.height) {
-          drag.current = { id: event.pointerId, ...point, camera: last.current.camera };
-          try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* The pointer may already have ended. */ }
-          return;
+        const { camera, viewport } = last.current;
+        const rect = minimapViewRect(camera, viewport, world, size);
+        // Grabbable as large as it is drawn (CSS keeps it MIN_VIEW_SIZE across).
+        const slack = Math.max(0, MIN_VIEW_SIZE * size.width / event.currentTarget.getBoundingClientRect().width - Math.min(rect.width, rect.height)) / 2;
+        const inside = point.x >= rect.x - slack && point.x <= rect.x + rect.width + slack && point.y >= rect.y - slack && point.y <= rect.y + rect.height + slack;
+        let start = camera;
+        if (!inside) {
+          // Glide there; a drag that follows starts from where the glide is going, as editors' navigators do.
+          const tile = minimapTile(point.x, point.y, world, size);
+          const x = Math.floor(tile.x), y = Math.floor(tile.y);
+          getMapController()?.centerOn(x, y);
+          start = { ...camera, x: x + 0.5 - viewport.width / camera.zoom / 2, y: y + 0.5 - viewport.height / camera.zoom / 2 };
         }
-        const tile = minimapTile(point.x, point.y, world, size);
-        getMapController()?.centerOn(Math.floor(tile.x), Math.floor(tile.y));
+        drag.current = { id: event.pointerId, ...point, camera: start, moved: false };
+        try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* The pointer may already have ended. */ }
       }}
       onPointerMove={(event) => {
         const start = drag.current;
         if (start?.id !== event.pointerId) return;
+        if (event.buttons === 0) { endDrag(); return; }
         const point = imagePoint(event);
+        if (!start.moved && point.x === start.x && point.y === start.y) return;
+        start.moved = true;
         const from = minimapTile(start.x, start.y, world, size), to = minimapTile(point.x, point.y, world, size);
         getMapController()?.jumpTo({ ...start.camera, x: start.camera.x + to.x - from.x, y: start.camera.y + to.y - from.y });
       }}
-      onPointerUp={() => { drag.current = null; }}
-      onPointerCancel={() => { drag.current = null; }}
+      onPointerUp={endDrag}
+      onPointerCancel={endDrag}
+      onLostPointerCapture={endDrag}
     >
       <canvas ref={imageRef} className="minimap-image" width={size.width} height={size.height} />
       {landmarks !== null && marker("Spawn", landmarks.spawn)}

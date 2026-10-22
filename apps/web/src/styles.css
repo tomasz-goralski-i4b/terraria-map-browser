@@ -791,7 +791,7 @@ kbd {
 .minimap-view {
   position: absolute;
   box-sizing: border-box;
-  min-width: 4px;
+  min-width: 4px; /* MIN_VIEW_SIZE */
   min-height: 4px;
   border: 1px solid #fff;
   outline: 1px solid rgb(0 0 0 / 70%);

@@ -172,6 +172,7 @@ export function TopBar({ commands }: { readonly commands: readonly Command[] }):
         menuItem(get("view.fit")),
         menuItem(get("view.actual")),
         { kind: "separator" },
+        menuItem(get("view.minimap")),
         menuItem(get("view.stats")),
         { kind: "submenu", label: "Grid", icon: "grid", items: commands.filter((command) => command.id.startsWith("view.grid.")).map(menuItem) },
         { kind: "submenu", label: "Theme", icon: "theme", items: commands.filter((command) => command.id.startsWith("view.theme.")).map(menuItem) },
