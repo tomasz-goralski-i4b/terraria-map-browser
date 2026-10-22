@@ -1,7 +1,7 @@
 import type { AtlasEntry, PackableSheet, SheetKind, SheetMetrics, SpriteAtlas } from "./atlas-types.js";
 
 /** Bump when the page layout or index shape changes; it is part of the cache key. */
-export const ATLAS_FORMAT_VERSION = 8;
+export const ATLAS_FORMAT_VERSION = 9;
 
 /** Page edge used when the caller passes none. */
 export const DEFAULT_PAGE_SIZE = 4096;
@@ -32,6 +32,8 @@ const METRICS: Readonly<Record<SheetKind, SheetMetrics>> = {
   water: { cell: 16, gap: 0 },
   // The shimmer wall's glow: laid out as its wall sheet.
   wallGlow: { cell: 32, gap: 4 },
+  // docs/assets.md, "Cave backgrounds": no grid, the whole sheet repeats.
+  background: { cell: 0, gap: 0 },
 };
 
 interface SheetLayout {

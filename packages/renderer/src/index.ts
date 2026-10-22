@@ -68,3 +68,8 @@ export type { DrawVariant } from "./objects/draw-offsets.js";
 export { WATERFALL_MAX_LENGTH, WATERFALL_MIN_WET, WATERFALL_SHEETS, waterfallSources, waterfallSprites } from "./objects/waterfalls.js";
 export type { WaterfallSource, WaterfallWorld } from "./objects/waterfalls.js";
 export type { ObjectSheetKind, ObjectSprite, ObjectWorld, TileArea, TreeSettings } from "./objects/object-sprites.js";
+export {
+  CAVE_BACKGROUND_IDS, CAVE_BLOCK_HEIGHT, CAVE_BLOCK_WIDTH, CAVE_SLOTS, CAVE_STYLE_COUNT, caveBackgroundBands,
+  caveBackgroundSheets, caveBackgroundStyles,
+} from "./chunk/cave-backgrounds.js";
+export type { CaveBackgroundSettings, CaveWorld } from "./chunk/cave-backgrounds.js";

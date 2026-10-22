@@ -10,9 +10,9 @@ import type { RenderableWorld } from "./types.js";
  */
 export const UNIT = {
   planes16: 0, planes8: 1, palette: 2, background: 3, rules: 4, overview: 5, atlas: 6, spriteSheets: 7, atlasHalf: 8,
-  highlight: 9,
+  highlight: 9, caves: 10,
 } as const;
-export const TEXTURE_UNITS = 10;
+export const TEXTURE_UNITS = 11;
 
 /**
  * A part of the renderer that owns GL objects. `lost` forgets them after a context loss (they died with the context);
