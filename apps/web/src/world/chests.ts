@@ -1,5 +1,5 @@
 import type { WorldChest, WorldTilesResult } from "@studio/world-codec";
-import type { Tile } from "@studio/world-model";
+import { objectFrames, objectLayout, resolveObject, type Tile } from "@studio/world-model";
 import { canonicalWorldOf } from "./canonical-world.js";
 
 export type ChestAt = (x: number, y: number) => WorldChest | null;
@@ -8,13 +8,13 @@ export interface ChestWorld { readonly width: number; readonly height: number; r
 export interface ChestFootprint { readonly x: number; readonly y: number; readonly width: number; readonly height: number }
 export type ChestAnchorStatus = "valid" | "outOfBounds" | "mismatch" | "unknown";
 
-const DRESSER = 88;
 /** Tiles a chest record can sit on: chests (two sheets), dressers and the two trapped-chest sheets. */
-const CHEST_TILES: ReadonlySet<number> = new Set([21, 467, DRESSER, 441, 468]);
+const CHEST_TILES: ReadonlySet<number> = new Set([21, 467, 88, 441, 468]);
 
-/** Chests are 2 × 2 from their top-left tile; dressers, the one vanilla 3-wide chest object, are 3 × 2. */
-function footprintWidth(origin: Tile): number {
-  return origin.block?.kind === "vanilla" && origin.block.id === DRESSER ? 3 : 2;
+/** The object's size in tiles from its layout (docs/assets.md, "Object frames"): 2 × 2 chests, 3 × 2 dressers. */
+function footprintSize(id: number): { readonly width: number; readonly height: number } | undefined {
+  const layout = objectLayout(id);
+  return layout === undefined ? undefined : { width: layout.cellX.length, height: layout.cellY.length };
 }
 
 /** Records survive invalid anchors; only a complete, consistently framed vanilla object gets a footprint. */
@@ -22,15 +22,26 @@ export function chestAnchorStatus(chest: WorldChest, world: ChestWorld): ChestAn
   if (chest.x < 0 || chest.y < 0 || chest.x >= world.width || chest.y >= world.height) return "outOfBounds";
   const origin = world.tileAt(chest.x, chest.y);
   if (origin.block?.kind !== "vanilla") return origin.block === undefined ? "mismatch" : "unknown";
-  if (!CHEST_TILES.has(origin.block.id)) return "unknown";
-  const width = footprintWidth(origin);
-  if (chest.x + width > world.width || chest.y + 2 > world.height) return "outOfBounds";
-  if (origin.frameX === undefined || origin.frameY === undefined || origin.frameX < 0 || origin.frameY < 0 || origin.frameX % (width * 18) !== 0 || origin.frameY % 36 !== 0) return "mismatch";
-  for (let dx = 0; dx < width; dx++) for (let dy = 0; dy < 2; dy++) {
-    const tile = world.tileAt(chest.x + dx, chest.y + dy);
-    if (tile.block?.kind !== "vanilla" || tile.block.id !== origin.block.id || tile.frameX !== origin.frameX + dx * 18 || tile.frameY !== origin.frameY + dy * 18) return "mismatch";
-  }
-  return "valid";
+  const id = origin.block.id;
+  const size = footprintSize(id);
+  if (!CHEST_TILES.has(id) || size === undefined) return "unknown";
+  if (chest.x + size.width > world.width || chest.y + size.height > world.height) return "outOfBounds";
+  // The record sits on the object's top-left tile, and every tile shows that style's frame for its part.
+  const object = resolveObject(id, origin.frameX ?? -1, origin.frameY ?? -1);
+  if (object?.part.dx !== 0 || object.part.dy !== 0) return "mismatch";
+  const frames = objectFrames(id, object.style, chest) ?? [];
+  const framed = frames.every(({ x, y, frameX, frameY }) => {
+    const tile = world.tileAt(x, y);
+    return tile.block?.kind === "vanilla" && tile.block.id === id && tile.frameX === frameX && tile.frameY === frameY;
+  });
+  return framed ? "valid" : "mismatch";
+}
+
+/** The tiles a validly anchored record's object covers. */
+function footprintOf(chest: WorldChest, world: ChestWorld): ChestFootprint | null {
+  const origin = world.tileAt(chest.x, chest.y);
+  const size = origin.block?.kind === "vanilla" ? footprintSize(origin.block.id) : undefined;
+  return size === undefined ? null : { x: chest.x, y: chest.y, ...size };
 }
 
 /** Why a record has no map target: its anchor, or a footprint shared with another record. */
@@ -41,7 +52,7 @@ export interface ChestRecord { readonly status: ChestRecordStatus; readonly foot
 export function chestRecords(chests: readonly WorldChest[], world: ChestWorld): readonly ChestRecord[] {
   const statuses = chests.map((chest) => chestAnchorStatus(chest, world));
   const footprints = chests.map((chest, index): ChestFootprint | null => statuses[index] === "valid"
-    ? { x: chest.x, y: chest.y, width: footprintWidth(world.tileAt(chest.x, chest.y)), height: 2 }
+    ? footprintOf(chest, world)
     : null);
   const owners = new Map<number, number>();
   const ambiguous = new Set<number>();

@@ -53,25 +53,25 @@ function rows(): [string, string][] {
 
 test.each([
   [0, 0, [
-    ["Position", "0, 0"], ["Block", "Stone Block"], ["Wall", "Natural Dirt Wall"], ["Frame X", "18"], ["Frame Y", "36"],
+    ["Position", "0, 0"], ["Block", "Stone Block"], ["Wall", "Natural Dirt Wall"], ["Style", "None"], ["Part", "None"], ["Frame X", "18"], ["Frame Y", "36"],
     ["Shape", "Half block"], ["Block paint", "Yellow Paint"], ["Wall paint", "Lime Paint"], ["Liquid", "None"], ["Liquid amount", "None"],
     ["Wires", "Red, Green"], ["Actuator", "Yes"], ["Inactive", "Yes"], ["Invisible block", "No"], ["Invisible wall", "No"],
     ["Full-bright block", "No"], ["Full-bright wall", "No"],
   ]],
   [0, 1, [
-    ["Position", "0, 1"], ["Block", "None"], ["Wall", "None"], ["Frame X", "None"], ["Frame Y", "None"], ["Shape", "None"],
+    ["Position", "0, 1"], ["Block", "None"], ["Wall", "None"], ["Style", "None"], ["Part", "None"], ["Frame X", "None"], ["Frame Y", "None"], ["Shape", "None"],
     ["Block paint", "None"], ["Wall paint", "None"], ["Liquid", "Water"], ["Liquid amount", "0"], ["Wires", "None"],
     ["Actuator", "No"], ["Inactive", "No"], ["Invisible block", "No"], ["Invisible wall", "No"], ["Full-bright block", "No"],
     ["Full-bright wall", "No"],
   ]],
   [1, 0, [
-    ["Position", "1, 0"], ["Block", "None"], ["Wall", "unknown:900"], ["Frame X", "None"], ["Frame Y", "None"],
+    ["Position", "1, 0"], ["Block", "None"], ["Wall", "unknown:900"], ["Style", "None"], ["Part", "None"], ["Frame X", "None"], ["Frame Y", "None"],
     ["Shape", "None"], ["Block paint", "None"], ["Wall paint", "None"], ["Liquid", "Lava"], ["Liquid amount", "255"],
     ["Wires", "Yellow"], ["Actuator", "No"], ["Inactive", "No"], ["Invisible block", "No"], ["Invisible wall", "Yes"],
     ["Full-bright block", "No"], ["Full-bright wall", "Yes"],
   ]],
   [2, 2, [
-    ["Position", "2, 2"], ["Block", "Tree"], ["Wall", "None"], ["Frame X", "None"], ["Frame Y", "None"],
+    ["Position", "2, 2"], ["Block", "Tree"], ["Wall", "None"], ["Style", "None"], ["Part", "None"], ["Frame X", "None"], ["Frame Y", "None"],
     ["Shape", "Slope, bottom left"], ["Block paint", "None"], ["Wall paint", "None"], ["Liquid", "None"], ["Liquid amount", "None"],
     ["Wires", "None"], ["Actuator", "No"], ["Inactive", "No"], ["Invisible block", "Yes"], ["Invisible wall", "No"],
     ["Full-bright block", "Yes"], ["Full-bright wall", "No"],

@@ -103,7 +103,7 @@ public static class MapObserver {
     // One multi-option content: the option for every frame pair, whether it depends on anything but the frame,
     // and, when it does not, a compact rule from the frame on one axis to the option.
     static void ObserveFrames(StringBuilder json, Array colors, bool wall, int id, int start, int count) {
-        int[] xs = Frames, ys = Array.FindAll(Frames, frame => frame <= 800);
+        int[] xs = Frames, ys = Frames;
         int[,] option = new int[xs.Length, ys.Length];
         bool more = false;
         // What the option depends on besides one frame coordinate, for content that is listed instead of ruled.
