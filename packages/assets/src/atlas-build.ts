@@ -62,12 +62,17 @@ interface Scan {
 }
 
 // Case-insensitive: the casing of Tiles_/Wall_ files differs between installs (docs/assets.md).
-const SHEET_NAME = /^(tiles|wall|tree_tops|tree_branches|item|liquid|liquidslope|waterfall|water)_(\d+)\.xnb$/i;
+const SHEET_NAME = /^(tiles|wall|tree_tops|tree_branches|item|liquid|liquidslope|waterfall|water|background)_(\d+)\.xnb$/i;
 /**
  * The `Misc/water_<n>` sheets the liquids are drawn from (docs/assets.md, "Liquids"): forest water, lava, honey and
  * shimmer; the other water styles depend on where the player stands.
  */
 const WATER_IDS: ReadonlySet<number> = new Set([0, 1, 11, 14]);
+/**
+ * The `Background_<n>` sheets the underground styles draw (docs/assets.md, "Cave backgrounds"); the surface
+ * backgrounds, far larger, are not read.
+ */
+const CAVE_BACKGROUND_RANGES: readonly (readonly [number, number])[] = [[32, 34], [40, 40], [62, 89], [117, 167], [185, 206], [290, 297]];
 /** The folder of `Images` holding the water sheets. */
 const MISC = "Misc";
 /** The single sheets the atlas holds by name, each as id 0 of its kind (docs/assets.md, "Atlas"). */
@@ -79,6 +84,7 @@ const NAMED_SHEETS: ReadonlyMap<string, SheetKind> = new Map([
 const NUMBERED_KINDS: ReadonlyMap<string, SheetKind> = new Map([
   ["tiles", "tile"], ["wall", "wall"], ["tree_tops", "treeTop"], ["tree_branches", "treeBranch"],
   ["item", "item"], ["liquid", "liquid"], ["liquidslope", "liquidSlope"], ["waterfall", "waterfall"], ["water", "water"],
+  ["background", "background"],
 ]);
 
 /** The kind and id of a sheet file the atlas holds, or undefined for any other file. */
@@ -89,6 +95,7 @@ function sheetOf(name: string): { readonly kind: SheetKind; readonly id: number 
   if (match === null) return undefined;
   const kind = NUMBERED_KINDS.get((match[1] ?? "").toLowerCase());
   const id = Number(match[2]);
+  if (kind === "background" && !CAVE_BACKGROUND_RANGES.some(([first, last]) => id >= first && id <= last)) return undefined;
   return kind === undefined || (kind === "water" && !WATER_IDS.has(id)) ? undefined : { kind, id };
 }
 

@@ -5,6 +5,7 @@ import {
   buildSpriteAtlas,
   computeFingerprint,
   findSprite,
+  isAtlasSheetName,
   loadCachedAtlas,
   packSheets,
   readSpritePixels,
@@ -147,8 +148,9 @@ describe("packSheets", () => {
     expect(index.metrics.wall).toEqual({ cell: 32, gap: 4 });
     expect(index.formatVersion).toBe(ATLAS_FORMAT_VERSION);
     // Format 5 added the tree, mushroom cap, wire and actuator sheets: an older cache entry lacks them.
-    // Format 6 added the item and liquid sheets; format 7 the liquid frame layout; format 8 the waterfall sheets.
-    expect(ATLAS_FORMAT_VERSION).toBe(8);
+    // Format 6 added the item and liquid sheets; format 7 the liquid frame layout; format 8 the waterfall sheets;
+    // format 9 the cave background sheets.
+    expect(ATLAS_FORMAT_VERSION).toBe(9);
     expect(index.pageSize).toBe(64);
   });
 
@@ -186,6 +188,8 @@ describe("packSheets", () => {
     ["a liquid slope sheet", "liquidSlope", 0, { frameWidth: 16, frameHeight: 16, gapX: 2, gapY: 2 }],
     // docs/assets.md "Waterfalls": 16 animation frames of 32 × 40, side by side.
     ["a waterfall sheet", "waterfall", 0, { frameWidth: 32, frameHeight: 40, gapX: 0, gapY: 0 }],
+    // docs/assets.md "Cave backgrounds": no grid, the whole sheet repeats.
+    ["a cave background", "background", 67, { frameWidth: 0, frameHeight: 0, gapX: 0, gapY: 0 }],
   ] as const)("packSheets_%s_IndexesItsEffectiveFrameAndGutter", (_label, kind, id, expected) => {
     const atlas = packSheets([sheet(kind, id, 40, 40)], { pageSize: 128 });
     expect(findSprite(atlas, kind, id)).toMatchObject(expected);
@@ -325,9 +329,11 @@ const SHEETS = [
   { name: "LiquidSlope_0", width: 16, height: 80 },
   { name: "Waterfall_14", width: 512, height: 40 },
   { name: "Item_Outline", width: 16, height: 16 }, // look-alike
+  { name: "Background_67", width: 160, height: 96 }, // a cave background (docs/assets.md, "Cave backgrounds")
+  { name: "Background_0", width: 16, height: 16 }, // the sky: not a cave background
 ];
 /** The sheets of SHEETS a build decodes: tiles, walls, tree tops and branches, the caps, the wires and the actuator. */
-const MATCHED = 14;
+const MATCHED = 15;
 
 /** `content` where the `Images/<name>` entry is listed but `getFile()` rejects, like a file that vanished mid-scan. */
 function withUnreadableSheet(content: MemoryDirectory, name: string): ContentDirectory {
@@ -383,12 +389,24 @@ function countingDecoder(): { decode: (bytes: Uint8Array) => XnbTexture; calls: 
   };
 }
 
+describe("isAtlasSheetName", () => {
+  // docs/assets.md, "Cave backgrounds": the sheets the underground styles draw; the surface backgrounds are not read.
+  it.each([
+    ["Background_32.xnb", true], ["Background_40.xnb", true], ["background_89.xnb", true], ["Background_167.xnb", true],
+    ["Background_185.xnb", true], ["Background_206.xnb", true], ["Background_297.xnb", true],
+    ["Background_0.xnb", false], ["Background_31.xnb", false], ["Background_90.xnb", false], ["Background_207.xnb", false],
+    ["Background_298.xnb", false],
+  ] as const)("isAtlasSheetName_%s_Is%s", (name, expected) => {
+    expect(isAtlasSheetName(name)).toBe(expected);
+  });
+});
+
 describe("buildSpriteAtlas", () => {
   it("buildSpriteAtlas_ContentFolder_IndexesTileWallTreeWireAndActuatorSheetsOnly", async () => {
     const result = await buildSpriteAtlas(contentWith(SHEETS), { pageSize: 1024 });
     const keys = result.atlas.index.entries.map((e) => `${e.kind}:${String(e.id)}`).sort();
     expect(keys).toEqual([
-      "actuator:0", "item:1", "liquid:0", "liquidSlope:0", "shroomTop:0", "tile:0", "tile:1", "tile:650", "treeBranch:12",
+      "actuator:0", "background:67", "item:1", "liquid:0", "liquidSlope:0", "shroomTop:0", "tile:0", "tile:1", "tile:650", "treeBranch:12",
       "treeTop:3", "wall:1", "wall:2", "waterfall:14", "wire:0",
     ]);
     expect(result.fromCache).toBe(false);

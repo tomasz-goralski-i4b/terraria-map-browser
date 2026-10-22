@@ -12,6 +12,7 @@ import { WIRE_LAYER, type ChunkLayers } from "../chunk/render.js";
 import type { BlockFraming } from "../framing/frame-block.js";
 import type { MapPalette } from "../palette/map-palette.js";
 import { createBackgroundProgram } from "./background-program.js";
+import { CAVE_UNIFORMS, createCaveBackgrounds } from "./cave-backgrounds.js";
 import { createChunkStore, CHUNKS_PER_PAGE, type Resident } from "./chunk-store.js";
 import { createFrameTargets } from "./frame-targets.js";
 import {
@@ -223,12 +224,12 @@ const CHUNK_PROGRAM: ProgramSource<(typeof CHUNK_PASS_UNIFORMS)[number] | (typeo
 /** The chunk pass in sprite mode (chunkSpriteFragmentSource): sprites and framed cells; the wire pass draws wires. */
 const SPRITE_CHUNK_PROGRAM: ProgramSource<
   (typeof CHUNK_PASS_UNIFORMS)[number] | (typeof SAMPLING_UNIFORMS)[number] | (typeof PAINT_GROUP_UNIFORMS)[number]
-  | "uSpriteSheets" | "uLiquidSheets" | "uLiquidOverlay" | "uSurfaceY" | "uWallGlow"
+  | "uSpriteSheets" | "uLiquidSheets" | "uLiquidOverlay" | "uSurfaceY" | "uWallGlow" | (typeof CAVE_UNIFORMS)[number]
 > = {
   vertex: chunkVertexSource, fragment: chunkSpriteFragmentSource,
   uniforms: [
     ...CHUNK_PASS_UNIFORMS, ...SAMPLING_UNIFORMS, ...PAINT_GROUP_UNIFORMS, "uSpriteSheets", "uLiquidSheets", "uLiquidOverlay", "uSurfaceY",
-    "uWallGlow",
+    "uWallGlow", ...CAVE_UNIFORMS,
   ],
 };
 
@@ -296,6 +297,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   const store = createChunkStore(gl, unpack, counters, maxCachedChunks);
   const colors = createMapColors(gl, unpack, counters, options?.mapPalette);
   const atlas = createSpriteAtlas(gl, unpack, programs);
+  const caves = createCaveBackgrounds(gl, unpack, counters);
   const overviews = createOverviewPart(gl, programs, colors, store);
   // Linked when an atlas is set or on the first sprite frame: map mode and the overview never compile the sprite code,
   // which would make every map-only renderer compile about twice as long. While it links, frames show map colours.
@@ -312,7 +314,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
   const grid = createGridPass(gl, programs);
   const annotations = createAnnotationPass(gl, programs);
   const frames = createFrameTargets(gl);
-  const parts: readonly GpuPart[] = [unpack, programs, store, colors, atlas, overviews, spriteProgram, objects, wires, highlight, annotations, frames];
+  const parts: readonly GpuPart[] = [unpack, programs, store, colors, atlas, caves, overviews, spriteProgram, objects, wires, highlight, annotations, frames];
   /** Links the map programs every renderer draws with at once, so a broken one fails here rather than in a frame. */
   const linkMapPrograms = (): void => {
     for (const source of [CHUNK_PROGRAM, BUILD_PROGRAM, DRAW_PROGRAM]) programs.get(source);
@@ -523,6 +525,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       gl.uniform4iv(sprite.uLiquidSheets, atlas.liquidSheets());
       gl.uniform4iv(sprite.uWallGlow, atlas.place("wallGlow"));
       gl.uniform1i(sprite.uSurfaceY, source.surfaceY);
+      caves.set(sprite, source, atlas);
       setPaintGroups(gl, sprite);
       // In sprite mode the chunk pass writes the depth of the game's order (blockDepth in the shader) for the sprites
       // behind the blocks, and clears the stencil bit.
@@ -711,6 +714,7 @@ export function createMapRenderer(canvas: HTMLCanvasElement, options?: MapRender
       if (next !== world) {
         store.setWorld(next);
         colors.setWorld();
+        caves.release();
         overviews.release();
         objects.clear();
         wires.clear();
