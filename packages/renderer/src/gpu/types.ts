@@ -1,4 +1,5 @@
 import type { ContentRef } from "@studio/world-model";
+import type { CaveBackgroundSettings } from "../chunk/cave-backgrounds.js";
 import type { TreeSettings } from "../objects/object-sprites.js";
 
 /** The slice of a world the renderer reads. Planes are column-major (`x * height + y`); never copied by the caller. */
@@ -31,6 +32,8 @@ export interface RenderableWorld {
   readonly palette: readonly ContentRef[];
   /** The world header's tree-style zones and tree top variations (docs/assets.md, "Trees"); without them all are 0. */
   readonly trees?: TreeSettings;
+  /** The world header's underground background settings (docs/assets.md, "Cave backgrounds"); without them none are drawn. */
+  readonly caves?: CaveBackgroundSettings;
 }
 
 /** One sheet of a sprite atlas: where it lies on its page and the size of its frame cells (docs/assets.md, "Atlas"). */

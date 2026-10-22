@@ -705,6 +705,47 @@ The **Paint** layer (`ChunkLayers.paint`, on by default) hides paint in map colo
 echo coating (`invisibleBlock`/`invisibleWall`) still draws the tile, as an editor must show it; the illuminant coating
 has no colour of its own.
 
+### Cave backgrounds
+
+**Sheets (S).** The underground is drawn from `Background_<n>`: strips 160 pixels wide (128 in the oldest style, 192
+by the ocean) with a 16-pixel border at each side, of three kinds: **edges** 16 high, **repeats** 96 high, and the
+magma ones, whose three animation frames lie one under the other (48 or 288 high; frame 0 is drawn). The atlas holds
+the 115 sheets the underground styles use (ids 32–34, 40, 62–89, 117–167, 185–206, 290–297); the surface
+backgrounds are not read.
+
+**Styles.** A style names seven sheets, one per **band** from the top: surface edge, dirt, rock edge, rock, magma
+edge, magma, underworld edge (`caveBackgroundSheets`, `packages/renderer/src/chunk/cave-backgrounds.ts`). Styles 3–10
+are the world header's four zone styles (0–7) plus 3, the zone picked by comparing the column with the header's three
+zone edges; 1 is snow (its sheets by the header's ice style), 2 glowing mushrooms, 11 the jungle (by the jungle
+style), 12–14 corruption, crimson and hallow in the caverns, 15–17 the same under snow, 18–21 the beaches (plain,
+corrupt, hallowed, crimson; dirt sheets only). The header's underworld style shifts the magma and underworld edge
+sheets; the world id picks one of several rock sheets of the evil styles.
+
+**Which style.** The game picks one style for the whole view from the biome tiles around its centre. For a still world
+the renderer picks one per block of 8 × 6 tiles (one repeat of the sheets), as if the view were centred on it
+(`caveBackgroundStyles`): it counts the snow, jungle, corruption, crimson, hallow and mushroom tiles of a window of
+21 × 21 blocks around the block (the game's window is 169 × 124 tiles); hallow and the evils cancel each other out.
+In order: the zone style; snow when more than 1500 snow tiles lie around and the view does not reach 250 rows above
+the bottom; jungle when more than 140 jungle tiles lie around (over snow only with more jungle than snow); on a beach
+(above the ocean level, within 380 columns of either edge) a beach style; otherwise, with the view's top more than
+60 rows below the rock level and 60 above the magma level, the evil styles (300 corrupt or crimson tiles, 125 hallow);
+mushroom over everything with 100 mushroom tiles. The sunflower and remix-world adjustments of the counts are not
+made, and edited tiles or header styles take effect when the world is opened again.
+
+**Bands.** In world pixels (16 per tile), with the surface level *s*, rock level *r* and the world's height *h*
+(`caveBackgroundBands`): the surface edge at *s* × 16; the dirt from 16 below it down to the rock edge, which ends
+32 pixels past the first whole 96-pixel repeat from the surface at or below the rock level; the rock band down to the
+first whole repeat 600 pixels below the magma level *m* = *s* + 6 ⌊(*h* − 330 − *s*) / 6⌋ − 5; its edge; the magma
+band repeating from *m* × 16 + 608 down to the first whole repeat past the underworld (*h* − 200); its edge. Below it
+the underworld's own backgrounds are not drawn (map colour). The dirt, rock and magma sheets repeat every 96 pixels
+down from their band's start. Across, the edge, dirt and rock edge sheets repeat every width − 32 pixels, the others
+every 128, from the world's left edge (a still view: no parallax), past the 16-pixel border. The colour is dimmed to
+0.9 (the game's fully lit background).
+
+**Drawing.** In sprite mode an empty tile below the surface shows the background instead of the background's map
+colour, faded in like a sprite; walls, blocks and the rest are drawn over it as before. A world without the header's
+settings or a rock level keeps the map colour. The background layer toggle shows and hides it.
+
 ### Worked examples
 
 | # | Case | Input | Source rectangle (x, y, w, h) | Basis |
@@ -735,6 +776,7 @@ Expected sheet sizes (consistent with the size arithmetic, confirmed only by the
 | Wires and actuators | the `WiresNew` piece the four same-colour side neighbours give, red to yellow, the actuator on top, over everything in a wire pass; the colour overlay below `SPRITE_MIN_ZOOM` (#241, "Wires") | animation, the wiring tools' translucency modes, the other `WiresNew` rows |
 | Liquids | the pieces of frame 0 of their `Misc/water_<n>` sheet by the liquid's visible level and edges, falls below liquid, the liquid behind blocks (`Liquid_<n>`, `LiquidSlope_<n>`), an opaque back layer under the sky and a translucent front layer over everything in the tile, also over the object-pass sprites under it ("Liquids"); shimmer in its wave of violets | animation (waves, lava glow), biome water styles, shimmer's sparkles, lighting |
 | Waterfalls | sources and paths as the game finds and walks them, lips, columns, feet, films and slope strips from frame 0 of `Waterfall_<n>`, the rainbow and gemspark streams, rain and snow under clouds, in the object pass ("Waterfalls") | animation, the biome water styles, shimmer's sparkles |
+| Cave backgrounds | the underground style of each block by the header's zones and styles and the biome tiles around it, its sheets in the game's bands below the surface, still (no parallax) ("Cave backgrounds") | surface and underworld backgrounds, transitions between styles, lighting |
 | Paint, inactive tiles | every paint on every sprite path, special groups on trees, grass, dirt and mud, inactive tiles at 102/255 (#229, "Paint and inactive tiles") | illumination (lighting), the echo coating's invisibility |
 
 ## Tile framing
@@ -1546,9 +1588,10 @@ report the same errors, and every candidate library either drags in a framework 
 wall's glow, laid out as a wall sheet; each id 0), and `Item_<n>`,
 `Liquid_<n>` and `LiquidSlope_<n>` (kinds `item`, `liquid`, `liquidSlope`: items for chest contents, with no frame grid
 (frame size 0, the whole sheet: the item catalog carries each inventory frame); liquids drawn per "Liquids", 16 × 16
-frames at a stride of 18) once (names matched
+frames at a stride of 18), and the underground `Background_<n>` sheets (kind `background`, no frame grid; "Cave
+backgrounds") once (names matched
 case-insensitively; `Wall_Outline`, `Tiles_<id>_<n>` variants and everything else are ignored) and packs them into
-square RGBA pages, 4096 × 4096 by default. Format 5 added the tree, cap, wire and actuator sheets; format 6 the item and liquid sheets; format 7 the liquid frame layout; format 8 the waterfall sheets. It runs in a Worker (`atlas-worker.ts`) and never
+square RGBA pages, 4096 × 4096 by default. Format 5 added the tree, cap, wire and actuator sheets; format 6 the item and liquid sheets; format 7 the liquid frame layout; format 8 the waterfall sheets; format 9 the cave background sheets. It runs in a Worker (`atlas-worker.ts`) and never
 touches the network; the Worker reports the number of `fetch` calls it saw (always 0).
 
 - **Packing:** shelf packing, tallest sheet first, with 2 transparent pixels of padding around every sheet so

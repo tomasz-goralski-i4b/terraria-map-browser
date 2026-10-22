@@ -1,6 +1,7 @@
 // GLSL for the WebGL2 backend. The colour rules mirror `renderChunk` (../chunk/render.ts) and use integer arithmetic so
 // the chunk pass is bit-exact: no tie-breaking can differ because (l*a + c*(255-a)) / 255 never has a .5 fraction.
 import { FILTER_SUBTILE } from "../chunk/box-filter.js";
+import { CAVE_BLOCK_HEIGHT, CAVE_BLOCK_WIDTH, CAVE_STYLE_COUNT } from "../chunk/cave-backgrounds.js";
 import { BEHIND_FADING, BEHIND_OPACITIES, LIQUID_FALL_REACH, LIQUID_FRONT_ALPHA, SURFACE_SOURCE_Y } from "../chunk/liquid-layout.js";
 import { BLOCK_CELL_STRIDE } from "../framing/chunk-cells.js";
 import { NO_CELL } from "../framing/frame-block.js";
@@ -340,6 +341,12 @@ uniform ivec4 uLiquidSheets[12];
 uniform ivec4 uWallGlow;
 // The world's surface level: above it the liquids' back layer hides the sky; below it the background hides that layer.
 uniform int uSurfaceY;
+// The underground backgrounds (docs/assets.md, "Cave backgrounds"; CaveBackgrounds in cave-backgrounds.ts): rows
+// 0 … CAVE_STYLE_COUNT - 1 hold per style and band its sheet (atlas page, x, y, width; width 0 without it), the rows
+// after them the style of each block of tiles. uCaveBands: where bands 0–6 start and the last ends in world pixels,
+// then where the magma sheet's repeats start; -1 first without backgrounds.
+uniform highp usampler2D uCaves;
+uniform int uCaveBands[9];
 // The front layer's opacity by kind, and the steps of a fall's fade (its reach + 1).
 const int LIQUID_FRONT_ALPHA[4] = int[4](${LIQUID_FRONT_ALPHA.map(String).join(", ")});
 const int LIQUID_FALL_STEPS[4] = int[4](${LIQUID_FALL_REACH.map((reach) => String(reach + 1)).join(", ")});
@@ -1027,6 +1034,29 @@ float stageDepth(int stage, int y) {
   return ${STAGE_DEPTH_TOP} - float(stage * ${String(STAGE_ROWS)} + min(y, ${String(STAGE_ROWS - 1)})) * ${STAGE_DEPTH_SCALE};
 }
 
+#ifdef SPRITES
+// The underground background at sprite pixel sub of world tile tile, as the game shows a still world: the sheet of the
+// pixel's band in the style of its block, repeated across from the world's left edge (the edge, dirt and rock edge
+// sheets every width - 32 pixels, the others every 128, past a 16-pixel border) and down from its band's start every
+// 96 pixels, dimmed to 0.9; transparent outside the bands or without the sheet.
+ivec4 caveBackground(ivec2 tile, vec2 sub) {
+  if (uCaveBands[0] < 0) return ivec4(0);
+  ivec2 pixel = tile * 16 + ivec2(min(sub, vec2(15.0)));
+  int slot = -1;
+  for (int band = 0; band < 7; band++) if (pixel.y >= uCaveBands[band] && pixel.y < uCaveBands[band + 1]) slot = band;
+  if (slot < 0) return ivec4(0);
+  int style = int(texelFetch(uCaves, ivec2(tile.x / ${String(CAVE_BLOCK_WIDTH)}, ${String(CAVE_STYLE_COUNT)} + tile.y / ${String(CAVE_BLOCK_HEIGHT)}), 0).r);
+  ivec4 sheet = ivec4(texelFetch(uCaves, ivec2(slot, style), 0));
+  if (sheet.w == 0) return ivec4(0);
+  int down = pixel.y - (slot == 5 ? uCaveBands[8] : uCaveBands[slot]);
+  int v = (slot & 1) == 1 ? ((down % 96) + 96) % 96 : down;
+  int u = 16 + pixel.x % (slot < 3 ? sheet.w - 32 : 128);
+  vec4 texel = atlasTexel(sheet.yz, sheet.yz + ivec2(u, v), sheet.x);
+  ivec4 color = ivec4(round(texel * 255.0));
+  return ivec4((color.rgb * 9 + 5) / 10, color.a);
+}
+#endif
+
 ivec4 localColorAt(ivec2 local, vec2 sub) {
   ivec2 texel = ivec2(local.y + ${String(PAGE_APRON)}, local.x + ${String(PAGE_APRON)});
 #ifdef SPRITES
@@ -1038,6 +1068,12 @@ ivec4 localColorAt(ivec2 local, vec2 sub) {
   ivec4 color = ivec4(0);
   if ((uLayers & 1) != 0) color = ivec4(texelFetch(uBackground, ivec2(tileY % 256, tileY / 256), 0));
 #ifdef SPRITES
+  // Below the surface the underground background stands in for the background's map colour, faded in like a sprite.
+  ivec4 cave = (uLayers & 1) != 0 ? caveBackground(vRect.xy + local, sub) : ivec4(0);
+  if (cave.a != 0) {
+    cave = over(cave, color);
+    color = uSpriteWeight < 256 ? (color * (256 - uSpriteWeight) + cave * uSpriteWeight + 128) / 256 : cave;
+  }
   // The liquids as the game lays them out (docs/assets.md, "Liquids"; liquidLayout in ../chunk/liquid-layout.ts),
   // uploaded with the framed cells: the tile's liquid piece of its water sheet and the liquid behind its block. A kind
   // without its sheets keeps its map colour (below).

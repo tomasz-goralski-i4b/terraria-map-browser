@@ -116,7 +116,6 @@ describe("caveBackgroundStyles", () => {
 
   test("caveBackgroundStyles_WithoutHeaderStylesOrRockLevel_IsNull", () => {
     expect(caveBackgroundStyles(world([], null))).toBeNull();
-    const { rockY: _rock, ...noRock } = world([]);
-    expect(caveBackgroundStyles(noRock)).toBeNull();
+    expect(caveBackgroundStyles({ ...world([]), rockY: undefined } as unknown as CaveWorld)).toBeNull();
   });
 });
