@@ -1,11 +1,11 @@
 /**
  * Which sprite family a sheet belongs to: `Tiles_<id>`, `Wall_<id>`, and the sheets that no tile id addresses
- * (docs/assets.md, "Atlas"): `Tree_Tops_<n>`, `Tree_Branches_<n>`, `Shroom_Tops` (id 0), `WiresNew` (id 0) and
- * `Actuator` (id 0).
+ * (docs/assets.md, "Atlas"): `Tree_Tops_<n>`, `Tree_Branches_<n>`, `Shroom_Tops` (id 0), `WiresNew` (id 0),
+ * `Actuator` (id 0) and the cave backgrounds' `Background_<n>`.
  */
 export type SheetKind =
   "tile" | "wall" | "treeTop" | "treeBranch" | "shroomTop" | "wire" | "actuator" | "item" | "liquid" | "liquidSlope" | "waterfall"
-  | "water" | "wallGlow";
+  | "water" | "wallGlow" | "background";
 
 /** Frame and gutter metrics of a family (docs/assets.md, "Sprite layout"). */
 export interface SheetMetrics {
