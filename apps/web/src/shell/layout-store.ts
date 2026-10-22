@@ -58,6 +58,8 @@ export interface Layout {
   readonly inspectorShowAll: boolean;
   /** How a chest's slots open: the game's grid or a list of the filled slots. */
   readonly chestView: ChestView;
+  /** The overview of the whole world in the map's corner while zoomed in. */
+  readonly minimap: boolean;
 }
 
 export const DEFAULT_LAYOUT = {
@@ -73,6 +75,7 @@ export const DEFAULT_LAYOUT = {
   theme: "system",
   inspectorShowAll: false,
   chestView: "grid",
+  minimap: true,
   minDockWidth: 240,
   maxDockWidth: 640,
 } as const satisfies Layout & { minDockWidth: number; maxDockWidth: number };
@@ -100,6 +103,7 @@ export interface LayoutState extends Layout {
   readonly setColumn: (table: string, column: string, layout: ColumnLayout) => void;
   readonly setTheme: (theme: ThemeChoice) => void;
   readonly setInspectorShowAll: (showAll: boolean) => void;
+  readonly setMinimap: (shown: boolean) => void;
   readonly setChestView: (view: ChestView) => void;
 }
 
@@ -159,7 +163,7 @@ function parseLayout(text: string | null): Layout {
   const sections = Object.fromEntries(
     SECTION_IDS.map((id) => [id, storedSections[id] ?? DEFAULT_LAYOUT.sections[id]]),
   ) as Record<SectionId, boolean>;
-  const { dockWidth, dockHidden, dockTab, inspectorHeight, theme, inspectorShowAll, chestView } = value;
+  const { dockWidth, dockHidden, dockTab, inspectorHeight, theme, inspectorShowAll, chestView, minimap } = value;
   return {
     sections,
     grid: parseGrid(value["grid"]),
@@ -173,6 +177,7 @@ function parseLayout(text: string | null): Layout {
     theme: theme === "dark" || theme === "light" || theme === "system" ? theme : DEFAULT_LAYOUT.theme,
     inspectorShowAll: typeof inspectorShowAll === "boolean" ? inspectorShowAll : DEFAULT_LAYOUT.inspectorShowAll,
     chestView: chestView === "grid" || chestView === "list" ? chestView : DEFAULT_LAYOUT.chestView,
+    minimap: typeof minimap === "boolean" ? minimap : DEFAULT_LAYOUT.minimap,
   };
 }
 
@@ -191,9 +196,9 @@ function browserStorage(): LayoutStorage | null {
 let storage: LayoutStorage | null = null;
 
 function save(layout: Layout): void {
-  const { sections, groups, dockWidth, dockHidden, dockTab, inspectorHeight, columns, theme, inspectorShowAll, chestView, grid, ruler } = layout;
+  const { sections, groups, dockWidth, dockHidden, dockTab, inspectorHeight, columns, theme, inspectorShowAll, chestView, grid, ruler, minimap } = layout;
   try {
-    storage?.setItem(LAYOUT_STORAGE_KEY, JSON.stringify({ sections, groups, dockWidth, dockHidden, dockTab, inspectorHeight, columns, theme, inspectorShowAll, chestView, grid, ruler }));
+    storage?.setItem(LAYOUT_STORAGE_KEY, JSON.stringify({ sections, groups, dockWidth, dockHidden, dockTab, inspectorHeight, columns, theme, inspectorShowAll, chestView, grid, ruler, minimap }));
   } catch {
     // Private mode, quota or blocked storage: the layout still works for this visit.
   }
@@ -238,6 +243,7 @@ export const useLayoutStore = create<LayoutState>()((set, get) => {
     setTheme: (theme) => {
       update({ theme });
     },
+    setMinimap: (shown) => { update({ minimap: shown }); },
     setInspectorShowAll: (showAll) => {
       update({ inspectorShowAll: showAll });
     },

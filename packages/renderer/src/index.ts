@@ -1,7 +1,9 @@
 // Public entry point of the framework-free renderer: chunk rendering of CWM planes. The camera and
 // drawing backends land here in later issues; this package must never import React (enforced by lint and a test).
 export const RENDERER_PACKAGE = "@studio/renderer";
-export { WIRE_ALPHA, WIRE_COLORS, WIRE_LAYER, renderChunk, wireColor } from "./chunk/render.js";
+export { WIRE_ALPHA, WIRE_COLORS, WIRE_LAYER, minimapPixels, renderChunk, wireColor } from "./chunk/render.js";
+export { minimapSize, minimapTile, minimapViewRect } from "./camera/minimap.js";
+export type { MinimapRect } from "./camera/minimap.js";
 export type { ChunkLayers, ChunkPixels, ChunkRenderOptions } from "./chunk/render.js";
 export {
   DEFAULT_HIGHLIGHT_COLOR, DEFAULT_HIGHLIGHT_DIM, HIGHLIGHT_OUTLINE_PIXELS, HIGHLIGHT_OUTLINE_ZOOM, HIGHLIGHT_TINT_ALPHA,

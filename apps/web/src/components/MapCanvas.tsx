@@ -17,6 +17,8 @@ import { measurementScene, type MeasurementScene } from "../world/measurement-sc
 import { hitMeasurement, type MeasurementHit, type RulerSettings } from "../world/measurements.js";
 import { useRulerStore, beginMeasurement, moveMeasurement, finishMeasurement } from "../world/ruler-session.js";
 import { installPerformance, type FrameObservation } from "../performance.js";
+import { Minimap, type MinimapHandle } from "./Minimap.js";
+import { PIN_RING_ZOOM, tileMarkers } from "../world/tile-markers.js";
 
 const KEY_PAN_PIXELS_PER_MS = 0.384;
 const KEY_ZOOM_FACTOR = 1.25;
@@ -123,6 +125,7 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
   const rulerNodes = useRef(new Map<string, HTMLSpanElement>());
   const rulerLabelCamera = useRef("");
   const worldRef = useRef(world);
+  const minimapRef = useRef<MinimapHandle>(null);
   const [error, setError] = useState<string | null>(null);
   const tool = useViewStore((state) => state.tool);
   const layers = useViewStore((state) => state.layers);
@@ -258,7 +261,7 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
     });
   }, []);
 
-  const annotationCache = useRef<{ readonly ruler: Float32Array; readonly chests: ReturnType<typeof useChestNavigation.getState>; readonly markers: boolean; readonly match: unknown; readonly data: Float32Array } | null>(null);
+  const annotationCache = useRef<{ readonly ruler: Float32Array; readonly chests: ReturnType<typeof useChestNavigation.getState>; readonly markers: boolean; readonly match: unknown; readonly tiles: string; readonly data: Float32Array } | null>(null);
   const updateRuler = useCallback((session: MapSession): void => {
     const canvas = canvasRef.current, overlay = rulerLabelsRef.current;
     if (canvas === null || overlay === null || canvas.clientWidth === 0) return;
@@ -277,12 +280,18 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
     const markers = session.camera.zoom / density < CHEST_MARKER_ZOOM;
     // The content match F3 last went to is framed like the selected chest, so the current one stands out.
     const match = useSearchStore.getState().position;
-    if (annotations?.ruler !== cached.scene.data || annotations.chests !== chests || annotations.markers !== markers || annotations.match !== match) {
+    // The Inspector's tiles: the pin, and the hovered tile while the Inspect tool previews it.
+    const { pinnedTile } = useViewStore.getState();
+    const hover = useViewStore.getState().tool === "inspect" ? session.hoverTile : null;
+    const ring = session.camera.zoom / density < PIN_RING_ZOOM;
+    const tiles = JSON.stringify([pinnedTile, hover, ring]);
+    if (annotations?.ruler !== cached.scene.data || annotations.chests !== chests || annotations.markers !== markers || annotations.match !== match || annotations.tiles !== tiles) {
       const current = match === null ? [] : [{ x: match.x, y: match.y, width: 1, height: 1 }];
       const chestData = chestAnnotations([...chests.areas, ...current], current[0] ?? chests.selected, markers);
-      const data = new Float32Array(cached.scene.data.length + chestData.length);
-      data.set(cached.scene.data); data.set(chestData, cached.scene.data.length);
-      annotations = { ruler: cached.scene.data, chests, markers, match, data };
+      const tileData = tileMarkers(pinnedTile, hover, ring);
+      const data = new Float32Array(cached.scene.data.length + chestData.length + tileData.length);
+      data.set(cached.scene.data); data.set(chestData, cached.scene.data.length); data.set(tileData, cached.scene.data.length + chestData.length);
+      annotations = { ruler: cached.scene.data, chests, markers, match, tiles, data };
       annotationCache.current = annotations;
     }
     session.renderer.setAnnotations(annotations.data.length === 0 ? null : { data: annotations.data, density });
@@ -310,6 +319,7 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
     session.camera = camera;
     session.renderer.setCamera(camera);
     useViewStore.getState().setZoom(camera.zoom);
+    minimapRef.current?.update(camera, session.viewport);
     refreshHover(session);
     const canvas = canvasRef.current;
     if (canvas === null) return;
@@ -416,6 +426,7 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
     });
     const unsubscribeTool = useViewStore.subscribe((state, previous) => {
       if (state.tool !== previous.tool) { finishMeasurement(true, true); rulerPointer.current = null; session.requestFrame(); }
+      if (state.pinnedTile !== previous.pinnedTile) session.requestFrame();
     });
     const unsubscribeGrid = useLayoutStore.subscribe((state, previous) => {
       if (state.grid !== previous.grid || state.ruler !== previous.ruler) session.requestFrame();
@@ -522,6 +533,7 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
       zoomTo: (zoom) => {
         zoomBy(zoom / session.animator.target.zoom);
       },
+      zoomBy,
       goTo: (x, y, minZoom) => {
         endStroke();
         if (session.viewport.width === 0 || canvas.clientWidth === 0) return;
@@ -970,6 +982,7 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
       <div ref={footprintRef} className="brush-footprint" aria-hidden="true" hidden style={{ position: "absolute", pointerEvents: "none" }}><svg width="100%" height="100%"><path className="brush-footprint-fill" /><path className="brush-footprint-halo" /><path className="brush-footprint-edge" /></svg></div>
       <div ref={areaRef} className="area-outline" aria-hidden="true" hidden><canvas ref={pasteCanvasRef} className="area-paste-preview" hidden /></div>
       <div ref={rulerLabelsRef} className="measurement-labels" aria-hidden="true" />
+      <Minimap world={world} ref={minimapRef} />
       <div className="map-controls" style={CONTROLS_STYLE}>
         <button
           type="button"

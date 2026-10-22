@@ -180,6 +180,8 @@ export function useCommands(): Command[] {
   const canRedo = tool === "ruler" ? rulerCanRedo : brushCanRedo;
   const historyReason = tool === "ruler" ? loadingWorld ? "A world is loading" : null : editReason;
   const statsVisible = useViewStore((state) => state.statsVisible);
+  const minimap = useLayoutStore((state) => state.minimap);
+  const setMinimap = useLayoutStore((state) => state.setMinimap);
   const setStatsVisible = useViewStore((state) => state.setStatsVisible);
   const setHelpOpen = useViewStore((state) => state.setHelpOpen);
   const setPaletteOpen = useViewStore((state) => state.setPaletteOpen);
@@ -279,6 +281,12 @@ export function useCommands(): Command[] {
       id: "view.actual", group: "View", label: "Actual size (1:1)", shortcut: "1", enabled: hasWorld, ...noWorld,
       run: () => {
         getMapController()?.actualSize();
+      },
+    },
+    {
+      id: "view.minimap", group: "View", label: "Show minimap", shortcut: "N", enabled: true, checked: minimap,
+      run: () => {
+        setMinimap(!minimap);
       },
     },
     {

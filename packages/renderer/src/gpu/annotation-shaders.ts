@@ -1,4 +1,4 @@
-/** Instanced strokes, square handles and dimension ticks, with widths in CSS pixels. */
+/** Instanced strokes, square handles, dimension ticks and hollow rings, with widths in CSS pixels. */
 export const annotationVertexSource = `#version 300 es
 precision highp float;
 layout(location=0) in vec4 aEndpoints;
@@ -23,7 +23,7 @@ void main() {
   vWidth = aStyle.x;
   vKind = aStyle.y;
   vColor = aColor;
-  if (vKind == 1.0) {
+  if (vKind == 1.0 || vKind == 3.0) {
     vOffset = (corner * 2.0 - 1.0) * vWidth * 0.5;
     position = from + vOffset * uDensity;
   } else {
@@ -44,8 +44,11 @@ flat in float vWidth;
 flat in float vKind;
 out vec4 outColor;
 void main() {
-  bool ink = vKind == 1.0
-    ? max(abs(vOffset.x), abs(vOffset.y)) >= vWidth * 0.5 - 1.5
+  float edge = vWidth * 0.5 - max(abs(vOffset.x), abs(vOffset.y));
+  // A ring is a 2 px light band between 1 px dark ones and leaves its inside to the map.
+  if (vKind == 3.0 && edge > 4.0) discard;
+  bool ink = vKind == 3.0 ? edge > 1.0 && edge <= 3.0
+    : vKind == 1.0 ? edge <= 1.5
     : abs(vOffset.x) <= vWidth * 0.5;
   // Opaque strokes and a dark halo also preserve straight alpha over transparent terrain.
   outColor = vec4(ink ? vColor : vec3(0.06, 0.09, 0.14), 1.0);

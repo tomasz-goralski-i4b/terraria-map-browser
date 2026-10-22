@@ -3,6 +3,10 @@ import {
   backgroundColor, contentColor, liquidColors, mapOption, optionColor, optionColors, optionRule, paintedColor,
 } from "../palette/map-palette.js";
 import type { MapOptionRule, MapPalette, Rgba } from "../palette/map-palette.js";
+import type { RenderableWorld } from "../gpu/types.js";
+
+/** What drawing map colours reads: a CanonicalWorld or the WebGL2 backend's world. */
+type TileSource = Pick<RenderableWorld, "width" | "height" | "planes" | "palette">;
 
 export interface ChunkLayers {
   readonly background: boolean;
@@ -125,16 +129,30 @@ export function renderChunk(
   }
   const originX = chunkX * chunkSize;
   const originY = chunkY * chunkSize;
-  const width = Math.min(chunkSize, world.width - originX);
-  const height = Math.min(chunkSize, world.height - originY);
+  const span = (origin: number, size: number): Int32Array => Int32Array.from({ length: Math.min(chunkSize, size - origin) }, (_, i) => origin + i);
+  return renderTiles(world, span(originX, world.width), span(originY, world.height), options);
+}
+
+/**
+ * The whole world at `size` pixels, one tile sampled at each pixel's centre, in map colours (the wire overlay is not
+ * drawn). Straight-alpha RGBA, row-major.
+ */
+export function minimapPixels(world: TileSource, size: { readonly width: number; readonly height: number }, options: ChunkRenderOptions): ChunkPixels {
+  // shortcut: nearest-tile sampling drops features thinner than a minimap pixel; average the footprint if that shows.
+  const sample = (count: number, tiles: number): Int32Array => Int32Array.from({ length: count }, (_, i) => Math.floor((i + 0.5) * tiles / count));
+  return renderTiles(world, sample(size.width, world.width), sample(size.height, world.height), { ...options, layers: { ...options.layers, wires: 0 } });
+}
+
+/** Pixel (x, y) is tile (`columns[x]`, `rows[y]`). */
+function renderTiles(world: TileSource, columns: Int32Array, rows: Int32Array, options: ChunkRenderOptions): ChunkPixels {
+  const width = columns.length;
+  const height = rows.length;
   const pixels = new Uint8ClampedArray(width * height * 4);
   const { layers, mapPalette } = options;
   const depth = { surfaceY: options.surfaceY, height: world.height, ...(options.rockY === undefined ? {} : { rockY: options.rockY }) };
   const { planes } = world;
-  // Typed as optional: the WebGL2 backend's worlds may omit the frame planes (frame 0), and its CPU reference reuses this.
-  const frameX = planes.frameX as Int16Array | undefined;
-  const frameY = planes.frameY as Int16Array | undefined;
-  const flags = planes.flags as Uint16Array | undefined;
+  // The WebGL2 backend's worlds may omit the frame planes (frame 0) and flags (no wires).
+  const { frameX, frameY, flags } = planes;
   const wireMask = (layers.wires ?? 0) & WIRE_LAYER.all;
   // Palette colours are cached outside the pixel loop; no semantic tile views are created.
   const colors = paletteColors(world.palette, mapPalette);
@@ -143,9 +161,10 @@ export function renderChunk(
   const liquids = liquidColors(mapPalette);
 
   for (let y = 0; y < height; y++) {
-    const background = layers.background ? backgroundColor(originY + y, depth, mapPalette) : transparent;
+    const tileY = rows[y] ?? 0;
+    const background = layers.background ? backgroundColor(tileY, depth, mapPalette) : transparent;
     for (let x = 0; x < width; x++) {
-      const index = (originX + x) * world.height + originY + y;
+      const index = (columns[x] ?? 0) * world.height + tileY;
       let red = background[0];
       let green = background[1];
       let blue = background[2];

@@ -775,6 +775,42 @@ kbd {
   background: var(--surface-0);
 }
 
+/* The overview stays small on narrow maps; the view rectangle is light over a dark halo, like the brush outline. */
+.minimap {
+  width: clamp(120px, 24%, 240px);
+  max-height: 50%;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface-0);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 30%);
+  overflow: hidden;
+  cursor: pointer;
+}
+.minimap[hidden] { display: none; }
+.minimap-image { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
+.minimap-view {
+  position: absolute;
+  box-sizing: border-box;
+  min-width: 4px;
+  min-height: 4px;
+  border: 1px solid #fff;
+  outline: 1px solid rgb(0 0 0 / 70%);
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 70%);
+  background: rgb(255 255 255 / 12%);
+  pointer-events: none;
+  cursor: move;
+}
+.minimap-marker {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  margin: -3px 0 0 -3px;
+  border: 1px solid #000;
+  border-radius: 50%;
+  pointer-events: none;
+}
+.minimap-marker-spawn { background: #6fcf8a; }
+.minimap-marker-dungeon { background: #86b4ff; }
 .brush-footprint { z-index: 1; }
 /* Avoid the text baseline shifting a subpixel outline below the pointer at low zoom. */
 .brush-footprint svg { display: block; overflow: visible; }
@@ -855,8 +891,13 @@ kbd {
   min-width: 0;
   min-height: 0;
   overflow-y: auto;
+  /* A tooltip reaching past the dock must not flash a horizontal scrollbar while it shows. */
+  overflow-x: hidden;
   overscroll-behavior: contain;
 }
+/* Buttons at the end of a dock row open their tooltip leftwards, so it stays inside the dock. */
+.dock-scroll [data-tooltip-side="bottom"]:last-child::after,
+.dock-scroll .menu:last-child > [data-tooltip-side="bottom"]::after { left: auto; right: 0; translate: none; }
 
 /* ---------- Section (accordion) ---------- */
 .section-level-2 {
