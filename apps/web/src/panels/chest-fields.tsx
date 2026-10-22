@@ -1,12 +1,8 @@
 import type { EntityItem, WorldChest } from "@studio/world-codec";
-import type { Tile } from "@studio/world-model";
+import { resolveObject, type Tile } from "@studio/world-model";
 import type { Property } from "../ui/PropertyGrid.js";
 import { contentName } from "../world/content-names.js";
 import { itemLabel, prefixLabel } from "../world/items.js";
-
-const DRESSER = 88;
-/** One frame cell: a 16 px tile and its 2 px gutter in the tile's sprite sheet. */
-const FRAME_CELL = 18;
 
 /** The object at the chest's position as the game's map names it ("Chest", "Dresser"); "Chest" without a block. */
 export function chestTitle(origin: Tile): string {
@@ -14,13 +10,12 @@ export function chestTitle(origin: Tile): string {
 }
 
 /**
- * The style index of the object: frame X counts whole objects (2 cells for chests, 3 for dressers) along its sheet.
- * Chests continue on a second sheet (tile 467), which numbers its styles from 0 again.
+ * The style of the object (docs/assets.md, "Object frames"). Chests continue on a second sheet (tile 467), which
+ * numbers its styles from 0 again.
  */
 function chestStyle(origin: Tile): number | undefined {
-  if (origin.frameX === undefined || origin.frameX < 0) return undefined;
-  const width = origin.block?.kind === "vanilla" && origin.block.id === DRESSER ? 3 : 2;
-  return Math.floor(origin.frameX / (width * FRAME_CELL));
+  if (origin.block?.kind !== "vanilla") return undefined;
+  return resolveObject(origin.block.id, origin.frameX ?? -1, origin.frameY ?? -1)?.style;
 }
 
 /** A filled slot: item, stack and, when it has one, the prefix. */

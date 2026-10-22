@@ -317,6 +317,37 @@ x = 1474, far short of the period. Any other sheet with a side of 1800 pixels or
 the sheet or uses its other blocks for something else (doors, chests, paintings 240 and 242, piles 186 and 647); a
 frame past the edge of a sheet not in the table keeps its map colour.
 
+### Object frames
+
+A tile of a multi-tile object (chest, door, chair, torch, …) stores the frame of its own cell; the frame also says which
+**style** the object is and which **part** of it the tile is (#202). Per tile type, the layout is (R, observed by
+`scripts/object-layouts/observe.ps1`, ADR 0003 "object layouts" addendum; numbers only, in
+`packages/world-model/src/terraria-object-layouts.generated.ts`):
+
+- **Parts.** Column `dx` of the object is at frame X `cellX[dx]` within its style cell, row `dy` at frame Y `cellY[dy]`.
+  Usually multiples of 18 (16 px + 2 px gap); a chair's rows are 0 and 18 in a 40-pixel cell, a torch's one cell is 22.
+- **Styles.** Every style takes one cell of `styleWidth` × `styleHeight` pixels. Styles advance along frame X
+  (`horizontal`) or frame Y, `multiplier` cells per style (the extra cells are alternate placements, such as a chair
+  facing right or a torch on a wall). After `wrap` cells (0: never) the next style starts a new row (or column),
+  `lineSkip` rows (columns) on: the ones in between hold the object's other states, such as a chandelier switched off.
+- **Style count.** The highest style an item places, plus one; a frame past it is outside the sheet. A tile that no item
+  places (pots, for example) has no known count.
+
+So a frame resolves as: column = ⌊frameX / styleWidth⌋, row = ⌊frameY / styleHeight⌋; the remainders must be one of
+`cellX` / `cellY` (the part); the axis styles advance along gives the cell index, plus ⌊other axis / lineSkip⌋ × wrap;
+style = ⌊index / multiplier⌋. A frame resolves to nothing when it is negative, off the cell grid, at or past `wrap` along
+its axis, past `lineSkip` across it when styles never wrap, or at or past the style count. Examples: chest 21 `(450, 0)` is style 12, part (1, 0); dresser 88 `(108, 18)` style 2,
+part (0, 1); torch 4 `(0, 66)` style 3; door 10 `(54, 234)` style 40 (36 styles per column, 3 columns per style column).
+`resolveObject` and its inverse `objectFrames` (world-model) implement this; the Inspector shows Style and Part.
+
+A type has a layout only when the layout reproduces the frames the game's own `WorldGen.PlaceObject` writes for every
+style an item places (at least styles 0–2). Each style is placed on a stone floor, else on a table, else on a platform
+(bottles, candles and books stand on furniture). Types the game frames by their neighbours (platforms), places only on
+special ground or by growth (plants, saplings, trees), makes from another object (the open door 11), or places in
+shapes that leave their style cell (piles) have none; the generated file lists every one with the reason. A style placed in another shape within its own cell (table style 25 is one row) is
+listed as `irregular` and resolves to nothing. Sources compared, not copied: TEdit `tiles.json` (A12) `frameSize`
+(chest 2 × 2, line 3084) agrees.
+
 ### Minecart tracks
 
 A minecart track (tile 314) stores **piece indices**, not sheet offsets (R: `scripts/sprite-objects`, ADR 0003): the
@@ -1368,11 +1399,10 @@ isolated multi-tile objects. Compare any game-saved copy with the original manif
   (178), herbs (82–84), pots (28) and chests (21) each have exactly one isolated tile per option reachable by
   the shipped `tileOptions` rules, using a selecting frame. The section also has one tile for every content
   listed as depending on more than one frame axis or on position; the viewer keeps those at option 0. The
-  manifest names the expected option. Pot **option 7 is pending the palette fix [#195](https://github.com/tomasz-goralski-i4b/terraria-map-browser/issues/195)**:
-  no observed frame currently selects it, so there is no fabricated tile. It appears under `unreachableOptions`
-  as tile 28, option 7, reason `no observed frame selects it`. Regenerating the palette with a selecting rule
-  adds that case automatically and removes the unreachable entry. Until #195 is fixed, the generated pot
-  option-8 case uses the observed `frameY=792`; larger pot frames are outside the current observed range.
+  manifest names the expected option. Since [#195](https://github.com/tomasz-goralski-i4b/terraria-map-browser/issues/195)
+  the observation samples frame Y over the same range as frame X (to 2000), so all nine pot options are reachable
+  (option 7 from `frameY=1224`) and `unreachableOptions` is empty for the listed tiles. An option no observed frame
+  selects would appear there with reason `no observed frame selects it`, never as a fabricated tile.
 
 - **H1** Inspect the generated **Blocks** cases `B1`–`B19` (Journey mode, 1:1 zoom, full lighting) and save.
   Read the tiles with `Terraria.WorldInspector`, take a screenshot, and compare each listed tile with its

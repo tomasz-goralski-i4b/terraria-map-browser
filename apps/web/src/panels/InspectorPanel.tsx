@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import type { WorldChest } from "@studio/world-codec";
-import type { Tile } from "@studio/world-model";
+import { objectLayout, resolveObject, type Tile } from "@studio/world-model";
 import { contentColor, terrariaMapPalette } from "@studio/renderer";
 import type { TileThumbnailSource } from "../assets/thumbnails.js";
 import { MaterialSwatch } from "./material-swatch.js";
@@ -43,20 +43,40 @@ const SHAPE_NAMES: Readonly<Record<NonNullable<Tile["shape"]>, string>> = {
 const RAW_FRAME: ReadonlySet<string> = new Set(["Frame X", "Frame Y"]);
 const optionalNumber = (value: number | undefined): string => (value === undefined ? NONE : String(value));
 const optionalPaint = (value: number | undefined): string => (value === undefined ? NONE : paintName(value));
+const COLUMN_NAMES: Readonly<Record<number, readonly string[]>> = { 2: ["left", "right"], 3: ["left", "middle", "right"] };
+const ROW_NAMES: Readonly<Record<number, readonly string[]>> = { 2: ["top", "bottom"], 3: ["top", "middle", "bottom"] };
+
+/**
+ * The object style a tile's frame shows (docs/assets.md, "Object frames") and where the tile sits in the object, column
+ * first ("right, top"); None when it is no object, and no part for a one-tile object.
+ */
+function objectLabels(tile: Tile): readonly [style: string, part: string] {
+  if (tile.block?.kind !== "vanilla") return [NONE, NONE];
+  const layout = objectLayout(tile.block.id);
+  const object = resolveObject(tile.block.id, tile.frameX ?? -1, tile.frameY ?? -1);
+  if (layout === undefined || object === null) return [NONE, NONE];
+  const name = (index: number, size: number, names: Readonly<Record<number, readonly string[]>>, axis: string): string[] =>
+    size === 1 ? [] : [names[size]?.[index] ?? `${axis} ${String(index + 1)} of ${String(size)}`];
+  const words = [...name(object.part.dx, layout.cellX.length, COLUMN_NAMES, "column"), ...name(object.part.dy, layout.cellY.length, ROW_NAMES, "row")];
+  return [String(object.style), words.length === 0 ? NONE : words.join(", ")];
+}
 
 /**
  * The fields of the tile's `tileAt` view. With `showAll`, every field in fixed rows (absent parts read "None", false
  * flags "No"), so rows do not jump between tiles. Otherwise only what the tile has: the keys present in its view,
- * wires when there are any, and flags that are set. A present liquid with amount 0 is shown either way. The raw
- * frame (sprite-sheet pixels) is shown with `showAll` only, until objects resolve it to a style and part.
+ * wires when there are any, and flags that are set. A present liquid with amount 0 is shown either way. A tile of a
+ * multi-tile object shows its style and part; the raw frame (sprite-sheet pixels) is shown with `showAll` only.
  */
 export function tileProperties(point: TilePoint, tile: Tile, showAll = true): Property[] {
   const wires = WIRE_NAMES.filter((_, bit) => (tile.wires & (1 << bit)) !== 0);
   const flag = (label: string, value: boolean | undefined): Property => ({ kind: "flag", label, value: value ?? false });
+  const [style, part] = objectLabels(tile);
   const all: Property[] = [
     { kind: "text", label: "Position", value: `${String(point.x)}, ${String(point.y)}` },
     { kind: "text", label: "Block", value: tile.block === undefined ? NONE : contentName(tile.block, "block", tile) },
     { kind: "text", label: "Wall", value: tile.wall === undefined ? NONE : contentName(tile.wall, "wall") },
+    { kind: "text", label: "Style", value: style },
+    { kind: "text", label: "Part", value: part },
     { kind: "text", label: "Frame X", value: optionalNumber(tile.frameX) },
     { kind: "text", label: "Frame Y", value: optionalNumber(tile.frameY) },
     { kind: "text", label: "Shape", value: tile.shape === undefined ? NONE : SHAPE_NAMES[tile.shape] },
