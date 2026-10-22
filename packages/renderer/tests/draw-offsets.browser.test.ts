@@ -21,18 +21,17 @@ const ZOOM = 16;
 
 /**
  * 3 × 3: a plant (3, frame (0, 0): 16 × 20, drawn from its tile's top) at (1, 0) over a bottle (13) at (1, 1), plus
- * the `plants` and full water at the `water` tiles given; with `walls` a stone wall (1) on every tile, without
- * `plant` no plant at (1, 0).
+ * the `plants` and full water at the `water` tiles given; with `walls` a stone wall (1) on every tile.
  */
 function world(
   water: readonly (readonly [number, number])[] = [], plants: readonly (readonly [number, number])[] = [],
-  { walls = false, plant = true }: { readonly walls?: boolean; readonly plant?: boolean } = {},
+  { walls = false }: { readonly walls?: boolean } = {},
 ): RenderableWorld {
   const n = 3, count = n * n;
   const block = new Uint16Array(count).fill(ABSENT);
   const frameX = new Int16Array(count).fill(-1);
   const frameY = new Int16Array(count).fill(-1);
-  const placed = [...(plant ? [[1, 0, 0] as const] : []), [1, 1, 1] as const, ...plants.map(([px, py]) => [px, py, 0] as const)];
+  const placed = [[1, 0, 0] as const, [1, 1, 1] as const, ...plants.map(([px, py]) => [px, py, 0] as const)];
   for (const [x, y, palette] of placed) {
     block[x * n + y] = palette;
     frameX[x * n + y] = 0;
@@ -62,26 +61,26 @@ const SHEETS: readonly SpriteSheetEntry[] = [
 const WATER: Rgba = [10, 60, 200, 255];
 
 /**
- * The plant: opaque, distinct per pixel, but for its right 2 columns above row 16. The bottle: its top 4 rows
- * transparent on every other column.
+ * The plant: opaque, distinct per pixel, but for its right 2 columns above row 16 (all of it with `clearPlant`). The
+ * bottle: its top 4 rows transparent on every other column.
  */
-function sheetPixel(sheet: number, x: number, y: number): Rgba {
+function sheetPixel(sheet: number, x: number, y: number, clearPlant = false): Rgba {
   if (sheet === 2) return WATER;
   if (sheet === 3) return [(x * 7) % 256, (y * 5) % 256, 90, 255];
-  if (sheet === 0) return [200, (x * 9) % 256, (y * 11) % 256, x >= 14 && y < 16 ? 0 : 255];
+  if (sheet === 0) return [200, (x * 9) % 256, (y * 11) % 256, clearPlant || (x >= 14 && y < 16) ? 0 : 255];
   return [(x * 13) % 256, 40, (y * 7) % 256, y < 4 && x % 2 === 0 ? 0 : 255];
 }
 
-function atlas(): SpriteAtlasSource {
+function atlas(clearPlant = false): SpriteAtlasSource {
   const page = new Uint8Array(PAGE * PAGE * 4);
   SHEETS.forEach((sheet, index) => {
-    for (let y = 0; y < sheet.height; y++) for (let x = 0; x < sheet.width; x++) page.set(sheetPixel(index, x, y), ((sheet.y + y) * PAGE + sheet.x + x) * 4);
+    for (let y = 0; y < sheet.height; y++) for (let x = 0; x < sheet.width; x++) page.set(sheetPixel(index, x, y, clearPlant), ((sheet.y + y) * PAGE + sheet.x + x) * 4);
   });
   return { pages: [page], index: { pageSize: PAGE, entries: SHEETS } };
 }
 
-/** The canvas's pixels of `w` drawn at ZOOM in sprite mode with the synthetic atlas. */
-function draw(w: RenderableWorld): (x: number, y: number) => Rgba {
+/** The canvas's pixels of `w` drawn at ZOOM in sprite mode with the synthetic atlas (`clearPlant`: see sheetPixel). */
+function draw(w: RenderableWorld, clearPlant = false): (x: number, y: number) => Rgba {
   const canvas = document.createElement("canvas");
   canvas.width = 3 * ZOOM;
   canvas.height = 3 * ZOOM;
@@ -89,7 +88,7 @@ function draw(w: RenderableWorld): (x: number, y: number) => Rgba {
   created.push(renderer);
   renderer.setWorld(w);
   renderer.setLayers({ background: true, walls: true, blocks: true, liquids: true });
-  renderer.setAtlas(atlas());
+  renderer.setAtlas(atlas(clearPlant));
   renderer.setFraming(framing);
   renderer.setSpriteMode(true);
   renderer.setCamera({ x: 0, y: 0, zoom: ZOOM });
@@ -148,10 +147,12 @@ test("no liquid is drawn behind a tile drawn as an object sprite: its transparen
 });
 
 test("a plant's transparent pixels show the wall's sprite behind it, and the background where there is no wall", () => {
-  // The plant's right 2 columns above row 16 are transparent; the same world without the plant shows what lies there.
+  // The plant's right 2 columns above row 16 are transparent; the same world with a fully transparent plant shows what
+  // lies there. (Not a world without the plant: a block in front of a wall changes the order overlapping walls are
+  // drawn in, docs/assets.md "Walls".)
   for (const walls of [true, false]) {
     const planted = draw(world([], [], { walls }));
-    const bare = draw(world([], [], { walls, plant: false }));
+    const bare = draw(world([], [], { walls }), true);
     for (let sy = 0; sy < 16; sy += 3) {
       for (const sx of [14, 15]) expect(planted(ZOOM + sx, sy), `walls ${String(walls)}, (${String(sx)}, ${String(sy)})`).toEqual(bare(ZOOM + sx, sy));
       expect(planted(ZOOM + 5, sy)).toEqual(sheetPixel(0, 5, sy));
