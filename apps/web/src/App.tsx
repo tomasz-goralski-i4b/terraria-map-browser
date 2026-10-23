@@ -3,6 +3,7 @@ import { RENDERER_PACKAGE } from "@studio/renderer";
 import { getDefaultAssetSession, useAssetStore } from "./assets/asset-session.js";
 import { SpritePreviewDialog } from "./panels/SpritePreviewDialog.js";
 import { SaveAsDialog } from "./components/SaveAsDialog.js";
+import { ExportImageDialog } from "./components/ExportImageDialog.js";
 import { useCommands, useGlobalShortcuts } from "./shell/commands.js";
 import { ConfirmDialog, confirmAction } from "./shell/ConfirmDialog.js";
 import { CommandPalette, HelpOverlay } from "./shell/dialogs.js";
@@ -162,6 +163,7 @@ export function App({ layoutStorage }: AppProps = {}): React.JSX.Element {
       <SpritePreview />
       <Notifications />
       <SaveAsDialog />
+      <ExportImageDialog />
       <PlannedDialogs />
       <ConfirmDialog />
     </div>

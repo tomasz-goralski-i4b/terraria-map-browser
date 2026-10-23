@@ -1,6 +1,7 @@
 import { WorldWorkerClient, WorldWorkerError, normalizeWorldMetadata, type WorldTilesResult } from "@studio/world-codec";
 import { useAppStore, type LoadError } from "../store.js";
 import { resetWorldSave } from "./save-world.js";
+import { resetImageExport } from "./image-export-session.js";
 import { finishBrush, setBrushWorld } from "./brush-session.js";
 import { confirmDiscardChanges } from "./discard-guard.js";
 import type { OpenedWorldFile, OpenWorldHandle, WorldSaveDirectory } from "./world-file.js";
@@ -82,6 +83,7 @@ export function createWorldSession(parser: WorldParser): WorldSession {
     const controller = new AbortController();
     current = controller;
     resetWorldSave();
+    resetImageExport();
     const store = useAppStore.getState();
     store.setLoading(source.name);
     try {
@@ -114,6 +116,7 @@ export function createWorldSession(parser: WorldParser): WorldSession {
     finishBrush(true);
     setBrushWorld(null);
     resetWorldSave();
+    resetImageExport();
     cancel();
     current = null;
     loaded = null;

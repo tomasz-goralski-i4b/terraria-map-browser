@@ -15,6 +15,8 @@ import { getDefaultWorldSession } from "../world/world-session.js";
 import { getMapController, useViewStore } from "./view-store.js";
 import { useSearchStore } from "../world/search-store.js";
 import { Icon } from "../ui/Icon.js";
+import { ProgressBar } from "../ui/Progress.js";
+import { cancelImageExport, useImageExportStore } from "../world/image-export-session.js";
 import { plannedReason } from "./commands.js";
 import { useChestNavigation } from "../world/chest-navigation.js";
 
@@ -66,14 +68,21 @@ function SearchPosition(): React.JSX.Element | null {
   return <span className="status-cell status-search" title="Search match (F3 / Shift+F3)" data-testid="search-position">{text}</span>;
 }
 
-/**
- * Long background work (fill, replace, statistics, conversion, export): its name, progress and a cancel button. No
- * such work exists yet, so the cell shows that nothing runs; it keeps its width either way.
- */
+/** Long background work (an image export): its name, progress and a cancel button; it keeps its width either way. */
 function BackgroundJob(): React.JSX.Element {
+  const progress = useImageExportStore((state) => state.progress);
+  if (progress === null) {
+    return (
+      <span className="status-cell status-job" title="Background work: none running" data-testid="background-job">
+        <Icon name="activity" /><span className="muted">Idle</span>
+      </span>
+    );
+  }
   return (
-    <span className="status-cell status-job" title="Background work: none running" data-testid="background-job">
-      <Icon name="activity" /><span className="muted">Idle</span>
+    <span className="status-cell status-job" title="Exporting the map image" data-testid="background-job">
+      <ProgressBar label="Exporting image" fraction={progress} />
+      <span>Image {Math.floor(progress * 100)}%</span>
+      <button type="button" className="icon-button" aria-label="Cancel image export" onClick={cancelImageExport}><Icon name="close" /></button>
     </span>
   );
 }

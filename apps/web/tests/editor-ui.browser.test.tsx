@@ -167,7 +167,6 @@ test("the new menus list their commands; the ones not connected yet are disabled
 test.each([
   ["Edit", ["Replace…"], "Replace"],
   ["File", ["Import", "Image as Pixel Art…"], "Import Image as Pixel Art"],
-  ["File", ["Export", "Map Image…"], "Export Map Image"],
   ["File", ["Export", "Selection as Schematic…"], "Save Selection as Schematic"],
 ] as const)("%s > %s opens its dialog, whose action says it is not available yet", async (title, path, dialogTitle) => {
   await render(<App layoutStorage={storage} />);

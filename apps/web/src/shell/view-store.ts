@@ -11,7 +11,7 @@ export type ToolId =
   | "object" | "platform" | "wire" | "liquid" | "trace";
 
 /** The dialogs of commands whose behaviour is not connected yet: their shells show what they will ask. */
-export type PlannedDialog = "replace" | "importImage" | "exportImage" | "saveSchematic";
+export type PlannedDialog = "replace" | "importImage" | "saveSchematic";
 
 export interface TilePoint {
   readonly x: number;
@@ -151,6 +151,8 @@ export interface MapController {
   /** Draws a complete frame now (all visible chunks), so the canvas can be read back in the same task. */
   readonly renderNow: () => void;
   readonly stats: () => MapRendererStats;
+  /** The tiles the view shows, clipped to the world. */
+  readonly viewArea: () => { readonly x: number; readonly y: number; readonly width: number; readonly height: number };
 }
 
 let mapController: MapController | null = null;

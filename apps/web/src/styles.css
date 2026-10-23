@@ -1260,10 +1260,10 @@ kbd {
 .measurement-label[data-selected="true"] { color: var(--accent-text); border-color: var(--accent-text); }
 .grid-panel .property-grid dl { grid-template-columns: max-content minmax(0, 1fr); }
 .grid-panel .select { width: 72px; flex: 0 0 72px; height: 24px; padding: 0 var(--space-1); }
-.grid-spacing, .grid-opacity { display: flex; align-items: center; gap: var(--space-1); min-width: 0; width: 100%; }
+.grid-spacing, .grid-opacity, .export-scale { display: flex; align-items: center; gap: var(--space-1); min-width: 0; width: 100%; }
 .grid-spacing .text-input { width: 58px; min-width: 58px; height: 24px; padding: 0 var(--space-1); }
 .grid-spacing .text-input:disabled { opacity: .5; }
-.grid-opacity .brush-slider { flex: 1; min-width: 0; width: auto; }
+.grid-opacity .brush-slider, .export-scale .brush-slider { flex: 1; min-width: 0; width: auto; }
 .grid-opacity output { min-width: 4ch; text-align: right; color: var(--text-2); font-variant-numeric: tabular-nums; }
 @container (max-width: 260px) {
   .grid-spacing .muted { display: none; }
@@ -2600,6 +2600,7 @@ kbd {
 .dialog-field-value > .text-input:only-child, .dialog-field-value > select.text-input { flex: 1; }
 .dialog-field-value .button { display: inline-flex; align-items: center; gap: 6px; }
 .dialog-number { width: 64px; }
+.export-scale output { min-width: 15ch; text-align: right; color: var(--text-2); font-variant-numeric: tabular-nums; }
 .dialog-previews { display: flex; gap: var(--space-3); }
 .dialog-previews figure { flex: 1; margin: 0; display: grid; gap: var(--space-1); color: var(--text-2); font-size: var(--text-small); }
 .dialog-preview {

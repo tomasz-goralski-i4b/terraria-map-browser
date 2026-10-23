@@ -5,6 +5,7 @@ import { getDefaultAssetSession, useAssetStore } from "../assets/asset-session.j
 import { useAppStore } from "../store.js";
 import { chooseWorldFile } from "../world/open-world.js";
 import { openSaveAs, useSaveStore } from "../world/save-world.js";
+import { openImageExport } from "../world/image-export-session.js";
 import { chooseWorldsFolder, hasFolderPicker } from "../world/world-library.js";
 import { closeWorld } from "../world/world-session.js";
 import { finishBrush, redoBrush, setBrushSize, undoBrush, useBrushStore } from "../world/brush-session.js";
@@ -177,7 +178,10 @@ export function plannedCommands(hasWorld: boolean): Command[] {
   return [
     dialogShell("file.importImage", "File", "Image as Pixel Art…", "importImage", hasWorld, { icon: "image" }),
     planned("file.importSchematic", "File", "Schematic…", { icon: "schematic" }),
-    dialogShell("file.exportImage", "File", "Map Image…", "exportImage", hasWorld, { icon: "image" }),
+    {
+      id: "file.exportImage", group: "File", label: "Map Image…", icon: "image", enabled: hasWorld,
+      ...(hasWorld ? {} : { disabledReason: "Open a world first" }), run: openImageExport,
+    },
     dialogShell("file.exportSchematic", "File", "Selection as Schematic…", "saveSchematic", hasWorld, { icon: "schematic" }),
     planned("file.recover", "File", "Recover Unsaved Work", { icon: "recovery" }),
     planned("file.backups", "File", "Backups…", { icon: "clock" }),
