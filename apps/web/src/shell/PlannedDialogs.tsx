@@ -62,18 +62,6 @@ const SHELLS: Readonly<Record<PlannedDialog, DialogShell>> = {
     </>,
     facts: [["object", "Vanilla solid blocks, walls and paints only"], ["select", "Placed as a paste you can move before it is written"]],
   },
-  exportImage: {
-    title: "Export Map Image", action: "Export", feature: "Map image export",
-    fields: () => <>
-      <Field label="Area"><Choice label="Area" options={["Whole world", "View", "Selection"]} /></Field>
-      <Field label="Scale">
-        <select className="text-input" disabled aria-label="Pixels per block"><option>1 pixel per block</option></select>
-      </Field>
-      <Field label="Layers"><Layers names={["Background", "Walls", "Blocks", "Liquids", "Wires"]} /></Field>
-      <Field label="Size"><span className="muted">8400 × 2400 px · about 12 MB</span></Field>
-    </>,
-    facts: [["image", "PNG, drawn as the map shows it"], ["check", "Runs in the background; you can keep working"]],
-  },
   saveSchematic: {
     title: "Save Selection as Schematic", action: "Save", feature: "Schematics",
     fields: () => <>

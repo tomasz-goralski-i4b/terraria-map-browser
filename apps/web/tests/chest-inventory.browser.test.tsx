@@ -38,7 +38,7 @@ test("Entities selects on click without moving, goes to a chest zoomed in on Ent
   const tiles = chestWorld();
   const centerOn = vi.fn();
   const goTo = vi.fn();
-  registerMapController({ centerOn, goTo, fitWorld: vi.fn(), actualSize: vi.fn(), zoomTo: vi.fn(), zoomBy: vi.fn(), jumpTo: vi.fn(), renderNow: vi.fn(), stats: () => { throw new Error("No stats requested"); } });
+  registerMapController({ centerOn, goTo, fitWorld: vi.fn(), actualSize: vi.fn(), zoomTo: vi.fn(), zoomBy: vi.fn(), jumpTo: vi.fn(), renderNow: vi.fn(), stats: () => { throw new Error("No stats requested"); }, viewArea: vi.fn() });
   const source = { width: tiles.width, height: tiles.height, chests: [mining, lights, empty], tileAt: (x: number, y: number) => tiles.tileAt(x, y) };
   await render(<><EntitiesPanel source={source} /><SearchPanel chests={source} /></>);
   const table = page.getByRole("grid", { name: "Chests" });

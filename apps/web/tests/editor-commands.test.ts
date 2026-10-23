@@ -2,6 +2,7 @@ import { afterEach, expect, test } from "vitest";
 import { plannedCommands, plannedReason, TOOL_FAMILIES, TOOLS, toolCommands, windowCommands, type Command } from "../src/shell/commands.js";
 import { SECTION_IDS } from "../src/shell/layout-store.js";
 import { useViewStore, type ToolId } from "../src/shell/view-store.js";
+import { closeImageExport, useImageExportStore } from "../src/world/image-export-session.js";
 import { PANELS } from "../src/shell/workbench-api.js";
 
 afterEach(() => {
@@ -97,7 +98,7 @@ test("picking a tool through its command marks it as checked", () => {
 });
 
 test("dialog shells open with a world and say why without one; the other planned commands do nothing", () => {
-  for (const [id, dialog] of [["edit.replace", "replace"], ["file.importImage", "importImage"], ["file.exportImage", "exportImage"], ["file.exportSchematic", "saveSchematic"]] as const) {
+  for (const [id, dialog] of [["edit.replace", "replace"], ["file.importImage", "importImage"], ["file.exportSchematic", "saveSchematic"]] as const) {
     const without = byId(plannedCommands(false), id);
     expect(without.enabled, id).toBe(false);
     expect(without.disabledReason, id).toBe("Open a world first");
@@ -111,6 +112,13 @@ test("dialog shells open with a world and say why without one; the other planned
   expect(cut.disabledReason).toBe("Not available yet");
   expect(cut.shortcut).toBe("Control+X");
   expect(byId(plannedCommands(true), "select.matches").disabledReason).toBe("Planned for later");
+});
+
+test("Export Map Image opens its dialog with a world and says why without one", () => {
+  expect(byId(plannedCommands(false), "file.exportImage").disabledReason).toBe("Open a world first");
+  byId(plannedCommands(true), "file.exportImage").run();
+  expect(useImageExportStore.getState().open).toBe(true);
+  closeImageExport();
 });
 
 test("View > Panels lists every panel, checked while it is shown, and the bottom panel as a whole", () => {

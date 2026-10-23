@@ -585,6 +585,15 @@ export function MapCanvas({ world, onQuickMenu }: MapCanvasProps): React.JSX.Ele
         renderer.render();
       },
       stats: () => renderer.stats(),
+      viewArea: () => {
+        const { camera, viewport, world } = session;
+        const x = Math.max(0, Math.floor(camera.x)), y = Math.max(0, Math.floor(camera.y));
+        return {
+          x, y,
+          width: Math.max(0, Math.min(world.width, Math.ceil(camera.x + viewport.width / camera.zoom)) - x),
+          height: Math.max(0, Math.min(world.height, Math.ceil(camera.y + viewport.height / camera.zoom)) - y),
+        };
+      },
     });
 
     return () => {

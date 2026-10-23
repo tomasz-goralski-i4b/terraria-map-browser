@@ -32,7 +32,7 @@ const goTo = vi.fn();
 beforeEach(() => {
   hydrateLayout(null);
   goTo.mockReset();
-  registerMapController({ centerOn: vi.fn(), goTo, fitWorld: vi.fn(), actualSize: vi.fn(), zoomTo: vi.fn(), zoomBy: vi.fn(), jumpTo: vi.fn(), renderNow: vi.fn(), stats: () => { throw new Error("No stats requested"); } });
+  registerMapController({ centerOn: vi.fn(), goTo, fitWorld: vi.fn(), actualSize: vi.fn(), zoomTo: vi.fn(), zoomBy: vi.fn(), jumpTo: vi.fn(), renderNow: vi.fn(), stats: () => { throw new Error("No stats requested"); }, viewArea: vi.fn() });
   useSearchStore.setState({ scope: "content", dim: true });
   clearSearch();
 });
