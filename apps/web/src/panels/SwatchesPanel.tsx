@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { create } from "zustand";
 import type { BrushContentLayer } from "@studio/world-model";
 import { confirmAction } from "../shell/ConfirmDialog.js";
-import { useLayoutStore } from "../shell/layout-store.js";
+import { showPanel } from "../shell/workbench-api.js";
 import { useViewStore } from "../shell/view-store.js";
 import { notify } from "../shell/notification-store.js";
 import { Icon } from "../ui/Icon.js";
@@ -33,10 +33,7 @@ export const useSwatchesView = create<SwatchesView>()(() => ({ category: "block"
 
 /** Shows the Swatches tab of the dock on a category, as clicking a material in the tool options does. */
 export function showSwatches(category: SwatchCategory): void {
-  const layout = useLayoutStore.getState();
-  layout.setDockHidden(false);
-  layout.setDockTab("swatches");
-  layout.setSectionOpen("swatches", true);
+  showPanel("swatches");
   useSwatchesView.setState((state) => ({ category, focusRequest: state.focusRequest + 1 }));
 }
 

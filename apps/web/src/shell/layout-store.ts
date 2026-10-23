@@ -2,15 +2,14 @@ import { create } from "zustand";
 import { DEFAULT_RULER, type RulerSettings } from "../world/measurements.js";
 
 /** The dock sections, in display order. */
-export const SECTION_IDS = ["search", "world", "layers", "grid", "measurements", "inspector", "content", "entities", "swatches"] as const;
+export const SECTION_IDS = [
+  "search", "bookmarks", "world", "layers", "grid", "measurements", "inspector", "history", "content", "entities", "statistics", "swatches", "objects", "schematics",
+] as const;
 export type SectionId = (typeof SECTION_IDS)[number];
-
-/** The dock's tabs: what the world is (properties, content, entities), what is shown (layers) and what is painted. */
-export const DOCK_TABS = ["world", "view", "swatches"] as const;
-export type DockTab = (typeof DOCK_TABS)[number];
-/** Which tab each section lives in; the Inspector is under the tabs, visible with either. */
-export const SECTION_TAB: Readonly<Record<Exclude<SectionId, "inspector">, DockTab>> = {
-  layers: "view", grid: "view", measurements: "view", world: "world", content: "world", entities: "world", search: "world", swatches: "swatches",
+export const SECTION_TITLES: Readonly<Record<SectionId, string>> = {
+  search: "Search", bookmarks: "Bookmarks", world: "World", layers: "Visibility", grid: "Grid", measurements: "Measurements",
+  inspector: "Inspector", history: "History", content: "Content", entities: "Entities", statistics: "Statistics",
+  swatches: "Swatches", objects: "Objects", schematics: "Schematics",
 };
 
 export type ThemeChoice = "system" | "dark" | "light";
@@ -46,11 +45,11 @@ export interface Layout {
   readonly sections: Readonly<Record<SectionId, boolean>>;
   /** Collapsible groups inside sections, keyed `<section>/<group>`; absent means open. */
   readonly groups: Readonly<Record<string, boolean>>;
-  readonly dockWidth: number;
   readonly dockHidden: boolean;
-  readonly dockTab: DockTab;
-  /** The open Inspector's height in CSS pixels, set by its splitter; null fits its content (up to half the dock). */
-  readonly inspectorHeight: number | null;
+  /** Panels whose areas Show panels (P) hid (one per area), so P shows exactly those again, also after a reload. */
+  readonly hiddenPanels: readonly string[];
+  /** The workbench's arrangement (dockview's `toJSON`); null until the user changes it, then restored on load. */
+  readonly workbench: unknown;
   /** Table columns, keyed by table id and column id. */
   readonly columns: Readonly<Record<string, Readonly<Record<string, ColumnLayout>>>>;
   readonly theme: ThemeChoice;
@@ -63,22 +62,22 @@ export interface Layout {
 }
 
 export const DEFAULT_LAYOUT = {
-  sections: { world: true, layers: true, grid: true, measurements: true, inspector: true, content: false, entities: false, search: false, swatches: true },
+  sections: {
+    world: true, layers: true, grid: true, measurements: true, inspector: true, history: true, content: false, entities: false, search: false, bookmarks: false,
+    statistics: false, swatches: true, objects: true, schematics: true,
+  },
   grid: { mode: "off", customSpacing: 10, opacity: 30 },
   ruler: DEFAULT_RULER,
   groups: {},
-  dockWidth: 320,
   dockHidden: false,
-  dockTab: "world",
-  inspectorHeight: null,
+  hiddenPanels: [],
+  workbench: null,
   columns: {},
   theme: "system",
   inspectorShowAll: false,
   chestView: "grid",
   minimap: true,
-  minDockWidth: 240,
-  maxDockWidth: 640,
-} as const satisfies Layout & { minDockWidth: number; maxDockWidth: number };
+} as const satisfies Layout;
 
 export const LAYOUT_STORAGE_KEY = "terraria-map-studio.layout.v1";
 
@@ -96,19 +95,14 @@ export interface LayoutState extends Layout {
   readonly setGroupOpen: (key: string, open: boolean) => void;
   /** Opens or closes several groups at once (Expand all / Collapse all). */
   readonly setGroupsOpen: (keys: readonly string[], open: boolean) => void;
-  readonly setDockWidth: (width: number) => void;
-  readonly setInspectorHeight: (height: number | null) => void;
   readonly setDockHidden: (hidden: boolean) => void;
-  readonly setDockTab: (tab: DockTab) => void;
+  readonly setWorkbench: (arrangement: unknown) => void;
+  readonly setHiddenPanels: (panels: readonly string[]) => void;
   readonly setColumn: (table: string, column: string, layout: ColumnLayout) => void;
   readonly setTheme: (theme: ThemeChoice) => void;
   readonly setInspectorShowAll: (showAll: boolean) => void;
   readonly setMinimap: (shown: boolean) => void;
   readonly setChestView: (view: ChestView) => void;
-}
-
-function clampDockWidth(width: number): number {
-  return Math.round(Math.min(DEFAULT_LAYOUT.maxDockWidth, Math.max(DEFAULT_LAYOUT.minDockWidth, width)));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -163,16 +157,16 @@ function parseLayout(text: string | null): Layout {
   const sections = Object.fromEntries(
     SECTION_IDS.map((id) => [id, storedSections[id] ?? DEFAULT_LAYOUT.sections[id]]),
   ) as Record<SectionId, boolean>;
-  const { dockWidth, dockHidden, dockTab, inspectorHeight, theme, inspectorShowAll, chestView, minimap } = value;
+  const { dockHidden, hiddenPanels, workbench, theme, inspectorShowAll, chestView, minimap } = value;
   return {
     sections,
     grid: parseGrid(value["grid"]),
     ruler: parseRuler(value["ruler"]),
     groups: booleans(value["groups"]),
-    dockWidth: typeof dockWidth === "number" && Number.isFinite(dockWidth) ? clampDockWidth(dockWidth) : DEFAULT_LAYOUT.dockWidth,
     dockHidden: typeof dockHidden === "boolean" ? dockHidden : DEFAULT_LAYOUT.dockHidden,
-    dockTab: DOCK_TABS.find((tab) => tab === dockTab) ?? DEFAULT_LAYOUT.dockTab,
-    inspectorHeight: typeof inspectorHeight === "number" && Number.isFinite(inspectorHeight) && inspectorHeight > 0 ? inspectorHeight : null,
+    hiddenPanels: Array.isArray(hiddenPanels) ? hiddenPanels.filter((id): id is string => typeof id === "string") : DEFAULT_LAYOUT.hiddenPanels,
+    // Checked by the workbench when it restores it (dockview validates its own format).
+    workbench: isRecord(workbench) ? workbench : null,
     columns: columnLayouts(value["columns"]),
     theme: theme === "dark" || theme === "light" || theme === "system" ? theme : DEFAULT_LAYOUT.theme,
     inspectorShowAll: typeof inspectorShowAll === "boolean" ? inspectorShowAll : DEFAULT_LAYOUT.inspectorShowAll,
@@ -196,9 +190,9 @@ function browserStorage(): LayoutStorage | null {
 let storage: LayoutStorage | null = null;
 
 function save(layout: Layout): void {
-  const { sections, groups, dockWidth, dockHidden, dockTab, inspectorHeight, columns, theme, inspectorShowAll, chestView, grid, ruler, minimap } = layout;
+  const { sections, groups, dockHidden, hiddenPanels, workbench, columns, theme, inspectorShowAll, chestView, grid, ruler, minimap } = layout;
   try {
-    storage?.setItem(LAYOUT_STORAGE_KEY, JSON.stringify({ sections, groups, dockWidth, dockHidden, dockTab, inspectorHeight, columns, theme, inspectorShowAll, chestView, grid, ruler, minimap }));
+    storage?.setItem(LAYOUT_STORAGE_KEY, JSON.stringify({ sections, groups, dockHidden, hiddenPanels, workbench, columns, theme, inspectorShowAll, chestView, grid, ruler, minimap }));
   } catch {
     // Private mode, quota or blocked storage: the layout still works for this visit.
   }
@@ -224,17 +218,14 @@ export const useLayoutStore = create<LayoutState>()((set, get) => {
     setGroupsOpen: (keys, open) => {
       update({ groups: { ...get().groups, ...Object.fromEntries(keys.map((key) => [key, open])) } });
     },
-    setDockWidth: (width) => {
-      update({ dockWidth: clampDockWidth(width) });
-    },
-    setInspectorHeight: (height) => {
-      update({ inspectorHeight: height });
-    },
     setDockHidden: (hidden) => {
       update({ dockHidden: hidden });
     },
-    setDockTab: (tab) => {
-      update({ dockTab: tab });
+    setWorkbench: (arrangement) => {
+      update({ workbench: arrangement });
+    },
+    setHiddenPanels: (panels) => {
+      update({ hiddenPanels: panels });
     },
     setColumn: (table, column, layout) => {
       const columns = get().columns;

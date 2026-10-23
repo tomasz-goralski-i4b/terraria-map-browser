@@ -115,7 +115,34 @@ function footprintPaths(size: number, shape: BrushShape, left: number, top: numb
  * pointer and the zoom go to the view store for the status bar; the chrome reaches the camera through the registered
  * map controller.
  */
-export function MapCanvas({ world }: { readonly world: RenderableWorld }): React.JSX.Element {
+/** Space held anywhere outside text fields, buttons, menus and dialogs: the primary button pans with every tool. */
+function useSpaceHeld(): React.RefObject<boolean> {
+  const held = useRef(false);
+  useEffect(() => {
+    const ignored = (target: EventTarget | null): boolean => target instanceof Element
+      && target.closest("input, textarea, select, button, [contenteditable], [role=menu], dialog[open]") !== null;
+    const down = (event: KeyboardEvent): void => {
+      if (event.key !== " " || ignored(event.target)) return;
+      event.preventDefault(); // no page scroll
+      held.current = true;
+    };
+    const up = (event: KeyboardEvent): void => { if (event.key === " ") held.current = false; };
+    const blur = (): void => { held.current = false; };
+    window.addEventListener("keydown", down);
+    window.addEventListener("keyup", up);
+    window.addEventListener("blur", blur);
+    return () => { window.removeEventListener("keydown", down); window.removeEventListener("keyup", up); window.removeEventListener("blur", blur); };
+  }, []);
+  return held;
+}
+
+export interface MapCanvasProps {
+  readonly world: RenderableWorld;
+  /** A right click without a drag: the quick menu at the pointer (a right drag pans, as before). */
+  readonly onQuickMenu?: (at: { readonly x: number; readonly y: number }, tile: { readonly x: number; readonly y: number } | null) => void;
+}
+
+export function MapCanvas({ world, onQuickMenu }: MapCanvasProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const footprintRef = useRef<HTMLDivElement>(null);
   const sessionRef = useRef<MapSession | null>(null);
@@ -137,6 +164,8 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
    * slop on its way (an out-and-back drag is still a drag).
    */
   const pressRef = useRef<{ readonly at: Point; moved: boolean } | null>(null);
+  const rightPress = useRef<{ readonly at: Point; moved: boolean } | null>(null);
+  const spaceHeld = useSpaceHeld();
   const brushPointer = useRef<number | null>(null);
   const selectionPointer = useRef<{ readonly id: number; readonly origin: { readonly x: number; readonly y: number }; last: Point; readonly type: string } | null>(null);
   const areaRef = useRef<HTMLDivElement>(null);
@@ -661,7 +690,9 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
 
   const onPointerDown = (event: React.PointerEvent<HTMLCanvasElement>): void => {
     withSession((session) => {
-      const selected = useViewStore.getState().tool;
+      // Space + drag pans whatever the tool, as in image editors.
+      const selected = spaceHeld.current && event.button === 0 ? "pan" : useViewStore.getState().tool;
+      rightPress.current = event.button === 2 ? { at: localPoint(event.clientX, event.clientY), moved: false } : null;
       if (rulerPointer.current !== null) {
         const previous = rulerPointer.current;
         finishMeasurement(true, true); rulerPointer.current = null;
@@ -745,7 +776,7 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
       event.currentTarget.style.cursor = "grabbing";
       session.pointers.set(event.pointerId, localPoint(event.clientX, event.clientY));
       // Only a lone primary-button press can pin; a second finger, or another button, makes it a gesture.
-      pressRef.current = session.pointers.size === 1 && event.isPrimary && event.button === 0
+      pressRef.current = session.pointers.size === 1 && event.isPrimary && event.button === 0 && selected !== "pan"
         ? { at: localPoint(event.clientX, event.clientY), moved: false }
         : null;
       try {
@@ -807,6 +838,8 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
       const last = session.pointers.get(event.pointerId);
       const press = pressRef.current;
       if (press !== null && Math.hypot(local.x - press.at.x, local.y - press.at.y) >= CLICK_SLOP) press.moved = true;
+      const right = rightPress.current;
+      if (right !== null && Math.hypot(local.x - right.at.x, local.y - right.at.y) >= CLICK_SLOP) right.moved = true;
       session.hover = local;
       if (last === undefined) {
         session.requestFrame();
@@ -875,6 +908,12 @@ export function MapCanvas({ world }: { readonly world: RenderableWorld }): React
       if (!session.pointers.delete(event.pointerId)) return;
       const press = pressRef.current;
       pressRef.current = null;
+      const right = rightPress.current;
+      rightPress.current = null;
+      if (event.type === "pointerup" && event.button === 2 && right !== null && !right.moved && onQuickMenu !== undefined) {
+        const point = toBacking(localPoint(event.clientX, event.clientY));
+        onQuickMenu({ x: event.clientX, y: event.clientY }, session.renderer.tileAt(point.x, point.y));
+      }
       if (event.type === "pointerup" && event.button === 0 && press !== null && useViewStore.getState().tool === "inspect") {
         const release = localPoint(event.clientX, event.clientY);
         // A click, not a drag: the pointer never left a few CSS pixels around the press.

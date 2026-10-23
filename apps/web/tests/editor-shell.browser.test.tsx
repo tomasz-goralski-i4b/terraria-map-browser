@@ -7,13 +7,14 @@ import { readWorldMetadata } from "@studio/world-codec";
 import type { Tile } from "@studio/world-model";
 import { App } from "../src/App.js";
 import { worldFieldGroups } from "../src/panels/world-fields.js";
-import { DEFAULT_LAYOUT, type LayoutStorage } from "../src/shell/layout-store.js";
+import { type LayoutStorage } from "../src/shell/layout-store.js";
+import { getWorkbench } from "../src/shell/workbench-api.js";
 import { useLayoutStore } from "../src/shell/layout-store.js";
 import { parseZoomPercent, StatusBar, type StatusWorld } from "../src/shell/StatusBar.js";
 import { getMapController, useViewStore } from "../src/shell/view-store.js";
 import "../src/styles.css";
 import "./support/commands.js";
-import { dockTab, menu } from "./support/shell.js";
+import { dockTab, menu, openPanel } from "./support/shell.js";
 
 class MemoryStorage implements LayoutStorage {
   readonly items = new Map<string, string>();
@@ -66,13 +67,15 @@ test.each(["dark", "light"] as const)("grid panel matches the %s editor theme", 
   getMapController()?.renderNow();
   await page.screenshot({ path: `.tdd/grid-${theme}.png` });
   const result = await axe.run(document.body);
-  expect(result.violations).toEqual([]);
+  expect(result.violations.map((violation) => `${violation.id}: ${violation.nodes.map((node) => node.target.join(" ")).join(", ")}`)).toEqual([]);
 });
 
-test("grid controls keep a stable layout at the narrowest dock and custom values commit on blur", async () => {
+test("grid controls keep a stable layout at the narrowest panel width and custom values commit on blur", async () => {
   await render(<App layoutStorage={storage} />);
   await dockTab("View");
-  useLayoutStore.getState().setDockWidth(DEFAULT_LAYOUT.minDockWidth);
+  // Dragged narrower, an area stops at its minimum (then snaps shut): that minimum is the narrowest Grid can be.
+  getWorkbench()?.getPanel("layers")?.group.api.setSize({ width: 100 });
+  await expect.poll(() => Math.round(document.querySelector(".grid-panel")?.getBoundingClientRect().width ?? 0)).toBeLessThanOrEqual(220);
   const panel = document.querySelector<HTMLElement>(".grid-panel");
   if (panel === null) throw new Error("Grid panel is missing");
   const spacing = page.getByRole("combobox", { name: "Grid spacing", exact: true });
@@ -204,30 +207,35 @@ test("Collapse all and Expand all toggle every World group", async () => {
   await expect.poll(() => groupToggles().every((toggle) => toggle.getAttribute("aria-expanded") === "true")).toBe(true);
 });
 
-test("collapsed sections, a resized and a hidden dock persist across a reload", async () => {
+/** The width of the side bar's group (World, Layers, …), 0 while it is folded or hidden. */
+function sideWidth(): number {
+  const group = getWorkbench()?.getPanel("world")?.group;
+  const box = group?.element.getBoundingClientRect();
+  return group?.api.isVisible === true && box !== undefined && box.height > 0 ? Math.round(box.width) : 0;
+}
+
+test("collapsed sections, a resized side bar, the panel in front and hidden panels persist across a reload", async () => {
   const first = await render(<App layoutStorage={storage} />);
   await dockTab("View");
-  sectionToggle("Layers").click();
-  await expect.element(sectionToggle("Layers")).toHaveAttribute("aria-expanded", "false");
-  const splitter = page.getByRole("separator", { name: "Resize panels" });
-  (splitter.element() as HTMLElement).focus();
-  await userEvent.keyboard("{ArrowLeft}{ArrowLeft}");
-  await expect.element(splitter).toHaveAttribute("aria-valuenow", String(DEFAULT_LAYOUT.dockWidth + 32));
+  sectionToggle("Visibility").click();
+  await expect.element(sectionToggle("Visibility")).toHaveAttribute("aria-expanded", "false");
+  getWorkbench()?.getPanel("layers")?.group.api.setSize({ width: 400 });
+  await expect.poll(sideWidth).toBe(400);
   await page.getByRole("button", { name: "Show panels" }).click();
-  await expect.element(page.getByRole("complementary", { name: "Panels" })).not.toBeInTheDocument();
+  await expect.poll(sideWidth).toBe(0);
+  // The arrangement is stored once the layout settles.
+  await expect.poll(() => storage.items.get("terraria-map-studio.layout.v1")?.includes("\"dockHidden\":true") ?? false).toBe(true);
+  await new Promise((resolve) => { window.setTimeout(resolve, 400); });
   await first.unmount();
 
   await render(<App layoutStorage={storage} />);
-  await expect.element(page.getByRole("complementary", { name: "Panels" })).not.toBeInTheDocument();
   await expect.element(page.getByRole("button", { name: "Show panels" })).toHaveAttribute("aria-pressed", "false");
+  expect(sideWidth()).toBe(0);
   await userEvent.keyboard("p");
-  await expect.element(page.getByRole("complementary", { name: "Panels" })).toBeVisible();
-  await expect.element(page.getByRole("separator", { name: "Resize panels" })).toHaveAttribute("aria-valuenow", String(DEFAULT_LAYOUT.dockWidth + 32));
-  // The chosen tab is remembered too.
-  await expect.element(page.getByRole("tab", { name: "View" })).toHaveAttribute("aria-selected", "true");
-  expect(sectionToggle("Layers").getAttribute("aria-expanded")).toBe("false");
-  await dockTab("World");
-  expect(sectionToggle("World").getAttribute("aria-expanded")).toBe("true");
+  await expect.poll(sideWidth).toBe(400);
+  // The panel in front is remembered too.
+  expect(getWorkbench()?.getPanel("layers")?.group.activePanel?.id).toBe("layers");
+  expect(sectionToggle("Visibility").getAttribute("aria-expanded")).toBe("false");
 });
 
 test("with localStorage throwing the app renders the default layout and keeps working", async () => {
@@ -238,18 +246,22 @@ test("with localStorage throwing the app renders the default layout and keeps wo
   vi.spyOn(Storage.prototype, "setItem").mockImplementation(blocked);
   await render(<App />);
   await expect.element(page.getByRole("main", { name: "Map" })).toBeVisible();
-  await expect.element(page.getByRole("complementary", { name: "Panels" })).toBeVisible();
-  expect(sectionToggle("World").getAttribute("aria-expanded")).toBe("true");
-  sectionToggle("World").click();
-  await expect.element(sectionToggle("World")).toHaveAttribute("aria-expanded", "false");
+  await expect.element(page.getByRole("region", { name: "World", exact: true })).toBeVisible();
+  await openPanel("Layers");
+  expect(sectionToggle("Visibility").getAttribute("aria-expanded")).toBe("true");
+  sectionToggle("Visibility").click();
+  await expect.element(sectionToggle("Visibility")).toHaveAttribute("aria-expanded", "false");
 });
 
-test("Reset layout restores the default sections and dock", async () => {
+test("Reset layout restores the default sections and panels", async () => {
   await render(<App layoutStorage={storage} />);
-  sectionToggle("World").click();
-  await expect.element(sectionToggle("World")).toHaveAttribute("aria-expanded", "false");
+  await openPanel("Layers");
+  sectionToggle("Visibility").click();
+  await expect.element(sectionToggle("Visibility")).toHaveAttribute("aria-expanded", "false");
   await menu("View", "Reset layout");
-  await expect.element(sectionToggle("World")).toHaveAttribute("aria-expanded", "true");
+  await expect.poll(() => getWorkbench()?.getPanel("world")?.group.activePanel?.id).toBe("world");
+  await openPanel("Layers");
+  await expect.element(sectionToggle("Visibility")).toHaveAttribute("aria-expanded", "true");
   expect(storage.items.size).toBe(0);
 });
 
@@ -279,14 +291,17 @@ test("tools, sections and dialogs are operable from the keyboard", async () => {
   await expect.element(page.getByRole("region", { name: "Tool options" })).toMatchTextContent("Inspect");
   await userEvent.keyboard("h");
   await expect.element(page.getByRole("button", { name: "Pan" })).toHaveAttribute("aria-pressed", "true");
-  // An edit tool that is not available yet is announced as disabled and ignores its shortcut.
+  // Without a world the drawing tools are unavailable: their key does nothing, and the family's button still opens
+  // the list of its tools (each saying why), so it is not disabled itself.
   await userEvent.keyboard("b");
-  await expect.element(page.getByRole("button", { name: "Brush" })).toHaveAttribute("aria-disabled", "true");
-  await expect.element(page.getByRole("button", { name: "Pan" })).toHaveAttribute("aria-pressed", "true");
+  await expect.element(page.getByRole("button", { name: "Pan", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect.element(page.getByRole("button", { name: "Brush", exact: true })).toHaveAttribute("aria-haspopup", "menu");
+  await expect.element(page.getByRole("button", { name: "Brush", exact: true })).not.toHaveAttribute("aria-disabled");
 
-  sectionToggle("Content").focus();
+  await openPanel("Layers");
+  sectionToggle("Grid").focus();
   await userEvent.keyboard("{Enter}");
-  await expect.element(sectionToggle("Content")).toHaveAttribute("aria-expanded", "true");
+  await expect.element(sectionToggle("Grid")).toHaveAttribute("aria-expanded", "false");
 
   await userEvent.keyboard("{Shift>}?{/Shift}");
   await expect.element(page.getByRole("dialog", { name: "Keyboard shortcuts" })).toBeVisible();
@@ -296,7 +311,8 @@ test("tools, sections and dialogs are operable from the keyboard", async () => {
   await userEvent.keyboard("{Control>}k{/Control}");
   await expect.element(page.getByRole("combobox", { name: "Command" })).toHaveFocus();
   await userEvent.keyboard("show panels{Enter}");
-  await expect.element(page.getByRole("complementary", { name: "Panels" })).not.toBeInTheDocument();
+  await expect.element(page.getByRole("button", { name: "Show panels" })).toHaveAttribute("aria-pressed", "false");
+  await expect.poll(sideWidth).toBe(0);
 });
 
 function tabbableTools(): string[] {
@@ -329,8 +345,10 @@ test("the menu bar works from the keyboard: Alt+letter, arrows between menus and
   await userEvent.keyboard("{ArrowRight}");
   await expect.element(page.getByRole("menuitem", { name: "Undo", exact: true })).toHaveFocus();
   await userEvent.keyboard("{ArrowRight}");
-  await expect.element(page.getByRole("menuitemcheckbox", { name: "Show panels" })).toHaveFocus();
-  await userEvent.keyboard("{ArrowLeft}{ArrowLeft}");
+  await expect.element(page.getByRole("menuitem", { name: "All", exact: true })).toHaveFocus();
+  await userEvent.keyboard("{ArrowRight}");
+  await expect.element(page.getByRole("menuitem", { name: "Fit world", exact: true })).toHaveFocus();
+  await userEvent.keyboard("{ArrowLeft}{ArrowLeft}{ArrowLeft}");
   await expect.element(page.getByRole("menuitem", { name: "Open World…" })).toHaveFocus();
   // Open World…, Open Folder…, Worlds, Open Recent.
   await userEvent.keyboard("{ArrowDown}{ArrowDown}{ArrowDown}");
@@ -371,28 +389,27 @@ test("the zoom in the status bar takes a typed percentage; Escape keeps the zoom
   await expect.element(page.getByTestId("zoom")).toHaveTextContent("300%");
 });
 
-test("the dock tabs follow the arrow keys, Home and End", async () => {
+test("the activity bar works from the keyboard: Enter shows a panel, and on the panel in front folds its area", async () => {
   await render(<App layoutStorage={storage} />);
-  const world = page.getByRole("tab", { name: "World" });
-  const view = page.getByRole("tab", { name: "View" });
-  (world.element() as HTMLElement).focus();
-  await userEvent.keyboard("{ArrowRight}");
-  await expect.element(view).toHaveFocus();
-  await expect.element(view).toHaveAttribute("aria-selected", "true");
-  await expect.element(page.getByRole("tabpanel")).toMatchTextContent("Layers");
-  await userEvent.keyboard("{Home}");
-  await expect.element(world).toHaveAttribute("aria-selected", "true");
-  await userEvent.keyboard("{End}");
-  await expect.element(page.getByRole("tab", { name: "Swatches" })).toHaveAttribute("aria-selected", "true");
-  await expect.element(page.getByRole("tabpanel")).toMatchTextContent("Open a vanilla world first");
-  // The Inspector stays visible with any tab.
-  await expect.element(page.getByRole("region", { name: "Inspector" })).toBeVisible();
+  const icons = page.getByRole("navigation", { name: "Panels" });
+  const swatches = icons.getByRole("button", { name: "Swatches", exact: true });
+  (swatches.element() as HTMLElement).focus();
+  await userEvent.keyboard("{Enter}");
+  await expect.element(swatches).toHaveAttribute("aria-pressed", "true");
+  await expect.element(page.getByRole("region", { name: "Swatches", exact: true })).toBeVisible();
+  await userEvent.keyboard("{Enter}");
+  await expect.element(swatches).toHaveAttribute("aria-pressed", "false");
+  await expect.poll(sideWidth).toBe(0);
+  await userEvent.keyboard(" ");
+  await expect.element(swatches).toHaveAttribute("aria-pressed", "true");
+  // Properties (the Inspector) is an area of its own and stayed.
+  await expect.element(page.getByRole("region", { name: "Properties", exact: true })).toBeVisible();
 });
 
-test("every dock section opens and closes from the keyboard", async () => {
+test("every panel section opens and closes from the keyboard", async () => {
   await render(<App layoutStorage={storage} />);
-  for (const [tab, name] of [["World", "World"], ["World", "Content"], ["World", "Entities"], ["World", "Inspector"], ["View", "Layers"], ["View", "Inspector"], ["Swatches", "Swatches"]] as const) {
-    await dockTab(tab);
+  for (const [panel, name] of [["Layers", "Visibility"], ["Layers", "Grid"], ["Library", "Objects"], ["Library", "Schematics"]] as const) {
+    await openPanel(panel);
     const toggle = sectionToggle(name);
     const before = toggle.getAttribute("aria-expanded");
     toggle.focus();
@@ -420,7 +437,8 @@ test("the command palette keeps the active option in view and closes without run
   await expect.element(page.getByRole("option", { name: "No matching command" })).toBeVisible();
   await page.getByRole("dialog", { name: "Command palette" }).getByRole("button", { name: "Close" }).click();
   await expect.element(page.getByRole("dialog", { name: "Command palette" })).not.toBeInTheDocument();
-  await expect.element(page.getByRole("complementary", { name: "Panels" })).toBeVisible();
+  // Closing ran nothing: the panels are still shown.
+  await expect.element(page.getByRole("button", { name: "Show panels" })).toHaveAttribute("aria-pressed", "true");
 
   await userEvent.keyboard("{Control>}k{/Control}");
   const dialog = page.getByRole("dialog", { name: "Command palette" }).element() as HTMLDialogElement;
@@ -441,13 +459,21 @@ test("at 320 px nothing overflows: secondary actions stay in the menus", async (
     expect(box.right).toBeLessThanOrEqual(320);
   }
   await expect.element(page.getByRole("button", { name: "Show panels" })).toBeVisible();
-  await expect.element(page.getByRole("menubar", { name: "Main menu" }).getByRole("menuitem", { name: "File" })).toBeVisible();
-  await menu("View", "Theme");
+  // Eight menus do not fit a phone: they open from one button, each as a submenu under its item.
+  expect(document.querySelector("[role=menubar]")?.closest<HTMLElement>(".hide-on-phone")?.offsetParent).toBeNull();
+  await page.getByRole("button", { name: "Menu", exact: true }).click();
+  await page.getByRole("menuitem", { name: "View", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Theme", exact: true }).click();
   const dark = page.getByRole("menuitemcheckbox", { name: "Theme: dark" });
   await expect.element(dark).toBeVisible();
   // On a phone the submenu opens under its item, inside the screen.
   expect(dark.element().getBoundingClientRect().right).toBeLessThanOrEqual(320);
-  await menu("Help");
+  // Escape walks back out of the submenus and closes the menu.
+  const menuButton = page.getByRole("button", { name: "Menu", exact: true });
+  for (let step = 0; step < 3 && menuButton.element().getAttribute("aria-expanded") === "true"; step++) await userEvent.keyboard("{Escape}");
+  await expect.element(menuButton).toHaveAttribute("aria-expanded", "false");
+  await menuButton.click();
+  await page.getByRole("menuitem", { name: "Help", exact: true }).click();
   await expect.element(page.getByRole("menuitem", { name: "Keyboard shortcuts" })).toBeVisible();
   expect(page.getByRole("toolbar", { name: "Tools" }).element().getAttribute("aria-orientation")).toBe("horizontal");
 });
@@ -456,7 +482,7 @@ test("the main screen with a loaded world has no accessibility violations", asyn
   await render(<App layoutStorage={storage} />);
   await openFixture("SCCO1.wld");
   await expect.element(page.getByRole("textbox", { name: "Name", exact: true })).toHaveValue("SCCR1");
-  sectionToggle("Content").click();
+  await openPanel("Content");
   await expect.element(page.getByRole("grid", { name: "Content" })).toBeVisible();
   for (const theme of ["dark", "light"] as const) {
     document.documentElement.dataset["theme"] = theme;
@@ -466,42 +492,44 @@ test("the main screen with a loaded world has no accessibility violations", asyn
   delete document.documentElement.dataset["theme"];
 });
 
-test("below 1024 px the rail runs along the top, the dock sits under the map and the map keeps half the screen", async () => {
+test("below 1024 px the rail runs along the top, panels open under the map and the activity bar runs along the bottom", async () => {
   await page.viewport(800, 700);
   await render(<App layoutStorage={storage} />);
-  await expect.element(page.getByRole("complementary", { name: "Panels" })).toBeVisible();
+  await expect.poll(() => getWorkbench()?.getPanel("world") !== undefined).toBe(true);
   const map = document.querySelector("main")?.getBoundingClientRect();
-  const dock = document.querySelector("aside")?.getBoundingClientRect();
+  const side = getWorkbench()?.getPanel("world")?.group.element.getBoundingClientRect();
   const rail = document.querySelector(".tool-rail")?.getBoundingClientRect();
-  if (map === undefined || dock === undefined || rail === undefined) throw new Error("layout regions missing");
-  expect(dock.top).toBeGreaterThanOrEqual(map.bottom - 1);
-  expect(rail.bottom).toBeLessThanOrEqual(map.top + 1);
-  expect(map.height).toBeGreaterThanOrEqual(700 / 2 - 1);
+  const icons = document.querySelector(".activity-bar")?.getBoundingClientRect();
+  const bench = document.querySelector(".workbench")?.getBoundingClientRect();
+  if (map === undefined || side === undefined || rail === undefined || icons === undefined || bench === undefined) throw new Error("layout regions missing");
+  expect(side.top).toBeGreaterThanOrEqual(map.bottom - 1);
+  expect(rail.bottom).toBeLessThanOrEqual(bench.top + 1);
+  expect(icons.top).toBeGreaterThanOrEqual(bench.bottom - 1);
+  expect(page.getByRole("navigation", { name: "Panels" }).element().getBoundingClientRect().width).toBeGreaterThan(icons.height);
   expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(800);
 });
 
-test("the Inspector's top edge resizes it against the tabs, by dragging or the keys, and the height persists", async () => {
+test("the edge between the side bar and the details resizes them, and the split survives a reload", async () => {
   const first = await render(<App layoutStorage={storage} />);
-  const splitter = page.getByRole("separator", { name: "Resize Inspector" });
-  await expect.element(splitter).toHaveAttribute("aria-orientation", "horizontal");
-  const inspector = document.querySelector<HTMLElement>(".dock-inspector");
-  if (inspector === null) throw new Error("The Inspector is missing");
-  const start = inspector.getBoundingClientRect().height;
-  const handle = splitter.element() as HTMLElement;
-  const box = handle.getBoundingClientRect();
-  const at = (type: string, dy: number): void => {
-    handle.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerId: 3, clientX: box.left + 10, clientY: box.top + dy }));
-  };
-  at("pointerdown", 0);
-  at("pointermove", -30);
-  at("pointerup", -30);
-  await expect.poll(() => Math.round(inspector.getBoundingClientRect().height)).toBe(Math.round(start + 30));
-  handle.focus();
-  await userEvent.keyboard("{ArrowDown}");
-  await expect.poll(() => Math.round(inspector.getBoundingClientRect().height)).toBe(Math.round(start + 30 - 16));
+  await expect.poll(() => getWorkbench()?.getPanel("properties") !== undefined).toBe(true);
+  const details = (): number => Math.round(getWorkbench()?.getPanel("properties")?.group.element.getBoundingClientRect().height ?? 0);
+  const start = details();
+  const edge = getWorkbench()?.getPanel("properties")?.group.element.getBoundingClientRect();
+  if (edge === undefined) throw new Error("no details pane");
+  const target = document.elementFromPoint(edge.left + 100, edge.top - 1);
+  expect(target?.classList.contains("dv-sash")).toBe(true);
+  const event = (type: string, dy: number): PointerEvent => new PointerEvent(type, {
+    bubbles: true, pointerId: 3, isPrimary: true, button: 0, buttons: type === "pointerup" ? 0 : 1, clientX: edge.left + 100, clientY: edge.top - 1 + dy,
+  });
+  target?.dispatchEvent(event("pointerdown", 0));
+  for (let step = 1; step <= 6; step++) document.dispatchEvent(event("pointermove", -5 * step));
+  document.dispatchEvent(event("pointerup", -30));
+  await expect.poll(details).toBe(start + 30);
+  await expect.poll(() => storage.items.get("terraria-map-studio.layout.v1")?.includes("workbench") ?? false).toBe(true);
+  await new Promise((resolve) => { window.setTimeout(resolve, 400); });
   await first.unmount();
   await render(<App layoutStorage={storage} />);
-  await expect.poll(() => Math.round(document.querySelector<HTMLElement>(".dock-inspector")?.getBoundingClientRect().height ?? 0)).toBe(Math.round(start + 14));
+  await expect.poll(details).toBe(start + 30);
 });
 
 test("a right click opens no browser menu, except in text fields", async () => {

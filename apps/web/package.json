@@ -16,6 +16,7 @@
     "@studio/renderer": "workspace:*",
     "@studio/world-codec": "workspace:*",
     "@studio/world-model": "workspace:*",
+    "dockview-react": "catalog:",
     "react": "catalog:",
     "react-dom": "catalog:",
     "zustand": "catalog:"

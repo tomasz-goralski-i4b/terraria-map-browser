@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { useLayoutStore } from "../shell/layout-store.js";
+import { showPanel } from "../shell/workbench-api.js";
 import { deleteStored, readStored, writeStored } from "../handle-db.js";
 import { isAtlasSheetName } from "@studio/assets";
 import type { AtlasWorkerRequest, AtlasWorkerResponse, BuildProgress, BuildResult, MissingSheet, SpriteAtlas } from "@studio/assets";
@@ -467,11 +467,8 @@ function openFolderDialog(session: () => AssetSession): void {
   input.webkitdirectory = true;
   input.addEventListener("change", () => {
     const files = [...(input.files ?? [])];
-    // The Sprites row in the Layers panel (View tab) shows the build, so make sure it is in view.
-    const layout = useLayoutStore.getState();
-    layout.setDockHidden(false);
-    layout.setDockTab("view");
-    layout.setSectionOpen("layers", true);
+    // The Sprites row in the Layers panel shows the build, so make sure it is in view.
+    showPanel("layers", "layers");
     void session().connectFiles(files);
   });
   input.addEventListener("cancel", () => {

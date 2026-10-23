@@ -1,4 +1,5 @@
 import { useLayoutStore } from "./layout-store.js";
+import { showPanel } from "./workbench-api.js";
 import { Toggle } from "./LayerToggles.js";
 import { Segments } from "../ui/Segments.js";
 import { MenuButton, type MenuItem } from "../ui/Menu.js";
@@ -7,10 +8,7 @@ import { useRulerStore } from "../world/ruler-session.js";
 
 /** Picking the Ruler leaves the dock as it was (as in image editors); this reveals the list on request. */
 export function showMeasurements(): void {
-  const layout = useLayoutStore.getState();
-  layout.setDockHidden(false); layout.setDockTab("view"); layout.setSectionOpen("measurements", true);
-  // Layers and Grid above it can fill a short dock: bring the list into view once it is rendered.
-  window.requestAnimationFrame(() => { document.querySelector(".measurements-panel")?.scrollIntoView({ block: "nearest" }); });
+  showPanel("measurements");
 }
 
 export function RulerOptions(): React.JSX.Element {

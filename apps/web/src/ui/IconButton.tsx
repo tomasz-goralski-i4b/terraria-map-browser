@@ -17,6 +17,10 @@ export interface IconButtonProps {
   readonly tabIndex?: number;
   /** Identifies a tool button for roving focus (`data-tool`). */
   readonly dataTool?: string;
+  /** Tooltip text when it says more than the name (the name stays `label`). */
+  readonly tooltip?: string;
+  /** The button also opens a menu (a tool family's other tools). */
+  readonly hasMenu?: boolean;
   readonly onClick?: () => void;
 }
 
@@ -31,7 +35,7 @@ export function shortcutText(shortcut: string): string {
  */
 export function IconButton(props: IconButtonProps): React.JSX.Element {
   const { icon, label, shortcut, pressed, disabled = false, disabledReason, tooltipSide = "bottom", className, tabIndex, dataTool, onClick } = props;
-  const tooltip = [label, shortcut === undefined ? "" : `(${shortcutText(shortcut)})`, disabled && disabledReason !== undefined ? `— ${disabledReason}` : ""]
+  const tooltip = [props.tooltip ?? label, shortcut === undefined ? "" : `(${shortcutText(shortcut)})`, disabled && disabledReason !== undefined ? `— ${disabledReason}` : ""]
     .filter((part) => part !== "").join(" ");
   return (
     <button
@@ -39,6 +43,7 @@ export function IconButton(props: IconButtonProps): React.JSX.Element {
       className={className === undefined ? "icon-button" : `icon-button ${className}`}
       aria-label={label}
       aria-pressed={pressed}
+      aria-haspopup={props.hasMenu === true ? "menu" : undefined}
       aria-keyshortcuts={shortcut}
       aria-disabled={disabled || undefined}
       tabIndex={tabIndex}

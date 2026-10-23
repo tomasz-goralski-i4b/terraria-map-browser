@@ -1,8 +1,17 @@
 import { create } from "zustand";
 import { WIRE_LAYER, type Camera, type ChunkLayers, type MapRendererStats } from "@studio/renderer";
 
-/** Tools of the left rail. Navigation and the first safe brush/erase slice are available (docs/ui.md). */
-export type ToolId = "pan" | "inspect" | "ruler" | "brush" | "erase" | "fill" | "select" | "picker" | "object";
+/** Tools of the left rail, grouped in families (`TOOL_FAMILIES` in commands.ts, docs/ui.md). */
+export type ToolId =
+  | "pan" | "inspect" | "ruler"
+  | "select" | "selectEllipse" | "lasso" | "wand" | "move"
+  | "brush" | "pencil" | "line"
+  | "shapeRect" | "shapeEllipse" | "shapePolygon"
+  | "fill" | "erase" | "hammer" | "paint" | "picker"
+  | "object" | "platform" | "wire" | "liquid" | "trace";
+
+/** The dialogs of commands whose behaviour is not connected yet: their shells show what they will ask. */
+export type PlannedDialog = "replace" | "importImage" | "exportImage" | "saveSchematic";
 
 export interface TilePoint {
   readonly x: number;
@@ -46,6 +55,9 @@ export interface ViewState {
   /** Backing-store pixels per tile; null before the map has a camera. */
   readonly zoom: number | null;
   readonly tool: ToolId;
+  /** The tool each family last had, which its rail button shows and its shortcut returns to. */
+  readonly familyTools: Readonly<Record<string, ToolId>>;
+  readonly plannedDialog: PlannedDialog | null;
   readonly helpOpen: boolean;
   readonly paletteOpen: boolean;
   readonly statsVisible: boolean;
@@ -59,7 +71,8 @@ export interface ViewState {
   readonly setPinnedTile: (tile: TilePoint | null) => void;
   readonly setLayers: (layers: Partial<MapLayers>) => void;
   readonly setZoom: (zoom: number | null) => void;
-  readonly setTool: (tool: ToolId) => void;
+  readonly setTool: (tool: ToolId, family?: string) => void;
+  readonly setPlannedDialog: (dialog: PlannedDialog | null) => void;
   readonly setHelpOpen: (open: boolean) => void;
   readonly setPaletteOpen: (open: boolean) => void;
   readonly setStatsVisible: (visible: boolean) => void;
@@ -73,6 +86,8 @@ export const useViewStore = create<ViewState>()((set, get) => ({
   layers: DEFAULT_MAP_LAYERS,
   zoom: null,
   tool: "pan",
+  familyTools: {},
+  plannedDialog: null,
   helpOpen: false,
   paletteOpen: false,
   statsVisible: false,
@@ -93,8 +108,11 @@ export const useViewStore = create<ViewState>()((set, get) => ({
   setZoom: (zoom) => {
     if (get().zoom !== zoom) set({ zoom });
   },
-  setTool: (tool) => {
-    set({ tool });
+  setTool: (tool, family) => {
+    set(family === undefined ? { tool } : { tool, familyTools: { ...get().familyTools, [family]: tool } });
+  },
+  setPlannedDialog: (dialog) => {
+    set({ plannedDialog: dialog });
   },
   setHelpOpen: (open) => {
     set({ helpOpen: open });

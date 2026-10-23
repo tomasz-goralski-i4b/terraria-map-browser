@@ -5,6 +5,15 @@ import { VitePWA } from "vite-plugin-pwa";
 export default defineConfig({
   // Relative asset URLs: the built shell works from any path (root hosting and the offline browser test).
   base: "./",
+  build: {
+    rolldownOptions: {
+      output: {
+        // The dock layout library in its own file: the service worker precaches files of up to 2 MiB each, and the
+        // app in one file is larger than that.
+        codeSplitting: { groups: [{ name: "dockview", test: /node_modules[\\/].*dockview/ }] },
+      },
+    },
+  },
   plugins: [
     react(),
     VitePWA({

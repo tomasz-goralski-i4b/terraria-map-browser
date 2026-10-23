@@ -21,10 +21,19 @@ export async function hoverSubmenu(name: string): Promise<void> {
   await expect.element(page.getByRole("menu", { name, exact: true })).toBeVisible();
 }
 
-/** Selects a dock tab ("World" or "View"). */
+/**
+ * Shows a panel from the activity bar, as a user would: clicks its icon unless it is already shown in front (a click
+ * then would fold it away).
+ */
+export async function openPanel(name: string): Promise<void> {
+  const icon = page.getByRole("navigation", { name: "Panels" }).getByRole("button", { name, exact: true });
+  if (icon.element().getAttribute("aria-pressed") !== "true") await icon.click();
+  await expect.element(icon).toHaveAttribute("aria-pressed", "true");
+}
+
+/** The panels that held the old dock tabs' sections: World, View (now the Layers panel) and Swatches. */
 export async function dockTab(name: "World" | "View" | "Swatches"): Promise<void> {
-  await page.getByRole("tab", { name, exact: true }).click();
-  await expect.element(page.getByRole("tab", { name, exact: true })).toHaveAttribute("aria-selected", "true");
+  await openPanel(name === "View" ? "Layers" : name);
 }
 
 export async function pressEscape(): Promise<void> {

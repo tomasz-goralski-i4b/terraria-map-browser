@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { buildFraction, useAssetStore, type AssetStatus } from "../assets/asset-session.js";
 import { useAppStore } from "../store.js";
 import { IconButton } from "../ui/IconButton.js";
-import { MenuBar, type MenuBarMenu, type MenuItem } from "../ui/Menu.js";
+import { MenuBar, MenuButton, type MenuBarMenu, type MenuItem } from "../ui/Menu.js";
 import { ProgressFill } from "../ui/Progress.js";
 import { useNow } from "../ui/use-now.js";
 import { formatBytes } from "../panels/world-fields.js";
@@ -145,6 +145,12 @@ export function TopBar({ commands }: { readonly commands: readonly Command[] }):
         menuItem(get("file.save")),
         menuItem(get("file.saveAs")),
         { kind: "separator" },
+        { kind: "submenu", label: "Import", icon: "download", items: [menuItem(get("file.importImage")), menuItem(get("file.importSchematic"))] },
+        { kind: "submenu", label: "Export", icon: "image", items: [menuItem(get("file.exportImage")), menuItem(get("file.exportSchematic"))] },
+        { kind: "separator" },
+        menuItem(get("file.recover")),
+        menuItem(get("file.backups")),
+        { kind: "separator" },
         menuItem(get("file.close")),
       ],
     },
@@ -154,30 +160,62 @@ export function TopBar({ commands }: { readonly commands: readonly Command[] }):
         menuItem(get("edit.undo")),
         menuItem(get("edit.redo")),
         { kind: "separator" },
+        menuItem(get("edit.cut")),
         menuItem(get("edit.copy")),
         menuItem(get("edit.paste")),
+        menuItem(get("edit.duplicate")),
         menuItem(get("edit.placePaste")),
         menuItem(get("edit.cancelArea")),
+        { kind: "separator" },
+        { kind: "submenu", label: "Transform", icon: "rotate", items: [menuItem(get("edit.flipH")), menuItem(get("edit.flipV")), menuItem(get("edit.rotate"))] },
         { kind: "separator" },
         menuItem(get("search.find")),
         menuItem(get("search.next")),
         menuItem(get("search.previous")),
+        menuItem(get("edit.replace")),
+        { kind: "separator" },
+        menuItem(get("edit.shortcuts")),
+      ],
+    },
+    {
+      label: "Select", mnemonic: "S",
+      items: [
+        menuItem(get("select.all")),
+        menuItem(get("select.none")),
+        menuItem(get("select.invert")),
+        { kind: "separator" },
+        menuItem(get("select.objects")),
+        menuItem(get("select.matches")),
       ],
     },
     {
       label: "View", mnemonic: "V",
       items: [
-        menuItem(get("view.dock")),
-        { kind: "separator" },
         menuItem(get("view.fit")),
+        menuItem(get("view.fitSelection")),
         menuItem(get("view.actual")),
+        menuItem(get("view.goTo")),
+        menuItem(get("view.previous")),
+        menuItem(get("view.next")),
         { kind: "separator" },
+        menuItem(get("view.isolate")),
         menuItem(get("view.minimap")),
         menuItem(get("view.stats")),
         { kind: "submenu", label: "Grid", icon: "grid", items: commands.filter((command) => command.id.startsWith("view.grid.")).map(menuItem) },
         { kind: "submenu", label: "Theme", icon: "theme", items: commands.filter((command) => command.id.startsWith("view.theme.")).map(menuItem) },
+        { kind: "separator" },
+        // As code editors' View > Tool Windows: every panel, shown or closed, and the panel areas as a whole.
+        {
+          kind: "submenu", label: "Panels", icon: "dock",
+          items: [...commands.filter((command) => command.id.startsWith("panel.") && command.id !== "panel.bottom").map(menuItem), { kind: "separator" }, menuItem(get("panel.bottom"))],
+        },
+        menuItem(get("view.dock")),
         menuItem(get("view.reset")),
       ],
+    },
+    {
+      label: "World", mnemonic: "W",
+      items: [menuItem(get("world.bookmark")), menuItem(get("world.statistics")), menuItem(get("world.presets"))],
     },
     {
       label: "Assets", mnemonic: "A",
@@ -196,7 +234,12 @@ export function TopBar({ commands }: { readonly commands: readonly Command[] }):
     <header className="top-bar">
       <span className="brand-mark" aria-hidden="true" />
       <h1 className="visually-hidden">Terraria Map Studio</h1>
-      <MenuBar label="Main menu" menus={menus} />
+      <span className="hide-on-phone"><MenuBar label="Main menu" menus={menus} /></span>
+      {/* Phones have no room for eight menus: the same menus open from one button, each as a submenu. */}
+      <MenuButton
+        className="show-on-phone" label="Menu" icon="menu"
+        items={menus.map((menu): MenuItem => ({ kind: "submenu", label: menu.label, items: menu.items }))}
+      />
       <div className="top-history hide-on-phone" role="group" aria-label="History">
         {(["edit.undo", "edit.redo"] as const).map((id) => {
           const command = get(id);

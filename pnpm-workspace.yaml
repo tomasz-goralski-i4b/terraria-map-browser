@@ -18,6 +18,9 @@ catalog:
   playwright: ^1.63.0
   react: ^19.3.0
   react-dom: ^19.3.0
+  # Dockable panels (tabs, splits, drag and drop, floating and pop-out groups) for the editor's dock; pinned to a
+  # minor released at least two weeks ago. Why a UI dependency: docs/tooling.md.
+  dockview-react: ~8.4.1
   # TypeScript 7 (native compiler) runs `tsc -b`; it ships no JS API that typescript-eslint can load.
   typescript7: npm:typescript@~7.0.2
   # The "typescript" module seen by typescript-eslint and editors: the TypeScript 6 API (bin: tsc6).
@@ -36,3 +39,8 @@ catalogMode: strict
 # Empty on purpose: nothing in the tree needs an install script since Vite 8 dropped esbuild for
 # Rolldown, whose native binding ships as a prebuilt optional dependency.
 allowBuilds: {}
+
+# dockview-react asks for ^ of its engine; keep the engine on the same reviewed release as the wrapper.
+overrides:
+  dockview: 8.4.1
+  dockview-core: 8.4.1

@@ -36,10 +36,21 @@
   --row: 26px;
   --radius: 4px;
   --rail: 44px;
+  --activity: 40px;
   --bar: 40px;
   --options: 30px;
   --status: 24px;
   --duration: 120ms;
+
+  /*
+   * Marks drawn over the map, not chrome: the same in both themes (the map is not themed), each with a dark halo so
+   * it reads over snow, caves and dense sprites. Validity is never shown by colour alone (invalid also hatches).
+   */
+  --overlay-select: #ffffff;
+  --overlay-ghost: rgb(255 255 255 / 70%);
+  --overlay-invalid: #ff5c5c;
+  --overlay-guide: #5ec8ff;
+  --overlay-halo: rgb(0 0 0 / 75%);
 
   font-family: var(--font);
   font-size: var(--text-base);
@@ -167,24 +178,20 @@ kbd {
   display: grid;
   height: 100vh;
   height: 100dvh;
-  grid-template-columns: var(--rail) minmax(0, 1fr) var(--dock-width, 320px);
+  grid-template-columns: var(--rail) minmax(0, 1fr) var(--activity);
   grid-template-rows: var(--bar) var(--options) minmax(0, 1fr) var(--status);
   grid-template-areas:
     "top top top"
     "rail options options"
-    "rail map dock"
+    "rail work activity"
     "status status status";
-}
-
-.app[data-dock="hidden"] {
-  grid-template-columns: var(--rail) minmax(0, 1fr) 0;
 }
 
 .top-bar { grid-area: top; }
 .tool-rail { grid-area: rail; }
 .tool-options { grid-area: options; }
-.map-view { grid-area: map; }
-.dock { grid-area: dock; }
+.workbench { grid-area: work; }
+.activity-bar { grid-area: activity; }
 .status-bar { grid-area: status; }
 
 /* ---------- Buttons ---------- */
@@ -876,28 +883,6 @@ kbd {
 .splitter.splitter-horizontal::before { inset: 3px 0 2px; background: transparent; }
 .splitter.splitter-horizontal:hover::before,
 .splitter.splitter-horizontal:focus-visible::before { inset: 2px 0 1px; background: var(--accent); }
-
-.dock {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  min-height: 0;
-  background: var(--surface-1);
-}
-
-.dock-scroll {
-  flex: 1 1 auto;
-  min-width: 0;
-  min-height: 0;
-  overflow-y: auto;
-  /* A tooltip reaching past the dock must not flash a horizontal scrollbar while it shows. */
-  overflow-x: hidden;
-  overscroll-behavior: contain;
-}
-/* Buttons at the end of a dock row open their tooltip leftwards, so it stays inside the dock. */
-.dock-scroll [data-tooltip-side="bottom"]:last-child::after,
-.dock-scroll .menu:last-child > [data-tooltip-side="bottom"]::after { left: auto; right: 0; translate: none; }
 
 /* ---------- Section (accordion) ---------- */
 .section-level-2 {
@@ -1784,16 +1769,15 @@ kbd {
 
 /* ---------- Narrow screens: rail on top, dock as a bottom sheet, map keeps at least half ---------- */
 @media (max-width: 1023px) {
-  .app,
-  .app[data-dock="hidden"] {
+  .app {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: var(--bar) auto auto minmax(50%, 1fr) auto var(--status);
+    grid-template-rows: var(--bar) auto auto minmax(0, 1fr) auto var(--status);
     grid-template-areas:
       "top"
       "rail"
       "options"
-      "map"
-      "dock"
+      "work"
+      "activity"
       "status";
   }
 
@@ -1838,21 +1822,6 @@ kbd {
     padding-left: var(--space-2);
     border-top: 0;
     border-left: 1px solid var(--border);
-  }
-
-  .dock {
-    max-height: 40vh;
-    border-top: 1px solid var(--border);
-    box-shadow: 0 -4px 16px rgb(0 0 0 / 25%);
-  }
-
-  /* In the short bottom sheet the tab's panel keeps a share; the Inspector gives way. */
-  .dock-scroll {
-    min-height: 96px;
-  }
-
-  .dock-inspector[data-open="true"] {
-    min-height: 0;
   }
 
   .table-scroll {
@@ -2334,72 +2303,6 @@ kbd {
   }
 }
 
-/* ---------- Dock tabs ---------- */
-.dock-tabs {
-  flex: none;
-  display: flex;
-  gap: var(--space-1);
-  height: 34px;
-  padding: 0 var(--space-2);
-  border-bottom: 1px solid var(--border);
-}
-
-.dock-tab {
-  position: relative;
-  padding: 0 var(--space-2);
-  border: 0;
-  background: transparent;
-  color: var(--text-2);
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.dock-tab:hover,
-.dock-tab[aria-selected="true"] {
-  color: var(--text-1);
-}
-
-.dock-tab[aria-selected="true"]::after {
-  content: "";
-  position: absolute;
-  left: var(--space-2);
-  right: var(--space-2);
-  bottom: -1px;
-  height: 2px;
-  border-radius: 1px;
-  background: var(--accent);
-}
-
-.dock-tab:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: -4px;
-}
-
-/* The Inspector sits under the tabs; open, it takes up to half the dock and scrolls on its own. */
-.dock-inspector {
-  flex: none;
-  max-height: 50%;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  border-top: 1px solid var(--border-strong);
-}
-
-.dock-inspector[data-open="true"] {
-  flex: 0 1 auto;
-  min-height: 120px;
-}
-
-/* Dragged to a height: it keeps it (the tabs above keep their minimum, the splitter's maximum). */
-.dock-inspector[data-sized="true"] {
-  flex: none;
-  min-height: 0;
-  max-height: none;
-}
-
-.dock-inspector .section-level-2 {
-  border-bottom: 0;
-}
-
 /* ---------- Save As ---------- */
 .save-dialog {
   width: min(520px, calc(100vw - 32px));
@@ -2548,7 +2451,7 @@ kbd {
 
 /* ---------- Notifications ---------- */
 .notifications {
-  grid-area: map;
+  grid-area: work;
   align-self: end;
   justify-self: end;
   z-index: 20;
@@ -2617,8 +2520,8 @@ kbd {
 .area-outline {
   position: absolute;
   pointer-events: none;
-  border: 1px dashed var(--text-1);
-  box-shadow: 0 0 0 1px var(--surface-0);
+  border: 1px dashed var(--overlay-select);
+  box-shadow: 0 0 0 1px var(--overlay-halo), inset 0 0 0 1px var(--overlay-halo);
 }
 
 .area-paste-preview {
@@ -2648,3 +2551,195 @@ kbd {
 }
 /* Four updates per second; pointer input reaches the map underneath. */
 .performance-overlay { position: fixed; left: 64px; bottom: 40px; z-index: 5; pointer-events: none; padding: 8px 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface-1); color: var(--text-1); font: 12px/1.5 monospace; font-variant-numeric: tabular-nums; }
+
+/* ---------- Tool families ---------- */
+.tool-slot { position: relative; display: inline-flex; }
+/* A family of several tools: a corner mark, as in image editors' toolbars. */
+.tool-slot[data-family]::after {
+  content: "";
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  border-style: solid;
+  border-width: 0 0 5px 5px;
+  border-color: transparent transparent var(--text-3) transparent;
+  pointer-events: none;
+}
+.tool-slot[data-family]:hover::after { border-bottom-color: var(--text-1); }
+.tool-slot[data-unavailable] .icon-button { color: var(--text-3); }
+.tool-slot[data-unavailable] .icon-button:hover { color: var(--text-2); }
+
+/* ---------- Panels whose feature is not connected yet ---------- */
+.panel-planned {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  color: var(--text-3);
+}
+.panel-planned p { margin: 0; max-width: 36ch; }
+.panel-planned-icon { width: 20px; height: 20px; color: var(--text-3); }
+.panel-planned .button { display: inline-flex; align-items: center; gap: 6px; }
+.panel-planned .button[aria-disabled="true"] { opacity: .6; cursor: not-allowed; }
+
+/* ---------- Status bar: background work, recovery, what the world allows ---------- */
+.status-job, .status-recovery, .status-capability { display: inline-flex; align-items: center; gap: 6px; }
+.status-job { min-width: 9ch; }
+.status-recovery { min-width: 14ch; }
+.status-job .icon, .status-recovery .icon, .status-capability .icon { width: 13px; height: 13px; color: var(--text-3); }
+.status-capability[data-editable="true"] .icon { color: var(--success); }
+.status-capability[data-editable="false"] { color: var(--text-1); }
+
+/* ---------- Select options: mode and numeric geometry ---------- */
+.brush-segments button .icon { width: 14px; height: 14px; vertical-align: -3px; }
+.numeric-field { display: inline-flex; align-items: center; gap: 3px; }
+.numeric-field .brush-number { width: 48px; }
+
+/* ---------- Dialog shells ---------- */
+.dialog-field-value { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); min-width: 0; }
+.dialog-field-value > .text-input:only-child, .dialog-field-value > select.text-input { flex: 1; }
+.dialog-field-value .button { display: inline-flex; align-items: center; gap: 6px; }
+.dialog-number { width: 64px; }
+.dialog-previews { display: flex; gap: var(--space-3); }
+.dialog-previews figure { flex: 1; margin: 0; display: grid; gap: var(--space-1); color: var(--text-2); font-size: var(--text-small); }
+.dialog-preview {
+  aspect-ratio: 4 / 3;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: repeating-conic-gradient(var(--surface-1) 0 25%, var(--surface-3) 0 50%) 0 0 / 12px 12px;
+}
+.planned-dialog .save-notice .icon { color: var(--text-2); }
+.planned-dialog .button-primary[aria-disabled="true"] { opacity: .5; cursor: not-allowed; filter: none; }
+/* The hint gives way first, so the settings and Undo/Redo stay on the one-row bar. */
+.tool-options > .tool-options-hint { flex-shrink: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---------- Phones: one menu button, compact status cells ---------- */
+.show-on-phone { display: none; }
+@media (max-width: 639px) {
+  .show-on-phone { display: inline-flex; }
+  .status-job > span, .status-recovery > span { display: none; }
+  .status-job, .status-recovery { min-width: 0; }
+}
+
+/* ---------- Workbench: the map and the panels in one dockview, drawn with the app's tokens ---------- */
+.workbench { position: relative; min-width: 0; min-height: 0; }
+.workbench > .dv-dockview, .workbench > div { height: 100%; }
+.dockview-theme-studio {
+  color-scheme: inherit;
+  --dv-paneview-active-outline-color: var(--focus);
+  --dv-tabs-and-actions-container-font-size: 12px;
+  --dv-tabs-and-actions-container-height: 30px;
+  --dv-drag-over-background-color: var(--accent-soft);
+  --dv-drag-over-border-color: var(--accent);
+  --dv-edge-dock-indicator-color: var(--accent);
+  --dv-tabs-container-scrollbar-color: var(--border-strong);
+  --dv-icon-hover-background-color: var(--surface-3);
+  --dv-floating-box-shadow: var(--shadow);
+  --dv-floating-border: 1px solid var(--border-strong);
+  --dv-overlay-z-index: 30;
+  --dv-tab-font-size: 12px;
+  --dv-border-radius: 0px;
+  --dv-tab-margin: 0;
+  --dv-sash-color: transparent;
+  --dv-active-sash-color: var(--accent);
+  --dv-active-sash-transition-duration: 0.1s;
+  --dv-active-sash-transition-delay: 0.3s;
+  --dv-spacing-padding: 0px;
+  --dv-tab-border-radius: 0px;
+  --dv-sash-border-radius: 0px;
+  --dv-dropdown-border-radius: var(--radius);
+  --dv-tab-close-icon-size: inherit;
+  --dv-floating-group-border: 1px solid var(--border-strong);
+  --dv-drag-over-border: 1px solid var(--accent);
+  --dv-floating-group-dragging-opacity: 0.6;
+  --dv-floating-titlebar-height: 22px;
+  --dv-floating-titlebar-background-color: var(--surface-1);
+  --dv-floating-titlebar-border-bottom: 1px solid var(--border);
+  --dv-group-view-background-color: var(--surface-1);
+  --dv-tabs-and-actions-container-background-color: var(--surface-1);
+  --dv-activegroup-visiblepanel-tab-background-color: var(--surface-1);
+  --dv-activegroup-hiddenpanel-tab-background-color: var(--surface-1);
+  --dv-inactivegroup-visiblepanel-tab-background-color: var(--surface-1);
+  --dv-inactivegroup-hiddenpanel-tab-background-color: var(--surface-1);
+  --dv-tab-divider-color: transparent;
+  --dv-activegroup-visiblepanel-tab-color: var(--text-1);
+  --dv-activegroup-hiddenpanel-tab-color: var(--text-2);
+  --dv-inactivegroup-visiblepanel-tab-color: var(--text-1);
+  --dv-inactivegroup-hiddenpanel-tab-color: var(--text-2);
+  --dv-separator-border: var(--border);
+  --dv-paneview-header-border-color: var(--border);
+}
+/* Tabs read like the old dock tabs: semibold, the shown one underlined in the accent. */
+.dockview-theme-studio .dv-tabs-and-actions-container { border-bottom: 1px solid var(--border); }
+.dockview-theme-studio .dv-tab { font-weight: 600; padding: 0 var(--space-2); }
+.dockview-theme-studio .dv-tab.dv-active-tab { box-shadow: inset 0 -2px var(--accent); }
+.dockview-theme-studio .dv-groupview.dv-active-group .dv-tab.dv-active-tab { box-shadow: inset 0 -2px var(--accent-text); }
+.dockview-theme-studio .dv-tab:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+/* Splits between groups: a 1 px line, the accent while dragged. */
+.dockview-theme-studio .dv-split-view-container > .dv-view-container > .dv-view:not(:first-child)::before { background: var(--border); }
+.workbench-panel { height: 100%; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; color: var(--text-1); font-size: var(--text-base); }
+.workbench-panel-actions { display: flex; justify-content: flex-end; padding: 2px var(--space-2); border-bottom: 1px solid var(--border); }
+/* Buttons at the end of a panel row open their tooltip leftwards, so it stays inside the panel. */
+.workbench-panel [data-tooltip-side="bottom"]:last-child::after,
+.workbench-panel .menu:last-child > [data-tooltip-side="bottom"]::after { left: auto; right: 0; translate: none; }
+.workbench .map-view { height: 100%; }
+
+/* ---------- Activity bar ---------- */
+.activity-bar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: var(--space-2) 0;
+  border-left: 1px solid var(--border);
+  background: var(--surface-1);
+}
+.activity-slot[data-break] { margin-top: var(--space-1); padding-top: var(--space-1); border-top: 1px solid var(--border); }
+.activity-button { width: 32px; height: 32px; color: var(--text-3); }
+.activity-button[aria-pressed="true"] { color: var(--text-1); background: transparent; box-shadow: inset 2px 0 var(--accent); }
+@media (max-width: 1023px) {
+  .activity-bar { flex-direction: row; justify-content: center; padding: 0 var(--space-2); border-left: 0; border-top: 1px solid var(--border); overflow-x: auto; }
+  .activity-slot[data-break] { margin: 0 0 0 var(--space-1); padding: 0 0 0 var(--space-1); border-top: 0; border-left: 1px solid var(--border); }
+  .activity-button[aria-pressed="true"] { box-shadow: inset 0 2px var(--accent); }
+}
+/* A panel scrolls inside itself; the split view around it must not add a second scrollbar. */
+.dockview-theme-studio .dv-split-view-container .dv-view-container .dv-view { overflow: hidden; }
+
+/* ---------- Panel tabs: the title, and a close button shown on hover and on the tab in front ---------- */
+.workbench-tab { display: inline-flex; align-items: center; gap: 6px; }
+.workbench-tab-close { display: inline-flex; padding: 1px; border-radius: 3px; color: var(--text-3); visibility: hidden; cursor: pointer; }
+.workbench-tab-close .icon { width: 12px; height: 12px; }
+.dv-tab:hover .workbench-tab-close, .dv-tab.dv-active-tab .workbench-tab-close { visibility: visible; }
+.workbench-tab-close:hover { background: var(--surface-3); color: var(--text-1); }
+
+/* ---------- Gesture readout over the map ---------- */
+.gesture-hud {
+  position: absolute;
+  left: 50%;
+  bottom: var(--space-3);
+  z-index: 3;
+  translate: -50% 0;
+  padding: 2px var(--space-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--overlay);
+  color: var(--text-1);
+  font-size: var(--text-small);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+/* Edges between areas: an 8 px grab zone around the 1 px line (dockview's own is 4 px), over the map's layer. */
+.dockview-theme-studio .dv-split-view-container.dv-horizontal > .dv-sash-container > .dv-sash { width: 8px; margin-left: -2px; }
+.dockview-theme-studio .dv-split-view-container.dv-vertical > .dv-sash-container > .dv-sash { height: 8px; margin-top: -2px; }
+.dockview-theme-studio .dv-split-view-container .dv-sash-container .dv-sash { z-index: 100; }
+/* A folded area's edge: a strip to drag it out again, with the line it will open from shown on hover. */
+.workbench-edge { position: absolute; z-index: 101; }
+.workbench-edge[data-edge="right"] { top: 0; right: 0; bottom: 0; width: 8px; cursor: ew-resize; }
+.workbench-edge[data-edge="left"] { top: 0; left: 0; bottom: 0; width: 8px; cursor: ew-resize; }
+.workbench-edge[data-edge="bottom"] { left: 0; right: 0; bottom: 0; height: 8px; cursor: ns-resize; }
+.workbench-edge[data-edge="top"] { left: 0; right: 0; top: 0; height: 8px; cursor: ns-resize; }
+.workbench-edge:hover { background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); }
+/* shortcut: between 1024 and 1279 px (one row) and on phones the bar has no room for the selection's X/Y/W/H; they are hidden there
+   until the options bar gets its overflow menu (with #275, when the fields become editable). */
+@media (min-width: 1024px) and (max-width: 1279px), (max-width: 639px) { .tool-options .numeric-field { display: none; } }

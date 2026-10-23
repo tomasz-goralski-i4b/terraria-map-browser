@@ -1,7 +1,9 @@
 import { PASTE_ANCHORS, useAreaStore, type PasteAnchor } from "../world/area-session.js";
 import type { CopyLayers, PasteOptions } from "../world/area-clipboard.js";
 import { shortcutText } from "../ui/IconButton.js";
-import { TOOLS, type Command, commandById } from "./commands.js";
+import { Icon, type IconName } from "../ui/Icon.js";
+import { Segments } from "../ui/Segments.js";
+import { plannedReason, TOOLS, type Command, commandById } from "./commands.js";
 import { Toggle } from "./LayerToggles.js";
 
 const LAYERS: readonly { readonly key: keyof CopyLayers; readonly label: string; readonly tooltip: string }[] = [
@@ -51,6 +53,43 @@ function AnchorPicker({ value, disabled, onChange }: { readonly value: PasteAnch
   );
 }
 
+const SELECTION_MODES: readonly { readonly id: string; readonly name: string; readonly icon: IconName; readonly key: string }[] = [
+  { id: "new", name: "New selection", icon: "selNew", key: "" },
+  { id: "add", name: "Add to selection", icon: "selAdd", key: " (Shift)" },
+  { id: "subtract", name: "Subtract from selection", icon: "selSubtract", key: " (Alt)" },
+  { id: "intersect", name: "Intersect with selection", icon: "selIntersect", key: " (Shift+Alt)" },
+];
+
+/**
+ * How a new drag combines with the selection, and the selection's place and size in blocks, as an image editor's
+ * marquee options. Only New exists so far: the other modes and typing the numbers say they are not available yet.
+ */
+function SelectionGeometry({ disabled }: { readonly disabled: boolean }): React.JSX.Element {
+  const selection = useAreaStore((state) => state.selection);
+  const typing = `Typing the place and size: ${plannedReason().toLowerCase()}`;
+  return (
+    <div className="brush-option-group" role="group" aria-label="Selection geometry">
+      <Segments
+        label="Selection mode" value="new" disabled={disabled}
+        options={SELECTION_MODES.map((mode) => ({
+          id: mode.id, name: mode.name, label: <Icon name={mode.icon} />,
+          tooltip: mode.id === "new" ? mode.name : `${mode.name}${mode.key} — ${plannedReason()}`,
+        }))}
+        onChange={() => undefined}
+      />
+      {(["X", "Y", "W", "H"] as const).map((axis) => {
+        const value = selection === null ? "" : String({ X: selection.x, Y: selection.y, W: selection.width, H: selection.height }[axis]);
+        return (
+          <label key={axis} className="numeric-field" data-tooltip={typing} data-tooltip-side="bottom">
+            <span className="brush-option-label">{axis}</span>
+            <input className="brush-number" aria-label={`Selection ${axis}`} value={value} placeholder="—" disabled readOnly />
+          </label>
+        );
+      })}
+    </div>
+  );
+}
+
 /** A command as a text button: the same label, shortcut and disabled reason as its menu item. */
 function CommandButton({ command, primary = false }: { readonly command: Command; readonly primary?: boolean }): React.JSX.Element {
   const tooltip = [command.shortcut === undefined ? "" : shortcutText(command.shortcut), command.enabled ? "" : command.disabledReason ?? ""]
@@ -89,7 +128,8 @@ export function AreaOptions({ commands, disabled }: { readonly commands: readonl
           ))}
         </div>
       </div>
-    ) : (
+    ) : (<>
+      <SelectionGeometry disabled={disabled} />
       <div className="brush-option-group" role="group" aria-label="Copy layers">
         <span className="brush-option-label area-option-label">Layers</span>
         <div className="brush-segments layer-toggles">
@@ -104,7 +144,7 @@ export function AreaOptions({ commands, disabled }: { readonly commands: readonl
           })}
         </div>
       </div>
-    )}
+    </>)}
     <div className="brush-option-group" role="group" aria-label="Selection actions">
       {state.pasting
         ? <><CommandButton command={commandById(commands, "edit.placePaste")} primary /><CommandButton command={commandById(commands, "edit.cancelArea")} /></>

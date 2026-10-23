@@ -49,7 +49,7 @@ export function HelpOverlay({ commands }: { readonly commands: readonly Command[
   }, [setOpen]);
   const ref = useModal(open, close);
   const titleId = useId();
-  const groups: CommandGroup[] = ["File", "View", "Layers", "Tools", "Help"];
+  const groups: CommandGroup[] = ["File", "Edit", "Select", "View", "World", "Layers", "Tools", "Help"];
 
   return (
     <dialog ref={ref} className="dialog help-dialog" aria-labelledby={titleId}>

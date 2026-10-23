@@ -1,6 +1,6 @@
 # Editing world properties
 
-The World tab edits every decoded metadata value, plus the file's save revision and favorite flag. File version,
+The World panel edits every decoded metadata value, plus the file's save revision and favorite flag. File version,
 file size, the section table and frame-important data remain structural information. Stored list lengths and the
 size class are derived from their data.
 
