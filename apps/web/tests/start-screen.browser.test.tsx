@@ -34,8 +34,8 @@ test.each(["dark", "light"])("a populated world chooser fits beside its art in t
     recent: worldNames.map((worldName) => ({ worldName, fileName: `${worldName}.wld`, openedAt })),
   });
   await render(
-    <div className="app" style={{ "--dock-width": "320px" } as React.CSSProperties}>
-      <main className="map-view" aria-label="Map"><StartScreen commands={openCommands} /></main>
+    <div className="app">
+      <div className="workbench"><main className="map-view" aria-label="Map"><StartScreen commands={openCommands} /></main></div>
     </div>,
   );
   const start = document.querySelector<HTMLElement>(".start");

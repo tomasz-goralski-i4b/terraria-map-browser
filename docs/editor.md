@@ -74,8 +74,8 @@ Blocks, Walls or Both (both layers of a tile change together or not at all); Era
 - **Materials** are every block that frames itself from its neighbours (the framing database's block types: dirt,
   stone, ores, sand, bricks, …) and every named wall, limited to the content ids the world's format defines. Objects
   and other frame-important tiles are not materials: they need their own placement rules (a later tool). The options
-  bar shows each written layer's material as a swatch and name; clicking it opens the **Swatches** tab of the dock
-  on that layer with the search field focused. The tab is always there, as an image editor's Swatches panel; choosing
+  bar shows each written layer's material as a swatch and name; clicking it shows the **Swatches** panel
+  on that layer with the search field focused, as an image editor's Swatches panel; choosing
   a swatch while Pan or Inspect is active switches to Brush. Alt+click on the map picks the block, wall and their paints under the
   pointer (an eyedropper).
 - **Paint** is chosen per layer from the colour well next to the material (No paint, or one of the 30 paints) and is
@@ -155,7 +155,7 @@ without an observer or idle delay. The small pixel cache is shared with Brush ch
 reconnect or disconnect. Missing sheets and unavailable framing keep the map-colour
 fallback, including the theme's checkerboard for missing map colours.
 
-The Swatches tab lists Blocks, Walls or Paints as a grid of sprites or map colours (painted swatches with the paint
+The Swatches panel lists Blocks, Walls or Paints as a grid of sprites or map colours (painted swatches with the paint
 in a corner) or as a list of names, filtered by name or id. Its source is All materials, Recently used (the last 16
 swatches painted with) or a custom palette. Custom palettes hold swatches, a material with its paint, and are kept in
 the browser (`localStorage`):

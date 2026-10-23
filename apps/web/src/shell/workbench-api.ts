@@ -275,19 +275,22 @@ export function toggleArea(area: PanelArea): void {
   if (first !== undefined) showPanel(first.id as PanelId);
 }
 
-/** The areas that were unfolded when Show panels (`P`) hid them, so showing brings back exactly those. */
-let hiddenByShowPanels: DockviewGroupPanel[] = [];
-
-/** Show panels (`P`): folds every docked area except the map's, and later unfolds the same ones. */
+/**
+ * Show panels (`P`): folds every docked area except the map's, and later unfolds the same ones. Which ones is kept
+ * with the layout (a panel of each), so it also holds after a reload.
+ */
 export function setPanelsHidden(hidden: boolean): void {
   if (api === null) return;
+  const layout = useLayoutStore.getState();
   if (hidden) {
-    hiddenByShowPanels = api.groups.filter((group) => group.api.location.type === "grid" && group.api.isVisible
+    const groups = api.groups.filter((group) => group.api.location.type === "grid" && group.api.isVisible
       && !group.panels.some((panel) => panel.id === MAP_PANEL));
-    for (const group of hiddenByShowPanels) group.api.setVisible(false);
+    // Restored already hidden (a reload with P on): keep the stored list rather than replace it with nothing.
+    if (groups.length > 0) layout.setHiddenPanels(groups.flatMap((group) => group.panels.slice(0, 1).map((panel) => panel.id)));
+    for (const group of groups) group.api.setVisible(false);
   } else {
-    for (const group of hiddenByShowPanels) if (api.groups.includes(group)) group.api.setVisible(true);
-    hiddenByShowPanels = [];
+    for (const id of layout.hiddenPanels) api.getPanel(id)?.group.api.setVisible(true);
+    layout.setHiddenPanels([]);
   }
   refreshShownPanels();
 }

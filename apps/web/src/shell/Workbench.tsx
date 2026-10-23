@@ -1,5 +1,5 @@
-import { createContext, useContext, useEffect, useMemo, useRef } from "react";
-import { DockviewReact, type DockviewApi, type DockviewReadyEvent, type DockviewTheme, type IDockviewPanelProps, type SerializedDockview } from "dockview-react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { DockviewReact, type DockviewApi, type IDockviewPanelHeaderProps, type DockviewReadyEvent, type DockviewTheme, type IDockviewPanelProps, type SerializedDockview } from "dockview-react";
 import "dockview-react/dist/styles/dockview.css";
 import { MapView } from "../components/MapView.js";
 import { ContentPanel } from "../panels/ContentPanel.js";
@@ -72,14 +72,16 @@ function PanelBody({ params }: IDockviewPanelProps<{ readonly id: string }>): Re
   if (definition.sections.length === 1 && only !== undefined) {
     const section = SECTIONS[only];
     return (
-      <div className="workbench-panel" aria-label={definition.title} role="region">
+      <div className="workbench-panel">
+        {/* The panel's tab names it on screen; the heading keeps the outline (h2, then the panel's own h3). */}
+        <h2 className="visually-hidden">{definition.title}</h2>
         {section.actions !== undefined && <div className="workbench-panel-actions">{section.actions(commands)}</div>}
         {section.body(commands)}
       </div>
     );
   }
   return (
-    <div className="workbench-panel" aria-label={definition.title} role="region">
+    <div className="workbench-panel">
       {definition.sections.map((section) => <PanelSection key={section} id={section} commands={commands} />)}
     </div>
   );
@@ -92,6 +94,26 @@ function MapPanel(): React.JSX.Element {
 
 const COMPONENTS = { map: MapPanel, panel: PanelBody };
 
+/**
+ * A panel's tab: its title and a close button for the pointer. The button is outside the accessibility tree and
+ * the Tab order (a focusable control inside role="tab" is invalid): from the keyboard a panel closes through its
+ * tab's menu, and comes back from the activity bar or View > Panels.
+ */
+function PanelTab({ api }: IDockviewPanelHeaderProps): React.JSX.Element {
+  return (
+    <span className="workbench-tab">
+      <span className="workbench-tab-title">{api.title}</span>
+      <span
+        className="workbench-tab-close" aria-hidden="true" title="Close"
+        onPointerDown={(event) => { event.stopPropagation(); }}
+        onClick={(event) => { event.stopPropagation(); api.close(); }}
+      >
+        <Icon name="close" />
+      </span>
+    </span>
+  );
+}
+
 
 
 /** Dockview drawn with the app's tokens (styles.css), in both themes. */
@@ -100,7 +122,8 @@ const THEME: DockviewTheme = { name: "studio", className: "dockview-theme-studio
 /** The default arrangement: side bar (World, Layers, Swatches, Library) over Properties | History, tables below the map. */
 function buildDefaultLayout(api: DockviewApi, container: HTMLElement | null): void {
   api.clear();
-  const map = api.addPanel({ id: MAP_PANEL, component: "map", title: "Map", renderer: "always" });
+  // Dockview names a group's region after its panel: not "Map", which is the map's own main landmark.
+  const map = api.addPanel({ id: MAP_PANEL, component: "map", title: "World map", renderer: "always" });
   map.group.header.hidden = true;
   map.group.locked = true;
   for (const definition of PANELS) addPanel(api, definition);
@@ -162,8 +185,8 @@ function EdgeStrip({ edge, root }: { readonly edge: Edge; readonly root: React.R
   };
   return (
     <div
-      className="workbench-edge" data-edge={edge} role="separator" aria-label={`Drag to open the folded ${EDGE_LABELS[edge]} panels`}
-      aria-orientation={edge === "left" || edge === "right" ? "vertical" : "horizontal"}
+      // Pointer only, as the edges between areas are; from the keyboard the activity bar unfolds an area.
+      className="workbench-edge" data-edge={edge} aria-hidden="true" title={`Drag to open the folded ${EDGE_LABELS[edge]} panels`}
       onPointerDown={onPointerDown}
     />
   );
@@ -178,6 +201,9 @@ const MOVE_TARGETS: readonly (readonly [PanelArea, string])[] = [["side", "Move 
 export function Workbench({ commands, renderer }: { readonly commands: readonly Command[]; readonly renderer: string }): React.JSX.Element {
   const context = useMemo(() => ({ commands, renderer }), [commands, renderer]);
   const foldedEdges = useWorkbenchStore((state) => state.foldedEdges);
+  // Dockview's layout announcements ("Layers moved to …") go to a polite status of the app's own: its built-in
+  // region is role="alert", which would compete with the app's error alerts.
+  const [announcement, setAnnouncement] = useState("");
   const dockHidden = useLayoutStore((state) => state.dockHidden);
   const ready = useRef(false);
   const root = useRef<HTMLDivElement>(null);
@@ -195,6 +221,9 @@ export function Workbench({ commands, renderer }: { readonly commands: readonly 
   const onReady = (event: DockviewReadyEvent): void => {
     const { api } = event;
     registerWorkbench(api);
+    // Dockview always creates its own live regions; with `announcer` set they stay empty, but the assertive one is
+    // role="alert", which assistive technology and the app's tests would take for an error.
+    for (const region of document.querySelectorAll(".dv-live-region-assertive")) region.removeAttribute("role");
     api.onDidAddGroup(configureGroup);
     restoreLayout(api, useLayoutStore.getState().workbench, root.current);
     for (const group of api.groups) configureGroup(group);
@@ -225,14 +254,17 @@ export function Workbench({ commands, renderer }: { readonly commands: readonly 
         <DockviewReact
           theme={THEME}
           components={COMPONENTS}
+          defaultTabComponent={PanelTab}
           onReady={onReady}
           popoutUrl={`${import.meta.env.BASE_URL}popout.html`}
+          announcer={(event) => { setAnnouncement(event.message); }}
           getTabContextMenuItems={({ panel }) => panel.id === MAP_PANEL ? [] : [
             ...MOVE_TARGETS.map(([area, label]) => ({ label, action: () => { movePanel(panel.id, area); } })),
             "separator", "float", "popout", "maximize", "separator", "close",
           ]}
         />
         {foldedEdges.map((edge) => <EdgeStrip key={edge} edge={edge} root={root} />)}
+        <span className="visually-hidden" role="status">{announcement}</span>
       </div>
     </WorkbenchContext.Provider>
   );
@@ -251,7 +283,12 @@ export function ActivityBar(): React.JSX.Element {
           <button
             type="button" className="icon-button activity-button" aria-label={panel.title} aria-pressed={shown.has(panel.id)}
             data-tooltip={panel.title} data-tooltip-side="left"
-            onClick={() => { togglePanel(panel.id); }}
+            onClick={(event) => {
+              const icon = event.currentTarget;
+              togglePanel(panel.id);
+              // Showing a panel activates its group, which takes focus; a keyboard user stays on the activity bar.
+              if (event.detail === 0) window.requestAnimationFrame(() => { icon.focus(); });
+            }}
           >
             <Icon name={panel.icon} />
           </button>

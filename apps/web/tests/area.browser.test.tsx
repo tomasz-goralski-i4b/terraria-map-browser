@@ -116,7 +116,7 @@ test("Select options fit the existing shell in both themes and desktop/tablet/ph
   const base64 = await commands.readWorldFixture("SCCO1.wld");
   const bytes = Uint8Array.from(atob(base64), (character) => character.charCodeAt(0));
   await getDefaultWorldSession().open(new File([bytes], "ForestWorkshop.wld"));
-  await page.getByRole("button", { name: "Select", exact: true }).click();
+  await page.getByRole("button", { name: "Rectangle select", exact: true }).click();
   const options = page.getByRole("region", { name: "Tool options" });
   for (const width of [1440, 1024, 800, 360]) {
     await page.viewport(width, 900);

@@ -40,7 +40,7 @@ afterEach(() => {
 test("a fresh browser starts with the default layout", () => {
   const state = useLayoutStore.getState();
   expect(state.dockHidden).toBe(DEFAULT_LAYOUT.dockHidden);
-  expect(state.dockWidth).toBe(DEFAULT_LAYOUT.dockWidth);
+  expect(state.workbench).toBeNull();
   expect(state.sections).toEqual(DEFAULT_LAYOUT.sections);
   expect(state.chestView).toBe("grid");
 });
@@ -67,7 +67,7 @@ test("section, dock and column changes survive a reload", () => {
   const actions = useLayoutStore.getState();
   actions.setSectionOpen("world", false);
   actions.setGroupOpen("world/progression", false);
-  actions.setDockWidth(400);
+  actions.setWorkbench({ grid: { root: { type: "branch" } }, panels: {} });
   actions.setDockHidden(true);
   actions.setColumn("content", "share", { hidden: true, width: 90 });
   actions.setInspectorShowAll(true);
@@ -77,7 +77,7 @@ test("section, dock and column changes survive a reload", () => {
   const state = useLayoutStore.getState();
   expect(state.sections.world).toBe(false);
   expect(state.groups["world/progression"]).toBe(false);
-  expect(state.dockWidth).toBe(400);
+  expect(state.workbench).toEqual({ grid: { root: { type: "branch" } }, panels: {} });
   expect(state.dockHidden).toBe(true);
   expect(state.columns["content"]?.["share"]).toEqual({ hidden: true, width: 90 });
   expect(state.inspectorShowAll).toBe(true);
@@ -92,18 +92,33 @@ test("several groups open or close at once", () => {
   expect(useLayoutStore.getState().groups).toMatchObject({ "world/identity": true, "world/size": true });
 });
 
-test("the dock width stays between its minimum and maximum", () => {
-  useLayoutStore.getState().setDockWidth(10);
-  expect(useLayoutStore.getState().dockWidth).toBe(DEFAULT_LAYOUT.minDockWidth);
-  useLayoutStore.getState().setDockWidth(10_000);
-  expect(useLayoutStore.getState().dockWidth).toBe(DEFAULT_LAYOUT.maxDockWidth);
+test("a stored panel arrangement that is not an object is dropped (the workbench then builds its default)", () => {
+  for (const workbench of ["grid", 3, [1, 2], null]) {
+    storage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify({ workbench }));
+    hydrateLayout(storage);
+    expect(useLayoutStore.getState().workbench).toBeNull();
+  }
+});
+
+test("the dock tab and width of the earlier layout are ignored without disturbing the rest", () => {
+  storage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify({ dockTab: "swatches", dockWidth: 500, bottomTab: "history", minimap: false }));
+  hydrateLayout(storage);
+  const state = useLayoutStore.getState() as unknown as Record<string, unknown>;
+  expect(state["dockTab"]).toBeUndefined();
+  expect(state["dockWidth"]).toBeUndefined();
+  expect(state["minimap"]).toBe(false);
+});
+
+test("every panel section has an open state, the new ones included", () => {
+  const { sections } = useLayoutStore.getState();
+  for (const id of ["bookmarks", "statistics", "history", "objects", "schematics", "measurements"] as const) expect(typeof sections[id]).toBe("boolean");
 });
 
 test("a throwing storage leaves the defaults and never throws", () => {
   expect(() => {
     hydrateLayout(throwing);
   }).not.toThrow();
-  expect(useLayoutStore.getState().dockWidth).toBe(DEFAULT_LAYOUT.dockWidth);
+  expect(useLayoutStore.getState().workbench).toBeNull();
   expect(() => {
     useLayoutStore.getState().setDockHidden(true);
   }).not.toThrow();
@@ -113,23 +128,24 @@ test("a throwing storage leaves the defaults and never throws", () => {
 test("a corrupt or foreign stored value is ignored field by field", () => {
   storage.setItem(LAYOUT_STORAGE_KEY, "{not json");
   hydrateLayout(storage);
-  expect(useLayoutStore.getState().dockWidth).toBe(DEFAULT_LAYOUT.dockWidth);
+  expect(useLayoutStore.getState().dockHidden).toBe(DEFAULT_LAYOUT.dockHidden);
 
-  storage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify({ dockWidth: "wide", dockHidden: true, sections: { world: "no", layers: false } }));
+  storage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify({ workbench: "wide", dockHidden: true, sections: { world: "no", layers: false } }));
   hydrateLayout(storage);
   const state = useLayoutStore.getState();
-  expect(state.dockWidth).toBe(DEFAULT_LAYOUT.dockWidth);
+  expect(state.workbench).toBeNull();
   expect(state.dockHidden).toBe(true);
   expect(state.sections.world).toBe(DEFAULT_LAYOUT.sections.world);
   expect(state.sections.layers).toBe(false);
 });
 
-test("Reset layout restores the defaults and forgets the stored layout", () => {
-  useLayoutStore.getState().setDockWidth(500);
+test("Reset layout restores the defaults and forgets the stored layout, the panel arrangement included", () => {
+  useLayoutStore.getState().setWorkbench({ grid: {} });
   useLayoutStore.getState().setSectionOpen("content", false);
   resetLayout();
-  expect(useLayoutStore.getState().dockWidth).toBe(DEFAULT_LAYOUT.dockWidth);
+  expect(useLayoutStore.getState().workbench).toBeNull();
   expect(useLayoutStore.getState().sections.content).toBe(DEFAULT_LAYOUT.sections.content);
+  expect(storage.getItem(LAYOUT_STORAGE_KEY)).toBeNull();
   hydrateLayout(storage);
-  expect(useLayoutStore.getState().dockWidth).toBe(DEFAULT_LAYOUT.dockWidth);
+  expect(useLayoutStore.getState().workbench).toBeNull();
 });

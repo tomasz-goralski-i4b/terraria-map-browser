@@ -182,7 +182,7 @@ export function plannedCommands(hasWorld: boolean): Command[] {
     planned("file.recover", "File", "Recover Unsaved Work", { icon: "recovery" }),
     planned("file.backups", "File", "Backups…", { icon: "clock" }),
     planned("edit.cut", "Edit", "Cut", { shortcut: "Control+X" }),
-    planned("edit.duplicate", "Edit", "Duplicate", { shortcut: "Control+J" }),
+    planned("edit.duplicate", "Edit", "Duplicate", { shortcut: "Control+Shift+D" }),
     dialogShell("edit.replace", "Edit", "Replace…", "replace", hasWorld, { icon: "replace", shortcut: "Control+H" }),
     planned("edit.flipH", "Edit", "Flip Horizontal", { icon: "flipH" }),
     planned("edit.flipV", "Edit", "Flip Vertical", { icon: "flipV" }),

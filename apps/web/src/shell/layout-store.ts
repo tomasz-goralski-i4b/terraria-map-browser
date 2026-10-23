@@ -7,7 +7,7 @@ export const SECTION_IDS = [
 ] as const;
 export type SectionId = (typeof SECTION_IDS)[number];
 export const SECTION_TITLES: Readonly<Record<SectionId, string>> = {
-  search: "Search", bookmarks: "Bookmarks", world: "World", layers: "Layers", grid: "Grid", measurements: "Measurements",
+  search: "Search", bookmarks: "Bookmarks", world: "World", layers: "Visibility", grid: "Grid", measurements: "Measurements",
   inspector: "Inspector", history: "History", content: "Content", entities: "Entities", statistics: "Statistics",
   swatches: "Swatches", objects: "Objects", schematics: "Schematics",
 };
@@ -46,6 +46,8 @@ export interface Layout {
   /** Collapsible groups inside sections, keyed `<section>/<group>`; absent means open. */
   readonly groups: Readonly<Record<string, boolean>>;
   readonly dockHidden: boolean;
+  /** Panels whose areas Show panels (P) hid (one per area), so P shows exactly those again, also after a reload. */
+  readonly hiddenPanels: readonly string[];
   /** The workbench's arrangement (dockview's `toJSON`); null until the user changes it, then restored on load. */
   readonly workbench: unknown;
   /** Table columns, keyed by table id and column id. */
@@ -68,6 +70,7 @@ export const DEFAULT_LAYOUT = {
   ruler: DEFAULT_RULER,
   groups: {},
   dockHidden: false,
+  hiddenPanels: [],
   workbench: null,
   columns: {},
   theme: "system",
@@ -94,6 +97,7 @@ export interface LayoutState extends Layout {
   readonly setGroupsOpen: (keys: readonly string[], open: boolean) => void;
   readonly setDockHidden: (hidden: boolean) => void;
   readonly setWorkbench: (arrangement: unknown) => void;
+  readonly setHiddenPanels: (panels: readonly string[]) => void;
   readonly setColumn: (table: string, column: string, layout: ColumnLayout) => void;
   readonly setTheme: (theme: ThemeChoice) => void;
   readonly setInspectorShowAll: (showAll: boolean) => void;
@@ -153,13 +157,14 @@ function parseLayout(text: string | null): Layout {
   const sections = Object.fromEntries(
     SECTION_IDS.map((id) => [id, storedSections[id] ?? DEFAULT_LAYOUT.sections[id]]),
   ) as Record<SectionId, boolean>;
-  const { dockHidden, workbench, theme, inspectorShowAll, chestView, minimap } = value;
+  const { dockHidden, hiddenPanels, workbench, theme, inspectorShowAll, chestView, minimap } = value;
   return {
     sections,
     grid: parseGrid(value["grid"]),
     ruler: parseRuler(value["ruler"]),
     groups: booleans(value["groups"]),
     dockHidden: typeof dockHidden === "boolean" ? dockHidden : DEFAULT_LAYOUT.dockHidden,
+    hiddenPanels: Array.isArray(hiddenPanels) ? hiddenPanels.filter((id): id is string => typeof id === "string") : DEFAULT_LAYOUT.hiddenPanels,
     // Checked by the workbench when it restores it (dockview validates its own format).
     workbench: isRecord(workbench) ? workbench : null,
     columns: columnLayouts(value["columns"]),
@@ -185,9 +190,9 @@ function browserStorage(): LayoutStorage | null {
 let storage: LayoutStorage | null = null;
 
 function save(layout: Layout): void {
-  const { sections, groups, dockHidden, workbench, columns, theme, inspectorShowAll, chestView, grid, ruler, minimap } = layout;
+  const { sections, groups, dockHidden, hiddenPanels, workbench, columns, theme, inspectorShowAll, chestView, grid, ruler, minimap } = layout;
   try {
-    storage?.setItem(LAYOUT_STORAGE_KEY, JSON.stringify({ sections, groups, dockHidden, workbench, columns, theme, inspectorShowAll, chestView, grid, ruler, minimap }));
+    storage?.setItem(LAYOUT_STORAGE_KEY, JSON.stringify({ sections, groups, dockHidden, hiddenPanels, workbench, columns, theme, inspectorShowAll, chestView, grid, ruler, minimap }));
   } catch {
     // Private mode, quota or blocked storage: the layout still works for this visit.
   }
@@ -218,6 +223,9 @@ export const useLayoutStore = create<LayoutState>()((set, get) => {
     },
     setWorkbench: (arrangement) => {
       update({ workbench: arrangement });
+    },
+    setHiddenPanels: (panels) => {
+      update({ hiddenPanels: panels });
     },
     setColumn: (table, column, layout) => {
       const columns = get().columns;

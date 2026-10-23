@@ -98,7 +98,8 @@ function FamilyButton({ family, active, commands, narrow, tabStop, onFocusFamily
     >
       <IconButton
         icon={tool.icon}
-        label={several ? `${command.label} (${family.label.toLowerCase()}: right-click or hold for more)` : command.label}
+        label={command.label}
+        {...(several ? { tooltip: `${command.label} · ${family.label}: right-click or hold for more`, hasMenu: true } : {})}
         shortcut={family.shortcut ?? command.shortcut}
         pressed={command.checked ?? false}
         // A family with nothing available still opens, so its tools and their reasons can be read.

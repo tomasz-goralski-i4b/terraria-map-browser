@@ -2705,6 +2705,13 @@ kbd {
 /* A panel scrolls inside itself; the split view around it must not add a second scrollbar. */
 .dockview-theme-studio .dv-split-view-container .dv-view-container .dv-view { overflow: hidden; }
 
+/* ---------- Panel tabs: the title, and a close button shown on hover and on the tab in front ---------- */
+.workbench-tab { display: inline-flex; align-items: center; gap: 6px; }
+.workbench-tab-close { display: inline-flex; padding: 1px; border-radius: 3px; color: var(--text-3); visibility: hidden; cursor: pointer; }
+.workbench-tab-close .icon { width: 12px; height: 12px; }
+.dv-tab:hover .workbench-tab-close, .dv-tab.dv-active-tab .workbench-tab-close { visibility: visible; }
+.workbench-tab-close:hover { background: var(--surface-3); color: var(--text-1); }
+
 /* ---------- Gesture readout over the map ---------- */
 .gesture-hud {
   position: absolute;
@@ -2733,3 +2740,6 @@ kbd {
 .workbench-edge[data-edge="bottom"] { left: 0; right: 0; bottom: 0; height: 8px; cursor: ns-resize; }
 .workbench-edge[data-edge="top"] { left: 0; right: 0; top: 0; height: 8px; cursor: ns-resize; }
 .workbench-edge:hover { background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); }
+/* shortcut: between 1024 and 1279 px (one row) and on phones the bar has no room for the selection's X/Y/W/H; they are hidden there
+   until the options bar gets its overflow menu (with #275, when the fields become editable). */
+@media (min-width: 1024px) and (max-width: 1279px), (max-width: 639px) { .tool-options .numeric-field { display: none; } }
