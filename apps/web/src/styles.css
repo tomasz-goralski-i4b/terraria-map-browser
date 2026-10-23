@@ -41,6 +41,16 @@
   --status: 24px;
   --duration: 120ms;
 
+  /*
+   * Marks drawn over the map, not chrome: the same in both themes (the map is not themed), each with a dark halo so
+   * it reads over snow, caves and dense sprites. Validity is never shown by colour alone (invalid also hatches).
+   */
+  --overlay-select: #ffffff;
+  --overlay-ghost: rgb(255 255 255 / 70%);
+  --overlay-invalid: #ff5c5c;
+  --overlay-guide: #5ec8ff;
+  --overlay-halo: rgb(0 0 0 / 75%);
+
   font-family: var(--font);
   font-size: var(--text-base);
   line-height: 1.4;
@@ -2617,8 +2627,8 @@ kbd {
 .area-outline {
   position: absolute;
   pointer-events: none;
-  border: 1px dashed var(--text-1);
-  box-shadow: 0 0 0 1px var(--surface-0);
+  border: 1px dashed var(--overlay-select);
+  box-shadow: 0 0 0 1px var(--overlay-halo), inset 0 0 0 1px var(--overlay-halo);
 }
 
 .area-paste-preview {
@@ -2648,3 +2658,120 @@ kbd {
 }
 /* Four updates per second; pointer input reaches the map underneath. */
 .performance-overlay { position: fixed; left: 64px; bottom: 40px; z-index: 5; pointer-events: none; padding: 8px 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface-1); color: var(--text-1); font: 12px/1.5 monospace; font-variant-numeric: tabular-nums; }
+
+/* ---------- Tool families ---------- */
+.tool-slot { position: relative; display: inline-flex; }
+/* A family of several tools: a corner mark, as in image editors' toolbars. */
+.tool-slot[data-family]::after {
+  content: "";
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  border-style: solid;
+  border-width: 0 0 5px 5px;
+  border-color: transparent transparent var(--text-3) transparent;
+  pointer-events: none;
+}
+.tool-slot[data-family]:hover::after { border-bottom-color: var(--text-1); }
+.tool-slot[data-unavailable] .icon-button { color: var(--text-3); }
+.tool-slot[data-unavailable] .icon-button:hover { color: var(--text-2); }
+
+/* ---------- Dock tabs with icons; compact below 280 px ---------- */
+.dock-tab { display: inline-flex; align-items: center; gap: 6px; }
+.dock-tab .icon { color: var(--text-3); }
+.dock-tab[aria-selected="true"] .icon { color: var(--accent-text); }
+.dock-tabs[data-compact] { justify-content: space-around; }
+.dock-tabs[data-compact] .dock-tab-label { display: none; }
+
+/* The Inspector | History strip is the bottom pane's header: the shown tab folds the pane. */
+.dock-bottom-tabs {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-1);
+  height: 28px;
+  padding: 0 var(--space-2);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-1);
+}
+.dock-bottom-tab {
+  position: relative;
+  padding: 0 var(--space-2);
+  border: 0;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.dock-bottom-tab:hover, .dock-bottom-tab[aria-selected="true"] { color: var(--text-1); }
+.dock-bottom-tab[aria-selected="true"]::after {
+  content: "";
+  position: absolute;
+  left: var(--space-2);
+  right: var(--space-2);
+  bottom: -1px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+}
+.dock-bottom-tab:focus-visible { outline: 2px solid var(--focus); outline-offset: -4px; }
+.dock-bottom-chevron { margin: auto 0 auto auto; color: var(--text-3); transform: rotate(90deg); transition: transform var(--duration); }
+.dock-inspector[data-open="false"] .dock-bottom-chevron { transform: rotate(-90deg); }
+.dock-inspector[data-open="false"] .dock-bottom-tab[aria-selected="true"]::after { display: none; }
+
+/* ---------- Panels whose feature is not connected yet ---------- */
+.panel-planned {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  color: var(--text-3);
+}
+.panel-planned p { margin: 0; max-width: 36ch; }
+.panel-planned-icon { width: 20px; height: 20px; color: var(--text-3); }
+.panel-planned .button { display: inline-flex; align-items: center; gap: 6px; }
+.panel-planned .button[aria-disabled="true"] { opacity: .6; cursor: not-allowed; }
+
+/* ---------- Status bar: background work, recovery, what the world allows ---------- */
+.status-job, .status-recovery, .status-capability { display: inline-flex; align-items: center; gap: 6px; }
+.status-job { min-width: 9ch; }
+.status-recovery { min-width: 14ch; }
+.status-job .icon, .status-recovery .icon, .status-capability .icon { width: 13px; height: 13px; color: var(--text-3); }
+.status-capability[data-editable="true"] .icon { color: var(--success); }
+.status-capability[data-editable="false"] { color: var(--text-1); }
+
+/* ---------- Select options: mode and numeric geometry ---------- */
+.brush-segments button .icon { width: 14px; height: 14px; vertical-align: -3px; }
+.numeric-field { display: inline-flex; align-items: center; gap: 3px; }
+.numeric-field .brush-number { width: 48px; }
+
+/* ---------- Dialog shells ---------- */
+.dialog-field-value { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); min-width: 0; }
+.dialog-field-value > .text-input:only-child, .dialog-field-value > select.text-input { flex: 1; }
+.dialog-field-value .button { display: inline-flex; align-items: center; gap: 6px; }
+.dialog-number { width: 64px; }
+.dialog-previews { display: flex; gap: var(--space-3); }
+.dialog-previews figure { flex: 1; margin: 0; display: grid; gap: var(--space-1); color: var(--text-2); font-size: var(--text-small); }
+.dialog-preview {
+  aspect-ratio: 4 / 3;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: repeating-conic-gradient(var(--surface-1) 0 25%, var(--surface-3) 0 50%) 0 0 / 12px 12px;
+}
+.planned-dialog .save-notice .icon { color: var(--text-2); }
+.planned-dialog .button-primary[aria-disabled="true"] { opacity: .5; cursor: not-allowed; filter: none; }
+/* The hint gives way first, so the settings and Undo/Redo stay on the one-row bar. */
+.tool-options > .tool-options-hint { flex-shrink: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---------- Phones: one menu button, compact status cells ---------- */
+.show-on-phone { display: none; }
+@media (max-width: 639px) {
+  .show-on-phone { display: inline-flex; }
+  .status-job > span, .status-recovery > span { display: none; }
+  .status-job, .status-recovery { min-width: 0; }
+}

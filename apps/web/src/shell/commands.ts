@@ -11,12 +11,12 @@ import { finishBrush, redoBrush, setBrushSize, undoBrush, useBrushStore } from "
 import { WORLD_GROUP_IDS } from "../panels/world-fields.js";
 import { cancelArea, copySelection, placePaste, startPaste, useAreaStore } from "../world/area-session.js";
 import { MAX_AREA_TILES } from "../world/area-clipboard.js";
-import { GRID_MODES, resetLayout, useLayoutStore, type ThemeChoice } from "./layout-store.js";
+import { GRID_MODES, resetLayout, SECTION_IDS, SECTION_TAB, SECTION_TITLES, useLayoutStore, type ThemeChoice } from "./layout-store.js";
 import { CUSTOM_GRID_INPUT_ID } from "../panels/GridPanel.js";
 import { useRulerStore, finishMeasurement, undoMeasurement, redoMeasurement, deleteMeasurement, selectMeasurement } from "../world/ruler-session.js";
-import { getMapController, useViewStore, type MapLayers, type ToolId } from "./view-store.js";
+import { getMapController, useViewStore, type MapLayers, type PlannedDialog, type ToolId } from "./view-store.js";
 
-export type CommandGroup = "File" | "Edit" | "View" | "Layers" | "Tools" | "Assets" | "Help";
+export type CommandGroup = "File" | "Edit" | "Select" | "View" | "World" | "Window" | "Layers" | "Tools" | "Assets" | "Help";
 
 /**
  * One user action. Menus, the tool rail, tooltips, the shortcut help and the command palette are all built from this
@@ -37,49 +37,189 @@ export interface Command {
   readonly run: () => void;
 }
 
+export type ToolGroup = "navigate" | "edit" | "build";
+
+/** Tools that do the same kind of thing share one rail button; the others of the family open from it. */
+export interface ToolFamily {
+  readonly id: string;
+  readonly label: string;
+  readonly group: ToolGroup;
+  /** Picks the family's last tool, or the next one while a tool of the family is active (only families of several). */
+  readonly shortcut?: string;
+}
+
 export interface ToolDefinition {
   readonly id: ToolId;
   readonly label: string;
   readonly icon: IconName;
-  readonly shortcut: string;
-  readonly group: "navigate" | "edit" | "objects";
+  readonly family: ToolFamily["id"];
+  /** A key of the tool itself; the tools of a family of several are reached by the family's key instead. */
+  readonly shortcut?: string;
   readonly available: boolean;
+  /** Not in the first complete editor (catalog band B or later). */
+  readonly later?: boolean;
   /** One line for the tool options bar. */
   readonly hint: string;
 }
 
-const EDITING_LATER = "World editing is not available yet";
-
-export const TOOLS: readonly ToolDefinition[] = [
-  { id: "pan", label: "Pan", icon: "pan", shortcut: "H", group: "navigate", available: true, hint: "Drag to pan · Wheel or +/− to zoom · Arrow keys to move" },
-  { id: "inspect", label: "Inspect", icon: "inspect", shortcut: "I", group: "navigate", available: true, hint: "Click a tile (or press Enter) to pin it in the Inspector · Hover to preview · Drag to pan" },
-  { id: "ruler", label: "Ruler", icon: "ruler", shortcut: "L", group: "navigate", available: true, hint: "Drag to measure · Hold Shift for a rectangle" },
-  { id: "brush", label: "Brush", icon: "brush", shortcut: "B", group: "edit", available: true, hint: "Drag to paint simple blocks or walls" },
-  { id: "erase", label: "Erase", icon: "erase", shortcut: "E", group: "edit", available: true, hint: "Drag to erase the selected layer" },
-  { id: "fill", label: "Fill", icon: "fill", shortcut: "G", group: "edit", available: false, hint: "" },
-  { id: "select", label: "Select", icon: "select", shortcut: "M", group: "edit", available: true, hint: "Drag a rectangle · Ctrl+C to copy · Ctrl+V to paste" },
-  { id: "picker", label: "Pick content", icon: "picker", shortcut: "K", group: "edit", available: false, hint: "" },
-  { id: "object", label: "Place object", icon: "object", shortcut: "O", group: "objects", available: false, hint: "" },
+export const TOOL_FAMILIES: readonly ToolFamily[] = [
+  { id: "pan", label: "Pan", group: "navigate" },
+  { id: "inspect", label: "Inspect", group: "navigate" },
+  { id: "ruler", label: "Measure", group: "navigate" },
+  { id: "select", label: "Selection tools", group: "edit", shortcut: "M" },
+  { id: "draw", label: "Drawing tools", group: "edit", shortcut: "B" },
+  { id: "shape", label: "Shape tools", group: "edit", shortcut: "U" },
+  { id: "fill", label: "Fill", group: "edit" },
+  { id: "erase", label: "Erase", group: "edit" },
+  { id: "tileState", label: "Tile state tools", group: "edit", shortcut: "A" },
+  { id: "picker", label: "Eyedropper", group: "edit" },
+  { id: "objects", label: "Object tools", group: "build", shortcut: "O" },
+  { id: "infra", label: "Wiring and liquid tools", group: "build", shortcut: "W" },
 ];
 
-export function toolCommands(tool: ToolId, setTool: (tool: ToolId) => void, editReason: string | null = "Open a vanilla world first"): Command[] {
-  return TOOLS.map((definition) => {
-    const reason = !definition.available ? EDITING_LATER : definition.id === "brush" || definition.id === "erase" || definition.id === "select" ? editReason : null;
-    return ({
-    id: `tool.${definition.id}`,
-    group: "Tools",
-    label: definition.label,
-    icon: definition.icon,
-    shortcut: definition.shortcut,
-    enabled: reason === null,
-    ...(reason === null ? {} : { disabledReason: reason }),
-    checked: tool === definition.id,
-    run: () => {
-      finishBrush();
-      finishMeasurement(true, true);
-      setTool(definition.id);
-    },
+export const TOOLS: readonly ToolDefinition[] = [
+  { id: "pan", label: "Pan", icon: "pan", family: "pan", shortcut: "H", available: true, hint: "Drag to pan · Wheel or +/− to zoom · Arrow keys to move" },
+  { id: "inspect", label: "Inspect", icon: "inspect", family: "inspect", shortcut: "I", available: true, hint: "Click a tile (or press Enter) to pin it in the Inspector · Hover to preview · Drag to pan" },
+  { id: "ruler", label: "Ruler", icon: "ruler", family: "ruler", shortcut: "L", available: true, hint: "Drag to measure · Hold Shift for a rectangle" },
+  { id: "select", label: "Rectangle select", icon: "select", family: "select", available: true, hint: "Drag a rectangle · Ctrl+C to copy · Ctrl+V to paste" },
+  { id: "selectEllipse", label: "Ellipse select", icon: "selectEllipse", family: "select", available: false, hint: "" },
+  { id: "lasso", label: "Lasso select", icon: "lasso", family: "select", available: false, later: true, hint: "" },
+  { id: "wand", label: "Magic wand", icon: "wand", family: "select", available: false, later: true, hint: "" },
+  { id: "move", label: "Move", icon: "move", family: "select", shortcut: "V", available: false, hint: "" },
+  { id: "brush", label: "Brush", icon: "brush", family: "draw", available: true, hint: "Drag to paint simple blocks or walls" },
+  { id: "pencil", label: "Pencil", icon: "pencil", family: "draw", available: false, hint: "" },
+  { id: "line", label: "Line", icon: "line", family: "draw", available: false, hint: "" },
+  { id: "shapeRect", label: "Rectangle", icon: "shapeRect", family: "shape", available: false, hint: "" },
+  { id: "shapeEllipse", label: "Ellipse", icon: "shapeEllipse", family: "shape", available: false, hint: "" },
+  { id: "shapePolygon", label: "Polygon", icon: "shapePolygon", family: "shape", available: false, hint: "" },
+  { id: "fill", label: "Fill", icon: "fill", family: "fill", shortcut: "G", available: false, hint: "" },
+  { id: "erase", label: "Erase", icon: "erase", family: "erase", shortcut: "E", available: true, hint: "Drag to erase the selected layer" },
+  { id: "hammer", label: "Hammer", icon: "hammer", family: "tileState", available: false, hint: "" },
+  { id: "paint", label: "Paint and coatings", icon: "roller", family: "tileState", available: false, hint: "" },
+  { id: "picker", label: "Eyedropper", icon: "picker", family: "picker", shortcut: "K", available: false, hint: "" },
+  { id: "object", label: "Place object", icon: "object", family: "objects", available: false, hint: "" },
+  { id: "platform", label: "Platforms and tracks", icon: "platform", family: "objects", available: false, hint: "" },
+  { id: "wire", label: "Wire", icon: "wire", family: "infra", available: false, hint: "" },
+  { id: "liquid", label: "Liquid", icon: "liquid", family: "infra", available: false, hint: "" },
+  { id: "trace", label: "Trace circuit", icon: "trace", family: "infra", available: false, hint: "" },
+];
+
+/** Tools that write the world: unavailable while no supported world is open. */
+const WORLD_TOOLS: ReadonlySet<ToolId> = new Set(["brush", "erase", "select"]);
+
+/** Why a command that exists as a slot only cannot be used yet; short, since its label already names it (ui.md). */
+export function plannedReason(later = false): string {
+  return later ? "Planned for later" : "Not available yet";
+}
+
+function toolReason(definition: ToolDefinition, editReason: string | null): string | null {
+  if (!definition.available) return plannedReason(definition.later);
+  return WORLD_TOOLS.has(definition.id) ? editReason : null;
+}
+
+export function toolCommands(tool: ToolId, setTool: (tool: ToolId, family?: string) => void, editReason: string | null = "Open a vanilla world first"): Command[] {
+  const pick = (definition: ToolDefinition): void => {
+    finishBrush();
+    finishMeasurement(true, true);
+    setTool(definition.id, definition.family);
+  };
+  const tools = TOOLS.map((definition): Command => {
+    const reason = toolReason(definition, editReason);
+    return {
+      id: `tool.${definition.id}`, group: "Tools", label: definition.label, icon: definition.icon,
+      ...(definition.shortcut === undefined ? {} : { shortcut: definition.shortcut }),
+      enabled: reason === null, ...(reason === null ? {} : { disabledReason: reason }),
+      checked: tool === definition.id,
+      run: () => { pick(definition); },
+    };
   });
+  // A family's key picks its last tool, then steps through its other available tools, as in image editors.
+  const families = TOOL_FAMILIES.flatMap((family): Command[] => {
+    if (family.shortcut === undefined) return [];
+    const members = TOOLS.filter((definition) => definition.family === family.id && toolReason(definition, editReason) === null);
+    return [{
+      id: `family.${family.id}`, group: "Tools", label: family.label, shortcut: family.shortcut, enabled: members.length > 0,
+      ...(members.length > 0 ? {} : { disabledReason: plannedReason() }),
+      run: () => {
+        const at = members.findIndex((definition) => definition.id === tool);
+        const last = members.find((definition) => definition.id === useViewStore.getState().familyTools[family.id]);
+        const next = at >= 0 ? members[(at + 1) % members.length] : last ?? members[0];
+        if (next !== undefined) pick(next);
+      },
+    }];
+  });
+  return [...tools, ...families];
+}
+
+interface CommandExtra { readonly icon?: IconName; readonly shortcut?: string; readonly later?: boolean }
+
+/** A command whose behaviour is not connected yet: it has its place, name and key, and says why it is off. */
+function planned(id: string, group: CommandGroup, label: string, extra: CommandExtra = {}): Command {
+  return {
+    id, group, label, enabled: false, disabledReason: plannedReason(extra.later),
+    ...(extra.icon === undefined ? {} : { icon: extra.icon }), ...(extra.shortcut === undefined ? {} : { shortcut: extra.shortcut }),
+    run: () => undefined,
+  };
+}
+
+/** Opens the shell of a dialog whose action is not connected yet, so its questions can be seen. */
+function dialogShell(id: string, group: CommandGroup, label: string, dialog: PlannedDialog, enabled: boolean, extra: CommandExtra = {}): Command {
+  return {
+    id, group, label, enabled, ...(enabled ? {} : { disabledReason: "Open a world first" }),
+    ...(extra.icon === undefined ? {} : { icon: extra.icon }), ...(extra.shortcut === undefined ? {} : { shortcut: extra.shortcut }),
+    run: () => { useViewStore.getState().setPlannedDialog(dialog); },
+  };
+}
+
+/** Commands that have their menu place, key and dialog before their feature exists (docs/planning/editor-ui-plan.md). */
+export function plannedCommands(hasWorld: boolean): Command[] {
+  return [
+    dialogShell("file.importImage", "File", "Image as Pixel Art…", "importImage", hasWorld, { icon: "image" }),
+    planned("file.importSchematic", "File", "Schematic…", { icon: "schematic" }),
+    dialogShell("file.exportImage", "File", "Map Image…", "exportImage", hasWorld, { icon: "image" }),
+    dialogShell("file.exportSchematic", "File", "Selection as Schematic…", "saveSchematic", hasWorld, { icon: "schematic" }),
+    planned("file.recover", "File", "Recover Unsaved Work", { icon: "recovery" }),
+    planned("file.backups", "File", "Backups…", { icon: "clock" }),
+    planned("edit.cut", "Edit", "Cut", { shortcut: "Control+X" }),
+    planned("edit.duplicate", "Edit", "Duplicate", { shortcut: "Control+J" }),
+    dialogShell("edit.replace", "Edit", "Replace…", "replace", hasWorld, { icon: "replace", shortcut: "Control+H" }),
+    planned("edit.flipH", "Edit", "Flip Horizontal", { icon: "flipH" }),
+    planned("edit.flipV", "Edit", "Flip Vertical", { icon: "flipV" }),
+    planned("edit.rotate", "Edit", "Rotate 90° Clockwise", { icon: "rotate" }),
+    planned("edit.shortcuts", "Edit", "Keyboard Shortcuts…", { icon: "keyboard" }),
+    planned("select.all", "Select", "All", { shortcut: "Control+A" }),
+    planned("select.none", "Select", "Deselect", { shortcut: "Control+D" }),
+    planned("select.invert", "Select", "Invert", { shortcut: "Control+I" }),
+    planned("select.objects", "Select", "Expand to Complete Objects", { icon: "object" }),
+    planned("select.matches", "Select", "Select Search Matches", { icon: "search", later: true }),
+    planned("view.previous", "View", "Previous View", { shortcut: "Alt+ArrowLeft" }),
+    planned("view.next", "View", "Next View", { shortcut: "Alt+ArrowRight" }),
+    planned("view.fitSelection", "View", "Fit Selection"),
+    planned("view.goTo", "View", "Go To…", { icon: "target", shortcut: "Control+G" }),
+    planned("view.isolate", "View", "Isolate Layer", { icon: "isolate" }),
+    planned("world.bookmark", "World", "Add Bookmark", { icon: "bookmark", shortcut: "Control+B" }),
+    planned("world.statistics", "World", "Statistics", { icon: "stats" }),
+    planned("world.presets", "World", "Settings Presets…", { icon: "world" }),
+  ];
+}
+
+/** Window ▸ one checkable item per dock section: shows the dock on its tab with the section open, or closes it. */
+export function windowCommands(): Command[] {
+  const layout = useLayoutStore.getState();
+  return SECTION_IDS.map((section): Command => {
+    const open = !layout.dockHidden && layout.sections[section] && (section === "inspector" || section === "history"
+      ? layout.bottomTab === section : layout.dockTab === SECTION_TAB[section]);
+    return {
+      id: `window.${section}`, group: "Window", label: SECTION_TITLES[section], enabled: true, checked: open,
+      run: () => {
+        const state = useLayoutStore.getState();
+        if (open) { state.setSectionOpen(section, false); return; }
+        state.setDockHidden(false);
+        if (section === "inspector" || section === "history") state.setBottomTab(section);
+        else state.setDockTab(SECTION_TAB[section]);
+        state.setSectionOpen(section, true);
+      },
+    };
   });
 }
 
@@ -169,6 +309,10 @@ export function useCommands(): Command[] {
     : area.selection.width * area.selection.height > MAX_AREA_TILES ? `Too large: select up to ${MAX_AREA_TILES.toLocaleString("en-US")} tiles` : null;
   const editReason = loadingWorld ? "A world is loading" : saving ? "Finish exporting first" : brushReason;
   const dockHidden = useLayoutStore((state) => state.dockHidden);
+  // Window ▸ reads these when built.
+  useLayoutStore((state) => state.sections);
+  useLayoutStore((state) => state.dockTab);
+  useLayoutStore((state) => state.bottomTab);
   const setDockHidden = useLayoutStore((state) => state.setDockHidden);
   const theme = useLayoutStore((state) => state.theme);
   const setTheme = useLayoutStore((state) => state.setTheme);
@@ -344,6 +488,8 @@ export function useCommands(): Command[] {
       },
     })),
     ...toolCommands(tool, setTool, editReason),
+    ...plannedCommands(hasWorld),
+    ...windowCommands(),
     ...brushSizeCommands(tool === "brush" || tool === "erase"),
     ...brushOptionCommands(tool),
     {

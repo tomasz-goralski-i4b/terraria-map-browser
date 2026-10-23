@@ -7,6 +7,7 @@ import { SaveAsDialog } from "./components/SaveAsDialog.js";
 import { useCommands, useGlobalShortcuts } from "./shell/commands.js";
 import { ConfirmDialog, confirmAction } from "./shell/ConfirmDialog.js";
 import { CommandPalette, HelpOverlay } from "./shell/dialogs.js";
+import { PlannedDialogs } from "./shell/PlannedDialogs.js";
 import { Dock } from "./shell/Dock.js";
 import { hydrateLayout, useLayoutStore, type LayoutStorage } from "./shell/layout-store.js";
 import { clearNotifications } from "./shell/notification-store.js";
@@ -164,6 +165,7 @@ export function App({ layoutStorage }: AppProps = {}): React.JSX.Element {
       <SpritePreview />
       <Notifications />
       <SaveAsDialog />
+      <PlannedDialogs />
       <ConfirmDialog />
     </div>
   );

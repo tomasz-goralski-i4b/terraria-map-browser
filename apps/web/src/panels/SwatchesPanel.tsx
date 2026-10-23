@@ -35,7 +35,7 @@ export const useSwatchesView = create<SwatchesView>()(() => ({ category: "block"
 export function showSwatches(category: SwatchCategory): void {
   const layout = useLayoutStore.getState();
   layout.setDockHidden(false);
-  layout.setDockTab("swatches");
+  layout.setDockTab("paint");
   layout.setSectionOpen("swatches", true);
   useSwatchesView.setState((state) => ({ category, focusRequest: state.focusRequest + 1 }));
 }

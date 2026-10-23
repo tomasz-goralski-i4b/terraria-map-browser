@@ -7,32 +7,47 @@ import { LayersPanel } from "../panels/LayersPanel.js";
 import { GridPanel } from "../panels/GridPanel.js";
 import { MeasurementsPanel } from "../panels/MeasurementsPanel.js";
 import { SwatchesPanel } from "../panels/SwatchesPanel.js";
+import { BookmarksPanel, HistoryPanel, ObjectsPanel, SchematicsPanel, StatisticsPanel } from "../panels/planned.js";
+import { Icon, type IconName } from "../ui/Icon.js";
 import type { Command } from "./commands.js";
 import { WorldPanel, WorldPanelActions } from "../panels/WorldPanel.js";
 import { Section } from "../ui/Section.js";
 import { Splitter } from "../ui/Splitter.js";
-import { DEFAULT_LAYOUT, DOCK_TABS, SECTION_IDS, SECTION_TAB, useLayoutStore, type DockTab, type SectionId } from "./layout-store.js";
+import {
+  BOTTOM_TABS, DEFAULT_LAYOUT, DOCK_TABS, SECTION_IDS, SECTION_TAB, SECTION_TITLES, useLayoutStore, type BottomTab, type DockTab, type SectionId,
+} from "./layout-store.js";
 
 interface SectionDefinition {
-  readonly title: string;
   readonly body: (commands: readonly Command[]) => React.JSX.Element;
   /** Header controls, shown while the section is open. */
   readonly actions?: (commands: readonly Command[]) => React.JSX.Element;
 }
 
 const SECTIONS: Readonly<Record<SectionId, SectionDefinition>> = {
-  world: { title: "World", body: () => <WorldPanel />, actions: (commands) => <WorldPanelActions commands={commands} /> },
-  layers: { title: "Layers", body: (commands) => <LayersPanel commands={commands} /> },
-  grid: { title: "Grid", body: () => <GridPanel /> },
-  measurements: { title: "Measurements", body: () => <MeasurementsPanel /> },
-  inspector: { title: "Inspector", body: () => <InspectorPanel /> },
-  content: { title: "Content", body: () => <ContentPanel /> },
-  entities: { title: "Entities", body: () => <EntitiesPanel /> },
-  search: { title: "Search", body: () => <SearchPanel /> },
-  swatches: { title: "Swatches", body: () => <SwatchesPanel /> },
+  world: { body: () => <WorldPanel />, actions: (commands) => <WorldPanelActions commands={commands} /> },
+  layers: { body: (commands) => <LayersPanel commands={commands} /> },
+  grid: { body: () => <GridPanel /> },
+  measurements: { body: () => <MeasurementsPanel /> },
+  inspector: { body: () => <InspectorPanel /> },
+  history: { body: () => <HistoryPanel /> },
+  content: { body: () => <ContentPanel /> },
+  entities: { body: () => <EntitiesPanel /> },
+  search: { body: () => <SearchPanel /> },
+  bookmarks: { body: (commands) => <BookmarksPanel commands={commands} /> },
+  statistics: { body: (commands) => <StatisticsPanel commands={commands} /> },
+  swatches: { body: () => <SwatchesPanel /> },
+  objects: { body: (commands) => <ObjectsPanel commands={commands} /> },
+  schematics: { body: (commands) => <SchematicsPanel commands={commands} /> },
 };
 
-const TAB_LABELS: Readonly<Record<DockTab, string>> = { world: "World", view: "View", swatches: "Swatches" };
+const TABS: Readonly<Record<DockTab, { readonly label: string; readonly icon: IconName }>> = {
+  world: { label: "World", icon: "world" },
+  view: { label: "View", icon: "eye" },
+  paint: { label: "Paint", icon: "palette" },
+  library: { label: "Library", icon: "library" },
+};
+/** Below this dock width (the default) the tabs show their icons only (their names stay as accessible names and tooltips). */
+const TAB_TEXT_MIN_WIDTH = 320;
 
 export const DOCK_ID = "dock";
 /** The smallest Inspector and the room the tabs keep above it when the Inspector is dragged taller. */
@@ -61,7 +76,7 @@ function DockSection({ id, commands }: { readonly id: SectionId; readonly comman
   const definition = SECTIONS[id];
   return (
     <Section
-      title={definition.title}
+      title={SECTION_TITLES[id]}
       {...(open && definition.actions !== undefined ? { actions: definition.actions(commands) } : {})}
       open={open}
       onOpenChange={(next) => {
@@ -85,7 +100,10 @@ export function Dock({ commands }: { readonly commands: readonly Command[] }): R
   const setWidth = useLayoutStore((state) => state.setDockWidth);
   const tab = useLayoutStore((state) => state.dockTab);
   const setTab = useLayoutStore((state) => state.setDockTab);
-  const inspectorOpen = useLayoutStore((state) => state.sections.inspector);
+  const bottomTab = useLayoutStore((state) => state.bottomTab);
+  const setBottomTab = useLayoutStore((state) => state.setBottomTab);
+  const setSectionOpen = useLayoutStore((state) => state.setSectionOpen);
+  const inspectorOpen = useLayoutStore((state) => state.sections[state.bottomTab]);
   const inspectorHeight = useLayoutStore((state) => state.inspectorHeight);
   const setInspectorHeight = useLayoutStore((state) => state.setInspectorHeight);
   const dock = useRef<HTMLElement>(null);
@@ -109,7 +127,7 @@ export function Dock({ commands }: { readonly commands: readonly Command[] }): R
         controls={DOCK_ID}
         onChange={setWidth}
       />
-      <div role="tablist" aria-label="Panel groups" className="dock-tabs">
+      <div role="tablist" aria-label="Panel groups" className="dock-tabs" data-compact={width < TAB_TEXT_MIN_WIDTH || undefined}>
         {DOCK_TABS.map((candidate, index) => (
           <button
             key={candidate}
@@ -123,6 +141,8 @@ export function Dock({ commands }: { readonly commands: readonly Command[] }): R
             className="dock-tab"
             aria-selected={tab === candidate}
             aria-controls={`${id}-panel`}
+            aria-label={TABS[candidate].label}
+            {...(width < TAB_TEXT_MIN_WIDTH ? { "data-tooltip": TABS[candidate].label, "data-tooltip-side": "bottom" } : {})}
             tabIndex={tab === candidate ? 0 : -1}
             onClick={() => {
               setTab(candidate);
@@ -140,12 +160,13 @@ export function Dock({ commands }: { readonly commands: readonly Command[] }): R
               }
             }}
           >
-            {TAB_LABELS[candidate]}
+            <Icon name={TABS[candidate].icon} />
+            <span className="dock-tab-label">{TABS[candidate].label}</span>
           </button>
         ))}
       </div>
       <div id={`${id}-panel`} role="tabpanel" aria-labelledby={`${id}-${tab}`} className="dock-scroll">
-        {SECTION_IDS.filter((section) => section !== "inspector" && SECTION_TAB[section] === tab).map((section) => (
+        {SECTION_IDS.filter((section) => section !== "inspector" && section !== "history" && SECTION_TAB[section] === tab).map((section) => (
           <DockSection key={section} id={section} commands={commands} />
         ))}
       </div>
@@ -165,7 +186,29 @@ export function Dock({ commands }: { readonly commands: readonly Command[] }): R
         ref={inspector} id={`${id}-inspector`} className="dock-inspector" data-open={inspectorOpen} data-sized={inspectorOpen && inspectorHeight !== null}
         style={inspectorOpen && inspectorHeight !== null ? { height: inspectorHeight } : undefined}
       >
-        <DockSection id="inspector" commands={commands} />
+        <div role="tablist" aria-label="Details" className="dock-bottom-tabs">
+          {BOTTOM_TABS.map((candidate: BottomTab) => (
+            <button
+              key={candidate} type="button" role="tab" className="dock-bottom-tab" aria-selected={bottomTab === candidate} tabIndex={bottomTab === candidate ? 0 : -1}
+              aria-expanded={bottomTab === candidate ? inspectorOpen : undefined}
+              onClick={() => {
+                // The strip is the pane's header: the shown tab folds the pane, another one opens it.
+                setSectionOpen(candidate, bottomTab === candidate ? !inspectorOpen : true);
+                setBottomTab(candidate);
+              }}
+              onKeyDown={(event) => {
+                if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+                event.preventDefault();
+                const next = BOTTOM_TABS[(BOTTOM_TABS.indexOf(candidate) + 1) % BOTTOM_TABS.length] ?? candidate;
+                setBottomTab(next);
+                event.currentTarget.parentElement?.querySelector<HTMLButtonElement>(`[data-tab="${next}"]`)?.focus();
+              }}
+              data-tab={candidate}
+            >{SECTION_TITLES[candidate]}</button>
+          ))}
+          <Icon name="chevron" className="dock-bottom-chevron" />
+        </div>
+        {inspectorOpen && <div className="dock-bottom-body">{SECTIONS[bottomTab].body(commands)}</div>}
       </div>
     </aside>
   );

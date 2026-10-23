@@ -14,6 +14,8 @@ import { depthLabel, type DepthLevels } from "../world/depth.js";
 import { getDefaultWorldSession } from "../world/world-session.js";
 import { getMapController, useViewStore } from "./view-store.js";
 import { useSearchStore } from "../world/search-store.js";
+import { Icon } from "../ui/Icon.js";
+import { plannedReason } from "./commands.js";
 import { useChestNavigation } from "../world/chest-navigation.js";
 
 /** What the status bar reads of a world: its levels, the tile view at a coordinate and the chest standing there. */
@@ -62,6 +64,36 @@ function SearchPosition(): React.JSX.Element | null {
   }
   if (text === null) return null;
   return <span className="status-cell status-search" title="Search match (F3 / Shift+F3)" data-testid="search-position">{text}</span>;
+}
+
+/**
+ * Long background work (fill, replace, statistics, conversion, export): its name, progress and a cancel button. No
+ * such work exists yet, so the cell shows that nothing runs; it keeps its width either way.
+ */
+function BackgroundJob(): React.JSX.Element {
+  return (
+    <span className="status-cell status-job" title="Background work: none running" data-testid="background-job">
+      <Icon name="activity" /><span className="muted">Idle</span>
+    </span>
+  );
+}
+
+/** When the last recovery checkpoint was written, or a storage problem; off until recovery exists. */
+function Recovery(): React.JSX.Element {
+  return (
+    <span className="status-cell status-recovery" title={`Recovery of unsaved work: ${plannedReason().toLowerCase()}`} data-testid="recovery">
+      <Icon name="recovery" /><span className="muted">Recovery off</span>
+    </span>
+  );
+}
+
+/** What the open world allows: editable, or view only with the reason (the per-operation details come later). */
+function Capability({ editReason }: { readonly editReason: string | null }): React.JSX.Element {
+  return (
+    <span className="status-cell status-capability" data-editable={editReason === null} title={editReason === null ? "This world can be viewed and edited" : `View only: ${editReason}`} data-testid="capability">
+      <Icon name="shield" />{editReason === null ? "Editable" : "View only"}
+    </span>
+  );
 }
 
 /** "Chest: Ores · 2 of 40 slots": the object, its name when it has one, and how many slots are filled. */
@@ -165,6 +197,7 @@ function ZoomField({ zoom }: { readonly zoom: number | null }): React.JSX.Elemen
  */
 export function StatusBar({ world }: { readonly world?: StatusWorld | null }): React.JSX.Element {
   useBrushStore((state) => state.revision);
+  const editReason = useBrushStore((state) => state.reason);
   const summary = useAppStore((state) => state.summary);
   const worldRevision = useAppStore((state) => state.worldRevision);
   const hasWorld = summary !== null;
@@ -197,6 +230,9 @@ export function StatusBar({ world }: { readonly world?: StatusWorld | null }): R
       <span className="status-spacer" />
       <SearchPosition />
       <AreaSize />
+      <BackgroundJob />
+      <Recovery />
+      {hasWorld && <Capability editReason={editReason} />}
       {statsVisible && <RenderStats />}
       <ZoomField zoom={zoom} />
     </footer>
