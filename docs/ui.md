@@ -255,7 +255,7 @@ disabled with the reason.
 
 **Export Map Image** (File ▸ Export ▸ Map Image…, `components/ExportImageDialog.tsx`): area (whole world, view or
 selection; the selection when there is one), style, scale (a slider, 1 to 16 pixels per block), format, the layers to
-include (from the map's current ones) and the resulting size. **Map colours** are the CPU reference renderer's pixels,
+include (from the map's current ones) and the resulting size (pixels, and the raw pixel bytes: the file is compressed and usually far smaller). **Map colours** are the CPU reference renderer's pixels,
 rendered and encoded in a Worker band by band (`world/image-export.ts`), so the main thread only copies the planes in
 yielding slices. **Textures** are the game's sprites as the map draws them up close (needs the connected Images folder
 and 8 or more pixels per block): an offscreen WebGL2 renderer draws the area in pieces on the main thread

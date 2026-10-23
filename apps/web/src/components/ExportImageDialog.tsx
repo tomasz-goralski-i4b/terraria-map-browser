@@ -71,7 +71,7 @@ export function ExportImageDialog(): React.JSX.Element {
           <Field label="Size">
             <span className="muted" data-testid="export-image-size">
               {area === null || area.width === 0 || area.height === 0 ? "—"
-                : `${String(area.width * state.scale)} × ${String(area.height * state.scale)} px · ${formatBytes(area.width * state.scale * area.height * state.scale * 4)} uncompressed`}
+                : `${String(area.width * state.scale)} × ${String(area.height * state.scale)} px · ${formatBytes(area.width * state.scale * area.height * state.scale * 4)} of raw pixels; the file is much smaller`}
             </span>
           </Field>
           <ul className="save-facts" aria-label="What it does">
