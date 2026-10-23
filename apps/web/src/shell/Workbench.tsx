@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useRef } from "react";
-import { DockviewDefaultTab, DockviewReact, type DockviewApi, type DockviewReadyEvent, type DockviewTheme, type IDockviewPanelHeaderProps, type IDockviewPanelProps, type SerializedDockview } from "dockview-react";
+import { DockviewReact, type DockviewApi, type DockviewReadyEvent, type DockviewTheme, type IDockviewPanelProps, type SerializedDockview } from "dockview-react";
 import "dockview-react/dist/styles/dockview.css";
 import { MapView } from "../components/MapView.js";
 import { ContentPanel } from "../panels/ContentPanel.js";
@@ -17,7 +17,7 @@ import { Section } from "../ui/Section.js";
 import type { Command } from "./commands.js";
 import { SECTION_TITLES, useLayoutStore, type SectionId } from "./layout-store.js";
 import {
-  addPanel, MAP_PANEL, movePanel, PANELS, panelDefinition, refreshShownPanels, registerWorkbench, setPanelsHidden, togglePanel,
+  addPanel, configureGroup, MAP_PANEL, pullOut, snapAreasWhileDragging, type Edge, movePanel, PANELS, panelDefinition, refreshShownPanels, registerWorkbench, setPanelsHidden, togglePanel,
   useWorkbenchStore, type PanelArea,
 } from "./workbench-api.js";
 
@@ -92,10 +92,7 @@ function MapPanel(): React.JSX.Element {
 
 const COMPONENTS = { map: MapPanel, panel: PanelBody };
 
-/** Tabs without a close button: panels are closed from the tab's context menu and reopened from the activity bar. */
-function PanelTab(props: IDockviewPanelHeaderProps): React.JSX.Element {
-  return <DockviewDefaultTab {...props} hideClose />;
-}
+
 
 /** Dockview drawn with the app's tokens (styles.css), in both themes. */
 const THEME: DockviewTheme = { name: "studio", className: "dockview-theme-studio", gap: 0 };
@@ -125,8 +122,6 @@ function restoreLayout(api: DockviewApi, stored: unknown, container: HTMLElement
       if (map !== undefined) {
         map.group.header.hidden = true;
         map.group.locked = true;
-        // Panels are never removed; one missing from an older arrangement (or a new panel) joins its default area.
-        for (const definition of PANELS) if (api.getPanel(definition.id) === undefined) addPanel(api, definition);
         return;
       }
     }
@@ -134,6 +129,44 @@ function restoreLayout(api: DockviewApi, stored: unknown, container: HTMLElement
     // A layout from another version: start from the default arrangement.
   }
   buildDefaultLayout(api, container);
+}
+
+/** How far the pointer must travel into the workbench before a folded area starts coming out (a click does nothing). */
+const PULL_THRESHOLD = 8;
+const EDGE_LABELS: Readonly<Record<Edge, string>> = { left: "left", right: "right", top: "top", bottom: "bottom" };
+
+/**
+ * A strip along an edge where an area is folded: drag it inward to pull the area out at the dragged size, as the
+ * folded side bar and panel of code editors open from their edge.
+ */
+function EdgeStrip({ edge, root }: { readonly edge: Edge; readonly root: React.RefObject<HTMLDivElement | null> }): React.JSX.Element {
+  const onPointerDown = (down: React.PointerEvent): void => {
+    down.preventDefault();
+    // On the window: the strip goes away as soon as the area opens, and the drag keeps sizing it.
+    let resize: ((size: number) => void) | null = null;
+    const onMove = (move: PointerEvent): void => {
+      const rect = root.current?.getBoundingClientRect();
+      if (rect === undefined) return;
+      const size = { left: move.clientX - rect.left, right: rect.right - move.clientX, top: move.clientY - rect.top, bottom: rect.bottom - move.clientY }[edge];
+      if (resize === null) { if (size >= PULL_THRESHOLD) resize = pullOut(edge, size); }
+      else resize(size);
+    };
+    const stop = (): void => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", stop);
+      window.removeEventListener("pointercancel", stop);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", stop);
+    window.addEventListener("pointercancel", stop);
+  };
+  return (
+    <div
+      className="workbench-edge" data-edge={edge} role="separator" aria-label={`Drag to open the folded ${EDGE_LABELS[edge]} panels`}
+      aria-orientation={edge === "left" || edge === "right" ? "vertical" : "horizontal"}
+      onPointerDown={onPointerDown}
+    />
+  );
 }
 
 const MOVE_TARGETS: readonly (readonly [PanelArea, string])[] = [["side", "Move to side bar"], ["details", "Move to details"], ["bottom", "Move to bottom panel"]];
@@ -144,11 +177,13 @@ const MOVE_TARGETS: readonly (readonly [PanelArea, string])[] = [["side", "Move 
  */
 export function Workbench({ commands, renderer }: { readonly commands: readonly Command[]; readonly renderer: string }): React.JSX.Element {
   const context = useMemo(() => ({ commands, renderer }), [commands, renderer]);
+  const foldedEdges = useWorkbenchStore((state) => state.foldedEdges);
   const dockHidden = useLayoutStore((state) => state.dockHidden);
   const ready = useRef(false);
   const root = useRef<HTMLDivElement>(null);
   const stopReset = useRef<(() => void) | null>(null);
   useEffect(() => () => { registerWorkbench(null); stopReset.current?.(); }, []);
+  useEffect(() => (root.current === null ? undefined : snapAreasWhileDragging(root.current)), []);
   // Only a change of Show panels (P) folds or unfolds the areas; on mount onReady has already applied it.
   const appliedHidden = useRef(dockHidden);
   useEffect(() => {
@@ -160,14 +195,20 @@ export function Workbench({ commands, renderer }: { readonly commands: readonly 
   const onReady = (event: DockviewReadyEvent): void => {
     const { api } = event;
     registerWorkbench(api);
+    api.onDidAddGroup(configureGroup);
     restoreLayout(api, useLayoutStore.getState().workbench, root.current);
+    for (const group of api.groups) configureGroup(group);
     ready.current = true;
     if (useLayoutStore.getState().dockHidden) setPanelsHidden(true);
     refreshShownPanels();
     // View ▸ Reset layout forgets the stored arrangement: rebuild the default one.
     stopReset.current?.();
     stopReset.current = useLayoutStore.subscribe((state, previous) => {
-      if (state.workbench === null && previous.workbench !== null) { buildDefaultLayout(api, root.current); refreshShownPanels(); }
+      if (state.workbench === null && previous.workbench !== null) {
+        buildDefaultLayout(api, root.current);
+        for (const group of api.groups) configureGroup(group);
+        refreshShownPanels();
+      }
     });
     let timer: number | undefined;
     api.onDidLayoutChange(() => {
@@ -184,14 +225,14 @@ export function Workbench({ commands, renderer }: { readonly commands: readonly 
         <DockviewReact
           theme={THEME}
           components={COMPONENTS}
-          defaultTabComponent={PanelTab}
           onReady={onReady}
           popoutUrl={`${import.meta.env.BASE_URL}popout.html`}
           getTabContextMenuItems={({ panel }) => panel.id === MAP_PANEL ? [] : [
             ...MOVE_TARGETS.map(([area, label]) => ({ label, action: () => { movePanel(panel.id, area); } })),
-            "separator", "float", "popout", "maximize",
+            "separator", "float", "popout", "maximize", "separator", "close",
           ]}
         />
+        {foldedEdges.map((edge) => <EdgeStrip key={edge} edge={edge} root={root} />)}
       </div>
     </WorkbenchContext.Provider>
   );

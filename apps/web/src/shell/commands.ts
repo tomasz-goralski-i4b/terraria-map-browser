@@ -17,7 +17,7 @@ import { CUSTOM_GRID_INPUT_ID } from "../panels/GridPanel.js";
 import { useRulerStore, finishMeasurement, undoMeasurement, redoMeasurement, deleteMeasurement, selectMeasurement } from "../world/ruler-session.js";
 import { getMapController, useViewStore, type MapLayers, type PlannedDialog, type ToolId } from "./view-store.js";
 
-export type CommandGroup = "File" | "Edit" | "Select" | "View" | "World" | "Window" | "Layers" | "Tools" | "Assets" | "Help";
+export type CommandGroup = "File" | "Edit" | "Select" | "View" | "World" | "Layers" | "Tools" | "Assets" | "Help";
 
 /**
  * One user action. Menus, the tool rail, tooltips, the shortcut help and the command palette are all built from this
@@ -204,15 +204,15 @@ export function plannedCommands(hasWorld: boolean): Command[] {
   ];
 }
 
-/** Window ▸ one checkable item per panel: shows it wherever it is docked, or folds it away when it is shown. */
+/** View > Panels: one checkable item per panel (shown or not), with the activity bar's rule (`togglePanel`). */
 export function windowCommands(shown: ReadonlySet<string>): Command[] {
   return [
     ...PANELS.map((panel): Command => ({
-      id: `window.${panel.id}`, group: "Window", label: panel.title, icon: panel.icon, enabled: true, checked: shown.has(panel.id),
+      id: `panel.${panel.id}`, group: "View", label: panel.title, icon: panel.icon, enabled: true, checked: shown.has(panel.id),
       run: () => { togglePanel(panel.id); },
     })),
     {
-      id: "window.bottom", group: "Window", label: "Show bottom panel", shortcut: "Control+J", enabled: true,
+      id: "panel.bottom", group: "View", label: "Show bottom panel", shortcut: "Control+J", enabled: true,
       checked: PANELS.some((panel) => panel.area === "bottom" && shown.has(panel.id)),
       run: () => { toggleArea("bottom"); },
     },

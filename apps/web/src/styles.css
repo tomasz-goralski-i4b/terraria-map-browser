@@ -2721,3 +2721,15 @@ kbd {
   font-variant-numeric: tabular-nums;
   pointer-events: none;
 }
+
+/* Edges between areas: an 8 px grab zone around the 1 px line (dockview's own is 4 px), over the map's layer. */
+.dockview-theme-studio .dv-split-view-container.dv-horizontal > .dv-sash-container > .dv-sash { width: 8px; margin-left: -2px; }
+.dockview-theme-studio .dv-split-view-container.dv-vertical > .dv-sash-container > .dv-sash { height: 8px; margin-top: -2px; }
+.dockview-theme-studio .dv-split-view-container .dv-sash-container .dv-sash { z-index: 100; }
+/* A folded area's edge: a strip to drag it out again, with the line it will open from shown on hover. */
+.workbench-edge { position: absolute; z-index: 101; }
+.workbench-edge[data-edge="right"] { top: 0; right: 0; bottom: 0; width: 8px; cursor: ew-resize; }
+.workbench-edge[data-edge="left"] { top: 0; left: 0; bottom: 0; width: 8px; cursor: ew-resize; }
+.workbench-edge[data-edge="bottom"] { left: 0; right: 0; bottom: 0; height: 8px; cursor: ns-resize; }
+.workbench-edge[data-edge="top"] { left: 0; right: 0; top: 0; height: 8px; cursor: ns-resize; }
+.workbench-edge:hover { background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); }

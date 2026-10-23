@@ -203,6 +203,14 @@ export function TopBar({ commands }: { readonly commands: readonly Command[] }):
         menuItem(get("view.stats")),
         { kind: "submenu", label: "Grid", icon: "grid", items: commands.filter((command) => command.id.startsWith("view.grid.")).map(menuItem) },
         { kind: "submenu", label: "Theme", icon: "theme", items: commands.filter((command) => command.id.startsWith("view.theme.")).map(menuItem) },
+        { kind: "separator" },
+        // As code editors' View > Tool Windows: every panel, shown or closed, and the panel areas as a whole.
+        {
+          kind: "submenu", label: "Panels", icon: "dock",
+          items: [...commands.filter((command) => command.id.startsWith("panel.") && command.id !== "panel.bottom").map(menuItem), { kind: "separator" }, menuItem(get("panel.bottom"))],
+        },
+        menuItem(get("view.dock")),
+        menuItem(get("view.reset")),
       ],
     },
     {
@@ -212,16 +220,6 @@ export function TopBar({ commands }: { readonly commands: readonly Command[] }):
     {
       label: "Assets", mnemonic: "A",
       items: [menuItem(get("file.assets")), menuItem(get("file.sprites")), { kind: "separator" }, menuItem(get("file.disconnectAssets"))],
-    },
-    {
-      label: "Window", mnemonic: "N",
-      items: [
-        menuItem(get("view.dock")),
-        { kind: "separator" },
-        ...commands.filter((command) => command.group === "Window").map(menuItem),
-        { kind: "separator" },
-        menuItem(get("view.reset")),
-      ],
     },
     {
       label: "Help", mnemonic: "H",
