@@ -10,7 +10,7 @@ import { menu } from "./support/shell.js";
 import "../src/styles.css";
 
 afterEach(() => {
-  useImageExportStore.setState({ open: false, scope: "world", scale: 1, format: "png", progress: null });
+  useImageExportStore.setState({ open: false, scope: "world", scale: 1, style: "map", format: "png", progress: null });
   vi.unstubAllGlobals();
 });
 
@@ -45,6 +45,10 @@ test("File ▸ Export ▸ Map Image exports the whole world at the chosen scale 
   await dialog.getByRole("button", { name: "Selection" }).click();
   await expect.element(dialog).toMatchTextContent("Select an area first");
   await dialog.getByRole("button", { name: "Whole world" }).click();
+  await dialog.getByRole("button", { name: "Textures" }).click();
+  await expect.element(dialog).toMatchTextContent("Connect the game's Images folder to export textures");
+  expect(useImageExportStore.getState().scale).toBe(16);
+  await dialog.getByRole("button", { name: "Map colours" }).click();
   await dialog.getByRole("slider", { name: "Pixels per block" }).fill("2");
   await expect.poll(() => page.getByTestId("export-image-size").element().textContent).toMatch(/^80 × 60 px · /);
   await dialog.getByRole("button", { name: "Export" }).click();

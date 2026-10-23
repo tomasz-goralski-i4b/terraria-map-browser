@@ -182,7 +182,7 @@ built on dockview; the **activity bar** at its right edge has one icon per panel
   - the tile under the pointer;
   - its depth band;
   - its block, wall and liquid in one line;
-  - background work (*Idle* until long work such as fill or export exists), recovery (*Recovery off* until recovery
+  - background work (*Idle*, or a running image export with its progress and a Cancel button), recovery (*Recovery off* until recovery
     exists) and, with a world open, whether it can be edited (*Editable* / *View only*, with the reason in its tooltip);
     each cell has a fixed minimum width, and phones show their icons only;
   - render stats, when turned on from the menu;
@@ -249,9 +249,21 @@ panel of one section shows its body under a visually hidden heading; several mak
 | **Entities** (bottom) | Every decoded chest record: its name (an unnamed chest shows its object type, "Gold Chest"), position and filled slots; type, total items and the anchor issue are optional columns. A record without a valid map target (outside the world, no complete chest object at its position, a footprint shared with another record) keeps its row with a warning icon, but has no highlight and no click target. A click **selects**: the chest is outlined on the map and shown in Properties, and the camera stays. `Enter` or a double-click **goes to** it: the map moves there at once and zooms in to at least 16 CSS pixels per tile (a closer zoom is kept). The context menu (right-click, the Menu key or `Shift+F10`) offers Go to, **Open inventory** and Copy position. | Signs and NPCs in the same table pattern. |
 | **Bookmarks**, **Statistics** (bottom) | What each will hold and its one action, disabled until it exists. | NAV-02, QA-01. |
 
-Dialogs whose action is not connected yet (Replace, Import Image as Pixel Art, Export Map Image, Save Selection as
-Schematic; `shell/PlannedDialogs.tsx`) open with their fields shown but disabled, short facts with icons, and the
-primary button disabled with the reason.
+Dialogs whose action is not connected yet (Replace, Import Image as Pixel Art, Save Selection as Schematic;
+`shell/PlannedDialogs.tsx`) open with their fields shown but disabled, short facts with icons, and the primary button
+disabled with the reason.
+
+**Export Map Image** (File ▸ Export ▸ Map Image…, `components/ExportImageDialog.tsx`): area (whole world, view or
+selection; the selection when there is one), style, scale (a slider, 1 to 16 pixels per block), format, the layers to
+include (from the map's current ones) and the resulting size. **Map colours** are the CPU reference renderer's pixels,
+rendered and encoded in a Worker band by band (`world/image-export.ts`), so the main thread only copies the planes in
+yielding slices. **Textures** are the game's sprites as the map draws them up close (needs the connected Images folder
+and 8 or more pixels per block): an offscreen WebGL2 renderer draws the area in pieces on the main thread
+(`world/textured-image.ts`) and the Worker encodes the bands, at most two waiting. **PNG** streams through the
+compressor and has no size limit; **JPEG XL** (lossless, `@jsquash/jxl`) encodes the whole image at once and is limited
+to 32 Mpx. Export asks where to save first (File System Access, or a download), then the dialog closes and the job cell
+shows progress and Cancel. Controls in the dialog have no hover tooltips: they would overflow the modal and add scroll
+bars.
 
 **Chest inventory** (Open, from the Inspector or a chest list): every decoded slot in the game's ten-column rows,
 gaps included; the arrows, `Home` and `End` move between slots, and a List view shows the filled slots as a table. The

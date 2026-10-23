@@ -7,12 +7,19 @@ import { formatBytes } from "../panels/world-fields.js";
 import { useAreaStore } from "../world/area-session.js";
 import { MAX_IMAGE_SCALE, type ImageFormat } from "../world/image-export.js";
 import {
-  closeImageExport, imageExportReason, runImageExport, scopeArea, useImageExportStore, type ImageLayers, type ImageScope,
+  closeImageExport, imageExportReason, runImageExport, scopeArea, setImageStyle, useImageExportStore, type ImageLayers, type ImageScope,
+  type ImageStyle,
 } from "../world/image-export-session.js";
+import { useAssetStore } from "../assets/asset-session.js";
 
 const SCOPES: readonly { readonly id: ImageScope; readonly label: string }[] = [
   { id: "world", label: "Whole world" }, { id: "view", label: "View" }, { id: "selection", label: "Selection" },
 ];
+const STYLES: readonly { readonly id: ImageStyle; readonly label: string }[] = [{ id: "map", label: "Map colours" }, { id: "textured", label: "Textures" }];
+const STYLE_FACTS: Readonly<Record<ImageStyle, string>> = {
+  map: "Map colours, as the map shows them from afar",
+  textured: "The game's textures, as the map shows them up close; drawn here, so the map may pause briefly",
+};
 const FORMATS: readonly { readonly id: ImageFormat; readonly label: string }[] = [{ id: "png", label: "PNG" }, { id: "jxl", label: "JPEG XL" }];
 const FORMAT_NOTES: Readonly<Record<ImageFormat, string>> = { png: "Any size; opens everywhere", jxl: "Lossless and smaller; not every viewer opens it yet" };
 const LAYERS: readonly (readonly [Exclude<keyof ImageLayers, "wireMask">, string])[] = [
@@ -23,11 +30,13 @@ function Field({ label, children }: { readonly label: string; readonly children:
   return <div className="save-field"><span className="save-field-label">{label}</span><div className="dialog-field-value">{children}</div></div>;
 }
 
-/** File ▸ Export ▸ Map Image…: area, scale, format and layers; the export then runs in the status bar's job cell. */
+/** File ▸ Export ▸ Map Image…: area, style, scale, format and layers; the export then runs in the status bar's job cell. */
 export function ExportImageDialog(): React.JSX.Element {
   const state = useImageExportStore();
   // The selection changes what the Selection scope covers.
   useAreaStore((area) => area.selection);
+  // Connecting or losing the game's Images folder changes whether Textures can run.
+  useAssetStore((assets) => assets.status);
   const ref = useModal(state.open, closeImageExport);
   const titleId = useId();
   const reason = imageExportReason(state);
@@ -42,6 +51,7 @@ export function ExportImageDialog(): React.JSX.Element {
       {state.open && (
         <form className="save-body" onSubmit={(event) => { event.preventDefault(); if (reason === null) void runImageExport(); }}>
           <Field label="Area"><Segments label="Area" value={state.scope} disabled={false} options={SCOPES} onChange={(scope) => { set({ scope }); }} /></Field>
+          <Field label="Style"><Segments label="Style" value={state.style} disabled={false} options={STYLES} onChange={setImageStyle} /></Field>
           <Field label="Scale">
             <div className="export-scale">
               <input className="brush-slider" type="range" aria-label="Pixels per block" min={1} max={MAX_IMAGE_SCALE} step={1} value={state.scale}
@@ -65,7 +75,7 @@ export function ExportImageDialog(): React.JSX.Element {
             </span>
           </Field>
           <ul className="save-facts" aria-label="What it does">
-            <li><Icon name="image" />Map colours, as the map shows them from afar</li>
+            <li><Icon name="image" />{STYLE_FACTS[state.style]}</li>
             <li><Icon name="check" />Runs in the background; progress and Cancel are in the status bar</li>
           </ul>
           {reason !== null && <p className="save-notice save-notice-warning"><Icon name="info" /><span>{reason}.</span></p>}

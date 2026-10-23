@@ -13,7 +13,7 @@ export const MAX_IMAGE_SCALE = 16;
 /** The JPEG XL encoder (WASM) holds the image and its working copies in a 32-bit address space. */
 export const MAX_JXL_PIXELS = 1 << 25;
 /** Pixel bytes of one band; it sets how many tile rows a band has at the chosen width and scale. */
-const BAND_BYTES = 32 << 20;
+export const BAND_BYTES = 32 << 20;
 
 export interface ImageBand {
   /** Straight RGBA, `rows` rows of the image's full width. */
@@ -76,15 +76,15 @@ function defaultBandTiles(width: number, scale: number): number {
 
 /** Encodes the bands of a `width` × `height` image; `onRows` reports the rows done after each band. */
 export async function encodeMapImage(
-  format: ImageFormat, width: number, height: number, bands: Iterable<ImageBand>, onRows: (rows: number) => void = () => undefined,
+  format: ImageFormat, width: number, height: number, bands: Iterable<ImageBand> | AsyncIterable<ImageBand>, onRows: (rows: number) => void = () => undefined,
 ): Promise<Blob> {
   return format === "png" ? encodePng(width, height, bands, onRows) : encodeJxl(width, height, bands, onRows);
 }
 
-async function encodeJxl(width: number, height: number, bands: Iterable<ImageBand>, onRows: (rows: number) => void): Promise<Blob> {
+async function encodeJxl(width: number, height: number, bands: Iterable<ImageBand> | AsyncIterable<ImageBand>, onRows: (rows: number) => void): Promise<Blob> {
   const image = new ImageData(width, height);
   let rows = 0;
-  for (const band of bands) {
+  for await (const band of bands) {
     image.data.set(band.pixels, rows * width * 4);
     rows += band.rows;
     onRows(rows);
@@ -112,7 +112,7 @@ function pngChunk(type: string, body: Uint8Array): Uint8Array<ArrayBuffer> {
 }
 
 /** 8-bit RGBA, rows unfiltered, the zlib stream from `CompressionStream("deflate")` split into IDAT chunks as it comes. */
-async function encodePng(width: number, height: number, bands: Iterable<ImageBand>, onRows: (rows: number) => void): Promise<Blob> {
+async function encodePng(width: number, height: number, bands: Iterable<ImageBand> | AsyncIterable<ImageBand>, onRows: (rows: number) => void): Promise<Blob> {
   const header = new Uint8Array(13);
   const view = new DataView(header.buffer);
   view.setUint32(0, width);
@@ -131,7 +131,7 @@ async function encodePng(width: number, height: number, bands: Iterable<ImageBan
   })();
   const rowBytes = width * 4;
   let rows = 0;
-  for (const band of bands) {
+  for await (const band of bands) {
     const filtered = new Uint8Array(band.rows * (rowBytes + 1));
     for (let y = 0; y < band.rows; y++) filtered.set(band.pixels.subarray(y * rowBytes, (y + 1) * rowBytes), y * (rowBytes + 1) + 1);
     await writer.write(filtered);
