@@ -12,23 +12,6 @@ export const SECTION_TITLES: Readonly<Record<SectionId, string>> = {
   swatches: "Swatches", objects: "Objects", schematics: "Schematics",
 };
 
-/**
- * The dock's tabs: what the world is (properties, content, entities), what is shown (layers), what is painted with and
- * what is placed (objects, schematics).
- */
-export const DOCK_TABS = ["world", "view", "paint", "library"] as const;
-export type DockTab = (typeof DOCK_TABS)[number];
-/** The panes under the tabs, visible with any tab. */
-export const BOTTOM_TABS = ["inspector", "history"] as const;
-export type BottomTab = (typeof BOTTOM_TABS)[number];
-/** Which tab each section lives in; the Inspector and History are under the tabs, visible with any. */
-export const SECTION_TAB: Readonly<Record<Exclude<SectionId, BottomTab>, DockTab>> = {
-  search: "world", bookmarks: "world", world: "world", content: "world", entities: "world", statistics: "world",
-  layers: "view", grid: "view", measurements: "view",
-  swatches: "paint",
-  objects: "library", schematics: "library",
-};
-
 export type ThemeChoice = "system" | "dark" | "light";
 export type ChestView = "grid" | "list";
 
@@ -62,13 +45,9 @@ export interface Layout {
   readonly sections: Readonly<Record<SectionId, boolean>>;
   /** Collapsible groups inside sections, keyed `<section>/<group>`; absent means open. */
   readonly groups: Readonly<Record<string, boolean>>;
-  readonly dockWidth: number;
   readonly dockHidden: boolean;
-  readonly dockTab: DockTab;
-  /** Which pane under the tabs is shown: the Inspector or History. */
-  readonly bottomTab: BottomTab;
-  /** The open Inspector's height in CSS pixels, set by its splitter; null fits its content (up to half the dock). */
-  readonly inspectorHeight: number | null;
+  /** The workbench's arrangement (dockview's `toJSON`); null until the user changes it, then restored on load. */
+  readonly workbench: unknown;
   /** Table columns, keyed by table id and column id. */
   readonly columns: Readonly<Record<string, Readonly<Record<string, ColumnLayout>>>>;
   readonly theme: ThemeChoice;
@@ -88,19 +67,14 @@ export const DEFAULT_LAYOUT = {
   grid: { mode: "off", customSpacing: 10, opacity: 30 },
   ruler: DEFAULT_RULER,
   groups: {},
-  dockWidth: 320,
   dockHidden: false,
-  dockTab: "world",
-  bottomTab: "inspector",
-  inspectorHeight: null,
+  workbench: null,
   columns: {},
   theme: "system",
   inspectorShowAll: false,
   chestView: "grid",
   minimap: true,
-  minDockWidth: 240,
-  maxDockWidth: 640,
-} as const satisfies Layout & { minDockWidth: number; maxDockWidth: number };
+} as const satisfies Layout;
 
 export const LAYOUT_STORAGE_KEY = "terraria-map-studio.layout.v1";
 
@@ -118,20 +92,13 @@ export interface LayoutState extends Layout {
   readonly setGroupOpen: (key: string, open: boolean) => void;
   /** Opens or closes several groups at once (Expand all / Collapse all). */
   readonly setGroupsOpen: (keys: readonly string[], open: boolean) => void;
-  readonly setDockWidth: (width: number) => void;
-  readonly setInspectorHeight: (height: number | null) => void;
   readonly setDockHidden: (hidden: boolean) => void;
-  readonly setDockTab: (tab: DockTab) => void;
-  readonly setBottomTab: (tab: BottomTab) => void;
+  readonly setWorkbench: (arrangement: unknown) => void;
   readonly setColumn: (table: string, column: string, layout: ColumnLayout) => void;
   readonly setTheme: (theme: ThemeChoice) => void;
   readonly setInspectorShowAll: (showAll: boolean) => void;
   readonly setMinimap: (shown: boolean) => void;
   readonly setChestView: (view: ChestView) => void;
-}
-
-function clampDockWidth(width: number): number {
-  return Math.round(Math.min(DEFAULT_LAYOUT.maxDockWidth, Math.max(DEFAULT_LAYOUT.minDockWidth, width)));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -186,18 +153,15 @@ function parseLayout(text: string | null): Layout {
   const sections = Object.fromEntries(
     SECTION_IDS.map((id) => [id, storedSections[id] ?? DEFAULT_LAYOUT.sections[id]]),
   ) as Record<SectionId, boolean>;
-  const { dockWidth, dockHidden, dockTab, bottomTab, inspectorHeight, theme, inspectorShowAll, chestView, minimap } = value;
+  const { dockHidden, workbench, theme, inspectorShowAll, chestView, minimap } = value;
   return {
     sections,
     grid: parseGrid(value["grid"]),
     ruler: parseRuler(value["ruler"]),
     groups: booleans(value["groups"]),
-    dockWidth: typeof dockWidth === "number" && Number.isFinite(dockWidth) ? clampDockWidth(dockWidth) : DEFAULT_LAYOUT.dockWidth,
     dockHidden: typeof dockHidden === "boolean" ? dockHidden : DEFAULT_LAYOUT.dockHidden,
-    // The Paint tab was called Swatches before the Library tab joined it.
-    dockTab: DOCK_TABS.find((tab) => tab === (dockTab === "swatches" ? "paint" : dockTab)) ?? DEFAULT_LAYOUT.dockTab,
-    bottomTab: BOTTOM_TABS.find((tab) => tab === bottomTab) ?? DEFAULT_LAYOUT.bottomTab,
-    inspectorHeight: typeof inspectorHeight === "number" && Number.isFinite(inspectorHeight) && inspectorHeight > 0 ? inspectorHeight : null,
+    // Checked by the workbench when it restores it (dockview validates its own format).
+    workbench: isRecord(workbench) ? workbench : null,
     columns: columnLayouts(value["columns"]),
     theme: theme === "dark" || theme === "light" || theme === "system" ? theme : DEFAULT_LAYOUT.theme,
     inspectorShowAll: typeof inspectorShowAll === "boolean" ? inspectorShowAll : DEFAULT_LAYOUT.inspectorShowAll,
@@ -221,9 +185,9 @@ function browserStorage(): LayoutStorage | null {
 let storage: LayoutStorage | null = null;
 
 function save(layout: Layout): void {
-  const { sections, groups, dockWidth, dockHidden, dockTab, bottomTab, inspectorHeight, columns, theme, inspectorShowAll, chestView, grid, ruler, minimap } = layout;
+  const { sections, groups, dockHidden, workbench, columns, theme, inspectorShowAll, chestView, grid, ruler, minimap } = layout;
   try {
-    storage?.setItem(LAYOUT_STORAGE_KEY, JSON.stringify({ sections, groups, dockWidth, dockHidden, dockTab, bottomTab, inspectorHeight, columns, theme, inspectorShowAll, chestView, grid, ruler, minimap }));
+    storage?.setItem(LAYOUT_STORAGE_KEY, JSON.stringify({ sections, groups, dockHidden, workbench, columns, theme, inspectorShowAll, chestView, grid, ruler, minimap }));
   } catch {
     // Private mode, quota or blocked storage: the layout still works for this visit.
   }
@@ -249,20 +213,11 @@ export const useLayoutStore = create<LayoutState>()((set, get) => {
     setGroupsOpen: (keys, open) => {
       update({ groups: { ...get().groups, ...Object.fromEntries(keys.map((key) => [key, open])) } });
     },
-    setDockWidth: (width) => {
-      update({ dockWidth: clampDockWidth(width) });
-    },
-    setInspectorHeight: (height) => {
-      update({ inspectorHeight: height });
-    },
     setDockHidden: (hidden) => {
       update({ dockHidden: hidden });
     },
-    setDockTab: (tab) => {
-      update({ dockTab: tab });
-    },
-    setBottomTab: (tab) => {
-      update({ bottomTab: tab });
+    setWorkbench: (arrangement) => {
+      update({ workbench: arrangement });
     },
     setColumn: (table, column, layout) => {
       const columns = get().columns;

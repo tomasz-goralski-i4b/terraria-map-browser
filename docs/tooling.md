@@ -196,10 +196,11 @@ point at its own files (see the "Where" column).
 | `vitest-browser-react` | Renders React components in the real-Chromium Vitest browser project. |
 | `eslint-plugin-react-hooks` 7 | Rules of Hooks; applied only to `apps/web/**` in `eslint.config.js` (also a root devDependency). |
 | `@types/react`, `@types/react-dom` | Types for React 19. |
+| `dockview-react` 8.4 (engine `dockview`/`dockview-core` 8.4 via `overrides`) | The workbench: the map and every panel in one dock layout with drag-and-drop docking, floating groups, pop-out windows and a serialisable arrangement. Written in-house this would be weeks of drag, focus and layout work; MIT, no runtime dependencies. Free modules only (keyboard docking and auto-hide side bars are paid: our "Move to…" commands are the keyboard path). Pinned to a minor released at least two weeks before it was added; `overrides` keeps the engine on the same release. |
 | `axe-core` 4.13 (dev only) | Accessibility check of the main screen in `apps/web/tests/editor-shell.browser.test.tsx` (both themes). Pinned to a minor released at least two weeks before it was added. |
 
-UI primitives (virtualised table, splitter, menus, tooltips, icons) are written in-house; there is no UI component
-library. The rules for new UI are in [`docs/ui.md`](ui.md).
+UI primitives (virtualised table, splitter, menus, tooltips, icons) are written in-house; the only UI library is
+dockview, for the dock layout. The rules for new UI are in [`docs/ui.md`](ui.md).
 
 `packages/renderer` (`@studio/renderer`) is framework-free: `no-restricted-imports` in `eslint.config.js` and a test in
 `packages/renderer/tests` fail if it imports React.

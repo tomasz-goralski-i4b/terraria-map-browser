@@ -2,13 +2,12 @@ import { useEffect, useState } from "react";
 import { RENDERER_PACKAGE } from "@studio/renderer";
 import { getDefaultAssetSession, useAssetStore } from "./assets/asset-session.js";
 import { SpritePreviewDialog } from "./panels/SpritePreviewDialog.js";
-import { MapView } from "./components/MapView.js";
 import { SaveAsDialog } from "./components/SaveAsDialog.js";
 import { useCommands, useGlobalShortcuts } from "./shell/commands.js";
 import { ConfirmDialog, confirmAction } from "./shell/ConfirmDialog.js";
 import { CommandPalette, HelpOverlay } from "./shell/dialogs.js";
 import { PlannedDialogs } from "./shell/PlannedDialogs.js";
-import { Dock } from "./shell/Dock.js";
+import { ActivityBar, Workbench } from "./shell/Workbench.js";
 import { hydrateLayout, useLayoutStore, type LayoutStorage } from "./shell/layout-store.js";
 import { clearNotifications } from "./shell/notification-store.js";
 import { Notifications } from "./shell/Notifications.js";
@@ -148,16 +147,14 @@ export function App({ layoutStorage }: AppProps = {}): React.JSX.Element {
   useNoBrowserContextMenu();
   const commands = useCommands();
   useGlobalShortcuts(commands);
-  const dockHidden = useLayoutStore((state) => state.dockHidden);
-  const dockWidth = useLayoutStore((state) => state.dockWidth);
 
   return (
-    <div className="app" data-dock={dockHidden ? "hidden" : "shown"} style={{ "--dock-width": `${String(dockWidth)}px` } as React.CSSProperties}>
+    <div className="app">
       <TopBar commands={commands} />
       <ToolRail commands={commands} />
       <ToolOptions commands={commands} />
-      <MapView renderer={RENDERER_PACKAGE} commands={commands} />
-      <Dock commands={commands} />
+      <Workbench renderer={RENDERER_PACKAGE} commands={commands} />
+      <ActivityBar />
       <StatusBar />
       <PerformanceOverlay />
       <HelpOverlay commands={commands} />

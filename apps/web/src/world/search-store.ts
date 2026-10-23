@@ -4,7 +4,7 @@ import { GO_TO_ZOOM, stepChest, useChestNavigation } from "./chest-navigation.js
 import { buildContentStepIndex, sameSelection, type ContentSelection, type ContentStep, type ContentStepIndex } from "./content-search.js";
 import type { CountablePlanes } from "./content-counts.js";
 import { getMapController, useViewStore } from "../shell/view-store.js";
-import { useLayoutStore } from "../shell/layout-store.js";
+import { showPanel } from "../shell/workbench-api.js";
 
 /**
  * Where the one Search box looks. Each scope lists its own results and highlights its own matches; a new scope
@@ -129,8 +129,7 @@ export function clearSearch(): void {
 
 /** Shows the Search section; with `focus`, focuses its box (Find), else focus stays where it is. */
 function showSearch(focus: boolean): void {
-  const layout = useLayoutStore.getState();
-  layout.setDockHidden(false); layout.setDockTab("world"); layout.setSectionOpen("search", true);
+  showPanel("search");
   if (focus) useSearchStore.setState((state) => ({ requested: state.requested + 1 }));
 }
 

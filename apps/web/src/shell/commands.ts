@@ -11,7 +11,8 @@ import { finishBrush, redoBrush, setBrushSize, undoBrush, useBrushStore } from "
 import { WORLD_GROUP_IDS } from "../panels/world-fields.js";
 import { cancelArea, copySelection, placePaste, startPaste, useAreaStore } from "../world/area-session.js";
 import { MAX_AREA_TILES } from "../world/area-clipboard.js";
-import { GRID_MODES, resetLayout, SECTION_IDS, SECTION_TAB, SECTION_TITLES, useLayoutStore, type ThemeChoice } from "./layout-store.js";
+import { GRID_MODES, resetLayout, useLayoutStore, type ThemeChoice } from "./layout-store.js";
+import { PANELS, showPanel, toggleArea, togglePanel, useWorkbenchStore } from "./workbench-api.js";
 import { CUSTOM_GRID_INPUT_ID } from "../panels/GridPanel.js";
 import { useRulerStore, finishMeasurement, undoMeasurement, redoMeasurement, deleteMeasurement, selectMeasurement } from "../world/ruler-session.js";
 import { getMapController, useViewStore, type MapLayers, type PlannedDialog, type ToolId } from "./view-store.js";
@@ -203,24 +204,19 @@ export function plannedCommands(hasWorld: boolean): Command[] {
   ];
 }
 
-/** Window ▸ one checkable item per dock section: shows the dock on its tab with the section open, or closes it. */
-export function windowCommands(): Command[] {
-  const layout = useLayoutStore.getState();
-  return SECTION_IDS.map((section): Command => {
-    const open = !layout.dockHidden && layout.sections[section] && (section === "inspector" || section === "history"
-      ? layout.bottomTab === section : layout.dockTab === SECTION_TAB[section]);
-    return {
-      id: `window.${section}`, group: "Window", label: SECTION_TITLES[section], enabled: true, checked: open,
-      run: () => {
-        const state = useLayoutStore.getState();
-        if (open) { state.setSectionOpen(section, false); return; }
-        state.setDockHidden(false);
-        if (section === "inspector" || section === "history") state.setBottomTab(section);
-        else state.setDockTab(SECTION_TAB[section]);
-        state.setSectionOpen(section, true);
-      },
-    };
-  });
+/** Window ▸ one checkable item per panel: shows it wherever it is docked, or folds it away when it is shown. */
+export function windowCommands(shown: ReadonlySet<string>): Command[] {
+  return [
+    ...PANELS.map((panel): Command => ({
+      id: `window.${panel.id}`, group: "Window", label: panel.title, icon: panel.icon, enabled: true, checked: shown.has(panel.id),
+      run: () => { togglePanel(panel.id); },
+    })),
+    {
+      id: "window.bottom", group: "Window", label: "Show bottom panel", shortcut: "Control+J", enabled: true,
+      checked: PANELS.some((panel) => panel.area === "bottom" && shown.has(panel.id)),
+      run: () => { toggleArea("bottom"); },
+    },
+  ];
 }
 
 /** `[` and `]` change the brush size as in image editors: one tile at a time up to 8, then in larger steps. */
@@ -309,10 +305,7 @@ export function useCommands(): Command[] {
     : area.selection.width * area.selection.height > MAX_AREA_TILES ? `Too large: select up to ${MAX_AREA_TILES.toLocaleString("en-US")} tiles` : null;
   const editReason = loadingWorld ? "A world is loading" : saving ? "Finish exporting first" : brushReason;
   const dockHidden = useLayoutStore((state) => state.dockHidden);
-  // Window ▸ reads these when built.
-  useLayoutStore((state) => state.sections);
-  useLayoutStore((state) => state.dockTab);
-  useLayoutStore((state) => state.bottomTab);
+  const shownPanels = useWorkbenchStore((state) => state.shown);
   const setDockHidden = useLayoutStore((state) => state.setDockHidden);
   const theme = useLayoutStore((state) => state.theme);
   const setTheme = useLayoutStore((state) => state.setTheme);
@@ -452,10 +445,7 @@ export function useCommands(): Command[] {
       run: () => {
         setGrid({ mode });
         if (mode === "custom") {
-          const layout = useLayoutStore.getState();
-          layout.setDockHidden(false);
-          layout.setDockTab("view");
-          layout.setSectionOpen("grid", true);
+          showPanel("layers", "grid");
           window.requestAnimationFrame(() => { document.getElementById(CUSTOM_GRID_INPUT_ID)?.focus(); });
         }
       },
@@ -489,7 +479,7 @@ export function useCommands(): Command[] {
     })),
     ...toolCommands(tool, setTool, editReason),
     ...plannedCommands(hasWorld),
-    ...windowCommands(),
+    ...windowCommands(shownPanels),
     ...brushSizeCommands(tool === "brush" || tool === "erase"),
     ...brushOptionCommands(tool),
     {
